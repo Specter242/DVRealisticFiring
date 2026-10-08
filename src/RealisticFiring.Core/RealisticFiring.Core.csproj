@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Engine-free model code: no UnityEngine or game references belong here. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>RealisticFiring.Core</RootNamespace>
+  </PropertyGroup>
+
+</Project>

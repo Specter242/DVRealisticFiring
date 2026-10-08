@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/RealisticFiring.Core/RealisticFiring.Core.csproj" />
+    <Project Path="src/RealisticFiring/RealisticFiring.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/RealisticFiring.AdapterCheck/RealisticFiring.AdapterCheck.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RealisticFiring.Core.Tests/RealisticFiring.Core.Tests.csproj" />
+  </Folder>
+</Solution>

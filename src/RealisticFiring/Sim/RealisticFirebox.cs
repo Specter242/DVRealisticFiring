@@ -1,0 +1,420 @@
+using System;
+using System.Linq;
+using DV.JObjectExtstensions;
+using HarmonyLib;
+using LocoSim.Definitions;
+using LocoSim.Implementations;
+using Newtonsoft.Json.Linq;
+using RealisticFiring.Core;
+using UnityEngine;
+
+namespace RealisticFiring.Sim
+{
+    /// <summary>
+    /// Drop-in replacement for the stock LocoSim Firebox, driving a
+    /// <see cref="FireModel"/>. Keeps the definition's component ID, every
+    /// stock port and port reference with its default value, the stock save
+    /// keys, the add-and-reset coal delivery port, ignition and extinguish
+    /// requests, the boiler-broken shutdown, and the environmental-damage
+    /// meter, so the rest of the loco cannot tell the difference.
+    /// </summary>
+    internal sealed class RealisticFirebox : SimComponent
+    {
+        public const string FireOnSaveKey = "fireOn";
+        public const string CoalMassSaveKey = "coalMass";
+        public const string CoalEnvDamageSaveKey = "coalEnvDmg";
+        public const string ZonesSaveKey = "rfZones";
+
+        private const float StartupMultiplierBase = 25f;
+
+        // Clicking to throw ends the hover, and the throw animation takes
+        // under a second before the coal arrives.
+        internal const float AimHoldTime = 3f;
+
+        // Below this the door counts as shut; the leak path stays open anyway.
+        private const float DoorOpenThreshold = 0.05f;
+
+        private static readonly AccessTools.FieldRef<PortReference, Port> ReferencedPort =
+            AccessTools.FieldRefAccess<PortReference, Port>("port");
+
+        private readonly float startupMaxPressure;
+        private readonly ShovelDelivery shovel;
+        private readonly GrateLever grateLever = new GrateLever();
+
+        private readonly PortReference coalDumpControl;
+        private readonly PortReference intakeWaterContent;
+        private readonly PortReference airFlow;
+        private readonly PortReference forwardSpeed;
+        private readonly PortReference boilerPressure;
+        private readonly PortReference boilerTemperature;
+        private readonly PortReference boilerBrokenState;
+
+        private readonly Port coalLevelReadOut;
+        private readonly Port coalLevelNormalizedReadOut;
+        private readonly Port coalControlExtIn;
+        private readonly Port coalEnvDamage;
+        private readonly Port ignitionExtIn;
+        private readonly Port extinguishExtIn;
+        private readonly Port heatReadOut;
+        private readonly Port fireOnReadOut;
+        private readonly Port coalDumpFlowNormalizedReadOut;
+        private readonly Port smokeDensityReadOut;
+        private readonly Port combustionRateNormalizedReadOut;
+        private readonly Port temperatureReadOut;
+        private readonly Port oxygenAvailabilityReadOut;
+
+        private Port doorPort;
+        private float coalDumpFlow;
+        private float coalDumpFlowVelocity;
+        private bool reportedBadStartupParameter;
+
+        private bool doorOpen;
+        private float doorOpenTime;
+        private float doorMaxOpening;
+        private float doorMaxAirFlow;
+        private float heatAtDoorOpen;
+        private float temperatureAtDoorOpen;
+
+        public RealisticFirebox(FireboxDefinition fDef, TrainCar car)
+            : base(fDef.ID)
+        {
+            Car = car;
+            startupMaxPressure = fDef.startupMaxPressure;
+            Model = new FireModel(new FireboxParameters(
+                fDef.maxCoalCapacity,
+                fDef.burnTime,
+                fDef.efficiencyAtMaxCombustion,
+                fDef.coalDumpRate,
+                fDef.combustionRateSmoothTime,
+                fDef.temperatureSmoothTime));
+            shovel = new ShovelDelivery(Model.Parameters);
+            if (car != null && car.carLivery != null && GrateSlopes.TryGetValue(car.carLivery.id, out var slope))
+                Model.GrateSlope = slope;
+
+            // Same ports, IDs, and default values as the stock Firebox.
+            intakeWaterContent = AddPortReference(fDef.intakeWaterContent);
+            coalDumpControl = AddPortReference(fDef.coalDumpControl, 0.5f);
+            AddPort(fDef.coalCapacityReadOut, fDef.maxCoalCapacity);
+            coalLevelReadOut = AddPort(fDef.coalLevelReadOut);
+            coalLevelNormalizedReadOut = AddPort(fDef.coalLevelNormalizedReadOut);
+            coalControlExtIn = AddPort(fDef.coalControlExtIn);
+            coalEnvDamage = AddPort(fDef.coalEnvDamage);
+            ignitionExtIn = AddPort(fDef.ignitionExtIn);
+            extinguishExtIn = AddPort(fDef.extinguishExtIn);
+            airFlow = AddPortReference(fDef.airFlow);
+            heatReadOut = AddPort(fDef.heatReadOut);
+            coalDumpFlowNormalizedReadOut = AddPort(fDef.coalDumpFlowNormalizedReadOut);
+            fireOnReadOut = AddPort(fDef.fireOnReadOut);
+            smokeDensityReadOut = AddPort(fDef.smokeDensityReadOut);
+            combustionRateNormalizedReadOut = AddPort(fDef.combustionRateNormalizedReadOut);
+            temperatureReadOut = AddPort(fDef.temperatureReadOut, 100f);
+            forwardSpeed = AddPortReference(fDef.forwardSpeed);
+            boilerPressure = AddPortReference(fDef.boilerPressure);
+            boilerTemperature = AddPortReference(fDef.boilerTemperature, 100f);
+            boilerBrokenState = AddPortReference(fDef.boilerBrokenState);
+            oxygenAvailabilityReadOut = AddPort(fDef.oxygenAvailabilityReadOut);
+
+            coalControlExtIn.ValueUpdatedInternally += OnCoalDelivered;
+        }
+
+        public TrainCar Car { get; }
+
+        /// <summary>
+        /// Each livery's grate slope, in degrees, as measured from its coal
+        /// pile when a cab first loads; later fireboxes of that livery start
+        /// with it.
+        /// </summary>
+        public static readonly System.Collections.Generic.Dictionary<string, float> GrateSlopes =
+            new System.Collections.Generic.Dictionary<string, float>();
+
+        /// <summary>Records the grate's measured slope for this firebox and its livery.</summary>
+        public void SetGrateSlope(float degrees)
+        {
+            Model.GrateSlope = degrees;
+            if (Car != null && Car.carLivery != null)
+                GrateSlopes[Car.carLivery.id] = degrees;
+        }
+
+        public FireModel Model { get; }
+
+        public float AirFlowIn => airFlow.Value;
+
+        public float DoorOpening => doorPort != null ? Mathf.Clamp01(doorPort.Value) : 0f;
+
+        public bool HasDoorPort => doorPort != null;
+
+        public float StartupMultiplier { get; private set; } = 1f;
+
+        public float LastDeliveryMass { get; private set; }
+
+        /// <summary>Where the last delivery was aimed; null when it followed the fire.</summary>
+        public DoorAimSample? LastDeliveryAim { get; private set; }
+
+        /// <summary>Where a shovel last pointed in this firebox's door.</summary>
+        public DoorAimSample? HoverAim { get; private set; }
+
+        public override bool HasSaveData => true;
+
+        /// <summary>
+        /// Connects the firebox door port that FireboxSimController names, so
+        /// door opening can feed air above the fire. Unconnected means closed.
+        /// </summary>
+        public void AttachDoorPort(Port port) => doorPort = port;
+
+        public void ShakeGrate() => Model.ShakeGrate();
+
+        /// <summary>Records where the player points a shovel in the door.</summary>
+        public void NoteAim(DoorAimSample aim) => HoverAim = aim;
+
+        /// <summary>
+        /// Levels the fire around <paramref name="zone"/>, as raked with an
+        /// empty shovel through the door.
+        /// </summary>
+        public void Rake(GrateZone zone)
+        {
+            var before = Model.Zones[(int)zone].Coal;
+            Model.Rake(zone);
+            if (Main.Settings.LogCoalDeliveries)
+                Main.Mod.Logger.Log($"{Car?.ID}: raked {zone}, {before:F1} -> {Model.Zones[(int)zone].Coal:F1} kg there");
+        }
+
+        public override void InitializationAfterConnecting()
+        {
+            // The stock firebox subscribes to the port behind the reference;
+            // that field is internal to DV.Simulation.
+            if (boilerBrokenState.IsConnected)
+                ReferencedPort(boilerBrokenState).ValueUpdatedInternally += OnBoilerBrokenStateChanged;
+        }
+
+        private void OnBoilerBrokenStateChanged(float brokenState)
+        {
+            if (brokenState == 1f)
+            {
+                Model.Extinguish();
+                fireOnReadOut.Value = 0f;
+            }
+        }
+
+        private void OnCoalDelivered(float coalMassDelta)
+        {
+            if (coalMassDelta == 0f)
+                return;
+
+            if (coalMassDelta > 0f)
+            {
+                var aim = TakeFreshAim();
+                var accepted = shovel.Deliver(Model, coalMassDelta, aim?.Zone);
+                LastDeliveryMass = coalMassDelta;
+                LastDeliveryAim = aim;
+                if (Main.Settings.LogCoalDeliveries)
+                {
+                    Main.Mod.Logger.Log($"{Car?.ID}: {coalMassDelta:F2} kg delivered " +
+                                        $"({(aim.HasValue ? "aimed at " + aim.Value : "following the fire")}), {accepted:F2} kg accepted, " +
+                                        $"door {DoorOpening:P0}, door air {Model.DoorAirFlow:F2} kg/s");
+                }
+            }
+            else
+            {
+                Model.RemoveCoal(-coalMassDelta);
+            }
+
+            UpdateCoalLevel();
+            coalControlExtIn.Value = 0f;
+        }
+
+        // Coal from anything but a shovel the player just pointed into this
+        // door (the keyboard shovel, a stoker, another mod) goes where the fire needs it.
+        private DoorAimSample? TakeFreshAim()
+        {
+            var aim = HoverAim;
+            HoverAim = null;
+            return aim.HasValue && !aim.Value.Raking && Time.time - aim.Value.Time <= AimHoldTime ? aim : null;
+        }
+
+        public override void Tick(float delta)
+        {
+            CheckIgnition();
+            CoalDump(delta);
+
+            StartupMultiplier = ComputeStartupMultiplier();
+            var consumed = Model.Step(delta, new FireInputs
+            {
+                AirFlow = airFlow.Value,
+                IntakeWater = intakeWaterContent.Value,
+                DoorOpening = DoorOpening,
+                StartupMultiplier = StartupMultiplier,
+                BoilerTemperature = boilerTemperature.Value,
+                Speed = Mathf.Abs(forwardSpeed.Value),
+            });
+            if (consumed > 0f)
+                coalEnvDamage.Value += consumed;
+
+            fireOnReadOut.Value = Model.FireOn ? 1f : 0f;
+            heatReadOut.Value = Model.Heat;
+            smokeDensityReadOut.Value = Model.SmokeDensity;
+            combustionRateNormalizedReadOut.Value = Model.CombustionRateNormalized;
+            temperatureReadOut.Value = Model.Temperature;
+            oxygenAvailabilityReadOut.Value = Model.OxygenAvailability;
+            UpdateCoalLevel();
+            TrackDoor(delta);
+        }
+
+        // Logs each door opening with the fire as it was, and each closing with
+        // how long and how far it was open and what it did to heat and temperature.
+        private void TrackDoor(float delta)
+        {
+            var opening = DoorOpening;
+            var open = opening > DoorOpenThreshold;
+            if (open)
+            {
+                doorOpenTime += delta;
+                doorMaxOpening = Mathf.Max(doorMaxOpening, opening);
+                doorMaxAirFlow = Mathf.Max(doorMaxAirFlow, Model.DoorAirFlow);
+            }
+            if (open == doorOpen)
+                return;
+
+            doorOpen = open;
+            if (open)
+            {
+                doorOpenTime = 0f;
+                doorMaxOpening = opening;
+                doorMaxAirFlow = Model.DoorAirFlow;
+                heatAtDoorOpen = Model.Heat;
+                temperatureAtDoorOpen = Model.Temperature;
+                if (Main.Settings.LogCoalDeliveries)
+                {
+                    Main.Mod.Logger.Log($"{Car?.ID}: door opening: heat {Model.Heat / 1e6f:F2} MW, " +
+                                        $"temp {Model.Temperature:F0} C, smoke {Model.SmokeDensity:P0}, " +
+                                        $"draft {AirFlowIn:F2} kg/s (grate {Model.PrimaryAirFlow:F2}, door {Model.DoorAirFlow:F2})");
+                }
+            }
+            else if (Main.Settings.LogCoalDeliveries)
+            {
+                Main.Mod.Logger.Log($"{Car?.ID}: door closed after {doorOpenTime:F1} s, up to {doorMaxOpening:P0} open " +
+                                    $"and {doorMaxAirFlow:F2} kg/s of door air: heat {heatAtDoorOpen / 1e6f:F2} -> {Model.Heat / 1e6f:F2} MW, " +
+                                    $"temp {temperatureAtDoorOpen:F0} -> {Model.Temperature:F0} C, smoke {Model.SmokeDensity:P0}, " +
+                                    $"smoke burnt {Model.OverFireBurnout:P0}");
+            }
+        }
+
+        private void CheckIgnition()
+        {
+            if (ignitionExtIn.Value == 1f)
+            {
+                if (intakeWaterContent.Value <= 0.5f)
+                {
+                    Model.Ignite();
+                    fireOnReadOut.Value = 1f;
+                }
+                ignitionExtIn.Value = 0f;
+            }
+            else if (extinguishExtIn.Value == 1f)
+            {
+                Model.Extinguish();
+                fireOnReadOut.Value = 0f;
+                extinguishExtIn.Value = 0f;
+            }
+        }
+
+        // The dump lever doubles as the rocking grate lever: a quick rock shakes
+        // the grate, holding it over dumps at the stock rate. The dump keeps
+        // running while ash or clinker is left, since dumping is how a
+        // clinkered fire gets cleaned.
+        private void CoalDump(float delta)
+        {
+            var lever = grateLever.Update(coalDumpControl.Value, delta);
+            for (var i = 0; i < lever.Shakes; i++)
+            {
+                var ashBefore = Model.AshMass;
+                Model.ShakeGrate();
+                if (Main.Settings.LogCoalDeliveries)
+                    Main.Mod.Logger.Log($"{Car?.ID}: grate rocked, ash {ashBefore:F2} -> {Model.AshMass:F2} kg");
+            }
+            var target = Model.HasDumpableContents ? lever.Dump : 0f;
+            coalDumpFlow = Mathf.SmoothDamp(coalDumpFlow, target, ref coalDumpFlowVelocity, 0.5f, float.PositiveInfinity, delta);
+            if (target == 0f && coalDumpFlow < 0.01f)
+            {
+                coalDumpFlow = 0f;
+                coalDumpFlowVelocity = 0f;
+            }
+            coalDumpFlowNormalizedReadOut.Value = coalDumpFlow;
+            if (coalDumpFlow > 0f)
+                Model.Dump(coalDumpFlow, delta);
+        }
+
+        // Stock fast startup: up to 25× faster combustion while the boiler is
+        // below startupMaxPressure and the loco stands still.
+        private float ComputeStartupMultiplier()
+        {
+            var pressure = Mathf.InverseLerp(startupMaxPressure, 1f, boilerPressure.Value);
+            var standing = Mathf.InverseLerp(1f, 0f, Mathf.Abs(forwardSpeed.Value));
+            var parameter = gameParams != null ? gameParams.SteamStartupMultiplier : 1f;
+            if (parameter <= 0f)
+            {
+                if (!reportedBadStartupParameter)
+                {
+                    Main.Mod.Logger.Error($"Unexpected SteamStartupMultiplier {parameter}; using 1");
+                    reportedBadStartupParameter = true;
+                }
+                parameter = 1f;
+            }
+            return Mathf.Lerp(1f, StartupMultiplierBase / parameter, pressure * standing);
+        }
+
+        private void UpdateCoalLevel()
+        {
+            var coal = Model.CoalMass;
+            coalLevelReadOut.Value = coal;
+            coalLevelNormalizedReadOut.Value = coal / Model.Parameters.MaxCoalCapacity;
+        }
+
+        public override JObject GetSaveStateData()
+        {
+            var data = new JObject();
+            if (Model.FireOn)
+                data.SetBool(FireOnSaveKey, true);
+            data.SetFloat(CoalMassSaveKey, Model.CoalMass);
+            var envDamage = coalEnvDamage.Value;
+            if (envDamage > 0f)
+                data.SetFloat(CoalEnvDamageSaveKey, envDamage);
+            data[ZonesSaveKey] = new JArray(Model.SaveZones());
+            return data;
+        }
+
+        public override void SetSaveStateData(JObject savedData)
+        {
+            var fireOn = savedData.GetBool(FireOnSaveKey) == true;
+            var coalMass = savedData.GetFloat(CoalMassSaveKey) ?? 0f;
+
+            // Zones written by this mod win when they agree with the stock
+            // total; a stock save, or one another tool edited, is spread evenly.
+            var zones = ReadZones(savedData);
+            var restored = zones != null
+                           && Math.Abs(FireModel.SavedCoalMass(zones) - coalMass) < 0.5f
+                           && Model.RestoreZones(fireOn, zones);
+            if (!restored)
+                Model.Restore(fireOn, coalMass);
+
+            var envDamage = savedData.GetFloat(CoalEnvDamageSaveKey);
+            if (envDamage.HasValue)
+                coalEnvDamage.Value = envDamage.Value;
+
+            fireOnReadOut.Value = Model.FireOn ? 1f : 0f;
+            UpdateCoalLevel();
+        }
+
+        private static float[] ReadZones(JObject savedData)
+        {
+            try
+            {
+                return (savedData[ZonesSaveKey] as JArray)?.Select(token => (float)token).ToArray();
+            }
+            catch (Exception e) when (e is ArgumentException || e is InvalidCastException || e is FormatException)
+            {
+                Main.Mod.Logger.Warning($"Ignoring unreadable '{ZonesSaveKey}' save data: {e.Message}");
+                return null;
+            }
+        }
+    }
+}

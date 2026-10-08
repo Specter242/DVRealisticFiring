@@ -1,0 +1,585 @@
+using System.Collections.Generic;
+using System.Linq;
+using DV.Simulation.Controllers;
+using LocoSim.Definitions;
+using LocoSim.Implementations;
+using RealisticFiring.Core;
+using RealisticFiring.Sim;
+using UnityEngine;
+
+namespace RealisticFiring.Visuals
+{
+    /// <summary>
+    /// Drives a realistic firebox's chimney smoke in place of the stock
+    /// <see cref="SteamSmokeParticlePortReader"/>: a puff per exhaust beat,
+    /// counted from the crank angle and thrown up by the exhaust's force, a
+    /// steady plume between beats, and sparks on hard beats, all colored from
+    /// the fire model per particle. A puff leaves as a narrow column; drag
+    /// spends its speed within the tuned jet length and, as it slows, it
+    /// swells into a cloud that rises at the tuned speed. The mod applies the
+    /// drag and lift to every smoke particle itself each frame, because Unity's
+    /// own drag module did not hold the smoke back in game; the stock systems'
+    /// gravity and velocity modules are switched off so nothing else moves it.
+    /// The shape follows the smoke tuning settings live.
+    /// </summary>
+    internal sealed class ChimneyPlume : MonoBehaviour
+    {
+        // A particle is at its jet width above the fast speed and at its full
+        // cloud size below the slow one, in m/s.
+        private const float JetFastSpeed = 8f;
+        private const float JetSlowSpeed = 1.5f;
+
+        // A beat's particles leave within this angle of the stack's axis; haze wanders more.
+        private const float PuffSpread = 0.06f;
+        private const float HazeSpread = 0.25f;
+
+        // Jet streaks start at this share of the puff's spread-out size.
+        private const float JetStreakSize = 0.3f;
+
+        // A cinder glows for a couple of seconds while it arcs up and falls back.
+        private const float SparkMinLife = 1.5f;
+        private const float SparkMaxLife = 3f;
+
+        // Cinders fan out more than the smoke and vary in size and speed.
+        private const float SparkSpread = 0.25f;
+        private const float SparkMinSize = 0.05f;
+        private const float SparkMaxSize = 0.09f;
+
+        // A beat's particles leave at a spread of speeds, so they stretch into a column.
+        private const float PuffSlowest = 0.45f;
+        private const float PuffFastest = 1.1f;
+
+        // Puffs at speed (up to ~15 beats/s, 8 particles each, 5-10 s lifetimes)
+        // need more room than the stock cap of 300.
+        private const int MinMaxParticles = 1000;
+
+        // Within the narrow-jet zone above the game's smoke emitter (inside the
+        // stack, however deep its emitter sits) smoke is at most this wide and
+        // moves with the stack, rising at least this fast. Beyond it the plume
+        // widens by the spread for every metre from the zone's top, so a
+        // particle's camera-facing square never hangs down beside the stack.
+        private const float ZoneWidth = 0.15f;
+        private const float MinZoneRise = 1f;
+        private const float PlumeSpread = 0.9f;
+
+        // A frame that crosses more beats than this is a hitch, not a fast engine.
+        private const int MaxBeatsPerFrame = 3;
+
+        // Faster than any train: the floating origin moved the world.
+        private const float MaxPlausibleSpeed = 80f;
+
+        private SteamSmokeParticlePortReader stock;
+        private RealisticFirebox firebox;
+        private ExhaustBeatCounter beats;
+        private Port crankRotation;
+        private Port exhaustPressure;
+        private Port totalFlow;
+        private Port boilerBroken;
+        private ParticleSystem smoke;
+        private ParticleSystem sootCore;
+        private ParticleSystem jet;
+        private ParticleSystem[] embers;
+        private float hazeDue;
+        private Vector3 lastPosition;
+        private Vector3 stackVelocity;
+        private bool hasLastPosition;
+        private int beatCount;
+        private float statusTime;
+        private readonly PlumeTuning tuning = new PlumeTuning();
+        private float appliedJetWidth = float.NaN;
+        private ParticleSystem.Particle[] buffer = new ParticleSystem.Particle[0];
+
+        // Each smoke particle's intended size by its random seed (stable for
+        // its life), because its start size is capped near the stack mouth.
+        private readonly Dictionary<ParticleSystem, SizeMemory> intendedSizes = new Dictionary<ParticleSystem, SizeMemory>();
+
+        /// <summary>True once the plume has taken over from the stock smoke reader.</summary>
+        public bool Active { get; private set; }
+
+        public Puff LastPuff { get; private set; }
+
+        /// <summary>
+        /// Takes over <paramref name="reader"/>'s smoke on a loco with a
+        /// realistic firebox. Returns a sentence for the log: what was set up,
+        /// or why the stock smoke stays.
+        /// </summary>
+        public static string Attach(SteamSmokeParticlePortReader reader, SimulationFlow flow, TrainCar car, RealisticFirebox firebox)
+        {
+            var graph = car.SimController != null ? car.SimController.connectionsDefinition : null;
+            if (graph == null || graph.executionOrder == null)
+                return "no sim graph; keeping the stock smoke";
+
+            var engineId = ComponentOf(reader.chuffEventPortId);
+            var engine = graph.executionOrder.OfType<ReciprocatingSteamEngineDefinition>().FirstOrDefault(d => d.ID == engineId);
+            var exhaust = graph.executionOrder.OfType<SteamExhaustDefinition>().FirstOrDefault();
+            if (engine == null || exhaust == null)
+                return $"no steam engine '{engineId}' or exhaust in the graph; keeping the stock smoke";
+
+            if (!flow.TryGetPort($"{engineId}.{engine.crankRotationReadOut.ID}", out var crank)
+                || !flow.TryGetPort(reader.exhaustPressurePortId, out var pressure)
+                || !flow.TryGetPort($"{exhaust.ID}.{exhaust.totalFlowNormalizedReadOut.ID}", out var total)
+                || !flow.TryGetPort(reader.isBoilerBrokenPortId, out var broken))
+                return "a smoke input port is missing; keeping the stock smoke";
+
+            var systems = reader.smokeParticlesParent != null
+                ? reader.smokeParticlesParent.GetComponentsInChildren<ParticleSystem>(true)
+                : new ParticleSystem[0];
+            if (systems.Length == 0)
+                return "no smoke particle systems; keeping the stock smoke";
+
+            var plume = reader.gameObject.AddComponent<ChimneyPlume>();
+            plume.stock = reader;
+            plume.firebox = firebox;
+            plume.beats = new ExhaustBeatCounter(2 * engine.numCylinders);
+            plume.crankRotation = crank;
+            plume.exhaustPressure = pressure;
+            plume.totalFlow = total;
+            plume.boilerBroken = broken;
+            var custom = Main.Settings.CustomSmokeEffects && PlumeAssets.Prefab != null && plume.UseCustomEffect(systems);
+            if (!custom)
+            {
+                // The largest stock system carries the plume; a second one, if any, the sooty core.
+                plume.smoke = systems.OrderByDescending(s => s.main.maxParticles).First();
+                plume.sootCore = systems.FirstOrDefault(s => s != plume.smoke);
+            }
+            plume.embers = plume.ChooseSparks(reader, custom);
+            plume.TakeOver();
+            return $"realistic chimney smoke {(custom ? "with the custom effects" : "on the game's systems")}: " +
+                   $"cloud '{plume.smoke.name}'" +
+                   (plume.sootCore != null ? $", soot '{plume.sootCore.name}'" : "") +
+                   (plume.jet != null ? $", jet '{plume.jet.name}'" : "") +
+                   $", sparks {string.Join("/", plume.embers.Select(s => $"'{s.name}'"))}" +
+                   $", {2 * engine.numCylinders} beats per revolution from '{engineId}', flow from '{exhaust.ID}'";
+        }
+
+        // Puts the custom plume where the stock smoke leaves the stack, in the
+        // stock systems' simulation space (the game's world-origin shifts move
+        // it), and switches the stock smoke systems off.
+        private bool UseCustomEffect(ParticleSystem[] stockSystems)
+        {
+            var stockSmoke = stockSystems.OrderByDescending(s => s.main.maxParticles).First();
+            var fx = Instantiate(PlumeAssets.Prefab, stockSmoke.transform.parent, false);
+            fx.name = PlumeAssets.PrefabName;
+            fx.transform.localPosition = stockSmoke.transform.localPosition;
+            fx.transform.localRotation = stockSmoke.transform.localRotation;
+
+            // Leave from exactly where the stock smoke leaves: the same emitter
+            // shape, offset, and turn as well as the same simulation space.
+            var stockMain = stockSmoke.main;
+            var stockShape = stockSmoke.shape;
+            foreach (var system in fx.GetComponentsInChildren<ParticleSystem>(true))
+            {
+                var main = system.main;
+                main.simulationSpace = stockMain.simulationSpace;
+                if (stockMain.simulationSpace == ParticleSystemSimulationSpace.Custom)
+                    main.customSimulationSpace = stockMain.customSimulationSpace;
+                var shape = system.shape;
+                shape.shapeType = stockShape.shapeType;
+                shape.angle = stockShape.angle;
+                shape.radius = stockShape.radius;
+                shape.position = stockShape.position;
+                shape.rotation = stockShape.rotation;
+                shape.scale = stockShape.scale;
+            }
+
+            smoke = Child(fx, "Cloud");
+            sootCore = Child(fx, "Soot");
+            jet = Child(fx, "Jet");
+            if (smoke == null)
+            {
+                Destroy(fx);
+                return false;
+            }
+            foreach (var system in stockSystems)
+            {
+                system.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                system.gameObject.SetActive(false);
+            }
+            return true;
+        }
+
+        // The custom effects' own spark system, with the stock ones switched
+        // off; otherwise the stock single sparks. The stock "EmberClusters"
+        // system draws a sprite of a whole clump of dots that grows over its
+        // life, which read as a round cloud of cinders.
+        private ParticleSystem[] ChooseSparks(SteamSmokeParticlePortReader reader, bool custom)
+        {
+            var stock = reader.emberParticlesParent != null
+                ? reader.emberParticlesParent.GetComponentsInChildren<ParticleSystem>(true)
+                : new ParticleSystem[0];
+            var customSparks = custom && smoke != null ? Child(smoke.transform.parent.gameObject, "Sparks") : null;
+            if (customSparks != null)
+            {
+                foreach (var system in stock)
+                {
+                    system.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                    system.gameObject.SetActive(false);
+                }
+                return new[] { customSparks };
+            }
+            var singles = stock.Where(s => s.name.IndexOf("Cluster", System.StringComparison.OrdinalIgnoreCase) < 0).ToArray();
+            foreach (var system in stock.Except(singles))
+                system.gameObject.SetActive(false);
+            return singles.Length > 0 ? singles : stock;
+        }
+
+        private static ParticleSystem Child(GameObject root, string name) =>
+            root.GetComponentsInChildren<ParticleSystem>(true).FirstOrDefault(s => s.name == name);
+
+        private static string ComponentOf(string portId)
+        {
+            var dot = portId != null ? portId.IndexOf('.') : -1;
+            return dot > 0 ? portId.Substring(0, dot) : portId;
+        }
+
+        private void TakeOver()
+        {
+            // The stock reader's chuff and stop coroutines would fight over the systems.
+            stock.StopAllCoroutines();
+            foreach (var system in new[] { smoke, sootCore, jet }.Where(s => s != null))
+                Prepare(system, buoyant: true);
+            foreach (var system in embers)
+                PrepareSparks(system);
+            SyncTuning();
+            Active = true;
+        }
+
+        // Copies the live settings, and reshapes the smoke systems when the
+        // jet drag, jet width, or rise changed.
+        private void SyncTuning()
+        {
+            var settings = Main.Settings;
+            tuning.MaxBeatPressure = settings.SmokeMaxBeatPressure;
+            tuning.LaunchSpeed = settings.SmokeLaunchSpeed;
+            tuning.PuffParticles = settings.SmokePuffParticles;
+            tuning.PuffSize = settings.SmokePuffSize;
+            tuning.SteamOpacity = settings.SmokeSteamOpacity;
+            tuning.SootDarkness = settings.SmokeSootDarkness;
+            tuning.HazeOpacity = settings.SmokeHazeOpacity;
+            tuning.JetLength = settings.SmokeJetLength;
+            tuning.RiseSpeed = settings.SmokeRiseSpeed;
+            tuning.Sparks = settings.SmokeSparks;
+
+            if (settings.SmokeJetWidth == appliedJetWidth)
+                return;
+            appliedJetWidth = settings.SmokeJetWidth;
+            foreach (var system in new[] { smoke, sootCore }.Where(s => s != null))
+                ApplyJetWidth(system, appliedJetWidth);
+        }
+
+        // Size by speed keeps a particle narrow while fast and lets it swell as it slows.
+        private static void ApplyJetWidth(ParticleSystem system, float jetWidth)
+        {
+            var bySpeed = system.sizeBySpeed;
+            bySpeed.enabled = true;
+            bySpeed.range = new Vector2(JetSlowSpeed, JetFastSpeed);
+            bySpeed.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0f, 1f), new Keyframe(1f, jetWidth)));
+        }
+
+        // Cinders fly on the mod's ballistics alone: no gravity modifier, drag,
+        // turbulence, or inherited velocity of their own (Emit already adds
+        // the chimney's velocity; inheriting it as well doubled it).
+        private static void PrepareSparks(ParticleSystem system)
+        {
+            system.gameObject.SetActive(true);
+            var emission = system.emission;
+            emission.enabled = false;
+            var main = system.main;
+            main.gravityModifier = 0f;
+            var limit = system.limitVelocityOverLifetime;
+            limit.enabled = false;
+            var noise = system.noise;
+            noise.enabled = false;
+            var inherit = system.inheritVelocity;
+            inherit.enabled = false;
+            var force = system.forceOverLifetime;
+            force.enabled = false;
+            var velocity = system.velocityOverLifetime;
+            velocity.enabled = false;
+            system.Play();
+        }
+
+        // Everything is emitted by hand with its own color and velocity.
+        private static void Prepare(ParticleSystem system, bool buoyant)
+        {
+            system.gameObject.SetActive(true);
+            var emission = system.emission;
+            emission.enabled = false;
+            if (buoyant)
+            {
+                var main = system.main;
+                main.maxParticles = Mathf.Max(main.maxParticles, MinMaxParticles);
+
+                // The plume moves these particles itself (see Drift).
+                main.gravityModifier = 0f;
+                var limit = system.limitVelocityOverLifetime;
+                limit.enabled = false;
+                var force = system.forceOverLifetime;
+                force.enabled = false;
+                var velocity = system.velocityOverLifetime;
+                velocity.enabled = false;
+                var inherit = system.inheritVelocity;
+                inherit.enabled = false;
+                var external = system.externalForces;
+                external.enabled = false;
+
+                // Keep the fade in and out but drop the brown tint, so the
+                // emitted color is the color seen.
+                var tint = system.colorOverLifetime;
+                if (tint.enabled)
+                {
+                    var gradient = new Gradient();
+                    gradient.SetKeys(
+                        new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(new Color(0.9f, 0.9f, 0.9f), 1f) },
+                        tint.color.gradient != null ? tint.color.gradient.alphaKeys : new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0f, 1f) });
+                    tint.color = new ParticleSystem.MinMaxGradient(gradient);
+                }
+            }
+            system.Play();
+        }
+
+        private void Update()
+        {
+            if (!Active || smoke == null)
+                return;
+
+            var dt = Time.deltaTime;
+            var position = smoke.transform.position;
+            var carVelocity = hasLastPosition && dt > 0f ? (position - lastPosition) / dt : Vector3.zero;
+            if (carVelocity.magnitude > MaxPlausibleSpeed)
+                carVelocity = Vector3.zero;
+            lastPosition = position;
+            stackVelocity = carVelocity;
+            hasLastPosition = true;
+
+            var crossed = beats.Advance(crankRotation.Value);
+            if (boilerBroken.Value > 0f || dt <= 0f)
+                return;
+
+            SyncTuning();
+            var fire = firebox.Model;
+            var inputs = new PlumeInputs
+            {
+                ExhaustPressure = exhaustPressure.Value,
+                TotalFlowNormalized = totalFlow.Value,
+                Soot = fire.SootDensity,
+                FireOn = fire.FireOn,
+            };
+
+            // A beat with no steam behind it (drifting, regulator shut) makes no puff.
+            if (inputs.ExhaustPressure > PlumeModel.MinBeatPressure)
+            {
+                for (var i = 0; i < Mathf.Min(crossed, MaxBeatsPerFrame); i++)
+                    EmitPuff(PlumeModel.ForBeat(tuning, inputs), carVelocity);
+            }
+
+            var haze = PlumeModel.Between(tuning, inputs);
+            hazeDue += haze.Rate * dt;
+            for (; hazeDue >= 1f; hazeDue -= 1f)
+                Emit(smoke, haze.Speed, 1.2f * tuning.PuffSize, ToColor(haze.Color), carVelocity, HazeSpread, 0.85f, 1.15f);
+
+            Drift(smoke, dt, lift: true);
+            Drift(sootCore, dt, lift: true);
+            Drift(jet, dt, lift: true);
+            foreach (var system in embers)
+                Fly(system, dt);
+
+            LogStatus(inputs);
+        }
+
+        private void EmitPuff(Puff puff, Vector3 carVelocity)
+        {
+            LastPuff = puff;
+            beatCount++;
+            var color = ToColor(puff.Color);
+            for (var i = 0; i < puff.Particles; i++)
+                Emit(smoke, puff.Speed, puff.Size, color, carVelocity, PuffSpread, PuffSlowest, PuffFastest);
+
+            // The custom effects add streaks for the jet itself, right above the stack.
+            if (jet != null)
+            {
+                var streaks = Mathf.Max(2, puff.Particles / 2);
+                for (var i = 0; i < streaks; i++)
+                    Emit(jet, puff.Speed, puff.Size * JetStreakSize, color, carVelocity, PuffSpread * 0.5f, 0.85f, 1.1f);
+            }
+
+            if (sootCore != null && puff.SootParticles > 0)
+            {
+                var soot = new Color(color.r * 0.8f, color.g * 0.8f, color.b * 0.8f, Mathf.Min(1f, color.a + 0.1f));
+                for (var i = 0; i < puff.SootParticles; i++)
+                    Emit(sootCore, puff.Speed * 0.9f, puff.Size * 0.6f, soot, carVelocity, PuffSpread, PuffSlowest, PuffFastest);
+            }
+
+            // Usually well under one spark a beat: round at random.
+            var sparks = Mathf.FloorToInt(puff.Sparks) + (Random.value < puff.Sparks % 1f ? 1 : 0);
+            for (var i = 0; i < sparks && embers.Length > 0; i++)
+            {
+                Emit(embers[i % embers.Length], PlumeModel.SparkLaunchSpeed(puff), Random.Range(SparkMinSize, SparkMaxSize),
+                    Color.white, carVelocity, SparkSpread, 0.85f, 1.25f, Random.Range(SparkMinLife, SparkMaxLife));
+            }
+        }
+
+        // Cinders are heavy for their size: light drag toward still air and
+        // full gravity, so they arc up and fall back (PlumeModel.SparkDrag).
+        private void Fly(ParticleSystem system, float dt)
+        {
+            if (system == null)
+                return;
+            var count = Particles(system);
+            if (count == 0)
+                return;
+            var keep = Mathf.Exp(-PlumeModel.SparkDrag * dt);
+            var fall = Vector3.down * (PlumeModel.Gravity * dt);
+            for (var i = 0; i < count; i++)
+                buffer[i].velocity = buffer[i].velocity * keep + fall;
+            system.SetParticles(buffer, count);
+        }
+
+        private int Particles(ParticleSystem system)
+        {
+            var capacity = system.main.maxParticles;
+            if (buffer.Length < capacity)
+                buffer = new ParticleSystem.Particle[capacity];
+            return system.GetParticles(buffer);
+        }
+
+        // In the narrow-jet zone a particle is held thin and carried with the
+        // stack: each frame it takes the stack's current velocity plus its own
+        // rise, so speeding up, braking, or curving cannot push it through the
+        // stack's wall. Above the zone: linear drag toward still air and, for
+        // smoke, a lift that balances it at the rise speed, so a puff stops
+        // after its launch speed over the drag (the jet length for the hardest
+        // beat) and then rises; the stack's velocity it carried decays the
+        // same way, so the plume trails behind a moving train.
+        private void Drift(ParticleSystem system, float dt, bool lift)
+        {
+            if (system == null)
+                return;
+            var count = Particles(system);
+            if (count == 0)
+                return;
+
+            var keep = Mathf.Exp(-PlumeModel.JetDrag(tuning) * dt);
+            var rise = lift ? Vector3.up * (PlumeModel.Lift(tuning) * dt) : Vector3.zero;
+            var axis = system.transform.up;
+            var zone = Main.Settings.SmokeJetZone;
+            var emitter = SimulationPoint(system, Emitter(system));
+            var zoneTop = emitter + axis * zone;
+            var growth = system.sizeOverLifetime.enabled ? system.sizeOverLifetime.size : new ParticleSystem.MinMaxCurve(1f);
+            if (!intendedSizes.TryGetValue(system, out var sizes))
+                intendedSizes[system] = sizes = new SizeMemory();
+            for (var i = 0; i < count; i++)
+            {
+                var particle = buffer[i];
+                var intended = sizes.Recall(particle.randomSeed, particle.startSize);
+                var life = particle.startLifetime > 0f ? 1f - particle.remainingLifetime / particle.startLifetime : 0f;
+                var shown = intended * growth.Evaluate(life);
+                if (Vector3.Dot(particle.position - emitter, axis) < zone)
+                {
+                    particle.startSize = shown > ZoneWidth ? intended * ZoneWidth / shown : intended;
+                    var upward = Mathf.Max(Vector3.Dot(particle.velocity - stackVelocity, axis), MinZoneRise);
+                    particle.velocity = stackVelocity + axis * upward;
+                }
+                else
+                {
+                    var allowed = ZoneWidth + PlumeSpread * Vector3.Distance(particle.position, zoneTop);
+                    particle.startSize = shown > allowed ? intended * allowed / shown : intended;
+                    particle.velocity = particle.velocity * keep + rise;
+                }
+                buffer[i] = particle;
+            }
+            sizes.Forget();
+            system.SetParticles(buffer, count);
+        }
+
+        // Remembers values by particle seed across frames and forgets the
+        // particles that have died: whatever was not recalled since the last
+        // Forget is dropped.
+        private sealed class SizeMemory
+        {
+            private Dictionary<uint, float> current = new Dictionary<uint, float>();
+            private Dictionary<uint, float> next = new Dictionary<uint, float>();
+
+            /// <summary>The value first seen for <paramref name="seed"/>, recording <paramref name="seen"/> if new.</summary>
+            public float Recall(uint seed, float seen)
+            {
+                if (!current.TryGetValue(seed, out var value))
+                    value = seen;
+                next[seed] = value;
+                return value;
+            }
+
+            public void Forget()
+            {
+                var spent = current;
+                current = next;
+                next = spent;
+                next.Clear();
+            }
+        }
+
+        // A world point in the space the system simulates in (the game moves
+        // the world origin, so the stock smoke simulates in a custom space).
+        private static Vector3 SimulationPoint(ParticleSystem system, Vector3 world)
+        {
+            var main = system.main;
+            switch (main.simulationSpace)
+            {
+                case ParticleSystemSimulationSpace.Local:
+                    return system.transform.InverseTransformPoint(world);
+                case ParticleSystemSimulationSpace.Custom when main.customSimulationSpace != null:
+                    return main.customSimulationSpace.InverseTransformPoint(world);
+                default:
+                    return world;
+            }
+        }
+
+        // The game's smoke emitter in world space (its shape's point). Its depth
+        // inside the stack differs between locos, so smoke starts here and the
+        // narrow-jet zone (see Drift) keeps it inside the stack.
+        private static Vector3 Emitter(ParticleSystem system) =>
+            system.transform.TransformPoint(system.shape.position);
+
+        // Every particle starts at the emitter, at a random point across its
+        // radius, placed here in the system's simulation space rather than
+        // through Unity's shape module.
+        private static void Emit(ParticleSystem system, float speed, float size, Color color, Vector3 carVelocity,
+            float spread, float slowest, float fastest, float lifetime = 0f)
+        {
+            var transform = system.transform;
+            var up = transform.up;
+            var disk = Random.insideUnitCircle * system.shape.radius;
+            var start = Emitter(system) + transform.right * disk.x + transform.forward * disk.y;
+            var jitter = Random.insideUnitSphere * spread;
+            var emit = new ParticleSystem.EmitParams
+            {
+                position = SimulationPoint(system, start),
+                applyShapeToPosition = false,
+                velocity = (up + jitter).normalized * (speed * Random.Range(slowest, fastest)) + carVelocity,
+                startSize = size * Random.Range(0.8f, 1.2f),
+                startColor = color,
+            };
+            if (lifetime > 0f)
+                emit.startLifetime = lifetime;
+            system.Emit(emit, 1);
+        }
+
+        private static Color ToColor(PlumeColor c) => new Color(c.R, c.G, c.B, c.A);
+
+        private void LogStatus(PlumeInputs inputs)
+        {
+            var interval = Main.Settings.FireStatusLogInterval;
+            if (interval <= 0 || Time.time - statusTime < interval
+                || !FireboxRegistry.TryGetTended(PlayerManager.Car, out var tended) || tended != firebox)
+                return;
+
+            statusTime = Time.time;
+            var puff = LastPuff;
+            Main.Mod.Logger.Log($"{firebox.Car.ID} smoke: {beatCount} beats in {interval} s, exhaust {inputs.ExhaustPressure:F1} bar " +
+                                $"(strength {PlumeModel.BeatStrength(tuning, inputs.ExhaustPressure):P0}), flow {inputs.TotalFlowNormalized:P0}, " +
+                                $"soot {inputs.Soot:P0}; last puff {puff.Speed:F1} m/s, {puff.Particles}+{puff.SootParticles} particles, " +
+                                $"{puff.Sparks:F2} sparks, color #{ColorUtility.ToHtmlStringRGBA(ToColor(puff.Color))}");
+            beatCount = 0;
+        }
+    }
+}

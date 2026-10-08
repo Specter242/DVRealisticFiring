@@ -1,0 +1,46 @@
+using System;
+using System.Linq;
+using HarmonyLib;
+using RealisticFiring.Diagnostics;
+using RealisticFiring.Sim;
+using RealisticFiring.Visuals;
+
+namespace RealisticFiring.Patches
+{
+    /// <summary>
+    /// Runs when a loco's visual fire starts, after its cab interior has
+    /// loaded; the interior loads later than the sim graph. Dumps the firebox
+    /// geometry, builds the zoned coal bed on realistic fireboxes, and puts
+    /// the injector's overflow beside the cab's injector lever.
+    /// </summary>
+    [HarmonyPatch(typeof(Fire), "Start")]
+    internal static class FirePatch
+    {
+        private static void Postfix(Fire __instance)
+        {
+            try
+            {
+                var car = TrainCar.Resolve(__instance.gameObject);
+                if (Main.Settings.DumpFireboxGeometry && FireboxRegistry.IsSupported(car))
+                    FireboxGeometryDump.DumpOnce(car, __instance);
+                if (FireboxRegistry.TryGet(car, out var firebox))
+                {
+                    var result = ZonedCoalBed.Attach(__instance, car, firebox);
+                    if (Main.Settings.LogFireboxCreation)
+                        Main.Mod.Logger.Log($"{car.ID}: {result}");
+                }
+                if (InjectorRig.TryGet(car, out var rig))
+                {
+                    var roots = new[] { car.transform, __instance.transform.root, car.loadedInterior != null ? car.loadedInterior.transform : null };
+                    var overflow = InjectorOverflow.Attach(car, rig, roots.Where(t => t != null).Distinct());
+                    if (overflow != null && Main.Settings.LogFireboxCreation)
+                        Main.Mod.Logger.Log($"{car.ID}: {overflow}");
+                }
+            }
+            catch (Exception e)
+            {
+                Main.Mod.Logger.LogException("Firebox interior setup failed", e);
+            }
+        }
+    }
+}
