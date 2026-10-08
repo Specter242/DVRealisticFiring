@@ -145,6 +145,7 @@ namespace RealisticFiring.Sim
 
         public float StartupMultiplier { get; private set; } = 1f;
 
+        /// <summary>Coal the last delivery put on the grate, in kg; 0 when none since the fire was laid.</summary>
         public float LastDeliveryMass { get; private set; }
 
         /// <summary>Where the last delivery was aimed; null when it followed the fire.</summary>
@@ -178,6 +179,25 @@ namespace RealisticFiring.Sim
                 Main.Mod.Logger.Log($"{Car?.ID}: raked {zone}, {before:F1} -> {Model.Zones[(int)zone].Coal:F1} kg there");
         }
 
+        /// <summary>
+        /// Readies the fire as the game's loco start-up does: where stock fills
+        /// the firebox and lights it, this lays a clean bed burning evenly
+        /// across the grate and filling the firebox, as shed staff would have
+        /// built it, rather than a box of green coal that smothers the fire.
+        /// A flooded firebox gets the coal but stays out, as ignition does.
+        /// </summary>
+        public void PrepareFire()
+        {
+            var lit = intakeWaterContent.Value <= 0.5f;
+            Model.Restore(lit, Model.Parameters.MaxCoalCapacity);
+            fireOnReadOut.Value = Model.FireOn ? 1f : 0f;
+            LastDeliveryMass = 0f;
+            LastDeliveryAim = null;
+            UpdateCoalLevel();
+            if (Main.Settings.LogCoalDeliveries)
+                Main.Mod.Logger.Log($"{Car?.ID}: start-up laid a {(lit ? "burning" : "flooded, unlit")} fire of {Model.CoalMass:F1} kg");
+        }
+
         public override void InitializationAfterConnecting()
         {
             // The stock firebox subscribes to the port behind the reference;
@@ -204,7 +224,7 @@ namespace RealisticFiring.Sim
             {
                 var aim = TakeFreshAim();
                 var accepted = shovel.Deliver(Model, coalMassDelta, aim?.Zone);
-                LastDeliveryMass = coalMassDelta;
+                LastDeliveryMass = accepted;
                 LastDeliveryAim = aim;
                 if (Main.Settings.LogCoalDeliveries)
                 {

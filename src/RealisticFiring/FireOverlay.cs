@@ -47,7 +47,9 @@ namespace RealisticFiring
                             $"excess {fire.ExcessAirFlow:F2}");
             GUILayout.Label($"Coal {fire.CoalMass:F1}/{p.MaxCoalCapacity:F0} kg   ash {fire.AshMass:F2} kg   " +
                             $"clinker {fire.ClinkerMass:F2} kg   dropped {fire.CoalDroppedThroughGrate:F1} kg");
-            GUILayout.Label($"Last shovelful {shown.LastDeliveryMass:F2} kg → {(shown.LastDeliveryAim.HasValue ? shown.LastDeliveryAim.Value.ToString() : "following the fire")}" +
+            GUILayout.Label((shown.LastDeliveryMass > 0f
+                                ? $"Last shovelful {shown.LastDeliveryMass:F2} kg → {(shown.LastDeliveryAim.HasValue ? shown.LastDeliveryAim.Value.ToString() : "following the fire")}"
+                                : "Last shovelful: none yet") +
                             (now - shakeTime < 3f ? "   grate shaken" : ""));
             if (InjectorRig.TryGetTended(shown.Car, out var rig))
                 GUILayout.Label(FireController.Describe(rig));

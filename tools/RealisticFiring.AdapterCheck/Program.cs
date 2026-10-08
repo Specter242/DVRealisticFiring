@@ -36,6 +36,8 @@ namespace RealisticFiring.AdapterCheck
             Check(P(mine, "COAL_CONTROL_EXT_IN").Value == 0f, "delivery port resets to 0");
             Check(P(mine, "COAL_LEVEL").Value == P(stock, "COAL_LEVEL").Value,
                 $"overfilled coal level matches stock ({P(mine, "COAL_LEVEL").Value} kg)");
+            Check(mine.LastDeliveryMass > 0f && mine.LastDeliveryMass < 100f,
+                $"the last delivery shows what landed, not what was sent ({mine.LastDeliveryMass:F1} of 100 kg)");
             foreach (var c in new SimComponent[] { stock, mine })
                 P(c, "COAL_CONTROL_EXT_IN").Value += -20f;
             Check(Math.Abs(P(mine, "COAL_LEVEL").Value - P(stock, "COAL_LEVEL").Value) < 1e-3f, "negative delivery removes coal like stock");
@@ -117,6 +119,21 @@ namespace RealisticFiring.AdapterCheck
             lit.SetSaveStateData(new JObject { ["fireOn"] = true, ["coalMass"] = 20f });
             broken.Value = 1f;
             Check(P(lit, "FIRE_ON").Value == 0f && !lit.Model.FireOn, "a broken boiler puts the fire out");
+
+            // The loco start-up (StartupHelper.Startup) fills the firebox with
+            // TransferCoal(9999999) and lights it; StartupPatch then lays the
+            // ready fire.
+            var started = Create(def, gameParams);
+            started.SetSaveStateData(new JObject { ["fireOn"] = true, ["coalMass"] = 10f });
+            P(started, "COAL_CONTROL_EXT_IN").Value += 9999999f / 4f;
+            P(started, "IGNITION_EXT_IN").ExternalValueUpdate(1f);
+            started.PrepareFire();
+            started.Tick(0.02f);
+            Check(started.Model.FireOn && P(started, "FIRE_ON").Value == 1f
+                  && started.Model.Zones.All(z => z.Fresh == 0f && z.Burning > 0f)
+                  && Math.Abs(P(started, "COAL_LEVEL").Value - started.Model.Parameters.MaxCoalCapacity) < 0.5f
+                  && started.LastDeliveryMass == 0f,
+                $"start-up lays a full, burning fire ({P(started, "COAL_LEVEL").Value:F1} kg), not green coal");
 
             CheckInjector(gameParams);
 
