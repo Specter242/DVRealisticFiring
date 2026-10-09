@@ -344,21 +344,45 @@ namespace RealisticFiring.Visuals
         // went, for the log, or null.
         private static string PlaceLever(Transform cabPrefab, Transform frame, Port port, TrainCar car, Transform sourceControl, Transform sourceLabel)
         {
-            var source = cabPrefab.Find(SourceLever);
-            if (source == null || source.Find(SourceLeverControl) == null)
-                return null;
             var move = LeverMoves.TryGetValue(car.carLivery.id, out var seated) ? seated : Vector3.zero;
             var above = frame.TransformPoint(LeverAbove) + car.transform.TransformVector(move);
             var onFloor = TryFindFloor(car, above, out var floor);
             if (!onFloor)
                 floor = above - car.transform.up * FallbackDrop;
 
+            var holder = BuildFloorLever(cabPrefab, frame, car, floor, StokerJetControls.Reverse.Id, StokerJetControls.Reverse.PortId, port, LeverNotches, () =>
+            {
+                var direction = StokerJetControls.Direction(port.Value);
+                var jammed = FireboxRegistry.TryGet(car, out var firebox) && firebox.LastStoker is Core.StokerFlow flow && flow.Jammed;
+                return $"{StokerJetControls.Reverse.Label}: {direction}" + (jammed ? " (jammed: reverse to clear)" : "");
+            });
+            if (holder == null)
+                return null;
+            PlaceFloorLabel(holder, frame, sourceControl, sourceLabel, car, floor, "STOKER FWD-REV");
+
+            var local = car.transform.InverseTransformPoint(floor);
+            return $"on the floor at ({local.x:F2}, {local.y:F2}, {local.z:F2}) m" + (onFloor ? "" : " (no floor found; guessed)");
+        }
+
+        /// <summary>
+        /// A floor lever: a copy of the S282's cylinder cock lever standing
+        /// upright on <paramref name="floor"/>, swinging fore and aft along the
+        /// loco, with the given named notches, working <paramref name="port"/>.
+        /// Returns its holder, or null when there is no lever to copy.
+        /// </summary>
+        internal static Transform BuildFloorLever(Transform cabPrefab, Transform parent, TrainCar car, Vector3 floor,
+            string name, string portId, Port port, string[] notches, System.Func<string> hover)
+        {
+            var source = cabPrefab.Find(SourceLever);
+            if (source == null || source.Find(SourceLeverControl) == null)
+                return null;
+
             // Upright on the floor, swinging straight fore and aft along the loco.
             var up = car.transform.up;
             var forward = car.transform.forward;
             var facing = Quaternion.LookRotation(forward, up);
-            var holder = Object.Instantiate(source.gameObject, frame, false).transform;
-            holder.name = StokerJetControls.Reverse.Id;
+            var holder = Object.Instantiate(source.gameObject, parent, false).transform;
+            holder.name = name;
             var control = holder.Find(SourceLeverControl);
             holder.rotation = facing * Quaternion.Inverse(control.localRotation);
             holder.position += floor + up * PivotAboveFloor - control.position;
@@ -370,43 +394,44 @@ namespace RealisticFiring.Visuals
             var spec = control.GetComponent<DV.CabControls.Spec.Lever>();
             if (spec != null)
             {
-                spec.notches = LeverNotches.Length;
+                spec.notches = notches.Length;
                 spec.useSteppedJoint = true;
                 spec.steppedValueUpdate = true;
             }
-            control.gameObject.AddComponent<DV.HUD.NotchedControlCustomNames>().customNames = LeverNotches;
+            control.gameObject.AddComponent<DV.HUD.NotchedControlCustomNames>().customNames = notches;
             var feeder = control.GetComponent<InteractablePortFeeder>();
             if (feeder == null)
             {
                 Object.Destroy(holder.gameObject);
                 return null;
             }
-            feeder.portId = StokerJetControls.Reverse.PortId;
+            feeder.portId = portId;
             control.gameObject.AddComponent<SimControlBinder>().Bind(feeder, port);
-            control.gameObject.AddComponent<HoverName>().Source = () =>
-            {
-                var direction = StokerJetControls.Direction(port.Value);
-                var jammed = FireboxRegistry.TryGet(car, out var firebox) && firebox.LastStoker is Core.StokerFlow flow && flow.Jammed;
-                return $"{StokerJetControls.Reverse.Label}: {direction}" + (jammed ? " (jammed: reverse to clear)" : "");
-            };
-            // The label: a plate flat on the floor aft of the lever, its text
-            // reading from behind. A label sits like the S282's blower label to
-            // a valve whose wheel faces back along its z, so give it a frame
-            // whose z points down, away from someone looking at it, and whose
-            // up is forward.
+            control.gameObject.AddComponent<HoverName>().Source = hover;
+            return holder;
+        }
+
+        /// <summary>
+        /// A floor lever's label: a plate flat on the floor aft of its foot,
+        /// face up, its text reading from behind, so the handle never hides it.
+        /// </summary>
+        internal static void PlaceFloorLabel(Transform holder, Transform frame, Transform sourceControl, Transform sourceLabel, TrainCar car, Vector3 floor, string text)
+        {
+            // A label sits like the S282's blower label to a valve whose wheel
+            // faces back along its z, so give it a frame whose z points down,
+            // away from someone looking at it, and whose up is forward.
+            var up = car.transform.up;
+            var forward = car.transform.forward;
             var plate = new GameObject("label frame").transform;
             plate.SetParent(holder, false);
             plate.SetPositionAndRotation(floor + up * LabelAboveFloor - forward * LabelAft,
                 Quaternion.LookRotation(-up, forward));
-            PlaceLabel(sourceControl, sourceLabel, plate, frame, frame.InverseTransformPoint(plate.position), "STOKER FWD-REV", FloorLabelScale);
-
-            var local = car.transform.InverseTransformPoint(floor);
-            return $"on the floor at ({local.x:F2}, {local.y:F2}, {local.z:F2}) m" + (onFloor ? "" : " (no floor found; guessed)");
+            PlaceLabel(sourceControl, sourceLabel, plate, frame, frame.InverseTransformPoint(plate.position), text, FloorLabelScale);
         }
 
         // The cab floor under a point: the first upward-facing surface of this
         // car straight below it.
-        private static bool TryFindFloor(TrainCar car, Vector3 from, out Vector3 floor)
+        internal static bool TryFindFloor(TrainCar car, Vector3 from, out Vector3 floor)
         {
             floor = from;
             var down = -car.transform.up;

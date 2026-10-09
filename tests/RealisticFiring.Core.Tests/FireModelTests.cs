@@ -98,7 +98,7 @@ public class FireModelTests
             burned += fire.Step(FireTestKit.Dt, inputs);
         }
 
-        var balance = HalfLoadCoal + fireman.CoalFed - burned - fire.CoalDroppedThroughGrate - fire.CoalMass;
+        var balance = HalfLoadCoal + fireman.CoalFed - burned - fire.CoalDroppedThroughGrate - fire.ShakeCinders - fire.CoalMass;
         Assert.InRange(balance, -0.01, 0.01);
     }
 
@@ -179,8 +179,9 @@ public class FireModelTests
     [Fact]
     public void HoleInTheFireStealsAirAndCoolsTheFirebox()
     {
-        var even = new TendedFire(Stock, 0.5f);
-        var holed = new TendedFire(Stock, 0.5f);
+        // Clean coal, so the hole is bare grate rather than clinker.
+        var even = new TendedFire(Stock, 0.5f, tuning: FireTestKit.CleanCoal);
+        var holed = new TendedFire(Stock, 0.5f, tuning: FireTestKit.CleanCoal);
         var hole = holed.Fire.Zones[(int)GrateZone.FrontLeft];
         var center = holed.Fire.Zones[(int)GrateZone.Center];
         center.Burning += hole.Burning;

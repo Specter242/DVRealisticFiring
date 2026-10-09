@@ -21,6 +21,12 @@ namespace RealisticFiring
         [Draw("Fit feedwater heaters and pumps where the prototypes had them: the Hudson, 844, and S484-840 (needs a restart)")]
         public bool FitFeedPumps = true;
 
+        [Draw("Coal's clinker tendency, × (1 typical coal, about two hours of hard work between cleanings; 0 never; raise it to see clinker sooner)", DrawType.Slider, Min = 0, Max = 20, Precision = 1)]
+        public float ClinkerTendency = 1f;
+
+        [Draw("Glow of the fire in the ashpan, under the engine, × (0 off): bright over clean grates, dimmed by dead ash, flaring when fire drops in", DrawType.Slider, Min = 0, Max = 3, Precision = 1)]
+        public float AshpanGlow = 1f;
+
         [Draw("Realistic chimney smoke on the S282 and S060 (restart required)")]
         public bool RealisticSmoke = true;
 
@@ -87,6 +93,9 @@ namespace RealisticFiring
         [Draw("Shake grate")]
         public KeyBinding ShakeGrateKey = Bind(KeyCode.G, ctrl: true);
 
+        [Draw("Put a fire iron (slice bar) in front of me (unticks itself). Through the open door: click slices, the mouse wheel pushes and pulls, Shift with the wheel pushes sideways")]
+        public bool GiveFireIron;
+
         [Draw("Toggle fire overlay")]
         public KeyBinding ToggleOverlayKey = Bind(KeyCode.F, ctrl: true);
 
@@ -144,6 +153,23 @@ namespace RealisticFiring
         [Draw("Up, cm", DrawType.Slider, Min = -100, Max = 100, Precision = 0)]
         public float FeedNudgeUp;
 
+        [Header("Drop grate lever placement, from the fire-dump lever (fine-tune for your eye; moves it as you slide)")]
+        [Draw("Across, cm (+ right)", DrawType.Slider, Min = -100, Max = 100, Precision = 0)]
+        public float DropGrateNudgeAcross;
+
+        [Draw("Along, cm (+ forward)", DrawType.Slider, Min = -100, Max = 100, Precision = 0)]
+        public float DropGrateNudgeAlong;
+
+        [Header("Ashpan handle placement, out from the fireman's side (fine-tune for your eye; moves it as you slide)")]
+        [Draw("Along, cm (+ forward)", DrawType.Slider, Min = -150, Max = 150, Precision = 0)]
+        public float AshpanLeverNudgeAlong;
+
+        [Draw("Up, cm", DrawType.Slider, Min = -100, Max = 100, Precision = 0)]
+        public float AshpanLeverNudgeUp;
+
+        [Draw("Out, cm (+ away from the loco)", DrawType.Slider, Min = -150, Max = 40, Precision = 0)]
+        public float AshpanLeverNudgeOut;
+
         [Header("Diagnostics")]
         [Draw("Jam the stoker now, on the loco you're on (testing; unticks itself)")]
         public bool JamStokerNow;
@@ -175,9 +201,24 @@ namespace RealisticFiring
         private Vector3 lastManifoldTurn;
         private Vector4 lastBooster;
         private Vector2 lastFeed;
+        private Vector2 lastDropGrate;
+        private Vector3 lastAshpanLever;
 
         public void OnChange()
         {
+            Core.FireTuning.Default.ClinkerTendency = ClinkerTendency;
+            var ashpanLever = new Vector3(AshpanLeverNudgeAlong, AshpanLeverNudgeUp, AshpanLeverNudgeOut);
+            if (ashpanLever != lastAshpanLever)
+            {
+                lastAshpanLever = ashpanLever;
+                Visuals.AshpanLever.RebuildLoaded();
+            }
+            var dropGrate = new Vector2(DropGrateNudgeAcross, DropGrateNudgeAlong);
+            if (dropGrate != lastDropGrate)
+            {
+                lastDropGrate = dropGrate;
+                Visuals.DropGrateCab.RebuildLoaded();
+            }
             var booster = new Vector4(BoosterNudgeAcross, BoosterNudgeUp, BoosterNudgeOut, BoosterNudgeTurn);
             if (booster != lastBooster)
             {

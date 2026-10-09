@@ -64,15 +64,14 @@ namespace RealisticFiring.Visuals
         // the draft rushes through and it burns white-hot.
         private const float ThinShare = 0.3f;
 
-        // A fire is forced, its bed white-hot, at this firing rate in kg per
-        // m² of grate an hour (about 120 lb/ft²/h, heavy firing). The stock
-        // maximum, a full box burning out in the burn time, is no guide: an
-        // S282 working hard burns about a quarter of it.
-        private const float ForcedFiringRate = 600f;
+        // How far ash holds a zone's glow below white: by this much at a
+        // zone that is all ash.
+        private const float DirtyFireDulling = 0.55f;
 
-        // The smallest grate share a zone is taken to have, in m², should a
-        // stock pile measure flat.
-        private const float MinZoneGrate = 0.05f;
+        // The smallest grate a bed is taken to have, in m², should a stock
+        // pile measure flat. How hard each zone burns for its grate (its
+        // forcing) comes from the fire model, which the bed tells the area.
+        private const float MinGrateArea = 0.45f;
 
         // A zone with this share of its coal burning glows all through; the
         // green coal in it lies as dark lumps on the fire. Stoked coal keeps
@@ -99,7 +98,6 @@ namespace RealisticFiring.Visuals
         private readonly float[] cover = new float[GrateLayout.ZoneCount];
         private readonly float[] forcing = new float[GrateLayout.ZoneCount];
         private float fireForcing;
-        private float zoneGrate;
         private readonly float[] ash = new float[GrateLayout.ZoneCount];
         private readonly float[] clinker = new float[GrateLayout.ZoneCount];
 
@@ -156,6 +154,13 @@ namespace RealisticFiring.Visuals
             // moving loco shakes coal down it.
             var slope = Mathf.Asin(Mathf.Clamp(forward.y, -1f, 1f)) * Mathf.Rad2Deg;
             firebox.SetGrateSlope(slope);
+            if (car != null)
+            {
+                var box = new Bounds(car.transform.InverseTransformPoint(bed.BedPoint(0f, 0f, 0f)), Vector3.zero);
+                for (var c = 1; c < 8; c++)
+                    box.Encapsulate(car.transform.InverseTransformPoint(bed.BedPoint(c & 1, (c >> 1) & 1, (c >> 2) & 1)));
+                firebox.SetGrateBox(box);
+            }
             return $"zoned coal bed ({kind}) built from '{coal.name}', {bed.bed.size.x * bed.fullScale.x:F2} m wide " +
                    $"and {bed.bed.size.z * bed.fullScale.z:F2} m long, grate sloping {slope:F1}° " +
                    $"(up toward the front when positive), turned {Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg:F1}°";
@@ -183,8 +188,7 @@ namespace RealisticFiring.Visuals
             var depth = bed.size.y * Mathf.Abs(fullScale.y);
             if (depth < 0.05f && Mathf.Abs(fullScale.y) > 1e-4f)
                 bed.max = new Vector3(bed.max.x, bed.min.y + NominalDepth / Mathf.Abs(fullScale.y), bed.max.z);
-            zoneGrate = Mathf.Max(MinZoneGrate,
-                Mathf.Abs(bed.size.x * fullScale.x * bed.size.z * fullScale.z) / GrateLayout.ZoneCount);
+            owner.SetGrateArea(Mathf.Max(MinGrateArea, Mathf.Abs(bed.size.x * fullScale.x * bed.size.z * fullScale.z)));
 
             var prefab = PlumeAssets.FireboxPrefab;
             if (prefab != null && BuildMesh(prefab))
@@ -327,9 +331,7 @@ namespace RealisticFiring.Visuals
             var aim = firebox.HoverAim;
             var aimed = aim.HasValue && aim.Value.IsLiveAt(Time.time) ? aim.Value.Zone : (GrateZone?)null;
             var pulse = 0.6f + 0.4f * Mathf.Sin(Time.time * 8f);
-            // Each zone's forced rate, in kg/s.
-            var forcedRate = ForcedFiringRate * zoneGrate / 3600f;
-            fireForcing = Mathf.Clamp01(fire.ConsumptionRate / (forcedRate * GrateLayout.ZoneCount));
+            fireForcing = fire.FireForcing;
 
             for (var i = 0; i < GrateLayout.ZoneCount; i++)
             {
@@ -340,16 +342,21 @@ namespace RealisticFiring.Visuals
                 // Lit coal glows even when burning slowly and brighter as it is
                 // forced. The front draws hardest, but a forced fire lights the
                 // whole bed. Green coal dims a zone only where it smothers it.
-                var own = Mathf.Clamp01(zone.CombustionRate / forcedRate);
+                var own = fire.ZoneForcing((GrateZone)i);
                 forcing[i] = Mathf.Max(own, 0.5f * (own + fireForcing));
                 var lit = fire.FireOn && coal > 0f ? Mathf.Clamp01(zone.Burning / coal / LitShare) : 0f;
                 var burn = lit * (0.2f + 0.8f * forcing[i]);
-                // A thin, burning patch is a hole: the draft rushes through it white-hot.
+                // Ash lies at the bottom of the fire and chokes it: a dirty fire
+                // will not burn white, "a red fire" (Santa Fe 1921 p.34).
+                var dirt = Mathf.Clamp01(1.5f * zone.Ash / (zone.Ash + coal + 0.1f));
+                // A thin, burning patch over a clean grate is a hole: the draft
+                // rushes through it white-hot. Over ash it is only dying.
                 var thin = fire.FireOn && zone.Burning > 0f ? 1f - Mathf.Clamp01(coal / (ThinShare * zoneShare)) : 0f;
-                heat[i] = Mathf.Clamp01(Mathf.Lerp(burn, 1f, 0.7f * thin));
+                heat[i] = Mathf.Min(Mathf.Clamp01(Mathf.Lerp(burn, 1f, 0.7f * thin * (1f - dirt))), 1f - DirtyFireDulling * dirt);
                 green[i] = coal > 0f ? zone.Fresh / coal : 0f;
                 cover[i] = green[i] * (1f - (1f - ForcedGreenShows) * forcing[i] * forcing[i]);
-                ash[i] = Mathf.Clamp01(1.5f * zone.Ash / (zone.Ash + coal + 0.1f));
+                // Grey ash shows only where the fire has burned down to it.
+                ash[i] = dirt * (1f - Mathf.Clamp01(coal / (ThinShare * zoneShare)));
                 clinker[i] = Mathf.Clamp01(1.2f * zone.Clinker / (zone.Clinker + coal + 0.1f));
             }
 

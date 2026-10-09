@@ -150,6 +150,7 @@ namespace RealisticFiring.AdapterCheck
             CheckStoker(gameParams, def);
             CheckBooster();
 
+            CheckPatchTargets();
             Console.WriteLine(failures == 0 ? "All adapter checks passed" : $"{failures} adapter checks failed");
             return failures == 0 ? 0 : 1;
         }
@@ -479,6 +480,48 @@ namespace RealisticFiring.AdapterCheck
             var ports = component.GetAllPorts().Select(p => $"port {p.id} {p.type} {p.valueType} = {p.Value}");
             var references = component.GetAllPortReferences().Select(r => $"ref {r.id} = {r.Value} write {writeAllowed.GetValue(r)}");
             return string.Join("\n", ports.Concat(references).OrderBy(line => line, StringComparer.Ordinal));
+        }
+
+        // Every Harmony patch class's target resolves to exactly one method in
+        // the game's assemblies, as PatchAll will look it up. One that does
+        // not (missing, or ambiguous like Resources.Load(string) against
+        // Load<T>(string)) makes PatchAll throw and the whole mod fail to load.
+        private static void CheckPatchTargets()
+        {
+            var patches = typeof(RealisticFiring.Main).Assembly.GetTypes()
+                .Where(t => t.GetCustomAttributes(typeof(HarmonyLib.HarmonyPatch), true).Length > 0)
+                .ToList();
+            var bad = new System.Collections.Generic.List<string>();
+            foreach (var type in patches)
+            {
+                try
+                {
+                    // As Harmony does, skip a patch whose Prepare says no (one for a mod that is not loaded).
+                    var prepare = HarmonyLib.AccessTools.DeclaredMethod(type, "Prepare");
+                    if (prepare != null && prepare.GetParameters().Length == 0 && !(bool)prepare.Invoke(null, null))
+                        continue;
+                    var targetMethod = HarmonyLib.AccessTools.DeclaredMethod(type, "TargetMethod");
+                    MethodBase original;
+                    if (targetMethod != null)
+                    {
+                        original = (MethodBase)targetMethod.Invoke(null, null);
+                    }
+                    else
+                    {
+                        var info = HarmonyLib.HarmonyMethod.Merge(HarmonyLib.HarmonyMethodExtensions.GetFromType(type));
+                        original = info.methodType == HarmonyLib.MethodType.Constructor
+                            ? (MethodBase)HarmonyLib.AccessTools.DeclaredConstructor(info.declaringType, info.argumentTypes)
+                            : HarmonyLib.AccessTools.DeclaredMethod(info.declaringType, info.methodName, info.argumentTypes);
+                    }
+                    if (original == null)
+                        bad.Add($"{type.Name}: no target");
+                }
+                catch (Exception e)
+                {
+                    bad.Add($"{type.Name}: {e.GetBaseException().Message}");
+                }
+            }
+            Check(bad.Count == 0, $"all {patches.Count} Harmony patch targets resolve" + (bad.Count > 0 ? $" (not: {string.Join("; ", bad)})" : ""));
         }
 
         private static void Check(bool ok, string what)

@@ -35,6 +35,7 @@ namespace RealisticFiring
         {
             Mod = modEntry;
             Settings = UnityModManager.ModSettings.Load<Settings>(modEntry);
+            Core.FireTuning.Default.ClinkerTendency = Settings.ClinkerTendency;
             ReplacementEnabled = Settings.ReplaceStockFireboxes;
             RealisticSmokeEnabled = ReplacementEnabled && Settings.RealisticSmoke;
             RealisticInjectorsEnabled = Settings.RealisticInjectors;

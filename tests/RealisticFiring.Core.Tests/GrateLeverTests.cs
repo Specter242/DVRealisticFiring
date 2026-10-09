@@ -44,6 +44,29 @@ public class GrateLeverTests
         Assert.Equal(1, over.shakes + back.shakes);
     }
 
+    [Theory]
+    [InlineData(0.62f, 1, 0)]
+    [InlineData(0.38f, 1, 0)]
+    [InlineData(0.75f, 0, 1)]
+    [InlineData(0.25f, 0, 1)]
+    public void AShortRockWigglesAndAHalfStrokeShakes(float reach, int wiggles, int shakes)
+    {
+        // "Wiggling" and "shaking – half stroke" (1944 NY firing course p.88).
+        var lever = new GrateLever();
+        int w = 0, s = 0;
+        foreach (var value in new[] { reach, 0.5f })
+        {
+            for (var t = 0f; t < 0.4f; t += Dt)
+            {
+                var state = lever.Update(value, Dt);
+                w += state.Wiggles;
+                s += state.Shakes;
+            }
+        }
+
+        Assert.Equal((wiggles, shakes), (w, s));
+    }
+
     [Fact]
     public void RockingSideToSideShakesOnEachPass()
     {

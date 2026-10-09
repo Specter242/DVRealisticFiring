@@ -169,8 +169,9 @@ namespace RealisticFiring.Core.Tests;
     public void StokedCoalGivesLessHeatPerKgThanHandFiring(float load, float minLoss, float maxLoss)
     {
         // The stoker carries the fire; the fireman keeps the back up by hand.
+        // Clean coal: this is about what crushing costs, not clinker.
         var targetCoal = load * Hudson.MaxCombustionRate * Hudson.BurnTime;
-        var fire = FireTestKit.BurningFire(Hudson, targetCoal);
+        var fire = FireTestKit.BurningFire(Hudson, targetCoal, FireTestKit.CleanCoal);
         var stoker = NewStoker();
         var inputs = FireTestKit.Inputs(Air(load));
         double drawn = 0, burned = 0, heat = 0;

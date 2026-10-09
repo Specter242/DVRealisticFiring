@@ -33,6 +33,8 @@ namespace RealisticFiringFX
         private const string FireboxSmokeShaderName = "RealisticFiring/FireboxSmoke";
         private const string EmberBedShaderName = "RealisticFiring/EmberBed";
         private const string FlameCardShaderName = "RealisticFiring/FlameCard";
+        private const string FireIronShaderName = "RealisticFiring/FireIron";
+        public const string FireIronMaterialName = "FireIron";
 
         [MenuItem("Realistic Firing/Build plume bundle")]
         public static void BuildFromMenu() => Build("Build/AssetBundles");
@@ -88,6 +90,15 @@ namespace RealisticFiringFX
             flameCards.SetTexture("_NoiseTex", coalBed.GetTexture("_NoiseTex"));
             SaveMaterial(flameCards);
             CreateFireboxPrefab(coalBed, flame, fireboxSmoke, embers, flameCards);
+
+            // The fire iron's look; the mod builds its mesh.
+            var fireIron = new Material(FindShader(FireIronShaderName)) { name = FireIronMaterialName };
+            fireIron.SetTexture("_MainTex", ImportAlbedo("fire_iron.png"));
+            fireIron.SetTexture("_BumpMap", ImportNormal("fire_iron_normal.png"));
+            SaveMaterial(fireIron);
+            AssetImporter.GetAtPath($"{MaterialsDir}/{FireIronMaterialName}.mat").SetAssetBundleNameAndVariant(BundleName, "");
+            foreach (var icon in new[] { "fire_iron_icon.png", "fire_iron_icon_dropped.png" })
+                ImportIcon(icon).SetAssetBundleNameAndVariant(BundleName, "");
 
             AssetImporter.GetAtPath(PrefabPath).SetAssetBundleNameAndVariant(BundleName, "");
             AssetImporter.GetAtPath(OverflowPrefabPath).SetAssetBundleNameAndVariant(BundleName, "");
@@ -191,6 +202,40 @@ namespace RealisticFiringFX
             importer.alphaSource = TextureImporterAlphaSource.FromInput;
             importer.alphaIsTransparency = false;
             importer.sRGBTexture = false;
+            importer.mipmapEnabled = true;
+            importer.wrapMode = TextureWrapMode.Repeat;
+            importer.textureCompression = TextureImporterCompression.CompressedHQ;
+            importer.SaveAndReimport();
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        }
+
+        // An inventory icon: full resolution, sharp, with transparency.
+        private static TextureImporter ImportIcon(string file)
+        {
+            var path = $"{TexturesDir}/{file}";
+            var importer = (TextureImporter)AssetImporter.GetAtPath(path)
+                           ?? throw new FileNotFoundException($"Missing texture {path}; run fx/textures/make_firebox_textures.py");
+            importer.textureType = TextureImporterType.Default;
+            importer.alphaSource = TextureImporterAlphaSource.FromInput;
+            importer.alphaIsTransparency = true;
+            importer.sRGBTexture = true;
+            importer.mipmapEnabled = false;
+            importer.wrapMode = TextureWrapMode.Clamp;
+            importer.textureCompression = TextureImporterCompression.Uncompressed;
+            importer.SaveAndReimport();
+            return importer;
+        }
+
+        // A colour texture with smoothness in its alpha (not transparency).
+        private static Texture2D ImportAlbedo(string file)
+        {
+            var path = $"{TexturesDir}/{file}";
+            var importer = (TextureImporter)AssetImporter.GetAtPath(path)
+                           ?? throw new FileNotFoundException($"Missing texture {path}; run fx/textures/make_firebox_textures.py");
+            importer.textureType = TextureImporterType.Default;
+            importer.alphaSource = TextureImporterAlphaSource.FromInput;
+            importer.alphaIsTransparency = false;
+            importer.sRGBTexture = true;
             importer.mipmapEnabled = true;
             importer.wrapMode = TextureWrapMode.Repeat;
             importer.textureCompression = TextureImporterCompression.CompressedHQ;

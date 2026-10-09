@@ -29,10 +29,13 @@ internal static class FireTestKit
         BoilerTemperature = 100f,
     };
 
+    /// <summary>Coal that never clinkers, for tests about something else.</summary>
+    public static readonly FireTuning CleanCoal = new FireTuning { ClinkerTendency = 0f };
+
     /// <summary>A lit fire with the given coal spread evenly and already burning.</summary>
-    public static FireModel BurningFire(FireboxParameters p, float coal)
+    public static FireModel BurningFire(FireboxParameters p, float coal, FireTuning tuning = null)
     {
-        var fire = new FireModel(p);
+        var fire = new FireModel(p, tuning);
         fire.Restore(fireOn: true, coalMass: coal);
         return fire;
     }
@@ -47,12 +50,12 @@ internal static class FireTestKit
 /// <summary>A fire tended by a <see cref="Fireman"/> at a share of the stock maximum rate.</summary>
 internal sealed class TendedFire
 {
-    public TendedFire(FireboxParameters p, float load, float coalFactor = 1f, float settleSeconds = 600f)
+    public TendedFire(FireboxParameters p, float load, float coalFactor = 1f, float settleSeconds = 600f, FireTuning tuning = null)
     {
         var rate = load * p.MaxCombustionRate;
         Inputs = FireTestKit.Inputs(rate * FireTestKit.StockAirPerCoal);
         TargetCoal = Math.Min(p.MaxCoalCapacity, coalFactor * rate * p.BurnTime);
-        Fire = FireTestKit.BurningFire(p, TargetCoal);
+        Fire = FireTestKit.BurningFire(p, TargetCoal, tuning);
         Run(settleSeconds);
     }
 

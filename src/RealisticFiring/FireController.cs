@@ -49,6 +49,11 @@ namespace RealisticFiring
         private void HandleKeys()
         {
             var settings = Main.Settings;
+            if (settings.GiveFireIron)
+            {
+                settings.GiveFireIron = false;
+                Notify(Items.FireIron.GiveToPlayer());
+            }
             if (settings.JamStokerNow)
             {
                 settings.JamStokerNow = false;
@@ -156,6 +161,7 @@ namespace RealisticFiring
                 $"temp {fire.Temperature:F0} C, smoke {fire.SmokeDensity:P0}, bed air {fire.OxygenAvailability:P0}, " +
                 $"draft {firebox.AirFlowIn:F2} kg/s (grate {fire.PrimaryAirFlow:F2}, door {fire.DoorAirFlow:F2} at {firebox.DoorOpening:P0}, " +
                 $"excess {fire.ExcessAirFlow:F2}), coal {fire.CoalMass:F1} kg, ash {fire.AshMass:F2}, clinker {fire.ClinkerMass:F2}, " +
+                $"ashpan {fire.Ashpan:F0} kg ({fire.AshpanFill:P0}), " +
                 $"startup x{firebox.StartupMultiplier:F1}, stoked {firebox.TakeContinuousFeed():F1} kg, zones back-to-front [{zones}]" +
                 (DescribeStoker(firebox) is string stoker ? $"; {stoker}" : "") +
                 (InjectorRig.TryGetTended(PlayerManager.Car, out var rig) ? $"; {Describe(rig)}" : "") +

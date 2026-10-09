@@ -43,6 +43,9 @@ namespace RealisticFiring.Patches
                 var boosterCab = BoosterCab.Attach(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
                 if (boosterCab != null && Main.Settings.LogFireboxCreation)
                     Main.Mod.Logger.Log($"{car.ID}: {boosterCab}");
+                var dropGrate = DropGrateCab.Attach(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
+                if (dropGrate != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{car.ID}: {dropGrate}");
                 var feedLever = FeedPumpCab.RebindInjectorLever(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
                 if (feedLever != null && Main.Settings.LogFireboxCreation)
                     Main.Mod.Logger.Log($"{car.ID}: {feedLever}");

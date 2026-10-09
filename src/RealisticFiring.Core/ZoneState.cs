@@ -14,8 +14,11 @@ namespace RealisticFiring.Core
         /// <summary>Loose ash that shaking can clear.</summary>
         public float Ash { get; internal set; }
 
-        /// <summary>Fused ash that only dumping the fire clears.</summary>
+        /// <summary>Fused ash; shaking barely clears it until it is broken up.</summary>
         public float Clinker { get; internal set; }
+
+        /// <summary>Ash stirred up into the fire by the fire irons, 0 to 1, settling over minutes.</summary>
+        public float Stirred { get; internal set; }
 
         public float Coal => Fresh + Burning;
 
@@ -27,7 +30,7 @@ namespace RealisticFiring.Core
 
         internal void Clear()
         {
-            Fresh = Burning = Ash = Clinker = 0f;
+            Fresh = Burning = Ash = Clinker = Stirred = 0f;
             AirFlow = CombustionRate = RateVelocity = 0f;
         }
     }

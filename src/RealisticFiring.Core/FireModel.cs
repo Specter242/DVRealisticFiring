@@ -94,6 +94,99 @@ namespace RealisticFiring.Core
         /// </summary>
         public float GrateSlope { get; set; }
 
+        /// <summary>
+        /// Area of the grate in m², as measured from the loco's coal pile; 0
+        /// until then, when a forced fire is taken as a share of the stock maximum.
+        /// </summary>
+        public float GrateArea { get; set; }
+
+        /// <summary>Combustion rate of one zone of a forced fire, its bed white-hot, in kg/s.</summary>
+        public float ForcedZoneRate => GrateArea > 0f
+            ? tuning.ForcedFiringRate * GrateArea * zoneArea / 3600f
+            : tuning.ForcedShareOfStock * parameters.MaxCombustionRate * zoneArea;
+
+        /// <summary>How hard <paramref name="zone"/> burns for its share of the grate: 0 idle, 1 forced.</summary>
+        public float ZoneForcing(GrateZone zone) => Smoothing.Clamp01(zones[(int)zone].CombustionRate / ForcedZoneRate);
+
+        /// <summary>How hard the whole fire burns for its grate: 0 idle, 1 forced.</summary>
+        public float FireForcing => Smoothing.Clamp01(ConsumptionRate / (ForcedZoneRate * GrateLayout.ZoneCount));
+
+        /// <summary>
+        /// How hard the draft pulls through the grate against a forced fire's
+        /// air: 0 still, 1 working hard.
+        /// </summary>
+        public float Drawing => Smoothing.Clamp01(PrimaryAirFlow / (ForcedZoneRate * GrateLayout.ZoneCount * AirPerCoal));
+
+        /// <summary>Live coal shaking has thrown up the stack as cinders, in kg, since the fire was made.</summary>
+        public float ShakeCinders { get; private set; }
+
+        /// <summary>
+        /// The zones the drop grate covers: the front row unless the loco says
+        /// otherwise ("the 'drop-grate'—the forward section of the grates", Baker).
+        /// </summary>
+        public IReadOnlyList<GrateZone> DropGrate { get; set; } = new[] { GrateZone.FrontLeft, GrateZone.Front, GrateZone.FrontRight };
+
+        /// <summary>How far the drop grate stood open last tick, 0 to 1.</summary>
+        public float DropGrateOpening { get; private set; }
+
+        /// <summary>Ash and clinker the drop grate has dropped, in kg, since the fire was made.</summary>
+        public float DroppedAshAndClinker { get; private set; }
+
+        /// <summary>Loose ash and broken clinker hooked out through the door, in kg, since the fire was made.</summary>
+        public float HookedOut { get; private set; }
+
+        /// <summary>Ash, clinker, and burnt-out coal in the ashpan, in kg.</summary>
+        public float Ashpan { get; private set; }
+
+        /// <summary>What the ashpan holds when full, in kg: by grate area once measured, else by coal capacity.</summary>
+        public float AshpanCapacity => GrateArea > 0f
+            ? tuning.AshpanPerGrateArea * GrateArea
+            : tuning.AshpanPerCoalCapacity * parameters.MaxCoalCapacity;
+
+        /// <summary>How full the ashpan is, 0 to 1.</summary>
+        public float AshpanFill => Smoothing.Clamp01(Ashpan / AshpanCapacity);
+
+        /// <summary>Ashes let out of the ashpan's hopper doors, in kg, since the fire was made.</summary>
+        public float AshpanEmptied { get; private set; }
+
+        // How far past starting to choke the ashpan is, 0 to 1.
+        private float AshpanOverfill => Smoothing.Clamp01((AshpanFill - tuning.AshpanChokeStart) / (1f - tuning.AshpanChokeStart));
+
+        // Ash and clinker sifted or shaken through go into the ashpan as far as
+        // it has room; returns the share of <paramref name="mass"/> that went.
+        private float IntoAshpan(float mass)
+        {
+            if (!(mass > 0f))
+                return 1f;
+            var room = Math.Max(0f, AshpanCapacity - Ashpan);
+            var taken = Math.Min(mass, room);
+            Ashpan += taken;
+            return taken / mass;
+        }
+
+        // Fire falls into the ashpan regardless and burns down to its ash there.
+        private void FireIntoAshpan(float coal) => Ashpan += Math.Max(0f, coal) * tuning.AshFraction;
+
+        /// <summary>
+        /// Holds the ashpan's hopper doors open, 0 to 1, for one tick: the
+        /// ashes fall out. Returns the kg let out.
+        /// </summary>
+        public float OpenAshpan(float opening, float dt)
+        {
+            opening = Smoothing.Clamp01(opening);
+            if (opening <= 0f || !(dt > 0f) || Ashpan <= 0f)
+                return 0f;
+            var emptied = Ashpan * (1f - (float)Math.Exp(-opening * dt / tuning.AshpanEmptyTime));
+            if (Ashpan - emptied < NegligibleMass)
+                emptied = Ashpan;
+            Ashpan -= emptied;
+            AshpanEmptied += emptied;
+            return emptied;
+        }
+
+        /// <summary>Restores the ashpan's contents from a save.</summary>
+        public void RestoreAshpan(float mass) => Ashpan = mass >= 0f && !float.IsInfinity(mass) ? mass : 0f;
+
         /// <summary>How much air <paramref name="zone"/> draws against the grate's average, on an even bed.</summary>
         public float DraftWeight(GrateZone zone) => draftWeights[(int)zone];
 
@@ -273,18 +366,33 @@ namespace RealisticFiring.Core
         }
 
         /// <summary>
-        /// Rocks the grate: clears most loose ash, breaks up a little clinker,
-        /// and drops some live coal into the ashpan.
+        /// Rocks the grate. A shake (half stroke) clears most loose ash,
+        /// breaks up a little clinker, and drops some live coal into the
+        /// ashpan; a wiggle clears less ash and loses almost no fire. Shaken
+        /// while the draft pulls hard, more live coal falls and some goes up
+        /// the stack as cinders.
         /// </summary>
-        public void ShakeGrate()
+        public void ShakeGrate(ShakeStroke stroke = ShakeStroke.Shake)
         {
+            var shake = stroke == ShakeStroke.Shake;
+            var drawing = Drawing;
+            var working = 1f + (tuning.WorkingShakeLoss - 1f) * drawing * drawing;
+            var lossShare = (shake ? tuning.ShakeBurningLoss : tuning.WiggleBurningLoss) * working;
             foreach (var zone in zones)
             {
-                zone.Ash *= 1f - tuning.ShakeAshRemoval;
-                zone.Clinker *= 1f - tuning.ShakeClinkerRemoval;
-                var dropped = zone.Burning * tuning.ShakeBurningLoss;
-                zone.Burning -= dropped;
-                CoalDroppedThroughGrate += dropped;
+                // Into the ashpan as far as it has room; a full pan takes none.
+                var ash = zone.Ash * (shake ? tuning.ShakeAshRemoval : tuning.WiggleAshRemoval);
+                var clinker = shake ? zone.Clinker * tuning.ShakeClinkerRemoval : 0f;
+                var went = IntoAshpan(ash + clinker);
+                zone.Ash -= ash * went;
+                zone.Clinker -= clinker * went;
+                var lost = zone.Burning * lossShare;
+                zone.Burning -= lost;
+                // The loss beyond a still fire's goes up the stack, half of it as cinders.
+                var blown = 0.5f * lost * (1f - 1f / working);
+                ShakeCinders += blown;
+                CoalDroppedThroughGrate += lost - blown;
+                FireIntoAshpan(lost - blown);
             }
         }
 
@@ -342,6 +450,93 @@ namespace RealisticFiring.Core
             var broken = raked.Clinker * tuning.RakeClinkerBreak;
             raked.Clinker -= broken;
             raked.Ash += broken;
+            Stir(raked, tuning.RakeStir);
+        }
+
+        // Fire irons raise ash from the grate into the hot fire, where it fuses.
+        private static void Stir(ZoneState zone, float amount) => zone.Stirred = Math.Min(1f, zone.Stirred + amount);
+
+        /// <summary>
+        /// Runs the slice bar under <paramref name="target"/>'s fire: half its
+        /// clinker breaks loose, for a shake or the drop grate to take, and
+        /// ash is stirred up into the fire, where it fuses again.
+        /// </summary>
+        public void Slice(GrateZone target)
+        {
+            var zone = zones[(int)target];
+            var broken = zone.Clinker * tuning.SliceClinkerBreak;
+            zone.Clinker -= broken;
+            zone.Ash += broken;
+            Stir(zone, tuning.SliceStir);
+        }
+
+        /// <summary>
+        /// Works <paramref name="target"/> with the hoe toward
+        /// <paramref name="direction"/>: part of its coal and loose ash (broken
+        /// clinker with it) moves to the next zone. Pulled toward the door from
+        /// the back row, the loose ash and clinker come out through it and the
+        /// fire stays. Against a side wall nothing moves. Clinker that has not
+        /// been broken stays where it is.
+        /// </summary>
+        public void Push(GrateZone target, GrateDirection direction)
+        {
+            var from = zones[(int)target];
+            var row = GrateLayout.Row(target);
+            var column = GrateLayout.Column(target);
+            switch (direction)
+            {
+                case GrateDirection.Front: row++; break;
+                case GrateDirection.Back: row--; break;
+                case GrateDirection.Left: column--; break;
+                default: column++; break;
+            }
+            Stir(from, tuning.PushStir);
+            if (row < 0)
+            {
+                var hooked = from.Ash * tuning.PushShare;
+                from.Ash -= hooked;
+                HookedOut += hooked;
+                return;
+            }
+            if (row >= GrateLayout.Rows || column < 0 || column >= GrateLayout.Columns)
+                return;
+
+            var to = zones[(int)GrateLayout.At(row, column)];
+            var fresh = from.Fresh * tuning.PushShare;
+            var burning = from.Burning * tuning.PushShare;
+            var ash = from.Ash * tuning.PushShare;
+            from.Fresh -= fresh;
+            from.Burning -= burning;
+            from.Ash -= ash;
+            to.Fresh += fresh;
+            to.Burning += burning;
+            to.Ash += ash;
+            Stir(to, tuning.PushStir);
+        }
+
+        /// <summary>
+        /// Holds the drop grate open, 0 to 1, for one tick: whatever lies on its
+        /// zones (fire, ash, clinker) falls into the ashpan, and cold air comes
+        /// straight in through the opening.
+        /// </summary>
+        public void OpenDropGrate(float opening, float dt)
+        {
+            DropGrateOpening = Smoothing.Clamp01(opening);
+            if (DropGrateOpening <= 0f || !(dt > 0f))
+                return;
+            var keep = (float)Math.Exp(-DropGrateOpening * dt / tuning.DropGrateTime);
+            foreach (var target in DropGrate)
+            {
+                var zone = zones[(int)target];
+                CoalDumped += (zone.Fresh + zone.Burning) * (1f - keep);
+                DroppedAshAndClinker += (zone.Ash + zone.Clinker) * (1f - keep);
+                Ashpan += (zone.Ash + zone.Clinker) * (1f - keep);
+                FireIntoAshpan((zone.Fresh + zone.Burning) * (1f - keep));
+                zone.Fresh *= keep;
+                zone.Burning *= keep;
+                zone.Ash *= keep;
+                zone.Clinker *= keep;
+            }
         }
 
         /// <summary>
@@ -354,10 +549,13 @@ namespace RealisticFiring.Core
             if (flow <= 0f || !(dt > 0f))
                 return;
 
-            CoalDumped += RemoveCoal(flow * parameters.CoalDumpRate * dt);
+            var dumped = RemoveCoal(flow * parameters.CoalDumpRate * dt);
+            CoalDumped += dumped;
+            FireIntoAshpan(dumped);
             var keep = (float)Math.Exp(-flow * dt / tuning.DumpClearTime);
             foreach (var zone in zones)
             {
+                Ashpan += (zone.Ash + zone.Clinker) * (1f - keep);
                 zone.Ash *= keep;
                 zone.Clinker *= keep;
             }
@@ -368,10 +566,12 @@ namespace RealisticFiring.Core
 
         /// <summary>
         /// Restores from a stock save, which only knows the total coal. A lit
-        /// fire comes back evenly alight; an unlit one as fresh coal.
+        /// fire comes back evenly alight; an unlit one as fresh coal. The
+        /// ashpan comes back empty.
         /// </summary>
         public void Restore(bool fireOn, float coalMass)
         {
+            Ashpan = 0f;
             coalMass = Math.Max(0f, Math.Min(coalMass, parameters.MaxCoalCapacity));
             foreach (var zone in zones)
             {
@@ -629,6 +829,14 @@ namespace RealisticFiring.Core
             return Math.Max(tuning.EmberIgnitionSupport, Smoothing.Clamp01(support));
         }
 
+        private bool IsDropGrate(GrateZone zone)
+        {
+            foreach (var covered in DropGrate)
+                if (covered == zone)
+                    return true;
+            return false;
+        }
+
         // Zones and the door are parallel paths in series with the tubes. The
         // blast is calibrated to pull the stock AIR_FLOW through an even,
         // clean bed holding the same coal, so only unevenness, ash, clinker,
@@ -647,7 +855,9 @@ namespace RealisticFiring.Core
                                  + (tuning.BedResistance * zone.Coal
                                     + tuning.AshResistance * zone.Ash
                                     + tuning.ClinkerResistance * zone.Clinker) / referenceZoneMass;
-                conductance[i] = zoneArea * draftWeights[i] / (float)Math.Sqrt(resistance);
+                conductance[i] = zoneArea * draftWeights[i] / (float)Math.Sqrt(resistance) * (1f - tuning.AshpanChoke * AshpanOverfill);
+                if (DropGrateOpening > 0f && IsDropGrate((GrateZone)i))
+                    conductance[i] *= 1f + (tuning.DropGrateDraft - 1f) * DropGrateOpening;
                 grate += conductance[i];
             }
             var doorPath = tuning.DoorLeakConductance + tuning.DoorConductance * door;
@@ -692,17 +902,27 @@ namespace RealisticFiring.Core
         }
 
         // Burned coal leaves ash; ash sifts through the grate slowly and, in
-        // zones burning hard, fuses into clinker.
+        // zones burning hard, fuses into clinker: faster under a thick ash
+        // layer, a thin hot fire, or ash stirred up by the fire irons, and
+        // faster again once clinker has started to choke the zone.
         private void FormAsh(ZoneState zone, float burned, float rate, float dt)
         {
             zone.Ash += tuning.AshFraction * burned;
-            zone.Ash -= zone.Ash * Math.Min(1f, dt / tuning.AshSiftTime);
+            var sifted = zone.Ash * Math.Min(1f, dt / tuning.AshSiftTime);
+            zone.Ash -= sifted * IntoAshpan(sifted);
+            zone.Stirred -= zone.Stirred * Math.Min(1f, dt / tuning.StirDecayTime);
 
-            var zoneLoad = rate / (parameters.MaxCombustionRate * zoneArea);
-            var heat = Smoothing.Clamp01((zoneLoad - tuning.ClinkerHeatThreshold) / (1f - tuning.ClinkerHeatThreshold));
-            if (heat <= 0f)
+            var forcing = rate / ForcedZoneRate;
+            var heat = Smoothing.Clamp01((forcing - tuning.ClinkerHeatThreshold) / (1f - tuning.ClinkerHeatThreshold));
+            if (heat <= 0f || tuning.ClinkerTendency <= 0f || zone.Ash <= 0f)
                 return;
-            var fused = zone.Ash * Math.Min(1f, heat * dt / tuning.ClinkerFormationTime);
+            var thickAsh = 1f + zone.Ash / (tuning.ThickAshShare * referenceZoneMass);
+            var thinFire = 1f + tuning.ThinFireClinkerBoost * (1f - Smoothing.Clamp01(zone.Coal / referenceZoneMass));
+            var growth = 1f + tuning.ClinkerGrowth * Smoothing.Clamp01(zone.Clinker / (tuning.ClinkerChokeShare * referenceZoneMass));
+            var stirred = 1f + tuning.StirClinkerBoost * zone.Stirred;
+            var heatedFromBelow = 1f + tuning.AshpanClinkerBoost * AshpanOverfill;
+            var speed = tuning.ClinkerTendency * heat * thickAsh * thinFire * growth * stirred * heatedFromBelow;
+            var fused = zone.Ash * Math.Min(1f, speed * dt / tuning.ClinkerFormationTime);
             zone.Ash -= fused;
             zone.Clinker += fused;
         }

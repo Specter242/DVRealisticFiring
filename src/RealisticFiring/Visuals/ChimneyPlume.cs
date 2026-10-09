@@ -53,6 +53,16 @@ namespace RealisticFiring.Visuals
         private const float DefaultSparkSetting = 0.25f;
         private const float MaxStokerCinderBacklog = 0.05f;
 
+        // A grate shaken while the engine works hard throws live coal and ash
+        // up the stack: "a cloud of smoke and a hail of sparks are belched
+        // from the stack" (Baker p.63). Its cinders go out with the next few
+        // beats, up to this much a beat and this much waiting, in kg; its
+        // ash darkens the smoke, clearing over this time, in s.
+        private const float ShakeCindersPerBeat = 0.08f;
+        private const float MaxShakeCinderBacklog = 0.5f;
+        private const float ShakeSmokePerKg = 8f;
+        private const float ShakeSmokeClearing = 3f;
+
         // A beat's particles leave at a spread of speeds, so they stretch into a column.
         private const float PuffSlowest = 0.45f;
         private const float PuffFastest = 1.1f;
@@ -108,6 +118,9 @@ namespace RealisticFiring.Visuals
         private ParticleSystem[] embers;
         private float hazeDue;
         private float stokerCinders;
+        private float shakeCinders;
+        private float shakeCindersSeen = float.NaN;
+        private float shakeSmoke;
         private Vector3 lastPosition;
         private Vector3 stackVelocity;
         private bool hasLastPosition;
@@ -518,11 +531,15 @@ namespace RealisticFiring.Visuals
 
             SyncTuning();
             var fire = firebox.Model;
+            var shaken = float.IsNaN(shakeCindersSeen) ? 0f : Mathf.Max(0f, fire.ShakeCinders - shakeCindersSeen);
+            shakeCindersSeen = fire.ShakeCinders;
+            shakeCinders = Mathf.Min(shakeCinders + shaken, MaxShakeCinderBacklog);
+            shakeSmoke = Mathf.Clamp01(shakeSmoke * Mathf.Exp(-dt / ShakeSmokeClearing) + shaken * ShakeSmokePerKg);
             var inputs = new PlumeInputs
             {
                 ExhaustPressure = exhaustPressure.Value,
                 TotalFlowNormalized = totalFlow.Value,
-                Soot = fire.SootDensity,
+                Soot = Mathf.Max(fire.SootDensity, shakeSmoke),
                 FireOn = fire.FireOn,
             };
 
@@ -575,7 +592,9 @@ namespace RealisticFiring.Visuals
 
             // Usually well under one spark a beat: round at random. A stoker's
             // lost fines go out with the beat too.
-            var expected = puff.Sparks + stokerCinders * StokerCindersPerKg * tuning.Sparks / DefaultSparkSetting;
+            var shook = Mathf.Min(shakeCinders, ShakeCindersPerBeat);
+            shakeCinders -= shook;
+            var expected = puff.Sparks + (stokerCinders + shook) * StokerCindersPerKg * tuning.Sparks / DefaultSparkSetting;
             stokerCinders = 0f;
             var sparks = Mathf.FloorToInt(expected) + (Random.value < expected % 1f ? 1 : 0);
             for (var i = 0; i < sparks && embers.Length > 0; i++)

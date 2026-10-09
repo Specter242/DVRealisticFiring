@@ -13,6 +13,19 @@
                        off, white core in RGB, density in alpha; the mod tints
                        it per particle (yellow and smoky on green coal,
                        orange-white on a good fire).
+  fire_iron.png        512 x 128: the fire iron's forged bar, U along it from
+                       the ring handle (0) to the blade's tip (1), V around
+                       it. RGB colour: dark mottled iron with hammer marks, a
+                       little rust, the handle worn bright by hands, the end
+                       that goes into the fire blackened with scale. A
+                       smoothness.
+  fire_iron_normal.png 512 x 128: the hammer marks and grain as a normal map.
+  fire_iron_icon.png   128 x 128: the inventory icon, the iron drawn across
+                       the square from the ring (low left) to the blade (top
+                       right) in shaded dark iron, as the game's icons are.
+  fire_iron_icon_dropped.png
+                       128 x 128: its silhouette's outline in the game's
+                       light blue, for the iron lying dropped.
 
 Everything is generated from seeded noise, so the art is our own and the
 output is reproducible. Requires numpy and Pillow.
@@ -155,6 +168,119 @@ def atlas(frames, columns):
     return (np.clip(out, 0.0, 1.0) * 255).astype(np.uint8)
 
 
+def hammer_marks(width, height, count, rng):
+    """Shallow rounded dips left by forging, stretched along the bar, tiling
+    across V and along U: 0 flat, 1 at a dip's deepest."""
+    yy, xx = np.mgrid[0:height, 0:width].astype(float)
+    marks = np.zeros((height, width))
+    for _ in range(count):
+        cx, cy = rng.uniform(0, width), rng.uniform(0, height)
+        rx, ry = rng.uniform(10, 22), rng.uniform(5, 10)
+        dx = np.abs(xx - cx)
+        dx = np.minimum(dx, width - dx)
+        dy = np.abs(yy - cy)
+        dy = np.minimum(dy, height - dy)
+        marks = np.maximum(marks, rng.uniform(0.5, 1.0) * np.exp(-((dx / rx) ** 2 + (dy / ry) ** 2)))
+    return marks
+
+
+def fire_iron(width, height, rng):
+    """A forged bar, laid out along U (handle 0 to tip 1) and around V, in
+    sRGB with smoothness in alpha."""
+    size = width
+    mottle = tile_fbm(size, 16, 4, rng)[:height, :] * 0.5 + 0.5
+    grain = tile_fbm(size, 96, 2, rng)[:height, :] * 0.5 + 0.5
+    dips = hammer_marks(width, height, 220, rng)
+    u = np.linspace(0.0, 1.0, width)[None, :].repeat(height, axis=0)
+
+    # Linear albedo: forged iron is dark, about 7 % reflectance.
+    iron = np.array([0.072, 0.068, 0.064])
+    colour = iron[None, None, :] * (0.7 + 0.6 * mottle)[..., None] * (0.9 + 0.15 * grain)[..., None]
+    colour *= (1.0 - 0.25 * dips)[..., None]
+    smooth = 0.35 + 0.1 * grain - 0.1 * dips
+
+    # A little rust along the middle of the bar, none where it is handled
+    # or where the fire keeps it scaled.
+    rust_noise = tile_fbm(size, 10, 4, rng)[:height, :]
+    rust = 0.8 * np.clip((rust_noise - 0.45) / 0.2, 0.0, 1.0) * np.clip((u - 0.18) / 0.1, 0.0, 1.0) * np.clip((0.72 - u) / 0.1, 0.0, 1.0)
+    rust_colour = np.array([0.11, 0.05, 0.025])[None, None, :] * (0.8 + 0.4 * grain)[..., None]
+    colour = colour * (1.0 - rust[..., None]) + rust_colour * rust[..., None]
+    smooth = smooth * (1.0 - rust) + 0.1 * rust
+
+    # The ring handle and the grip, worn bright and smooth by hands.
+    worn = np.clip((0.16 - u) / 0.06, 0.0, 1.0)
+    colour = colour * (1.0 + 1.2 * worn[..., None])
+    smooth = smooth + 0.25 * worn
+
+    # The working end, black with scale from the fire, with a faint temper
+    # band where it shades back into bare iron.
+    scale = np.clip((u - 0.78) / 0.08, 0.0, 1.0)
+    colour = colour * (1.0 - 0.55 * scale[..., None])
+    band = np.exp(-((u - 0.79) / 0.015) ** 2)
+    temper = np.array([0.06, 0.045, 0.07])[None, None, :]
+    colour = colour * (1.0 - 0.4 * band[..., None]) + temper * 0.4 * band[..., None]
+    smooth = smooth * (1.0 - 0.5 * scale)
+
+    rgba = np.concatenate([np.clip(colour, 0.0, 1.0) ** (1 / 2.2), np.clip(smooth, 0.0, 1.0)[..., None]], axis=-1)
+    relief = -0.7 * dips + 0.2 * grain + 0.1 * mottle
+    return (np.clip(rgba, 0.0, 1.0) * 255).astype(np.uint8), relief
+
+
+def fire_iron_icon(size=128, scale=4):
+    """The inventory icons: the iron in shaded dark iron, and its outline in
+    the game's light blue (131, 209, 236 at about 60 % opacity)."""
+    big = size * scale
+    yy, xx = np.mgrid[0:big, 0:big].astype(float) / scale
+    # Along the bar from the ring's centre (low left) to the tip (top right).
+    start = np.array([24.0, 104.0])
+    end = np.array([114.0, 14.0])
+    axis = (end - start) / np.linalg.norm(end - start)
+    normal = np.array([axis[1], -axis[0]])
+    rel_x, rel_y = xx - start[0], yy - start[1]
+    along = rel_x * axis[0] + rel_y * axis[1]
+    across = rel_x * normal[0] + rel_y * normal[1]
+    length = np.linalg.norm(end - start)
+
+    bar_half = 3.0
+    blade_from = length - 22.0
+    blade_widen = np.clip((along - blade_from) / 10.0, 0.0, 1.0)
+    half = bar_half + 3.4 * blade_widen
+    on_bar = (along >= 11.0) & (along <= length) & (np.abs(across) <= half)
+    ring_r = np.hypot(rel_x, rel_y)
+    on_ring = np.abs(ring_r - 9.0) <= 3.0
+    mask = on_bar | on_ring
+
+    # Shade the bar round, lit from the upper side, darker at the blade.
+    side = np.where(on_bar, across / np.maximum(half, 1e-3), (ring_r - 9.0) / 3.0)
+    shade = 0.5 + 0.5 * np.clip(1.0 - side * side, 0.0, 1.0) - 0.3 * side + 1.6 * np.exp(-((side + 0.45) / 0.22) ** 2)
+    tone = np.where(on_bar, 1.0 - 0.45 * blade_widen, 1.25)
+    grain = 0.92 + 0.16 * tile_fbm(big, 32, 3, np.random.default_rng(RNG_SEED + 7))
+    value = np.clip(0.085 * shade * tone * grain, 0.0, 1.0)
+    rgb = np.stack([value * 1.04, value, value * 0.98], axis=-1)
+    alpha = mask.astype(float)
+    icon = np.concatenate([rgb, alpha[..., None]], axis=-1)
+    icon = icon.reshape(size, scale, size, scale, 4).mean(axis=(1, 3))
+    icon[..., :3] = np.where(icon[..., 3:4] > 0, icon[..., :3] / np.maximum(icon[..., 3:4], 1e-6), 0.0)
+
+    # The outline: the silhouette grown by two pixels, less itself.
+    grown = mask.copy()
+    reach = 3.5 * scale
+    for dy in range(-int(reach), int(reach) + 1, scale // 2):
+        for dx in range(-int(reach), int(reach) + 1, scale // 2):
+            if dx * dx + dy * dy <= reach * reach:
+                grown |= np.roll(np.roll(mask, dy, axis=0), dx, axis=1)
+    ring = (grown & ~mask).astype(float)
+    ring = ring.reshape(size, scale, size, scale).mean(axis=(1, 3))
+    blue = np.array([131.0, 209.0, 236.0]) / 255.0
+    dropped = np.concatenate([np.broadcast_to(blue, (size, size, 3)), (0.6 * ring)[..., None]], axis=-1)
+
+    def to8(a):
+        out = a.copy()
+        out[..., :3] = np.clip(out[..., :3], 0.0, 1.0) ** (1 / 2.2)
+        return (np.clip(out, 0.0, 1.0) * 255).astype(np.uint8)
+    return to8(icon), to8(dropped)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("output", type=pathlib.Path)
@@ -164,11 +290,17 @@ def main():
     rng = np.random.default_rng(RNG_SEED + 1)
 
     coal, height = coal_bed(512, rng)
+    iron, iron_relief = fire_iron(512, 128, rng)
+    icon, icon_dropped = fire_iron_icon()
     images = {
         "coal_bed.png": coal,
         "coal_normal.png": normal_map(height, 24.0),
         "fire_noise.png": fire_noise(256, rng),
         "flame_flipbook.png": atlas(flame_frames(128, 16, rng), 4),
+        "fire_iron.png": iron,
+        "fire_iron_normal.png": normal_map(iron_relief, 6.0),
+        "fire_iron_icon.png": icon,
+        "fire_iron_icon_dropped.png": icon_dropped,
     }
     for name, pixels in images.items():
         Image.fromarray(pixels, "RGBA").save(args.output / name)

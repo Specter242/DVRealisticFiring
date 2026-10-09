@@ -97,7 +97,7 @@ namespace RealisticFiring.Patches
         // Places the nearest hit on the target's colliders within that
         // collider's extent in the car's frame. Facing the firebox means
         // facing the car's front (+Z), so -X is the fireman's left.
-        private static bool TryMeasure(Ray ray, ItemUseTarget target, Transform car, out float across, out float height)
+        internal static bool TryMeasure(Ray ray, ItemUseTarget target, Transform car, out float across, out float height)
         {
             across = height = 0f;
             Collider nearest = null;

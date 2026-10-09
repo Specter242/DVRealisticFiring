@@ -15,11 +15,15 @@ namespace RealisticFiring.Visuals
         public const string PrefabName = "ChimneyPlumeFX";
         public const string OverflowPrefabName = "InjectorOverflowFX";
         public const string FireboxPrefabName = "FireboxFX";
+        public const string FireIronMaterialName = "FireIron";
 
         private static bool loaded;
         private static GameObject prefab;
         private static GameObject overflowPrefab;
         private static GameObject fireboxPrefab;
+        private static Material fireIronMaterial;
+        private static Texture2D fireIronIcon;
+        private static Texture2D fireIronIconDropped;
 
         /// <summary>The plume prefab, or null when the bundle is missing or unreadable.</summary>
         public static GameObject Prefab
@@ -44,6 +48,38 @@ namespace RealisticFiring.Visuals
         }
 
         /// <summary>The firebox's bed, flames, and smoke, or null when the bundle lacks them.</summary>
+        /// <summary>The fire iron's forged look, or null without the bundle.</summary>
+        public static Material FireIronMaterial
+        {
+            get
+            {
+                if (!loaded)
+                    Load();
+                return fireIronMaterial;
+            }
+        }
+
+        /// <summary>The fire iron's inventory icon, and its outline for when it lies dropped; null without the bundle.</summary>
+        public static Texture2D FireIronIcon
+        {
+            get
+            {
+                if (!loaded)
+                    Load();
+                return fireIronIcon;
+            }
+        }
+
+        public static Texture2D FireIronIconDropped
+        {
+            get
+            {
+                if (!loaded)
+                    Load();
+                return fireIronIconDropped;
+            }
+        }
+
         public static GameObject FireboxPrefab
         {
             get
@@ -73,6 +109,9 @@ namespace RealisticFiring.Visuals
             prefab = bundle.LoadAsset<GameObject>(PrefabName);
             overflowPrefab = bundle.LoadAsset<GameObject>(OverflowPrefabName);
             fireboxPrefab = bundle.LoadAsset<GameObject>(FireboxPrefabName);
+            fireIronMaterial = bundle.LoadAsset<Material>(FireIronMaterialName);
+            fireIronIcon = bundle.LoadAsset<Texture2D>("fire_iron_icon");
+            fireIronIconDropped = bundle.LoadAsset<Texture2D>("fire_iron_icon_dropped");
             Main.Mod.Logger.Log(prefab != null
                 ? "Custom smoke effects loaded"
                 : $"The smoke bundle has no '{PrefabName}'; using the game's smoke systems");
