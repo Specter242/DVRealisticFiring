@@ -29,8 +29,13 @@ namespace RealisticFiring.Patches
                 {
                     var result = ZonedCoalBed.Attach(__instance, car, firebox);
                     StokerSpray.Attach(__instance.GetComponent<ZonedCoalBed>(), firebox);
+                    var flames = FireboxFlames.Attach(__instance, __instance.GetComponent<ZonedCoalBed>(), firebox);
                     if (Main.Settings.LogFireboxCreation)
+                    {
                         Main.Mod.Logger.Log($"{car.ID}: {result}");
+                        if (flames != null)
+                            Main.Mod.Logger.Log($"{car.ID}: {flames}");
+                    }
                 }
                 var stokerCab = StokerCab.Attach(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
                 if (stokerCab != null && Main.Settings.LogFireboxCreation)

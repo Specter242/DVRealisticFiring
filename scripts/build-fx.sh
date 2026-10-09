@@ -14,6 +14,7 @@ out="$repo/fx/build"
 
 mkdir -p "$out"
 python3 -I "$repo/fx/textures/make_smoke_textures.py" "$project/Assets/RealisticFiring/Textures"
+python3 -I "$repo/fx/textures/make_firebox_textures.py" "$project/Assets/RealisticFiring/Textures"
 
 if ! "$unity" -batchmode -nographics -quit -projectPath "$project" \
         -executeMethod RealisticFiringFX.PlumeBuilder.BuildFromCommandLine \

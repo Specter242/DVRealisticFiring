@@ -53,7 +53,7 @@ namespace RealisticFiring
         [Draw("Rise speed of the spread smoke, m/s", DrawType.Slider, Min = 0, Max = 4, Precision = 1)]
         public float SmokeRiseSpeed = 1.2f;
 
-        [Draw("Narrow-jet zone above the smoke emitter, m (smoke there stays thin and moves with the stack)", DrawType.Slider, Min = 0, Max = 3, Precision = 2)]
+        [Draw("Narrow-jet zone above the smoke emitter at most, m (smoke there stays thin and moves with the stack; it ends at the stack's lip where the mod finds it)", DrawType.Slider, Min = 0, Max = 3, Precision = 2)]
         public float SmokeJetZone = 1.5f;
 
         [Draw("Particles per puff, ×", DrawType.Slider, Min = 0.2, Max = 4, Precision = 1)]

@@ -18,14 +18,21 @@ namespace RealisticFiringFX
         public const string BundleName = "realisticfiring_fx";
         public const string PrefabName = "ChimneyPlumeFX";
         public const string OverflowPrefabName = "InjectorOverflowFX";
+        public const string FireboxPrefabName = "FireboxFX";
 
         private const string Root = "Assets/RealisticFiring";
         private const string TexturesDir = Root + "/Textures";
         private const string MaterialsDir = Root + "/Materials";
         private const string PrefabPath = Root + "/" + PrefabName + ".prefab";
         private const string OverflowPrefabPath = Root + "/" + OverflowPrefabName + ".prefab";
+        private const string FireboxPrefabPath = Root + "/" + FireboxPrefabName + ".prefab";
         private const string ShaderName = "RealisticFiring/ChimneySmoke";
         private const string SparkShaderName = "RealisticFiring/Spark";
+        private const string CoalBedShaderName = "RealisticFiring/CoalBed";
+        private const string FlameShaderName = "RealisticFiring/Flame";
+        private const string FireboxSmokeShaderName = "RealisticFiring/FireboxSmoke";
+        private const string EmberBedShaderName = "RealisticFiring/EmberBed";
+        private const string FlameCardShaderName = "RealisticFiring/FlameCard";
 
         [MenuItem("Realistic Firing/Build plume bundle")]
         public static void BuildFromMenu() => Build("Build/AssetBundles");
@@ -64,8 +71,27 @@ namespace RealisticFiringFX
             CreatePrefab(puff, jet, spark);
             CreateOverflowPrefab(puff, droplet);
 
+            var coalBed = new Material(FindShader(CoalBedShaderName)) { name = "FireboxCoalBed" };
+            coalBed.SetTexture("_CoalTex", ImportData("coal_bed.png"));
+            coalBed.SetTexture("_NormalTex", ImportNormal("coal_normal.png"));
+            coalBed.SetTexture("_NoiseTex", ImportData("fire_noise.png"));
+            SaveMaterial(coalBed);
+            var flame = CreateMaterial(FindShader(FlameShaderName), "Flame", ImportFlipbook("flame_flipbook.png"));
+            flame.SetFloat("_Intensity", 3.5f);
+            var fireboxSmoke = CreateMaterial(FindShader(FireboxSmokeShaderName), "FireboxSmoke", ImportFlipbook("smoke_puff_flipbook.png"));
+            fireboxSmoke.SetFloat("_InvFade", 6f);
+            var embers = new Material(FindShader(EmberBedShaderName)) { name = "FireboxEmbers" };
+            embers.SetTexture("_CoalTex", coalBed.GetTexture("_CoalTex"));
+            embers.SetTexture("_NoiseTex", coalBed.GetTexture("_NoiseTex"));
+            SaveMaterial(embers);
+            var flameCards = new Material(FindShader(FlameCardShaderName)) { name = "FireboxFlameCards" };
+            flameCards.SetTexture("_NoiseTex", coalBed.GetTexture("_NoiseTex"));
+            SaveMaterial(flameCards);
+            CreateFireboxPrefab(coalBed, flame, fireboxSmoke, embers, flameCards);
+
             AssetImporter.GetAtPath(PrefabPath).SetAssetBundleNameAndVariant(BundleName, "");
             AssetImporter.GetAtPath(OverflowPrefabPath).SetAssetBundleNameAndVariant(BundleName, "");
+            AssetImporter.GetAtPath(FireboxPrefabPath).SetAssetBundleNameAndVariant(BundleName, "");
             Directory.CreateDirectory(output);
             var manifest = BuildPipeline.BuildAssetBundles(output,
                 BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.StrictMode,
@@ -152,6 +178,97 @@ namespace RealisticFiringFX
         // the cab while it picks up or after it knocks off. The mod points the
         // root (its +Z) out and down and sets both rates from the spill; these
         // systems emit on their own and fall or rise under their own gravity.
+        private static Shader FindShader(string name) =>
+            Shader.Find(name) ?? throw new InvalidOperationException($"Shader '{name}' did not compile; see the editor log");
+
+        // A data texture (not colors): linear, repeating, alpha as data.
+        private static Texture2D ImportData(string file)
+        {
+            var path = $"{TexturesDir}/{file}";
+            var importer = (TextureImporter)AssetImporter.GetAtPath(path)
+                           ?? throw new FileNotFoundException($"Missing texture {path}; run fx/textures/make_firebox_textures.py");
+            importer.textureType = TextureImporterType.Default;
+            importer.alphaSource = TextureImporterAlphaSource.FromInput;
+            importer.alphaIsTransparency = false;
+            importer.sRGBTexture = false;
+            importer.mipmapEnabled = true;
+            importer.wrapMode = TextureWrapMode.Repeat;
+            importer.textureCompression = TextureImporterCompression.CompressedHQ;
+            importer.SaveAndReimport();
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        }
+
+        // A tiling normal map.
+        private static Texture2D ImportNormal(string file)
+        {
+            var path = $"{TexturesDir}/{file}";
+            var importer = (TextureImporter)AssetImporter.GetAtPath(path)
+                           ?? throw new FileNotFoundException($"Missing texture {path}; run fx/textures/make_firebox_textures.py");
+            importer.textureType = TextureImporterType.NormalMap;
+            importer.mipmapEnabled = true;
+            importer.wrapMode = TextureWrapMode.Repeat;
+            importer.textureCompression = TextureImporterCompression.CompressedHQ;
+            importer.SaveAndReimport();
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        }
+
+        private static void SaveMaterial(Material material)
+        {
+            Directory.CreateDirectory(MaterialsDir);
+            var path = $"{MaterialsDir}/{material.name}.mat";
+            AssetDatabase.DeleteAsset(path);
+            AssetDatabase.CreateAsset(material, path);
+        }
+
+        // The firebox: the fire bed's renderer (the mod builds its mesh), the
+        // flames, and green coal's smoke. The mod emits every particle in the
+        // firebox's own space, so they ride with the loco.
+        private static void CreateFireboxPrefab(Material coalBed, Material flame, Material smoke, Material embers, Material flameCards)
+        {
+            var root = new GameObject(FireboxPrefabName);
+            try
+            {
+                // The mod builds these meshes: the dark lumps on top, the
+                // glowing embers under them, and the flame cards on the bed.
+                MeshHolder(root, "Bed", coalBed);
+                MeshHolder(root, "Embers", embers);
+                MeshHolder(root, "FlameCards", flameCards);
+
+                var flames = CreateSystem(root, "Flames", flame, tiles: 4, lifetime: (0.35f, 0.7f), maxParticles: 800,
+                    growth: Curve(0f, 0.55f, 0.3f, 1f, 1f, 0.75f),
+                    fade: Fade((0f, 0f), (0.12f, 1f), (0.65f, 0.75f), (1f, 0f)), noise: 0.12f);
+                var smokeSystem = CreateSystem(root, "Smoke", smoke, tiles: 8, lifetime: (1.4f, 2.8f), maxParticles: 700,
+                    growth: Curve(0f, 0.45f, 1f, 1.8f),
+                    fade: Fade((0f, 0f), (0.12f, 0.8f), (0.6f, 0.6f), (1f, 0f)), noise: 0.3f);
+                // Flames are given a width and a height each: taller and narrower as the draft draws them.
+                var flameMain = flames.main;
+                flameMain.startSize3D = true;
+                foreach (var system in new[] { flames, smokeSystem })
+                {
+                    var main = system.main;
+                    main.simulationSpace = ParticleSystemSimulationSpace.Local;
+                    var renderer = system.GetComponent<ParticleSystemRenderer>();
+                    renderer.maxParticleSize = 1f;
+                }
+                PrefabUtility.SaveAsPrefabAsset(root, FireboxPrefabPath);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        private static void MeshHolder(GameObject root, string name, Material material)
+        {
+            var holder = new GameObject(name);
+            holder.transform.SetParent(root.transform, false);
+            holder.AddComponent<MeshFilter>();
+            var renderer = holder.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = material;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+        }
+
         private static void CreateOverflowPrefab(Material puff, Material droplet)
         {
             var root = new GameObject(OverflowPrefabName);

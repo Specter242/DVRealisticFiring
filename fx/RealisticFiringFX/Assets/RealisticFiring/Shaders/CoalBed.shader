@@ -1,0 +1,144 @@
+// The fire bed for Realistic Firing: coal lumps lit by the firebox's light,
+// glowing where the fire burns. The mod writes each vertex's state in its
+// color: R the fire's heat there (0 black, through dull red, orange, and
+// yellow, to 1 white-hot), G how much green coal shows (dark lumps lying on
+// the fire, lit from below at their sides), B ash (grey, a dull glow under
+// it), A clinker (a dark glassy crust). A live fire glows first deep in the
+// gaps between lumps, then over the hottest lumps (each lump has its own
+// hotness), until a white-hot fire glows all over;
+// the glow wavers with a scrolling noise, faster under draft, and jumps with
+// each exhaust beat (_Pulse). UV0 is the bed's own frame (across, along,
+// 0..1), for the shovel's aim.
+Shader "RealisticFiring/CoalBed"
+{
+    Properties
+    {
+        _CoalTex ("Coal lumps (R hotness, G height, B grain)", 2D) = "white" {}
+        _NormalTex ("Coal relief", 2D) = "bump" {}
+        _NormalStrength ("Relief strength", Range(0, 2)) = 1.0
+        _NoiseTex ("Fire noise (R broad, G fine)", 2D) = "gray" {}
+        _Tiling ("Lumps per bed width", Float) = 3.0
+        _CoalColor ("Coal", Color) = (0.035, 0.032, 0.03, 1)
+        _AshColor ("Ash", Color) = (0.42, 0.40, 0.37, 1)
+        _ClinkerColor ("Clinker", Color) = (0.09, 0.06, 0.05, 1)
+        _GlowStrength ("Glow strength", Range(0, 12)) = 1.0
+        _Pulse ("Exhaust beat pulse", Range(0, 1)) = 0
+        _FlickerSpeed ("Flicker speed", Range(0, 4)) = 0.6
+        _AimRect ("Aimed zone (across0, along0, across1, along1)", Vector) = (0, 0, 0, 0)
+        _AimColor ("Aim color (alpha = strength)", Color) = (0.25, 0.6, 1, 0)
+    }
+
+    SubShader
+    {
+        Tags { "RenderType"="Opaque" }
+        LOD 200
+
+        CGPROGRAM
+        #pragma surface surf Standard fullforwardshadows vertex:vert addshadow
+        #pragma target 3.0
+
+        sampler2D _CoalTex;
+        sampler2D _NormalTex;
+        float _NormalStrength;
+        sampler2D _NoiseTex;
+        float _Pulse;
+        float _Tiling;
+        fixed4 _CoalColor;
+        fixed4 _AshColor;
+        fixed4 _ClinkerColor;
+        float _GlowStrength;
+        float _FlickerSpeed;
+        float4 _AimRect;
+        fixed4 _AimColor;
+
+        struct Input
+        {
+            float2 bed;
+            float4 state;
+        };
+
+        void vert(inout appdata_full v, out Input o)
+        {
+            UNITY_INITIALIZE_OUTPUT(Input, o);
+            o.bed = v.texcoord.xy;
+            o.state = v.color;
+        }
+
+        // Incandescence as a coal fire shows it: black, dull red, red-orange,
+        // orange, and only at the hottest a yellow-orange (the camera's bloom
+        // whitens the brightest).
+        half3 FireColor(half heat)
+        {
+            half3 dull = half3(0.5, 0.04, 0.01);
+            half3 redOrange = half3(0.92, 0.2, 0.03);
+            half3 orange = half3(1.0, 0.36, 0.06);
+            half3 hottest = half3(1.0, 0.55, 0.15);
+            half3 c = lerp(half3(0, 0, 0), dull, saturate(heat * 4.0));
+            c = lerp(c, redOrange, saturate(heat * 4.0 - 1.0));
+            c = lerp(c, orange, saturate(heat * 4.0 - 2.0));
+            c = lerp(c, hottest, saturate(heat * 4.0 - 3.0));
+            // Forced to its hottest, it goes nearly white.
+            return lerp(c, half3(1.0, 0.92, 0.8), saturate((heat - 0.93) / 0.07));
+        }
+
+        void surf(Input IN, inout SurfaceOutputStandard o)
+        {
+            half heat = IN.state.r;
+            half green = IN.state.g;
+            half ash = IN.state.b;
+            half clinker = IN.state.a;
+
+            float2 uv = IN.bed * _Tiling;
+            half4 lumps = tex2D(_CoalTex, uv);
+            half hot = lumps.r;
+            half height = lumps.g;
+            half grain = lumps.b;
+
+            // Green coal lies on the fire as whole lumps of its own, the
+            // coolest first, sitting higher over the gaps.
+            half fresh = saturate((green * 1.1 - hot) * 10.0);
+
+            // Gaps through the lumps where the fire burns, showing the embers
+            // below; green coal, ash, and clinker close them.
+            half opening = saturate(heat * 1.4) * (1.0 - 0.4 * fresh) * (1.0 - 0.3 * green) * (1.0 - 0.8 * ash) * (1.0 - clinker);
+            half gapLevel = (0.62 + 0.12 * saturate((heat - 0.7) / 0.3)) * opening;
+            clip(height - gapLevel);
+
+            half3 relief = UnpackNormal(tex2D(_NormalTex, uv));
+            o.Normal = normalize(lerp(half3(0, 0, 1), relief, _NormalStrength * (1.0 - 0.6 * ash)));
+
+            float t = _Time.y * _FlickerSpeed;
+            half broad = tex2D(_NoiseTex, IN.bed * 1.5 + float2(0.0, t * 0.11)).r;
+            half fine = tex2D(_NoiseTex, uv * 0.7 + float2(t * 0.07, -t * 0.19)).g;
+            half waver = 0.75 + 0.5 * broad * (0.6 + 0.8 * fine);
+
+            half3 albedo = _CoalColor.rgb * (0.7 + 0.5 * grain);
+            albedo = lerp(albedo, _AshColor.rgb * (0.8 + 0.3 * grain), ash);
+            albedo = lerp(albedo, _ClinkerColor.rgb, clinker);
+            o.Albedo = albedo;
+            o.Smoothness = lerp(lerp(0.4, 0.1, ash), 0.75, clinker) * (0.6 + 0.4 * height);
+            o.Metallic = 0.0;
+
+            // The lumps on top stay dark, lit from below at their edges by the
+            // embers in the gaps, until the fire is hot enough to light them
+            // too: the hottest lumps first, and all of them when it is forced.
+            // Green lumps stay black on top, their sides lit by the fire below.
+            half edges = saturate((gapLevel + 0.22 - height) / 0.22) * saturate(heat * 2.0);
+            half crowns = saturate((heat - 0.55) / 0.35) * (0.45 + 0.55 * saturate(hot + (heat - 0.9) * 6.0));
+            half sides = saturate((0.78 - height) / 0.3) * saturate(heat * 1.5);
+            half mask = max(max(edges, crowns) * (1.0 - fresh), 0.7 * sides * fresh);
+            half local = saturate(heat * (0.75 + 0.25 * hot) * (1.05 - 0.2 * height) + 0.15 * saturate((heat - 0.9) / 0.1));
+            half lit = (1.0 - 0.6 * ash) * (1.0 - 0.85 * clinker);
+            half forced = heat * heat * heat;
+            half3 glow = FireColor(local * (1.0 - 0.4 * fresh)) * mask * lit * waver * (0.4 + 1.6 * heat + 3.0 * forced * forced);
+            o.Emission = glow * _GlowStrength * (1.0 + 0.6 * _Pulse) * step(0.001, heat);
+
+            // The zone a loaded shovel is aimed at.
+            float2 inside = step(_AimRect.xy, IN.bed) * step(IN.bed, _AimRect.zw);
+            o.Emission += _AimColor.rgb * (_AimColor.a * inside.x * inside.y);
+        }
+        ENDCG
+    }
+
+    FallBack "Diffuse"
+}

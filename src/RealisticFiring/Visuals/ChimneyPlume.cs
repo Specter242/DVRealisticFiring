@@ -70,6 +70,25 @@ namespace RealisticFiring.Visuals
         private const float MinZoneRise = 1f;
         private const float PlumeSpread = 0.9f;
 
+        // The zone ends at the stack's lip where the mod can find it: the
+        // highest point of the loco's model within this radius of the stack's
+        // axis and this far above the emitter, plus a margin, in m. Beyond
+        // the lip smoke held to the stack showed as a thin column of its own,
+        // with the plume swept back behind it.
+        private const float StackRadius = 0.5f;
+        private const float MaxStackRise = 3f;
+        private const float LipMargin = 0.05f;
+
+        // Stack lips above the smoke emitter, in m, for locos whose stacks the
+        // mod cannot read in game, measured offline from their models
+        // (2026-10-09). The S484-840's stack piece ('smoke box.002' in its CCL
+        // bundle) rises 0.37 m above both its emitters; the smallest piece
+        // around its stack, which the mod once took instead, only 0.02 m.
+        private static readonly Dictionary<string, float> MeasuredStackLips = new Dictionary<string, float>
+        {
+            ["S484-840A"] = 0.37f,
+        };
+
         // A frame that crosses more beats than this is a hitch, not a fast engine.
         private const int MaxBeatsPerFrame = 3;
 
@@ -99,10 +118,21 @@ namespace RealisticFiring.Visuals
         private ParticleSystem.Particle[] buffer = new ParticleSystem.Particle[0];
         private ParticleSystemRenderer[] renderers;
         private bool shown = true;
+        private float? stackLip;
 
         // Each smoke particle's intended size by its random seed (stable for
         // its life), because its start size is capped near the stack mouth.
-        private readonly Dictionary<ParticleSystem, SizeMemory> intendedSizes = new Dictionary<ParticleSystem, SizeMemory>();
+        private readonly Dictionary<ParticleSystem, SeedMemory<float>> intendedSizes = new Dictionary<ParticleSystem, SeedMemory<float>>();
+
+        // The jet's streaks are drawn along their velocity, 0.06 s of it plus
+        // 1.5 times their size, which reached past the stack's lip: a streak
+        // just above it trailed back down through the stack's wall. Each
+        // streak is drawn instead along the line back to the stack's mouth,
+        // no longer than that line; the true velocity it moves by is kept
+        // here by the particle's seed.
+        private readonly SeedMemory<Vector3> jetVelocities = new SeedMemory<Vector3>();
+        private float jetVelocityScale;
+        private float jetLengthScale;
 
         /// <summary>True once the plume has taken over from the stock smoke reader.</summary>
         public bool Active { get; private set; }
@@ -156,12 +186,70 @@ namespace RealisticFiring.Visuals
             plume.embers = plume.ChooseSparks(reader, custom);
             plume.TakeOver();
             var sorting = plume.MatchSorting(car);
+            plume.stackLip = MeasureStackLip(car, Emitter(plume.smoke), plume.smoke.transform.up, out var lip);
             return $"realistic chimney smoke {(custom ? "with the custom effects" : "on the game's systems")}: " +
                    $"cloud '{plume.smoke.name}'" +
                    (plume.sootCore != null ? $", soot '{plume.sootCore.name}'" : "") +
                    (plume.jet != null ? $", jet '{plume.jet.name}'" : "") +
                    $", sparks {string.Join("/", plume.embers.Select(s => $"'{s.name}'"))}" +
-                   $", {2 * engine.numCylinders} beats per revolution from '{engineId}', flow from '{exhaust.ID}'; {sorting}";
+                   $", {2 * engine.numCylinders} beats per revolution from '{engineId}', flow from '{exhaust.ID}'; {sorting}; {lip}";
+        }
+
+        // The stack's lip above the game's smoke emitter, along the stack's
+        // axis: the highest point of the loco's model near the axis where its
+        // meshes can be read, or else the lip measured offline for its livery.
+        // Null when neither is known.
+        private static float? MeasureStackLip(TrainCar car, Vector3 emitter, Vector3 axis, out string how)
+        {
+            float? fromMesh = null;
+            var readable = 0;
+            var unreadable = 0;
+            foreach (var filter in car.GetComponentsInChildren<MeshFilter>(true))
+            {
+                var mesh = filter.sharedMesh;
+                var renderer = filter.GetComponent<MeshRenderer>();
+                if (mesh == null || renderer == null)
+                    continue;
+                var bounds = renderer.bounds;
+                if (bounds.size == Vector3.zero || bounds.max.y <= emitter.y)
+                    continue;
+                var nearest = bounds.ClosestPoint(new Vector3(emitter.x, bounds.center.y, emitter.z));
+                if (new Vector2(nearest.x - emitter.x, nearest.z - emitter.z).sqrMagnitude > StackRadius * StackRadius)
+                    continue;
+                if (!mesh.isReadable)
+                {
+                    unreadable++;
+                    continue;
+                }
+                readable++;
+                var toWorld = filter.transform.localToWorldMatrix;
+                foreach (var vertex in mesh.vertices)
+                {
+                    var offset = toWorld.MultiplyPoint3x4(vertex) - emitter;
+                    var rise = Vector3.Dot(offset, axis);
+                    if (rise > 0f && rise <= MaxStackRise
+                        && (offset - axis * rise).sqrMagnitude <= StackRadius * StackRadius
+                        && (!fromMesh.HasValue || rise > fromMesh.Value))
+                        fromMesh = rise;
+                }
+            }
+
+            if (fromMesh.HasValue)
+            {
+                how = $"stack lip {fromMesh.Value:F2} m above the smoke emitter, from {readable} readable meshes around the stack";
+                return fromMesh;
+            }
+            var livery = car.carLivery != null ? car.carLivery.id : null;
+            if (livery != null && MeasuredStackLips.TryGetValue(livery, out var measured))
+            {
+                how = $"stack lip {measured:F2} m above the smoke emitter, as measured offline for {livery} " +
+                      $"({unreadable} meshes around the stack can't be read in game)";
+                return measured;
+            }
+            how = unreadable > 0
+                ? $"the stack can't be read in game ({unreadable} meshes around it); the narrow-jet zone is the setting's"
+                : "no stack found around the smoke emitter; the narrow-jet zone is the setting's";
+            return null;
         }
 
         // The loco's own steam (dynamo, whistle, safety valves, leaks) and the
@@ -230,6 +318,19 @@ namespace RealisticFiring.Visuals
             smoke = Child(fx, "Cloud");
             sootCore = Child(fx, "Soot");
             jet = Child(fx, "Jet");
+
+            // The jet's streaks are drawn along each particle's velocity. In
+            // the world's space that includes the train's speed, so at speed
+            // they lay down level and reached out of the stack's back wall
+            // from inside it. In the stack's own space they lie along the
+            // jet's path out of the stack, as the gas leaving a moving stack
+            // does; they live half a second, so the train's turning in that
+            // time does not matter.
+            if (jet != null)
+            {
+                var jetMain = jet.main;
+                jetMain.simulationSpace = ParticleSystemSimulationSpace.Local;
+            }
             if (smoke == null)
             {
                 Destroy(fx);
@@ -283,6 +384,12 @@ namespace RealisticFiring.Visuals
             stock.StopAllCoroutines();
             foreach (var system in new[] { smoke, sootCore, jet }.Where(s => s != null))
                 Prepare(system, buoyant: true);
+            var jetRenderer = jet != null ? jet.GetComponent<ParticleSystemRenderer>() : null;
+            if (jetRenderer != null && jetRenderer.renderMode == ParticleSystemRenderMode.Stretch)
+            {
+                jetVelocityScale = jetRenderer.velocityScale;
+                jetLengthScale = jetRenderer.lengthScale;
+            }
             foreach (var system in embers)
                 PrepareSparks(system);
             SyncTuning();
@@ -509,7 +616,9 @@ namespace RealisticFiring.Visuals
         // smoke, a lift that balances it at the rise speed, so a puff stops
         // after its launch speed over the drag (the jet length for the hardest
         // beat) and then rises; the stack's velocity it carried decays the
-        // same way, so the plume trails behind a moving train.
+        // same way, so the plume trails behind a moving train. A system in
+        // the stack's own space (the jet) moves with the stack already, and
+        // the still air there blows back at the train's speed.
         private void Drift(ParticleSystem system, float dt, bool lift)
         {
             if (system == null)
@@ -519,62 +628,71 @@ namespace RealisticFiring.Visuals
                 return;
 
             var keep = Mathf.Exp(-PlumeModel.JetDrag(tuning) * dt);
-            var rise = lift ? Vector3.up * (PlumeModel.Lift(tuning) * dt) : Vector3.zero;
-            var axis = system.transform.up;
-            var zone = Main.Settings.SmokeJetZone;
+            var space = system.transform;
+            var local = system.main.simulationSpace == ParticleSystemSimulationSpace.Local;
+            var up = local ? space.InverseTransformDirection(Vector3.up) : Vector3.up;
+            var rise = lift ? up * (PlumeModel.Lift(tuning) * dt) : Vector3.zero;
+            var axis = local ? Vector3.up : space.up;
+            var carried = local ? Vector3.zero : stackVelocity;
+            var air = local ? space.InverseTransformDirection(-stackVelocity) : Vector3.zero;
+            var zone = stackLip.HasValue
+                ? Mathf.Min(Mathf.Max(0f, stackLip.Value) + LipMargin, Main.Settings.SmokeJetZone)
+                : Main.Settings.SmokeJetZone;
             var emitter = SimulationPoint(system, Emitter(system));
             var zoneTop = emitter + axis * zone;
             var growth = system.sizeOverLifetime.enabled ? system.sizeOverLifetime.size : new ParticleSystem.MinMaxCurve(1f);
             if (!intendedSizes.TryGetValue(system, out var sizes))
-                intendedSizes[system] = sizes = new SizeMemory();
+                intendedSizes[system] = sizes = new SeedMemory<float>();
+            var streaks = system == jet && jetVelocityScale > 0f;
             for (var i = 0; i < count; i++)
             {
                 var particle = buffer[i];
                 var intended = sizes.Recall(particle.randomSeed, particle.startSize);
                 var life = particle.startLifetime > 0f ? 1f - particle.remainingLifetime / particle.startLifetime : 0f;
                 var shown = intended * growth.Evaluate(life);
-                if (Vector3.Dot(particle.position - emitter, axis) < zone)
+                var velocity = streaks ? jetVelocities.Recall(particle.randomSeed, particle.velocity) : particle.velocity;
+                var inZone = Vector3.Dot(particle.position - emitter, axis) < zone;
+                float drawn;
+                if (inZone)
                 {
-                    particle.startSize = shown > ZoneWidth ? intended * ZoneWidth / shown : intended;
-                    var upward = Mathf.Max(Vector3.Dot(particle.velocity - stackVelocity, axis), MinZoneRise);
-                    particle.velocity = stackVelocity + axis * upward;
+                    drawn = Mathf.Min(shown, ZoneWidth);
+                    var upward = Mathf.Max(Vector3.Dot(velocity - carried, axis), MinZoneRise);
+                    velocity = carried + axis * upward;
                 }
                 else
                 {
-                    var allowed = ZoneWidth + PlumeSpread * Vector3.Distance(particle.position, zoneTop);
-                    particle.startSize = shown > allowed ? intended * allowed / shown : intended;
-                    particle.velocity = particle.velocity * keep + rise;
+                    drawn = Mathf.Min(shown, ZoneWidth + PlumeSpread * Vector3.Distance(particle.position, zoneTop));
+                    velocity = air + (velocity - air) * keep + rise;
+                }
+                particle.startSize = shown > drawn ? intended * drawn / shown : intended;
+
+                if (streaks)
+                {
+                    // Inside the stack a streak runs straight down it. Above,
+                    // it points back at the mouth, and the particle is moved
+                    // by the difference so it still travels by its true velocity.
+                    var drawnVelocity = velocity;
+                    if (!inZone)
+                    {
+                        var toMouth = particle.position - zoneTop;
+                        var room = Mathf.Max(0f, toMouth.magnitude - jetLengthScale * drawn);
+                        var length = Mathf.Min(jetVelocityScale * velocity.magnitude, room);
+                        drawnVelocity = toMouth.normalized * (length / jetVelocityScale);
+                    }
+                    particle.position += (velocity - drawnVelocity) * dt;
+                    particle.velocity = drawnVelocity;
+                    jetVelocities.Keep(particle.randomSeed, velocity);
+                }
+                else
+                {
+                    particle.velocity = velocity;
                 }
                 buffer[i] = particle;
             }
             sizes.Forget();
+            if (streaks)
+                jetVelocities.Forget();
             system.SetParticles(buffer, count);
-        }
-
-        // Remembers values by particle seed across frames and forgets the
-        // particles that have died: whatever was not recalled since the last
-        // Forget is dropped.
-        private sealed class SizeMemory
-        {
-            private Dictionary<uint, float> current = new Dictionary<uint, float>();
-            private Dictionary<uint, float> next = new Dictionary<uint, float>();
-
-            /// <summary>The value first seen for <paramref name="seed"/>, recording <paramref name="seen"/> if new.</summary>
-            public float Recall(uint seed, float seen)
-            {
-                if (!current.TryGetValue(seed, out var value))
-                    value = seen;
-                next[seed] = value;
-                return value;
-            }
-
-            public void Forget()
-            {
-                var spent = current;
-                current = next;
-                next = spent;
-                next.Clear();
-            }
         }
 
         // A world point in the space the system simulates in (the game moves
@@ -610,11 +728,15 @@ namespace RealisticFiring.Visuals
             var disk = Random.insideUnitCircle * system.shape.radius;
             var start = Emitter(system) + transform.right * disk.x + transform.forward * disk.y;
             var jitter = Random.insideUnitSphere * spread;
+            var launch = (up + jitter).normalized * (speed * Random.Range(slowest, fastest));
             var emit = new ParticleSystem.EmitParams
             {
                 position = SimulationPoint(system, start),
                 applyShapeToPosition = false,
-                velocity = (up + jitter).normalized * (speed * Random.Range(slowest, fastest)) + carVelocity,
+                // A system in the stack's own space already moves with it.
+                velocity = system.main.simulationSpace == ParticleSystemSimulationSpace.Local
+                    ? transform.InverseTransformDirection(launch)
+                    : launch + carVelocity,
                 startSize = size * Random.Range(0.8f, 1.2f),
                 startColor = color,
             };

@@ -14,10 +14,12 @@ namespace RealisticFiring.Visuals
         public const string BundleFile = "realisticfiring_fx";
         public const string PrefabName = "ChimneyPlumeFX";
         public const string OverflowPrefabName = "InjectorOverflowFX";
+        public const string FireboxPrefabName = "FireboxFX";
 
         private static bool loaded;
         private static GameObject prefab;
         private static GameObject overflowPrefab;
+        private static GameObject fireboxPrefab;
 
         /// <summary>The plume prefab, or null when the bundle is missing or unreadable.</summary>
         public static GameObject Prefab
@@ -41,6 +43,17 @@ namespace RealisticFiring.Visuals
             }
         }
 
+        /// <summary>The firebox's bed, flames, and smoke, or null when the bundle lacks them.</summary>
+        public static GameObject FireboxPrefab
+        {
+            get
+            {
+                if (!loaded)
+                    Load();
+                return fireboxPrefab;
+            }
+        }
+
         // The bundle stays loaded: the prefab's materials and textures live in it.
         private static void Load()
         {
@@ -59,6 +72,7 @@ namespace RealisticFiring.Visuals
             }
             prefab = bundle.LoadAsset<GameObject>(PrefabName);
             overflowPrefab = bundle.LoadAsset<GameObject>(OverflowPrefabName);
+            fireboxPrefab = bundle.LoadAsset<GameObject>(FireboxPrefabName);
             Main.Mod.Logger.Log(prefab != null
                 ? "Custom smoke effects loaded"
                 : $"The smoke bundle has no '{PrefabName}'; using the game's smoke systems");
