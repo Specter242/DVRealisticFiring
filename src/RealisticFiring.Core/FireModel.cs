@@ -227,6 +227,34 @@ namespace RealisticFiring.Core
             return accepted;
         }
 
+        /// <summary>
+        /// Adds stoked coal by zone: lumps land as fresh coal, and fines catch
+        /// at once, landing as burning coal. If the box can't take it all,
+        /// every zone takes the same share. Returns the mass accepted.
+        /// </summary>
+        public float AddStoked(float[] lumps, float[] fines)
+        {
+            if (lumps == null || fines == null || lumps.Length != zones.Length || fines.Length != zones.Length)
+                throw new ArgumentException("Need one lump and one fines mass per zone.");
+
+            var offered = 0f;
+            for (var i = 0; i < zones.Length; i++)
+                offered += Math.Max(0f, lumps[i]) + Math.Max(0f, fines[i]);
+            var accepted = Accept(offered);
+            if (accepted <= 0f)
+                return 0f;
+
+            var share = accepted / offered;
+            for (var i = 0; i < zones.Length; i++)
+            {
+                zones[i].Fresh += Math.Max(0f, lumps[i]) * share;
+                zones[i].Burning += FireOn ? Math.Max(0f, fines[i]) * share : 0f;
+                if (!FireOn)
+                    zones[i].Fresh += Math.Max(0f, fines[i]) * share;
+            }
+            return accepted;
+        }
+
         /// <summary>Takes coal from every zone in proportion to what it holds. Returns the mass removed.</summary>
         public float RemoveCoal(float mass)
         {

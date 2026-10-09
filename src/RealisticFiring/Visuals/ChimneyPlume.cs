@@ -4,6 +4,7 @@ using DV.Simulation.Controllers;
 using LocoSim.Definitions;
 using LocoSim.Implementations;
 using RealisticFiring.Core;
+using RealisticFiring.Diagnostics;
 using RealisticFiring.Sim;
 using UnityEngine;
 
@@ -45,6 +46,13 @@ namespace RealisticFiring.Visuals
         private const float SparkMinSize = 0.05f;
         private const float SparkMaxSize = 0.09f;
 
+        // Fines a stoker loses up the stack, as visible cinders per kg, at the
+        // default Sparks setting (0.25); they wait for the next beat to carry
+        // them out, up to this much, in kg.
+        private const float StokerCindersPerKg = 60f;
+        private const float DefaultSparkSetting = 0.25f;
+        private const float MaxStokerCinderBacklog = 0.05f;
+
         // A beat's particles leave at a spread of speeds, so they stretch into a column.
         private const float PuffSlowest = 0.45f;
         private const float PuffFastest = 1.1f;
@@ -80,6 +88,7 @@ namespace RealisticFiring.Visuals
         private ParticleSystem jet;
         private ParticleSystem[] embers;
         private float hazeDue;
+        private float stokerCinders;
         private Vector3 lastPosition;
         private Vector3 stackVelocity;
         private bool hasLastPosition;
@@ -88,6 +97,8 @@ namespace RealisticFiring.Visuals
         private readonly PlumeTuning tuning = new PlumeTuning();
         private float appliedJetWidth = float.NaN;
         private ParticleSystem.Particle[] buffer = new ParticleSystem.Particle[0];
+        private ParticleSystemRenderer[] renderers;
+        private bool shown = true;
 
         // Each smoke particle's intended size by its random seed (stable for
         // its life), because its start size is capped near the stack mouth.
@@ -144,12 +155,46 @@ namespace RealisticFiring.Visuals
             }
             plume.embers = plume.ChooseSparks(reader, custom);
             plume.TakeOver();
+            var sorting = plume.MatchSorting(car);
             return $"realistic chimney smoke {(custom ? "with the custom effects" : "on the game's systems")}: " +
                    $"cloud '{plume.smoke.name}'" +
                    (plume.sootCore != null ? $", soot '{plume.sootCore.name}'" : "") +
                    (plume.jet != null ? $", jet '{plume.jet.name}'" : "") +
                    $", sparks {string.Join("/", plume.embers.Select(s => $"'{s.name}'"))}" +
-                   $", {2 * engine.numCylinders} beats per revolution from '{engineId}', flow from '{exhaust.ID}'";
+                   $", {2 * engine.numCylinders} beats per revolution from '{engineId}', flow from '{exhaust.ID}'; {sorting}";
+        }
+
+        // The loco's own steam (dynamo, whistle, safety valves, leaks) and the
+        // plume must share a render queue, sorting layer, order, and fudge, or
+        // one always draws over the other whichever is nearer; matched, Unity
+        // sorts them by distance. Takes the commonest of the stock settings.
+        private string MatchSorting(TrainCar car)
+        {
+            var ours = Systems().Select(s => s.GetComponent<ParticleSystemRenderer>()).Where(r => r != null).ToList();
+            var stock = car.GetComponentsInChildren<ParticleSystemRenderer>(true)
+                .Where(r => !ours.Contains(r) && r.sharedMaterial != null)
+                .ToList();
+            if (stock.Count == 0)
+                return "no stock steam to sort against";
+
+            T Commonest<T>(System.Func<ParticleSystemRenderer, T> key) =>
+                stock.GroupBy(key).OrderByDescending(g => g.Count()).First().Key;
+            var queue = Commonest(r => r.sharedMaterial.renderQueue);
+            var layer = Commonest(r => r.sortingLayerID);
+            var order = Commonest(r => r.sortingOrder);
+            var fudge = Commonest(r => r.sortingFudge);
+            var before = string.Join(", ", ours.Select(r => $"{r.name} q{r.sharedMaterial?.renderQueue} o{r.sortingOrder} f{r.sortingFudge:F0}"));
+            foreach (var renderer in ours)
+            {
+                renderer.sortingLayerID = layer;
+                renderer.sortingOrder = order;
+                renderer.sortingFudge = fudge;
+                if (renderer.sharedMaterial != null)
+                    renderer.material.renderQueue = queue;
+            }
+            var seen = string.Join(", ", stock.GroupBy(r => (r.sharedMaterial.name, r.sharedMaterial.renderQueue, r.sortingOrder, r.sortingFudge))
+                .Select(g => $"{g.Key.name} q{g.Key.renderQueue} o{g.Key.sortingOrder} f{g.Key.sortingFudge:F0} ×{g.Count()}"));
+            return $"sorting matched to the stock steam (queue {queue}, order {order}, fudge {fudge:F0}; was {before}; stock: {seen})";
         }
 
         // Puts the custom plume where the stock smoke leaves the stack, in the
@@ -340,8 +385,16 @@ namespace RealisticFiring.Visuals
 
         private void Update()
         {
+            var start = PerfMeter.Start();
+            UpdatePlume();
+            PerfMeter.Stop(PerfSection.ChimneyPlume, start);
+        }
+
+        private void UpdatePlume()
+        {
             if (!Active || smoke == null)
                 return;
+            ShowOrHide();
 
             var dt = Time.deltaTime;
             var position = smoke.transform.position;
@@ -372,6 +425,9 @@ namespace RealisticFiring.Visuals
                 for (var i = 0; i < Mathf.Min(crossed, MaxBeatsPerFrame); i++)
                     EmitPuff(PlumeModel.ForBeat(tuning, inputs), carVelocity);
             }
+
+            if (firebox.LastStoker is StokerFlow stoked)
+                stokerCinders = Mathf.Min(stokerCinders + stoked.CinderRate * dt, MaxStokerCinderBacklog);
 
             var haze = PlumeModel.Between(tuning, inputs);
             hazeDue += haze.Rate * dt;
@@ -410,8 +466,11 @@ namespace RealisticFiring.Visuals
                     Emit(sootCore, puff.Speed * 0.9f, puff.Size * 0.6f, soot, carVelocity, PuffSpread, PuffSlowest, PuffFastest);
             }
 
-            // Usually well under one spark a beat: round at random.
-            var sparks = Mathf.FloorToInt(puff.Sparks) + (Random.value < puff.Sparks % 1f ? 1 : 0);
+            // Usually well under one spark a beat: round at random. A stoker's
+            // lost fines go out with the beat too.
+            var expected = puff.Sparks + stokerCinders * StokerCindersPerKg * tuning.Sparks / DefaultSparkSetting;
+            stokerCinders = 0f;
+            var sparks = Mathf.FloorToInt(expected) + (Random.value < expected % 1f ? 1 : 0);
             for (var i = 0; i < sparks && embers.Length > 0; i++)
             {
                 Emit(embers[i % embers.Length], PlumeModel.SparkLaunchSpeed(puff), Random.Range(SparkMinSize, SparkMaxSize),
@@ -578,8 +637,25 @@ namespace RealisticFiring.Visuals
             Main.Mod.Logger.Log($"{firebox.Car.ID} smoke: {beatCount} beats in {interval} s, exhaust {inputs.ExhaustPressure:F1} bar " +
                                 $"(strength {PlumeModel.BeatStrength(tuning, inputs.ExhaustPressure):P0}), flow {inputs.TotalFlowNormalized:P0}, " +
                                 $"soot {inputs.Soot:P0}; last puff {puff.Speed:F1} m/s, {puff.Particles}+{puff.SootParticles} particles, " +
-                                $"{puff.Sparks:F2} sparks, color #{ColorUtility.ToHtmlStringRGBA(ToColor(puff.Color))}");
+                                $"{puff.Sparks:F2} sparks, color #{ColorUtility.ToHtmlStringRGBA(ToColor(puff.Color))}; " +
+                                $"alive {string.Join(", ", Systems().Select(s => $"{s.name} {s.particleCount}"))}" +
+                                (shown ? "" : " (hidden)"));
             beatCount = 0;
+        }
+
+        private IEnumerable<ParticleSystem> Systems() =>
+            new[] { smoke, sootCore, jet }.Concat(embers ?? new ParticleSystem[0]).Where(s => s != null).Distinct();
+
+        // The settings can hide the plume's rendering at once, to see what it costs the frame.
+        private void ShowOrHide()
+        {
+            var show = Main.Settings.ShowChimneySmoke;
+            if (show == shown)
+                return;
+            renderers = renderers ?? Systems().Select(s => s.GetComponent<ParticleSystemRenderer>()).Where(r => r != null).ToArray();
+            foreach (var renderer in renderers)
+                renderer.enabled = show;
+            shown = show;
         }
     }
 }

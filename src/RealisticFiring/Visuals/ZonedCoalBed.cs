@@ -1,5 +1,6 @@
 using System.Linq;
 using RealisticFiring.Core;
+using RealisticFiring.Diagnostics;
 using RealisticFiring.Sim;
 using UnityEngine;
 
@@ -41,6 +42,7 @@ namespace RealisticFiring.Visuals
         private readonly Transform[] tiles = new Transform[GrateLayout.ZoneCount];
         private readonly Renderer[] tileRenderers = new Renderer[GrateLayout.ZoneCount];
         private readonly Material[] tileMaterials = new Material[GrateLayout.ZoneCount];
+        private readonly float[] heights = new float[GrateLayout.ZoneCount];
 
         private RealisticFirebox firebox;
         private Renderer stockCoal;
@@ -123,6 +125,13 @@ namespace RealisticFiring.Visuals
 
         private void LateUpdate()
         {
+            var start = PerfMeter.Start();
+            UpdateBed();
+            PerfMeter.Stop(PerfSection.CoalBed, start);
+        }
+
+        private void UpdateBed()
+        {
             if (stockCoal == null || pivot == null)
                 return;
 
@@ -173,8 +182,29 @@ namespace RealisticFiring.Visuals
         // base, and centers it on its zone, pulling the outer piles in so they
         // stay inside the bed. Rows run from the door (the car's back, -Z) to
         // the front, columns from left (-X) to right; all in the pivot's units.
+        /// <summary>
+        /// A world point in the bed's box: across from left (0) to right (1),
+        /// along from the door (0) to the front (1), and up from the grate (0)
+        /// to the stock pile's top (1); beyond 0..1 is outside the box.
+        /// </summary>
+        public Vector3 BedPoint(float across, float along, float up)
+        {
+            var p = new Vector3(
+                Mathf.LerpUnclamped(bed.min.x, bed.max.x, across),
+                Mathf.LerpUnclamped(bed.min.y, bed.max.y, up),
+                Mathf.LerpUnclamped(bed.min.z, bed.max.z, along));
+            return pivot.parent.TransformPoint(pivot.localPosition + pivot.localRotation * Vector3.Scale(fullScale, p));
+        }
+
+        /// <summary>Where a zone's pile stands now, as a share of the stock pile's height.</summary>
+        public float ZoneHeight(GrateZone zone) => heights[(int)zone];
+
+        /// <summary>Whether the bed has been built and placed.</summary>
+        public bool Ready => pivot != null;
+
         private void Place(int index, float height)
         {
+            heights[index] = height;
             var zone = (GrateZone)index;
             var across = Overlap / GrateLayout.Columns;
             var along = Overlap / GrateLayout.Rows;

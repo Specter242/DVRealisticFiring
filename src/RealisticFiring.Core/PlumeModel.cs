@@ -165,16 +165,32 @@ namespace RealisticFiring.Core
         /// <summary>Upward acceleration on smoke, in m/s², that balances the drag at the rise speed.</summary>
         public static float Lift(PlumeTuning tuning) => tuning.RiseSpeed * JetDrag(tuning);
 
+        // The blower at full sends about a tenth of the full-work exhaust flow
+        // up the stack (the S282's and Hudson's blowers, 1.1 kg/s and up).
+        private const float FullBlowerFlow = 0.1f;
+
+        // A lit fire's lazy column, and the blower's steady stream on top, in
+        // particles a second.
+        private const float StandingRate = 3f;
+        private const float BlowerRate = 12f;
+
+        /// <summary>
+        /// What leaves the stack between beats: a lit fire always sends a lazy
+        /// column up by its own draft, faint when clean and dark after a fresh
+        /// charge; steam through the stack (the blower, mostly) makes a steady,
+        /// faster, whiter stream on top of it.
+        /// </summary>
         public static Haze Between(PlumeTuning tuning, PlumeInputs inputs)
         {
-            var flow = Clamp01(inputs.TotalFlowNormalized);
+            var steam = Clamp01(Clamp01(inputs.TotalFlowNormalized) / FullBlowerFlow);
             var darkness = Darkness(tuning, inputs.FireOn ? Clamp01(inputs.Soot) : 0f);
+            var clean = Mix(CleanHaze, Steam, steam, 1f);
+            var opacity = Lerp(Lerp(tuning.HazeOpacity, tuning.SteamOpacity, steam), 0.7f, darkness);
             return new Haze
             {
-                // A lit fire always sends something up; a dead one only blower steam.
-                Rate = inputs.FireOn ? Lerp(0.5f, 6f, flow) : 6f * flow,
-                Speed = Lerp(1.5f, 6f, flow),
-                Color = Mix(CleanHaze, Sooty, darkness, Lerp(tuning.HazeOpacity, 0.6f, darkness)),
+                Rate = (inputs.FireOn ? StandingRate : 0f) + BlowerRate * steam,
+                Speed = Lerp(1.2f, 8f, steam),
+                Color = Mix(clean, Sooty, darkness, opacity),
             };
         }
 

@@ -1,7 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
+using DV.CabControls;
 using DV.HUD;
+using DV.Simulation.Ports;
 using RealisticFiring.Core;
+using RealisticFiring.Diagnostics;
 using RealisticFiring.Sim;
 using UnityEngine;
 
@@ -12,14 +15,17 @@ namespace RealisticFiring.Visuals
     /// the injector's overflow pipe under the cab while it picks up and after
     /// it knocks off, with the game's own water-dump and steam-release sounds.
     /// A singing injector spills nothing. Hidden just under the cab's deck
-    /// plate on the injector lever's (the fireman's) side, spilling out and
-    /// down from under the cab.
+    /// plate on the injector lever's side, spilling out and down from under
+    /// the cab. A loco with an injector lever on each side (the Hudson's work
+    /// the same injector) gets one under each, and the one under the lever
+    /// last moved spills.
     /// </summary>
     internal sealed class InjectorOverflow : MonoBehaviour
     {
-        // Tucked under the deck plate: this far below the deck, and at least
-        // this far out from the centerline (a little outboard of the lever).
-        private const float BelowDeck = 0.15f;
+        // Tucked under the deck plate: this far below the deck (the S484-840's
+        // is 16 cm thick), and at least this far out from the centerline (a
+        // little outboard of the lever).
+        private const float BelowDeck = 0.2f;
         private const float MinOutboard = 0.8f;
         private const float OutboardOfLever = 0.3f;
 
@@ -40,6 +46,11 @@ namespace RealisticFiring.Visuals
         private const string SteamClipName = "SteamRelease_01";
 
         private InjectorRig rig;
+        private Transform leverTransform;
+        private ControlImplBase lever;
+        private float side;
+        private InjectorOverflow[] group = new InjectorOverflow[0];
+        private bool wasSpilling;
         private ParticleSystem water;
         private ParticleSystem steam;
         private AudioSource waterSound;
@@ -54,47 +65,114 @@ namespace RealisticFiring.Visuals
         {
             if (PlumeAssets.OverflowPrefab == null)
                 return null;
+            roots = roots.ToList();
 
-            var lever = roots.SelectMany(r => r.GetComponentsInChildren<LocoControlsReader>(true))
-                .Select(reader => reader.injector)
-                .FirstOrDefault(go => go != null);
-            var leverLocal = lever != null ? car.transform.InverseTransformPoint(lever.transform.position) : new Vector3(-0.6f, 2f, 0f);
+            // Every lever working the injector, one a side; else the one the
+            // game's controls reader names.
+            var levers = roots.SelectMany(r => r.GetComponentsInChildren<InteractablePortFeeder>(true))
+                .Where(f => f.portId == rig.LeverPortId)
+                .Select(f => f.transform)
+                .ToList();
+            if (levers.Count == 0)
+            {
+                var named = roots.SelectMany(r => r.GetComponentsInChildren<LocoControlsReader>(true))
+                    .Select(reader => reader.injector)
+                    .FirstOrDefault(go => go != null);
+                if (named != null)
+                    levers.Add(named.transform);
+            }
+            var bySide = levers
+                .GroupBy(t => car.transform.InverseTransformPoint(t.position).x < 0f ? -1f : 1f)
+                .Select(g => g.First())
+                .OrderBy(t => car.transform.InverseTransformPoint(t.position).x)
+                .ToList();
+            if (bySide.Count == 0)
+                bySide.Add(null);
+
+            var existing = car.GetComponentsInChildren<InjectorOverflow>(true).ToList();
+            var lines = new List<string>();
+            var group = new List<InjectorOverflow>();
+            foreach (var lever in bySide)
+            {
+                lines.Add(Place(car, rig, lever, existing, out var overflow));
+                group.Add(overflow);
+            }
+            foreach (var stale in existing.Except(group))
+                Destroy(stale.gameObject);
+            foreach (var overflow in group)
+                overflow.group = group.ToArray();
+            return string.Join("; ", lines);
+        }
+
+        private static string Place(TrainCar car, InjectorRig rig, Transform lever, List<InjectorOverflow> existing, out InjectorOverflow overflow)
+        {
+            var leverLocal = lever != null ? car.transform.InverseTransformPoint(lever.position) : new Vector3(-0.6f, 2f, 0f);
             var side = leverLocal.x < 0f ? -1f : 1f;
-            var foundDeck = TryFindDeck(car, car.transform.TransformPoint(leverLocal), out var deckHeight);
+            var leverWorld = car.transform.TransformPoint(leverLocal);
+            var deck = "the cab's teleport point";
+            var foundDeck = TryFindCabFloor(car, out var deckHeight);
+            if (!foundDeck)
+            {
+                foundDeck = TryFindDeck(car, leverWorld, WalkableLayers, out deckHeight, out deck)
+                            || TryFindDeck(car, leverWorld, ~0, out deckHeight, out deck);
+            }
             if (!foundDeck)
                 deckHeight = leverLocal.y - 1f;
 
-            var overflow = car.GetComponentInChildren<InjectorOverflow>(true);
+            overflow = existing.FirstOrDefault(o => o.side == side);
             if (overflow == null)
             {
                 var fx = Instantiate(PlumeAssets.OverflowPrefab, car.transform, false);
-                fx.name = PlumeAssets.OverflowPrefabName;
+                fx.name = PlumeAssets.OverflowPrefabName + (side < 0f ? " left" : " right");
                 overflow = fx.AddComponent<InjectorOverflow>();
+                overflow.side = side;
                 overflow.Build(car, rig);
             }
+            overflow.leverTransform = lever;
+            overflow.lever = null;
             var outboard = Mathf.Max(Mathf.Abs(leverLocal.x) + OutboardOfLever, MinOutboard);
             var position = new Vector3(side * outboard, deckHeight - BelowDeck, leverLocal.z);
             overflow.transform.localPosition = position;
             overflow.transform.localRotation = Quaternion.LookRotation(new Vector3(side, -0.6f, 0f).normalized, Vector3.up);
 
             return $"injector overflow under the deck on the {(side < 0f ? "left" : "right")} at ({position.x:F2}, {position.y:F2}, {position.z:F2}) m" +
-                   (foundDeck ? $", deck at {deckHeight:F2} m" : ", deck not found (guessed 1 m below the lever)") +
+                   (lever != null ? $" under '{lever.name}'" : "") +
+                   (foundDeck ? $", deck ({deck}) at {deckHeight:F2} m" : ", deck not found (guessed 1 m below the lever)") +
                    (lever == null ? ", no injector lever found (guessed the side)" : "") +
                    $", sounds: water {(overflow.waterSound != null ? $"'{WaterClipName}'" : "missing")}, " +
                    $"steam {(overflow.steamSound != null ? $"'{SteamClipName}'" : "missing")}";
         }
 
-        // The cab deck under a point: the first upward-facing surface of this
-        // car straight below it, in the car's frame.
-        private static bool TryFindDeck(TrainCar car, Vector3 from, out float height)
+        // The cab floor's height in the car's frame: where the game stands a
+        // player teleported into the cab, the [cab] point every loco has (the
+        // S282's 1.37 m, the S060's 1.66 m, the Hudson's 1.99 m, the
+        // S484-840's 2.18 m, each on its floor). A ray down from the lever can
+        // hit a custom cab's fittings first: on the S484-840 one 0.7 m up.
+        internal static bool TryFindCabFloor(TrainCar car, out float height)
+        {
+            var cab = car.transform.Find(TrainCarColliders.CAB_NAME);
+            if (cab == null && car.interior != null)
+                cab = car.interior.Find(TrainCarColliders.CAB_NAME);
+            height = cab != null ? car.transform.InverseTransformPoint(cab.position).y : 0f;
+            return cab != null;
+        }
+
+        // The floor the crew walk on is on this layer.
+        private static int WalkableLayers => LayerMask.GetMask("Train_Walkable");
+
+        // Without a [cab] point: the first upward-facing surface of this car on
+        // these layers straight below a point, in the car's frame.
+        private static bool TryFindDeck(TrainCar car, Vector3 from, int layers, out float height, out string what)
         {
             height = 0f;
+            what = null;
             var down = -car.transform.up;
-            foreach (var hit in Physics.RaycastAll(from, down, DeckSearch, ~0, QueryTriggerInteraction.Ignore).OrderBy(h => h.distance))
+            foreach (var hit in Physics.RaycastAll(from, down, DeckSearch, layers, QueryTriggerInteraction.Ignore).OrderBy(h => h.distance))
             {
                 if (Vector3.Dot(hit.normal, car.transform.up) < 0.7f || TrainCar.Resolve(hit.collider.gameObject) != car)
                     continue;
                 height = car.transform.InverseTransformPoint(hit.point).y;
+                what = $"'{hit.collider.name}' on layer {LayerMask.LayerToName(hit.collider.gameObject.layer)} under the lever";
                 return true;
             }
             return false;
@@ -155,14 +233,61 @@ namespace RealisticFiring.Visuals
 
         private void LateUpdate()
         {
+            var start = PerfMeter.Start();
+            UpdateOverflow();
+            PerfMeter.Stop(PerfSection.Overflow, start);
+        }
+
+        private void UpdateOverflow()
+        {
             if (rig == null)
                 return;
             var flow = rig.Flow;
             var full = rig.Injector.Spec.MaxDelivery;
-            SetRate(water, Mathf.Min(MaxWaterParticles, flow.Overflow * WaterParticlesPerKg));
-            SetRate(steam, Mathf.Min(MaxSteamParticles, flow.OverflowSteam * SteamParticlesPerKg));
-            SetVolume(waterSound, Mathf.Clamp01(flow.Overflow / (0.3f * full)));
-            SetVolume(steamSound, Mathf.Clamp01(flow.OverflowSteam / (0.05f * full)));
+            var spilling = Spilling();
+            if (spilling && !wasSpilling && group.Length > 1 && Main.Settings.LogCoalDeliveries)
+                Main.Mod.Logger.Log($"{rig.Car?.ID}: injector overflow spills on the {(side < 0f ? "left" : "right")} (valve {rig.LeverValue:F2}; " +
+                                    string.Join(", ", group.Where(o => o != null).Select(o => $"{(o.side < 0f ? "left" : "right")} lever " +
+                                        (o.Lever() != null ? o.Lever().Value.ToString("F2") : "not spawned"))) + ")");
+            wasSpilling = spilling;
+            var share = spilling ? 1f : 0f;
+            SetRate(water, Mathf.Min(MaxWaterParticles, share * flow.Overflow * WaterParticlesPerKg));
+            SetRate(steam, Mathf.Min(MaxSteamParticles, share * flow.OverflowSteam * SteamParticlesPerKg));
+            SetVolume(waterSound, share * Mathf.Clamp01(flow.Overflow / (0.3f * full)));
+            SetVolume(steamSound, share * Mathf.Clamp01(flow.OverflowSteam / (0.05f * full)));
+        }
+
+        // Whether this side spills: with a lever each side, the one whose lever
+        // sits where the injector's valve is (the last moved), the fireman's
+        // (left) when they agree or the cab is not loaded.
+        private bool Spilling()
+        {
+            if (group.Length < 2)
+                return true;
+            InjectorOverflow best = null;
+            var bestGap = float.MaxValue;
+            foreach (var overflow in group)
+            {
+                if (overflow == null)
+                    continue;
+                var control = overflow.Lever();
+                var gap = control != null ? Mathf.Abs(control.Value - rig.LeverValue) : float.MaxValue;
+                if (gap < bestGap - 0.01f || (Mathf.Abs(gap - bestGap) <= 0.01f && best != null && overflow.side < best.side))
+                {
+                    best = overflow;
+                    bestGap = gap;
+                }
+            }
+            return best == null ? side < 0f || group.All(o => o == null || o.side >= side) : best == this;
+        }
+
+        // The lever's control, found once it has spawned: a custom cab's
+        // controls can spawn after the overflow is placed.
+        private ControlImplBase Lever()
+        {
+            if (lever == null && leverTransform != null)
+                lever = leverTransform.GetComponent<ControlImplBase>();
+            return lever;
         }
 
         private static void SetRate(ParticleSystem system, float rate)

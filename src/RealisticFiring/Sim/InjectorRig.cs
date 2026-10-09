@@ -60,16 +60,66 @@ namespace RealisticFiring.Sim
         private readonly Boiler boiler;
         private InjectorState lastState;
 
-        private InjectorRig(TrainCar car, Boiler boiler, Injector injector)
+        private InjectorRig(TrainCar car, Boiler boiler, Injector injector, string leverPortId)
         {
             Car = car;
             this.boiler = boiler;
             Injector = injector;
+            LeverPortId = leverPortId;
         }
 
         public TrainCar Car { get; }
 
         public Injector Injector { get; }
+
+        /// <summary>The cab control port its lever (or levers, one each side) works.</summary>
+        public string LeverPortId { get; }
+
+        /// <summary>The steam valve's opening, as the last lever moved set it.</summary>
+        public float LeverValue => boiler.injectorControl.Value;
+
+        /// <summary>The feedwater heater and pump, on a loco whose prototype had one; else null.</summary>
+        public FeedPump Pump { get; private set; }
+
+        /// <summary>Its make and type.</summary>
+        public string PumpName { get; private set; }
+
+        /// <summary>What the pump did on the last tick.</summary>
+        public FeedPumpFlow PumpFlow { get; private set; }
+
+        /// <summary>The pump's operating valve, 0 to 1.</summary>
+        public float PumpValve => pumpValve != null ? pumpValve.Value : 0f;
+
+        private Port pumpValve;
+        private Port exhaustFlow;
+        private Port fullExhaustFlow;
+        private Port chestPressure;
+        private float pendingPumpSteam;
+
+        // Fits the heater and pump when the loco's prototype had one and its
+        // sim has the operating valve. Returns a line for the log, or null.
+        private string FitPump(SimulationFlow flow)
+        {
+            if (Car == null || flow == null || !FeedwaterFit.TryGet(Car.carLivery.id, out var fit)
+                || !flow.TryGetPort(FeedwaterFit.Valve.PortId, out var valve))
+                return null;
+            var engine = flow.OrderedSimComps.OfType<ReciprocatingSteamEngine>().FirstOrDefault();
+            AttachPump(new FeedPump(new FeedPumpSpec(fit.Type, fit.CapacityShare * Injector.Spec.MaxDelivery), TenderWaterTemperature), fit.Name, valve,
+                engine?.exhaustFlowReadOut, engine?.maxFlowReadOut, engine?.steamChestPressureReadOut);
+            return $"{fit.Name} feedwater heater and pump: {Pump.Spec.Capacity:F1} kg/s, worked by '{valve.id}'" +
+                   (engine == null ? "; no steam engine to heat it" : "");
+        }
+
+        /// <summary>Gives the rig a pump directly, for checks outside the game.</summary>
+        internal void AttachPump(FeedPump pump, string name, Port valve, Port exhaust, Port fullExhaust, Port chest)
+        {
+            Pump = pump;
+            PumpName = name;
+            pumpValve = valve;
+            exhaustFlow = exhaust;
+            fullExhaustFlow = fullExhaust;
+            chestPressure = chest;
+        }
 
         /// <summary>What the injector did on the last tick.</summary>
         public InjectorFlow Flow { get; private set; }
@@ -108,7 +158,8 @@ namespace RealisticFiring.Sim
             var notes = new List<string>();
             foreach (var boiler in boilers)
             {
-                TryCreate(car, boiler, out var note);
+                if (TryCreate(car, boiler, out var note) && TryGet(boiler, out var rig) && rig.FitPump(flow) is string pump)
+                    note += "; " + pump;
                 notes.Add(note);
             }
             return string.Join("; ", notes);
@@ -135,7 +186,7 @@ namespace RealisticFiring.Sim
                 return false;
             }
 
-            var rig = new InjectorRig(car, boiler, new Injector(new InjectorSpec(maxRate, rated)));
+            var rig = new InjectorRig(car, boiler, new Injector(new InjectorSpec(maxRate, rated)), control.id);
             PruneDestroyedCars();
             ByBoiler[boiler] = rig;
             if (car != null)
@@ -147,6 +198,9 @@ namespace RealisticFiring.Sim
 
         /// <summary>The boiler's water and steam, for checks outside the game.</summary>
         internal WaterPressureVessel BoilerVessel => Vessel(boiler);
+
+        /// <summary>Any boiler's water and steam, for other appliances that use its steam.</summary>
+        internal static WaterPressureVessel VesselOf(Boiler boiler) => boiler != null ? Vessel(boiler) : null;
 
         public static bool TryGet(Boiler boiler, out InjectorRig rig) => ByBoiler.TryGetValue(boiler, out rig);
 
@@ -184,6 +238,7 @@ namespace RealisticFiring.Sim
             var space = Mathf.Max(0f, TotalVolume(boiler) - vessel.waterVolume);
             var broken = boiler.isBrokenReadOut.Value != 0f;
 
+            Injector.Spec.TechniqueAndHeat = Main.Settings.InjectorTechniqueAndHeat;
             var flow = Injector.Step(delta, new InjectorInputs
             {
                 SteamValve = broken ? 0f : boiler.injectorControl.Value,
@@ -202,9 +257,38 @@ namespace RealisticFiring.Sim
                 vessel.RemoveSteam(steam);
             var drawn = flow.TenderDraw * delta;
 
+            space = Mathf.Max(0f, space - fed);
+            if (Pump != null)
+            {
+                var pumpFlow = Pump.Step(delta, new FeedPumpInputs
+                {
+                    Valve = broken ? 0f : PumpValve,
+                    BoilerPressure = vessel.pressure,
+                    BoilerSpace = space,
+                    TenderWater = Mathf.Max(0f, tender - drawn),
+                    TenderWaterTemperature = TenderWaterTemperature,
+                    ExhaustFlow = exhaustFlow != null ? exhaustFlow.Value : 0f,
+                    FullExhaustFlow = fullExhaustFlow != null ? fullExhaustFlow.Value : 0f,
+                    ChestPressure = chestPressure != null ? chestPressure.Value : vessel.pressure,
+                }, Steam);
+                LogPumpChange(pumpFlow);
+                PumpFlow = pumpFlow;
+                var pumped = pumpFlow.WaterIn * delta;
+                if (pumped > 0f)
+                    vessel.AddWater(pumped, pumpFlow.FeedTemperature);
+                space = Mathf.Max(0f, space - pumped);
+                drawn += pumpFlow.TenderDraw * delta;
+                // A boiler's mass is too big for a float to take a few grams a tick.
+                pendingPumpSteam += pumpFlow.SteamUsed * delta;
+                if (pendingPumpSteam >= RealisticStoker.SteamLot)
+                {
+                    vessel.RemoveSteam(Mathf.Min(pendingPumpSteam, vessel.mass));
+                    pendingPumpSteam = 0f;
+                }
+            }
+
             // Filling with no steam: the hose from the mains, or the hand pump from the tender.
             FillRate = 0f;
-            space = Mathf.Max(0f, space - fed);
             if (HydrantFilling && !broken && CanHydrantFill)
             {
                 var hose = Mathf.Min(HydrantRate * delta, space);
@@ -229,6 +313,19 @@ namespace RealisticFiring.Sim
             LogStateChange(flow);
         }
 
+        private FeedPumpState lastPumpState;
+
+        private void LogPumpChange(FeedPumpFlow flow)
+        {
+            if (flow.State == lastPumpState)
+                return;
+            var from = lastPumpState;
+            lastPumpState = flow.State;
+            if (Main.Settings.LogCoalDeliveries)
+                Main.Mod.Logger.Log($"{Car?.ID}: feed pump {from} -> {flow.State} at {BoilerPressure:F1} bar, valve {PumpValve:F2}, " +
+                                    $"feed {flow.WaterIn:F2} kg/s at {flow.FeedTemperature:F0} C, steam {flow.SteamUsed:F2} kg/s, heater {flow.HeaterTemperature:F0} C");
+        }
+
         private void LogStateChange(InjectorFlow flow)
         {
             if (flow.State == lastState)
@@ -237,9 +334,10 @@ namespace RealisticFiring.Sim
             lastState = flow.State;
             if (!Main.Settings.LogCoalDeliveries)
                 return;
-            Main.Mod.Logger.Log($"{Car?.ID}: injector {from} -> {flow.State} at {BoilerPressure:F1} bar, " +
+            Main.Mod.Logger.Log($"{Car?.ID}: injector {from} -> {flow.State} at {BoilerPressure:F1} bar, lever {boiler.injectorControl.Value:F2}, " +
                                 $"feed {flow.WaterIn:F2} kg/s at {flow.FeedTemperature:F0} C, steam {flow.SteamUsed:F2} kg/s, " +
-                                $"overflow {flow.Overflow:F2} kg/s");
+                                $"overflow {flow.Overflow:F2} kg/s water, {flow.OverflowSteam:F2} kg/s steam, " +
+                                $"injector {flow.InjectorTemperature:F0} C (takes below {flow.RestartLimit:F0} C)");
         }
 
         private static void PruneDestroyedCars()
@@ -260,6 +358,9 @@ namespace RealisticFiring.Sim
             public float WaterEnthalpy(float temperature) => SteamTables.WaterSpecificEnthalpyByTemp(temperature);
 
             public float WaterTemperature(float enthalpy) => SteamTables.WaterTempBySpecificEnthalpy(enthalpy);
+
+            public float SaturationTemperature(float pressure) =>
+                SteamTables.WaterTempBySpecificEnthalpy(SteamTables.WaterSpecificEnthalpy(pressure));
         }
     }
 }

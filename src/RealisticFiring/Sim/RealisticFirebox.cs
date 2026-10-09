@@ -6,6 +6,7 @@ using LocoSim.Definitions;
 using LocoSim.Implementations;
 using Newtonsoft.Json.Linq;
 using RealisticFiring.Core;
+using RealisticFiring.Diagnostics;
 using UnityEngine;
 
 namespace RealisticFiring.Sim
@@ -33,6 +34,10 @@ namespace RealisticFiring.Sim
 
         // Below this the door counts as shut; the leak path stays open anyway.
         private const float DoorOpenThreshold = 0.05f;
+
+        // A stoker feeds a little every tick, far less than any shovelful;
+        // deliveries smaller than this are continuous feed, in kg.
+        private const float ContinuousFeedPiece = 0.5f;
 
         private static readonly AccessTools.FieldRef<PortReference, Port> ReferencedPort =
             AccessTools.FieldRefAccess<PortReference, Port>("port");
@@ -154,6 +159,8 @@ namespace RealisticFiring.Sim
         /// <summary>Where a shovel last pointed in this firebox's door.</summary>
         public DoorAimSample? HoverAim { get; private set; }
 
+        private float continuousFeed;
+
         public override bool HasSaveData => true;
 
         /// <summary>
@@ -220,7 +227,13 @@ namespace RealisticFiring.Sim
             if (coalMassDelta == 0f)
                 return;
 
-            if (coalMassDelta > 0f)
+            if (coalMassDelta > 0f && coalMassDelta < ContinuousFeedPiece)
+            {
+                // A stoker's trickle: it goes where the fire needs it, leaves
+                // the player's shovel aim alone, and is logged as a total.
+                continuousFeed += shovel.Deliver(Model, coalMassDelta, null);
+            }
+            else if (coalMassDelta > 0f)
             {
                 var aim = TakeFreshAim();
                 var accepted = shovel.Deliver(Model, coalMassDelta, aim?.Zone);
@@ -242,6 +255,39 @@ namespace RealisticFiring.Sim
             coalControlExtIn.Value = 0f;
         }
 
+        /// <summary>The last tick's stoker reading, if a stoker feeds this firebox.</summary>
+        public StokerFlow? LastStoker { get; private set; }
+
+        /// <summary>Stoker engine speed at the last tick, as a share of full speed.</summary>
+        public float StokerEngineSpeed { get; private set; }
+
+        /// <summary>The stoker feeding this firebox, once it has run.</summary>
+        public Stoker StokerModel { get; private set; }
+
+        /// <summary>
+        /// Runs <paramref name="stoker"/> for a tick, its jets throwing coal
+        /// straight onto this firebox's zones.
+        /// </summary>
+        internal StokerFlow Stoke(Stoker stoker, StokerInputs inputs, float dt)
+        {
+            inputs.AirFlow = AirFlowIn;
+            var flow = stoker.Step(dt, inputs, Model);
+            continuousFeed += flow.Fed;
+            LastStoker = flow;
+            StokerModel = stoker;
+            StokerEngineSpeed = stoker.EngineSpeed;
+            UpdateCoalLevel();
+            return flow;
+        }
+
+        /// <summary>Coal fed continuously (by a stoker) since the last call, in kg.</summary>
+        public float TakeContinuousFeed()
+        {
+            var fed = continuousFeed;
+            continuousFeed = 0f;
+            return fed;
+        }
+
         // Coal from anything but a shovel the player just pointed into this
         // door (the keyboard shovel, a stoker, another mod) goes where the fire needs it.
         private DoorAimSample? TakeFreshAim()
@@ -252,6 +298,13 @@ namespace RealisticFiring.Sim
         }
 
         public override void Tick(float delta)
+        {
+            var start = PerfMeter.Start();
+            Step(delta);
+            PerfMeter.Stop(PerfSection.Firebox, start);
+        }
+
+        private void Step(float delta)
         {
             CheckIgnition();
             CoalDump(delta);

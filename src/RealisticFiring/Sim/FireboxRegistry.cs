@@ -9,11 +9,22 @@ namespace RealisticFiring.Sim
     /// </summary>
     internal static class FireboxRegistry
     {
-        /// <summary>Stock liveries whose firebox the mod replaces.</summary>
+        /// <summary>
+        /// Liveries whose firebox the mod replaces: the stock coal locos, and
+        /// custom (CCL) locos under test for phase 2.
+        /// </summary>
         public static readonly IReadOnlyCollection<string> SupportedLiveries = new HashSet<string>
         {
             "LocoS282A",
             "LocoS060",
+            // LittleNiko36's NYC Dreyfuss Hudson (Nexus 1688; measured
+            // 2026-10-08) and 4-8-4 (Nexus 1494; livery ID from its car type,
+            // not yet measured).
+            "S464-730",
+            "S484-840A",
+            // Cypress and LittleNiko36's UP FEF-3 No. 844 (Nexus 1590, 1.0.58),
+            // read from its bundle and seated in game 2026-10-09.
+            "FEF-3",
         };
 
         private static readonly Dictionary<TrainCar, RealisticFirebox> Fireboxes = new Dictionary<TrainCar, RealisticFirebox>();

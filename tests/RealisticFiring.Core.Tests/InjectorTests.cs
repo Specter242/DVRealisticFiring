@@ -3,17 +3,21 @@ using RealisticFiring.Core;
 namespace RealisticFiring.Core.Tests;
 
 /// <summary>
-/// A live-steam injector, as on a real loco: it needs pressure to pick up,
-/// spills from the overflow until it does, sings while it feeds the boiler
-/// with warm water and a little live steam, and knocks off when pressure sags
-/// or the tender runs dry, after which only closing and reopening it restarts
-/// it. Pressures are absolute bar, as the game's boiler gives them.
+/// A live-steam injector worked by one lever, as on a real loco: cracked, it
+/// spills water from the overflow until it primes, then sings while it feeds
+/// the boiler with warm water and a little live steam, and can be opened up.
+/// Opened before it primes, the jet breaks and blows steam until the lever is
+/// shut. Steam blowing through heats it, and a hot injector will not take
+/// hold until water running through it cools it. Once it has taken, it
+/// restarts by itself after sagging pressure or a dry tender. Pressures are
+/// absolute bar, as the game's boiler gives them.
 /// </summary>
 public class InjectorTests
 {
     private const float Dt = 0.05f;
     private const float MaxDelivery = 4f;    // kg/s at rated pressure, the stock injector's full rate
     private const float RatedPressure = 15f; // bar, absolute
+    private const float Crack = 0.1f;
 
     /// <summary>Textbook-like steam properties; the game passes its own steam tables.</summary>
     private sealed class Steam : ISteamProperties
@@ -21,6 +25,7 @@ public class InjectorTests
         public float SteamEnthalpy(float pressure) => 2675f + 9f * (pressure - 1f);
         public float WaterEnthalpy(float temperature) => 4.19f * temperature;
         public float WaterTemperature(float enthalpy) => enthalpy / 4.19f;
+        public float SaturationTemperature(float pressure) => 100f + 8f * (pressure - 1f);
     }
 
     private static readonly Steam Water = new Steam();
@@ -44,6 +49,13 @@ public class InjectorTests
         return flow;
     }
 
+    // Cracks it until it primes, then opens it to the lever given.
+    private static InjectorFlow Start(Injector injector, float pressure, float lever = 1f)
+    {
+        Run(injector, At(pressure, Crack), 2f);
+        return Run(injector, At(pressure, lever), 3f);
+    }
+
     [Fact]
     public void AClosedInjectorDoesNothing()
     {
@@ -56,43 +68,76 @@ public class InjectorTests
     }
 
     [Fact]
-    public void AtWorkingPressureItSpillsWhilePickingUpThenFeeds()
+    public void CrackedItSpillsWaterWhilePrimingThenFeeds()
     {
         var injector = NewInjector();
 
-        var starting = Run(injector, At(12f), 0.5f);
-        Assert.Equal(InjectorState.PickingUp, starting.State);
-        Assert.Equal(0f, starting.WaterIn);
-        Assert.True(starting.Overflow > 0f);
+        var priming = Run(injector, At(12f, Crack), 0.5f);
+        Assert.Equal(InjectorState.Priming, priming.State);
+        Assert.Equal(0f, priming.WaterIn);
+        Assert.True(priming.Overflow > 0f);
+        Assert.Equal(0f, priming.OverflowSteam);
 
-        var working = Run(injector, At(12f), 2f);
+        var working = Run(injector, At(12f, Crack), 1.5f);
         Assert.Equal(InjectorState.Working, working.State);
         Assert.True(working.WaterIn > 0f);
         Assert.Equal(0f, working.Overflow);
         Assert.True(working.SteamUsed > 0f);
+
+        Assert.Equal(InjectorState.Working, Run(injector, At(12f), 1f).State);
     }
 
     [Fact]
-    public void BelowItsStartingPressureItOnlySpills()
-    {
-        var flow = Run(NewInjector(), At(2f), 3f);
-
-        Assert.Equal(InjectorState.KnockedOff, flow.State);
-        Assert.Equal(0f, flow.WaterIn);
-        Assert.True(flow.Overflow > 0f);
-        Assert.True(flow.OverflowSteam > 0f);
-    }
-
-    [Fact]
-    public void SaggingPressureKnocksItOffUntilItIsClosedAndReopened()
+    public void OpenedBeforeItPrimesTheJetBreaksUntilTheLeverIsShut()
     {
         var injector = NewInjector();
-        Run(injector, At(12f), 3f);
 
-        Assert.Equal(InjectorState.KnockedOff, Run(injector, At(2f), 1f).State);
-        Assert.Equal(InjectorState.KnockedOff, Run(injector, At(12f), 3f).State);
+        var broken = Run(injector, At(12f), 0.5f);
+        Assert.Equal(InjectorState.Broken, broken.State);
+        Assert.Equal(0f, broken.WaterIn);
+        Assert.True(broken.OverflowSteam > 0f, "steam blows from the overflow");
+
+        Assert.Equal(InjectorState.Broken, Run(injector, At(12f, Crack), 1f).State);
 
         Assert.Equal(InjectorState.Off, Run(injector, At(12f, lever: 0f), 0.5f).State);
+        Assert.Equal(InjectorState.Working, Run(injector, At(12f, Crack), 20f).State);
+    }
+
+    [Fact]
+    public void OpenedThroughTheCrackInOneMovementTheJetBreaks()
+    {
+        var injector = NewInjector();
+
+        injector.Step(Dt, At(12f, Crack), Water);
+        injector.Step(Dt, At(12f, 0.5f), Water);
+
+        Assert.Equal(InjectorState.Broken, Run(injector, At(12f), 1f).State);
+    }
+
+    [Fact]
+    public void BelowItsStartingPressureItSpillsWaterAndPicksUpWhenPressureRises()
+    {
+        var injector = NewInjector();
+
+        var low = Run(injector, At(2f, Crack), 3f);
+        Assert.Equal(InjectorState.LowPressure, low.State);
+        Assert.Equal(0f, low.WaterIn);
+        Assert.True(low.Overflow > 0f);
+        Assert.Equal(0f, low.OverflowSteam);
+
+        Assert.Equal(InjectorState.Working, Run(injector, At(12f, Crack), 2f).State);
+    }
+
+    [Fact]
+    public void AfterSaggingPressureItRestartsByItself()
+    {
+        var injector = NewInjector();
+        Start(injector, 12f);
+
+        var sagged = Run(injector, At(2f), 1f);
+        Assert.Equal(InjectorState.LowPressure, sagged.State);
+        Assert.True(sagged.Overflow > 0f);
+
         Assert.Equal(InjectorState.Working, Run(injector, At(12f), 3f).State);
     }
 
@@ -101,7 +146,7 @@ public class InjectorTests
     {
         // Once singing it keeps going down to a lower pressure than it needs to start.
         var injector = NewInjector();
-        Run(injector, At(12f), 3f);
+        Start(injector, 12f);
 
         Assert.Equal(InjectorState.Working, Run(injector, At(InjectorSpec.DefaultStartPressure - 0.5f), 2f).State);
     }
@@ -109,21 +154,18 @@ public class InjectorTests
     [Fact]
     public void DeliveryRisesWithPressureToTheFullRate()
     {
-        var low = NewInjector();
-        var rated = NewInjector();
-
-        var atLow = Run(low, At(5f), 3f);
-        var atRated = Run(rated, At(RatedPressure), 3f);
+        var atLow = Start(NewInjector(), 5f);
+        var atRated = Start(NewInjector(), RatedPressure);
 
         Assert.True(atLow.WaterIn < atRated.WaterIn);
         Assert.Equal(MaxDelivery, atRated.WaterIn, 3);
-        Assert.Equal(0.5f * MaxDelivery, Run(NewInjector(), At(RatedPressure, lever: 0.5f), 3f).WaterIn, 3);
+        Assert.Equal(0.5f * MaxDelivery, Start(NewInjector(), RatedPressure, lever: 0.5f).WaterIn, 3);
     }
 
     [Fact]
     public void ItFeedsWarmWaterAndAboutOneKiloOfSteamPerTwelveOfWater()
     {
-        var flow = Run(NewInjector(), At(12f), 3f);
+        var flow = Start(NewInjector(), 12f);
 
         Assert.InRange(flow.FeedTemperature, 55f, 95f);
         Assert.InRange(flow.WaterIn / flow.SteamUsed, 11f, 15f);
@@ -131,23 +173,82 @@ public class InjectorTests
     }
 
     [Fact]
-    public void ADryTenderKnocksItOff()
+    public void ADryTenderBlowsSteamUntilItIsRefilledThenItRestarts()
     {
         var injector = NewInjector();
-        Run(injector, At(12f), 3f);
+        Start(injector, 12f);
 
-        var flow = Run(injector, At(12f, tender: 0f), 0.5f);
+        var dry = Run(injector, At(12f, tender: 0f), 0.5f);
+        Assert.Equal(InjectorState.NoWater, dry.State);
+        Assert.Equal(0f, dry.WaterIn);
+        Assert.Equal(0f, dry.TenderDraw);
+        Assert.True(dry.OverflowSteam > 0f);
 
-        Assert.Equal(InjectorState.KnockedOff, flow.State);
-        Assert.Equal(0f, flow.WaterIn);
-        Assert.Equal(0f, flow.TenderDraw);
+        Assert.Equal(InjectorState.Working, Run(injector, At(12f), 3f).State);
+    }
+
+    [Fact]
+    public void BlowingSteamHeatsItTooHotToRestartUntilWaterRunningThroughCoolsIt()
+    {
+        var injector = NewInjector();
+        Start(injector, 12f);
+        Run(injector, At(12f, tender: 0f), 10f);
+
+        Assert.True(injector.Temperature > injector.RestartLimitAt(12f, 1f));
+        Assert.Equal(InjectorState.Broken, Run(injector, At(12f), 0.5f).State);
+
+        Run(injector, At(12f, lever: 0f), 0.5f);
+        var hot = Run(injector, At(12f, Crack), 0.5f);
+        Assert.Equal(InjectorState.Hot, hot.State);
+        Assert.True(hot.Overflow > 0f && hot.OverflowSteam > 0f, "steam and hot water spill");
+        Assert.Equal(0f, hot.WaterIn);
+
+        Assert.Equal(InjectorState.Working, Run(injector, At(12f, Crack), 20f).State);
+    }
+
+    [Fact]
+    public void AShutInjectorCoolsOverMinutes()
+    {
+        var injector = NewInjector();
+        Run(injector, At(12f), 10f);
+        Run(injector, At(12f, lever: 0f), 30f);
+
+        Assert.True(injector.Temperature > injector.RestartLimitAt(12f, Crack), "still too hot after half a minute");
+
+        Run(injector, At(12f, lever: 0f), 600f);
+        Assert.True(injector.Temperature < injector.RestartLimitAt(12f, 1f), "cool enough to take hold wide open after ten minutes");
+    }
+
+    [Fact]
+    public void TheHottestItTakesHoldFallsWithPressureAtTheNozzle()
+    {
+        var injector = NewInjector();
+        const float psi = 1f / 14.5038f;
+
+        // Kneass's Sellers non-lifter: 135 °F at 60 psi, 106 °F at 200 psi.
+        Assert.Equal(57.2f, injector.RestartLimitAt(1f + 60f * psi, 1f), 0);
+        Assert.Equal(41.1f, injector.RestartLimitAt(1f + 200f * psi, 1f), 0);
+        Assert.True(injector.RestartLimitAt(12f, 0.5f) > injector.RestartLimitAt(12f, 1f), "a part-open lever throttles the steam");
+    }
+
+    [Fact]
+    public void WithoutTechniqueAndHeatItOnlyNeedsPressureAndWater()
+    {
+        var injector = NewInjector();
+        injector.Spec.TechniqueAndHeat = false;
+
+        Assert.Equal(InjectorState.Priming, Run(injector, At(12f), 0.5f).State);
+        Assert.Equal(InjectorState.Working, Run(injector, At(12f), 2f).State);
+
+        Run(injector, At(12f, tender: 0f), 30f);
+        Assert.Equal(InjectorState.Working, Run(injector, At(12f), 3f).State);
     }
 
     [Fact]
     public void AFullBoilerTakesNoMoreWater()
     {
         var injector = NewInjector();
-        Run(injector, At(12f), 3f);
+        Start(injector, 12f);
 
         var flow = Run(injector, At(12f, space: 0f), 0.5f);
 
@@ -159,7 +260,7 @@ public class InjectorTests
     public void DeliveryNeverExceedsWhatTheTenderAndBoilerAllow()
     {
         var injector = NewInjector();
-        Run(injector, At(12f), 3f);
+        Start(injector, 12f);
 
         var flow = injector.Step(Dt, At(12f, tender: 0.01f, space: 0.02f), Water);
 

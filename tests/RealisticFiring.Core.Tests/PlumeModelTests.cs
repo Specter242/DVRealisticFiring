@@ -82,24 +82,45 @@ namespace RealisticFiring.Core.Tests;
     }
 
     [Fact]
-    public void CleanFireBetweenBeatsIsAFaintHaze()
+    public void AStandingCleanFireSendsUpAFaintLazyColumn()
     {
-        var haze = PlumeModel.Between(Tuning, Working(1f, smoke: 0f, flow: 0.2f));
-        var smoke = PlumeModel.Between(Tuning, Working(1f, smoke: 1f, flow: 0.2f));
+        var haze = PlumeModel.Between(Tuning, Working(1f, smoke: 0f, flow: 0.01f));
 
+        Assert.True(haze.Rate >= 2f, $"{haze.Rate} particles a second");
+        Assert.InRange(haze.Speed, 1f, 2.5f);
         Assert.True(haze.Color.A < 0.35f);
-        Assert.True(smoke.Color.A > 0.5f);
-        Assert.True(Brightness(smoke.Color) < Brightness(haze.Color));
     }
 
     [Fact]
-    public void PlumeBetweenBeatsGrowsWithDraftAndStopsWithoutIt()
+    public void AStandingFreshChargeSendsUpDarkSmoke()
+    {
+        var clean = PlumeModel.Between(Tuning, Working(1f, smoke: 0f, flow: 0.01f));
+        var sooty = PlumeModel.Between(Tuning, Working(1f, smoke: 1f, flow: 0.01f));
+
+        Assert.True(sooty.Color.A > 0.5f);
+        Assert.True(Brightness(sooty.Color) < Brightness(clean.Color));
+    }
+
+    [Fact]
+    public void TheBlowerMakesASteadyFasterWhiterStream()
+    {
+        var standing = PlumeModel.Between(Tuning, Working(1f, smoke: 0f, flow: 0.01f));
+        var blower = PlumeModel.Between(Tuning, Working(1f, smoke: 0f, flow: 0.1f));
+
+        Assert.True(blower.Rate >= 3f * standing.Rate, $"{blower.Rate} against {standing.Rate} particles a second");
+        Assert.True(blower.Speed > 2f * standing.Speed);
+        Assert.True(blower.Color.A > standing.Color.A);
+        Assert.True(Brightness(blower.Color) > Brightness(standing.Color));
+    }
+
+    [Fact]
+    public void ADeadFireWithNoSteamSendsNothingUp()
     {
         var cold = Working(1f, flow: 0f) with { FireOn = false };
         Assert.Equal(0f, PlumeModel.Between(Tuning, cold).Rate);
 
-        Assert.True(PlumeModel.Between(Tuning, Working(1f, flow: 0.8f)).Rate > PlumeModel.Between(Tuning, Working(1f, flow: 0.1f)).Rate);
-        Assert.True(PlumeModel.Between(Tuning, Working(1f, flow: 0.8f)).Speed > PlumeModel.Between(Tuning, Working(1f, flow: 0.1f)).Speed);
+        var blowerOnly = Working(1f, flow: 0.1f) with { FireOn = false };
+        Assert.True(PlumeModel.Between(Tuning, blowerOnly).Rate > 0f);
     }
 
     [Fact]

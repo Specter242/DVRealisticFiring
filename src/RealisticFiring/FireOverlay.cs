@@ -53,6 +53,10 @@ namespace RealisticFiring
                             (now - shakeTime < 3f ? "   grate shaken" : ""));
             if (InjectorRig.TryGetTended(shown.Car, out var rig))
                 GUILayout.Label(FireController.Describe(rig));
+            if (FireController.DescribeStoker(shown) is string stoker)
+                GUILayout.Label(char.ToUpperInvariant(stoker[0]) + stoker.Substring(1));
+            if (FireController.DescribeBooster(shown.Car) is string booster)
+                GUILayout.Label(char.ToUpperInvariant(booster[0]) + booster.Substring(1));
             var aim = shown.HoverAim;
             var aimed = aim.HasValue && aim.Value.IsLiveAt(now) ? aim.Value.Zone : (GrateZone?)null;
             GUILayout.Label(aimed.HasValue

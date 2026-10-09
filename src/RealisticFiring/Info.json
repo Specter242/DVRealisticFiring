@@ -2,8 +2,9 @@
   "Id": "RealisticFiring",
   "DisplayName": "Realistic Firing",
   "Author": "Specter242",
-  "Version": "1.0.1",
+  "Version": "1.1.0",
   "ManagerVersion": "0.28.2",
   "AssemblyName": "RealisticFiring.dll",
-  "EntryMethod": "RealisticFiring.Main.Load"
+  "EntryMethod": "RealisticFiring.Main.Load",
+  "LoadAfter": ["DVCustomCarLoader"]
 }

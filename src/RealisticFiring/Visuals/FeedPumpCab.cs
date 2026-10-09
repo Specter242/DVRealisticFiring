@@ -1,0 +1,323 @@
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using DV.CabControls;
+using DV.Simulation.Ports;
+using HarmonyLib;
+using LocoSim.Implementations;
+using RealisticFiring.Core;
+using RealisticFiring.Sim;
+using TMPro;
+using UnityEngine;
+
+namespace RealisticFiring.Visuals
+{
+    /// <summary>
+    /// The feed pump's cab controls, on the fireman's side as on the
+    /// prototypes: its operating valve and gauge beside the stoker manifold
+    /// (a Worthington's cold-pump gauge, an Elesco's delivery gauge); or, in a
+    /// cab with an injector lever each side, the fireman's lever becomes the
+    /// pump's valve and the engineer's stays the injector, as on the NYC.
+    /// </summary>
+    internal static class FeedPumpCab
+    {
+        private readonly struct Spot
+        {
+            public Spot(Vector2 valve, Vector2 gauge, Vector3? valveInCar = null)
+            {
+                Valve = valve;
+                Gauge = gauge;
+                ValveInCar = valveInCar;
+            }
+
+            public Vector2 Valve { get; }
+
+            /// <summary>The gauge, in the frame; from the valve when the valve is given in the car's frame.</summary>
+            public Vector2 Gauge { get; }
+
+            public Vector3? ValveInCar { get; }
+        }
+
+        private static readonly Dictionary<string, Spot> Spots = new Dictionary<string, Spot>
+        {
+            // Below the manifold, a little inboard, beside the stoker valve.
+            ["FEF-3"] = new Spot(new Vector2(-0.11f, -0.40f), new Vector2(-0.11f, -0.28f)),
+            // Above and outboard of the dynamo valve, by the sight glass.
+            ["S484-840A"] = new Spot(Vector2.zero, new Vector2(0f, 0.12f), new Vector3(0.75f, 3.47f, -8.36f)),
+            // The Hudson's valve is its fireman's injector lever; the gauge
+            // six inches above the manifold and three inboard, below the lever.
+            ["S464-730"] = new Spot(Vector2.zero, new Vector2(0.076f, 0.24f)),
+        };
+
+        private static readonly Spot DefaultSpot = new Spot(new Vector2(-0.165f, -0.12f), new Vector2(-0.165f, 0.03f));
+
+        private const float GaugeDepth = 0.035f;
+        private const float WheelDepth = -0.012f;
+        private const float LabelDrop = 0.044f;
+        private const float BodyBack = 0.035f;
+        private const float BodyFront = -0.004f;
+        private const float BodyRadius = 0.014f;
+        private const float FlangeRadius = 0.03f;
+        private const float GaugeLineRadius = 0.006f;
+        private const float GaugeLineFlange = 0.013f;
+
+        // Where a pipe ends with no surface found behind it, in the frame, m.
+        private const float FallbackPanelDepth = 0.15f;
+
+        // The cab label beside a lever is within this of it, m.
+        private const float LabelReach = 0.45f;
+
+        /// <summary>
+        /// Builds the pump's valve (unless the fireman's injector lever works
+        /// it) and gauge in the manifold's frame, which must still be
+        /// inactive. Returns a line for the log and the gauge to write once
+        /// the frame is active, or nulls.
+        /// </summary>
+        public static (string Note, StokerGauges.Built Gauge) BuildInManifold(TrainCar car, SimulationFlow flow, Transform frame, Transform cabPrefab,
+            Transform sourceValve, Transform sourceControl, Transform sourceLabel, Transform plateFacing)
+        {
+            if (car == null || flow == null || !InjectorRig.TryGet(car, out var rig) || rig.Pump == null
+                || !FeedwaterFit.TryGet(car.carLivery.id, out var fit) || !flow.TryGetPort(FeedwaterFit.Valve.PortId, out var port))
+                return (null, null);
+
+            var spot = Spots.TryGetValue(car.carLivery.id, out var seated) ? seated : DefaultSpot;
+            var nudge = new Vector2(Main.Settings.FeedNudgeAcross, Main.Settings.FeedNudgeUp) / 100f;
+            var valveAt = spot.Valve;
+            var gaugeAt = spot.Gauge;
+            if (spot.ValveInCar is Vector3 inCar)
+            {
+                var local = frame.InverseTransformPoint(car.transform.TransformPoint(inCar));
+                valveAt = new Vector2(local.x, local.y);
+                gaugeAt = valveAt + spot.Gauge;
+            }
+            var valvePoint = new Vector3(valveAt.x + nudge.x, valveAt.y + nudge.y, WheelDepth);
+            var gaugePoint = new Vector3(gaugeAt.x + nudge.x, gaugeAt.y + nudge.y, GaugeDepth);
+
+            var notes = new List<string>();
+            if (!fit.OnInjectorLever && sourceValve != null)
+            {
+                // The valve's body runs back into the boiler.
+                StokerCab.Pipe(frame, "body feed pump", new Vector3(valvePoint.x, valvePoint.y, BodyBack), new Vector3(valvePoint.x, valvePoint.y, BodyFront), BodyRadius);
+                notes.Add(StokerCab.PipeToBackhead(frame, car, new Vector2(valvePoint.x, valvePoint.y), BodyBack, BodyRadius, FlangeRadius,
+                    "feed pump valve", FallbackPanelDepth));
+                var control = StokerCab.PlaceWheel(sourceValve, frame, valvePoint, FeedwaterFit.Valve, port);
+                control.GetComponent<HoverName>().Source = () => Hover(rig);
+                var labelled = plateFacing != null && StokerCab.PlaceLabel(sourceControl, sourceLabel, plateFacing, frame,
+                    new Vector3(valvePoint.x, valvePoint.y - LabelDrop, BodyFront - 0.002f), "FEED PUMP");
+                notes.Add("its operating valve" + (labelled ? " and plate" : ""));
+            }
+            var open = fit.Type == FeedHeaterType.Open;
+            var gauge = StokerGauges.BuildOne(frame, cabPrefab, gaugePoint, open ? "FEED PUMP\nPSI" : "FEEDWATER\nPSI",
+                open ? 60f : 400f, open ? 10f : 50f, () => rig.PumpFlow.Gauge);
+            notes.Add(open ? "a cold-pump gauge" : "a delivery gauge");
+            // Its gauge line, from behind the gauge into the boiler.
+            notes.Add(StokerCab.PipeToBackhead(frame, car, new Vector2(gaugePoint.x, gaugePoint.y), GaugeDepth - 0.005f, GaugeLineRadius,
+                GaugeLineFlange, "gauge line", FallbackPanelDepth));
+            FeedPumpSounds.Attach(car, rig, fit.Type, frame);
+            return ($"{rig.PumpName} feed pump: " + string.Join(", ", notes) + " beside the manifold", gauge);
+        }
+
+        /// <summary>
+        /// In a cab with an injector lever each side, makes the fireman's (the
+        /// left) the pump's operating valve, keys removed and plate relabeled.
+        /// Returns a line for the log, or null.
+        /// </summary>
+        public static string RebindInjectorLever(TrainCar car, Transform interior)
+        {
+            if (car == null || interior == null || !InjectorRig.TryGet(car, out var rig) || rig.Pump == null
+                || !FeedwaterFit.TryGet(car.carLivery.id, out var fit) || !fit.OnInjectorLever)
+                return null;
+            var flow = car.SimController != null ? car.SimController.SimulationFlow : null;
+            if (flow == null || !flow.TryGetPort(FeedwaterFit.Valve.PortId, out var port))
+                return null;
+            float Across(Component c) => car.transform.InverseTransformPoint(c.transform.position).x;
+            var levers = interior.GetComponentsInChildren<InteractablePortFeeder>(true)
+                .Where(f => f.portId == rig.LeverPortId)
+                .OrderBy(Across)
+                .ToList();
+            if (levers.Count < 2 || Across(levers[0]) >= 0f)
+                return "no fireman's injector lever to work the feed pump";
+
+            var feeder = levers[0];
+            feeder.portId = FeedwaterFit.Valve.PortId;
+            foreach (var input in feeder.GetComponents<MonoBehaviour>().Where(c => StokerCab.InputComponents.Contains(c.GetType().Name)).ToList())
+                Object.DestroyImmediate(input);
+            feeder.gameObject.AddComponent<FeederRebinder>().Bind(feeder, port);
+            feeder.gameObject.AddComponent<HoverName>().Source = () => Hover(rig);
+            var relabeled = Relabel(interior, feeder.transform, "FEED PUMP");
+            return $"the fireman's injector lever '{feeder.name}' works the {rig.PumpName} feed pump" + (relabeled ? ", its plate relabeled" : "");
+        }
+
+        // The cab plate nearest a lever, named for the injector, gets new text.
+        private static bool Relabel(Transform interior, Transform lever, string text)
+        {
+            var plate = interior.GetComponentsInChildren<TextMeshPro>(true)
+                .Where(t => Path(t.transform).ToLowerInvariant().Contains("injector"))
+                .Select(t => (Text: t, Distance: Vector3.Distance(t.transform.position, lever.position)))
+                .Where(t => t.Distance < LabelReach)
+                .OrderBy(t => t.Distance)
+                .Select(t => t.Text)
+                .FirstOrDefault();
+            if (plate == null)
+                return false;
+            foreach (var localize in plate.GetComponentsInParent<MonoBehaviour>(true)
+                         .Concat(plate.GetComponentsInChildren<MonoBehaviour>(true))
+                         .Where(c => c.GetType().Name == "Localize" || c.GetType().Name == "LabelLocalizer")
+                         .ToList())
+                Object.DestroyImmediate(localize);
+            plate.text = text;
+            return true;
+        }
+
+        private static string Path(Transform t)
+        {
+            var names = new List<string>();
+            for (; t != null; t = t.parent)
+                names.Add(t.name);
+            return string.Join("/", names);
+        }
+
+        internal static string Hover(InjectorRig rig) => $"{FeedwaterFit.Valve.Label} ({rig.PumpName}): {rig.PumpValve:P0} open, {Describe(rig.PumpFlow)}";
+
+        /// <summary>The pump and heater in a few words.</summary>
+        internal static string Describe(FeedPumpFlow flow)
+        {
+            switch (flow.State)
+            {
+                case FeedPumpState.Off:
+                    return $"shut; heater {flow.HeaterTemperature:F0} °C";
+                case FeedPumpState.Feeding:
+                    return $"feeding {flow.WaterIn:F1} kg/s at {flow.FeedTemperature:F0} °C";
+                case FeedPumpState.Choked:
+                    return $"drifting: choked to half, {flow.WaterIn:F1} kg/s at {flow.FeedTemperature:F0} °C";
+                case FeedPumpState.Racing:
+                    return "RACING: the heater's water is flashing (ease it before hooking up or shutting off)";
+                case FeedPumpState.LostSuction:
+                    return "LOST SUCTION: shut it, get water, and open it again to prime it";
+                case FeedPumpState.Tripped:
+                    return "TRIPPED on overspeed: shut it a few seconds to reset it";
+                default:
+                    return flow.State.ToString();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Points a lever's feeder at a new port once the game has bound the
+    /// cab's controls, two frames after the cab loads; if the game bound it
+    /// to the old port first, it is unbound and bound again.
+    /// </summary>
+    internal sealed class FeederRebinder : MonoBehaviour
+    {
+        private static readonly AccessTools.FieldRef<InteractablePortFeeder, Port> BoundPort =
+            AccessTools.FieldRefAccess<InteractablePortFeeder, Port>("port");
+
+        private InteractablePortFeeder feeder;
+        private Port port;
+
+        public void Bind(InteractablePortFeeder portFeeder, Port simPort)
+        {
+            feeder = portFeeder;
+            port = simPort;
+        }
+
+        private IEnumerator Start()
+        {
+            for (var i = 0; i < 5; i++)
+                yield return null;
+            if (feeder == null || port == null || GetComponent<ControlImplBase>() == null)
+                yield break;
+            var bound = BoundPort(feeder);
+            if (bound == port)
+                yield break;
+            if (bound != null)
+                feeder.Deinit();
+            feeder.Init(port, null);
+            yield return null;
+            feeder.SetupControlChangedListeners();
+        }
+    }
+
+    /// <summary>
+    /// What the fireman hears of the pump: a Worthington's hot pump clanking
+    /// with its strokes and its cold pump's turbine; an Elesco's turbine.
+    /// Losing the suction, the turbine runs away to a shriek. Under the cab
+    /// on the fireman's side.
+    /// </summary>
+    internal sealed class FeedPumpSounds : MonoBehaviour
+    {
+        private const string PumpClip = "Steam_AirPump_01";
+        private const string TurbineClip = "Steam_Dynamo_01";
+
+        private InjectorRig rig;
+        private FeedHeaterType type;
+        private AudioSource pump;
+        private AudioSource turbine;
+
+        public static void Attach(TrainCar car, InjectorRig rig, FeedHeaterType type, Transform near)
+        {
+            var sounds = car.GetComponentInChildren<FeedPumpSounds>(true);
+            if (sounds == null)
+            {
+                var go = new GameObject("[RealisticFiring feed pump sounds]");
+                go.transform.SetParent(car.transform, false);
+                sounds = go.AddComponent<FeedPumpSounds>();
+                sounds.Build(car);
+            }
+            sounds.rig = rig;
+            sounds.type = type;
+            var local = car.transform.InverseTransformPoint(near.position);
+            sounds.transform.localPosition = new Vector3(Mathf.Sign(local.x) * Mathf.Max(1f, Mathf.Abs(local.x)), Mathf.Max(0.5f, local.y - 1.3f), local.z);
+        }
+
+        private void Build(TrainCar car)
+        {
+            var clips = Resources.FindObjectsOfTypeAll<AudioClip>();
+            var mixer = car.interior != null
+                ? car.interior.GetComponentsInChildren<AudioSource>(true).Select(s => s.outputAudioMixerGroup).FirstOrDefault(g => g != null)
+                : null;
+            pump = Source(clips.FirstOrDefault(c => c.name == PumpClip), mixer);
+            turbine = Source(clips.FirstOrDefault(c => c.name == TurbineClip), mixer);
+        }
+
+        private AudioSource Source(AudioClip clip, UnityEngine.Audio.AudioMixerGroup mixer)
+        {
+            var source = gameObject.AddComponent<AudioSource>();
+            source.clip = clip;
+            source.loop = true;
+            source.playOnAwake = false;
+            source.spatialBlend = 1f;
+            source.rolloffMode = AudioRolloffMode.Linear;
+            source.minDistance = 2f;
+            source.maxDistance = 40f;
+            source.dopplerLevel = 0f;
+            source.outputAudioMixerGroup = mixer;
+            return source;
+        }
+
+        private void Update()
+        {
+            if (rig == null)
+                return;
+            var flow = rig.PumpFlow;
+            var speed = flow.Speed;
+            var shrieking = flow.State == FeedPumpState.LostSuction;
+            if (type == FeedHeaterType.Open)
+                Set(pump, speed > 0.02f ? Mathf.Lerp(0.04f, 0.2f, Mathf.Clamp01(speed)) : 0f, Mathf.Lerp(0.6f, 1.2f, Mathf.Clamp01(speed / 1.8f)));
+            Set(turbine, speed > 0.02f ? (shrieking ? 0.25f * Mathf.Clamp01(speed / 1.5f) : Mathf.Lerp(0.015f, 0.08f, Mathf.Clamp01(speed))) : 0f,
+                shrieking ? Mathf.Lerp(1.2f, 1.9f, Mathf.Clamp01(speed / 2.5f)) : Mathf.Lerp(0.8f, 1.2f, Mathf.Clamp01(speed)));
+        }
+
+        private static void Set(AudioSource source, float volume, float pitch)
+        {
+            if (source == null || source.clip == null)
+                return;
+            source.volume = volume;
+            source.pitch = pitch;
+            if (volume > 0.01f && !source.isPlaying)
+                source.Play();
+            else if (volume <= 0.01f && source.isPlaying)
+                source.Stop();
+        }
+    }
+}

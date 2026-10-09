@@ -21,14 +21,26 @@ namespace RealisticFiring.Patches
             try
             {
                 var car = TrainCar.Resolve(__instance.gameObject);
-                if (Main.Settings.DumpFireboxGeometry && FireboxRegistry.IsSupported(car))
+                // Every coal-fired loco, custom ones included, so new locos
+                // can be measured before the mod supports them.
+                if (Main.Settings.DumpFireboxGeometry)
                     FireboxGeometryDump.DumpOnce(car, __instance);
                 if (FireboxRegistry.TryGet(car, out var firebox))
                 {
                     var result = ZonedCoalBed.Attach(__instance, car, firebox);
+                    StokerSpray.Attach(__instance.GetComponent<ZonedCoalBed>(), firebox);
                     if (Main.Settings.LogFireboxCreation)
                         Main.Mod.Logger.Log($"{car.ID}: {result}");
                 }
+                var stokerCab = StokerCab.Attach(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
+                if (stokerCab != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{car.ID}: {stokerCab}");
+                var boosterCab = BoosterCab.Attach(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
+                if (boosterCab != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{car.ID}: {boosterCab}");
+                var feedLever = FeedPumpCab.RebindInjectorLever(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
+                if (feedLever != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{car.ID}: {feedLever}");
                 if (InjectorRig.TryGet(car, out var rig))
                 {
                     var roots = new[] { car.transform, __instance.transform.root, car.loadedInterior != null ? car.loadedInterior.transform : null };

@@ -1,6 +1,8 @@
 using System;
+using System.Linq;
 using DV.Simulation.Cars;
 using HarmonyLib;
+using LocoSim.Definitions;
 using RealisticFiring.Diagnostics;
 using RealisticFiring.Sim;
 
@@ -13,11 +15,16 @@ namespace RealisticFiring.Patches
     [HarmonyPatch(typeof(SimController), nameof(SimController.Initialize))]
     internal static class SimControllerPatch
     {
+        // Coal-fired: the sim graph has a firebox, as on custom steam locos too.
+        private static bool HasFirebox(SimController controller) =>
+            controller.connectionsDefinition != null && controller.connectionsDefinition.executionOrder != null
+            && controller.connectionsDefinition.executionOrder.OfType<FireboxDefinition>().Any();
+
         private static void Postfix(SimController __instance, TrainCar trainCar)
         {
             if (Main.Settings.DumpSimGraphs)
                 SimGraphDump.DumpOnce(trainCar, __instance.connectionsDefinition);
-            if (Main.Settings.DumpFireboxGeometry && FireboxRegistry.IsSupported(trainCar))
+            if (Main.Settings.DumpFireboxGeometry && HasFirebox(__instance))
             {
                 // Diagnostics must never break the car's setup.
                 try

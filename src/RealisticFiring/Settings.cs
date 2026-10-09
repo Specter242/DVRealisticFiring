@@ -12,6 +12,15 @@ namespace RealisticFiring
         [Draw("Realistic injectors on every steam loco (restart required)")]
         public bool RealisticInjectors = true;
 
+        [Draw("Injector technique and heat: crack the lever until it primes before opening it; a hot injector won't take")]
+        public bool InjectorTechniqueAndHeat = true;
+
+        [Draw("Fit the NYC Hudson with its Franklin trailing-truck booster (needs a restart)")]
+        public bool FitBoosters = true;
+
+        [Draw("Fit feedwater heaters and pumps where the prototypes had them: the Hudson, 844, and S484-840 (needs a restart)")]
+        public bool FitFeedPumps = true;
+
         [Draw("Realistic chimney smoke on the S282 and S060 (restart required)")]
         public bool RealisticSmoke = true;
 
@@ -87,7 +96,61 @@ namespace RealisticFiring
         [Draw("Show each grate zone's coal inside the firebox")]
         public bool ShowZonedCoalBed = true;
 
+        [Draw("Put the stoker's jet valves in the cab (takes effect when the cab next loads)")]
+        public bool ShowStokerJetValves = true;
+
+        [Draw("Fit the stock S282 with a mechanical stoker (needs a restart)")]
+        public bool RetrofitS282Stoker = true;
+
+        [Draw("Stoker jams: lumps or tramp iron now and then; reverse the stoker engine to clear (needs a restart)")]
+        public bool StokerJams = true;
+
+        [Header("Stoker manifold placement (fine-tune for your eye; moves it as you slide)")]
+        [Draw("Across, cm (+ toward the middle of the cab)", DrawType.Slider, Min = -100, Max = 100, Precision = 0)]
+        public float ManifoldNudgeAcross;
+
+        [Draw("Up, cm", DrawType.Slider, Min = -100, Max = 100, Precision = 0)]
+        public float ManifoldNudgeUp;
+
+        [Draw("Out, cm (+ into the panel)", DrawType.Slider, Min = -40, Max = 40, Precision = 0)]
+        public float ManifoldNudgeOut;
+
+        [Draw("Turn, degrees", DrawType.Slider, Min = -45, Max = 45, Precision = 0)]
+        public float ManifoldNudgeTurn;
+
+        [Draw("Tilt, degrees", DrawType.Slider, Min = -45, Max = 45, Precision = 0)]
+        public float ManifoldNudgeTilt;
+
+        [Draw("Roll, degrees", DrawType.Slider, Min = -45, Max = 45, Precision = 0)]
+        public float ManifoldNudgeRoll;
+
+        [Header("Booster controls placement, on the wall by the reverser (fine-tune for your eye; moves them as you slide)")]
+        [Draw("Along the wall, cm (+ forward)", DrawType.Slider, Min = -100, Max = 100, Precision = 0)]
+        public float BoosterNudgeAcross;
+
+        [Draw("Up, cm", DrawType.Slider, Min = -100, Max = 100, Precision = 0)]
+        public float BoosterNudgeUp;
+
+        [Draw("Out, cm (+ into the wall)", DrawType.Slider, Min = -40, Max = 40, Precision = 0)]
+        public float BoosterNudgeOut;
+
+        [Draw("Turn, degrees", DrawType.Slider, Min = -90, Max = 90, Precision = 0)]
+        public float BoosterNudgeTurn;
+
+        [Header("Feed pump controls placement, beside the stoker manifold (fine-tune for your eye; moves them as you slide)")]
+        [Draw("Across, cm (+ toward the middle of the cab)", DrawType.Slider, Min = -100, Max = 100, Precision = 0)]
+        public float FeedNudgeAcross;
+
+        [Draw("Up, cm", DrawType.Slider, Min = -100, Max = 100, Precision = 0)]
+        public float FeedNudgeUp;
+
         [Header("Diagnostics")]
+        [Draw("Jam the stoker now, on the loco you're on (testing; unticks itself)")]
+        public bool JamStokerNow;
+
+        [Draw("Show the chimney smoke and cinders (untick to see what they cost the frame rate)")]
+        public bool ShowChimneySmoke = true;
+
         [Draw("Log firebox creation")]
         public bool LogFireboxCreation = true;
 
@@ -108,8 +171,28 @@ namespace RealisticFiring
             Save(this, modEntry);
         }
 
+        private Vector3 lastManifoldOffset;
+        private Vector3 lastManifoldTurn;
+        private Vector4 lastBooster;
+        private Vector2 lastFeed;
+
         public void OnChange()
         {
+            var booster = new Vector4(BoosterNudgeAcross, BoosterNudgeUp, BoosterNudgeOut, BoosterNudgeTurn);
+            if (booster != lastBooster)
+            {
+                lastBooster = booster;
+                Visuals.BoosterCab.RebuildLoaded();
+            }
+            var offset = new Vector3(ManifoldNudgeAcross, ManifoldNudgeUp, ManifoldNudgeOut);
+            var turn = new Vector3(ManifoldNudgeTurn, ManifoldNudgeTilt, ManifoldNudgeRoll);
+            var feed = new Vector2(FeedNudgeAcross, FeedNudgeUp);
+            if (offset == lastManifoldOffset && turn == lastManifoldTurn && feed == lastFeed)
+                return;
+            lastManifoldOffset = offset;
+            lastManifoldTurn = turn;
+            lastFeed = feed;
+            Visuals.StokerCab.RebuildLoaded();
         }
 
         // Change() also caches the key for UMM's new-input-system path.

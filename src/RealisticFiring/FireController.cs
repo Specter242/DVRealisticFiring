@@ -1,6 +1,7 @@
 using System.Linq;
 using DV;
 using RealisticFiring.Core;
+using RealisticFiring.Diagnostics;
 using RealisticFiring.Sim;
 using UnityEngine;
 
@@ -34,9 +35,33 @@ namespace RealisticFiring
         private float noticeTime = float.NegativeInfinity;
         private float hydrantCheckTime;
 
+        private void FixedUpdate() => PerfMeter.PhysicsStep();
+
         private void Update()
         {
+            PerfMeter.Frame();
+            var start = PerfMeter.Start();
+            HandleKeys();
+            Visuals.StokerCab.EnsureBuilt();
+            PerfMeter.Stop(PerfSection.Controller, start);
+        }
+
+        private void HandleKeys()
+        {
             var settings = Main.Settings;
+            if (settings.JamStokerNow)
+            {
+                settings.JamStokerNow = false;
+                if (FireboxRegistry.TryGetTended(PlayerManager.Car, out var jammed) && jammed.StokerModel != null)
+                {
+                    jammed.StokerModel.Jam();
+                    Notify("Stoker jammed: the engine stalls; reverse it a few turns to clear it");
+                }
+                else
+                {
+                    Notify("No stoker on this loco to jam");
+                }
+            }
             if (settings.ToggleOverlayKey.Down())
                 settings.ShowOverlay = !settings.ShowOverlay;
 
@@ -116,11 +141,13 @@ namespace RealisticFiring
         private void LateUpdate()
         {
             var interval = Main.Settings.FireStatusLogInterval;
-            if (interval <= 0 || Time.time - lastStatusTime < interval
-                || !FireboxRegistry.TryGetTended(PlayerManager.Car, out var firebox))
+            if (interval <= 0 || Time.time - lastStatusTime < interval)
+                return;
+            lastStatusTime = Time.time;
+            Main.Mod.Logger.Log($"Performance: {PerfMeter.Report()}");
+            if (!FireboxRegistry.TryGetTended(PlayerManager.Car, out var firebox))
                 return;
 
-            lastStatusTime = Time.time;
             var fire = firebox.Model;
             var zones = string.Join(" ", fire.Zones.Select(z => z.Coal.ToString("F0")));
             Main.Mod.Logger.Log(
@@ -129,26 +156,79 @@ namespace RealisticFiring
                 $"temp {fire.Temperature:F0} C, smoke {fire.SmokeDensity:P0}, bed air {fire.OxygenAvailability:P0}, " +
                 $"draft {firebox.AirFlowIn:F2} kg/s (grate {fire.PrimaryAirFlow:F2}, door {fire.DoorAirFlow:F2} at {firebox.DoorOpening:P0}, " +
                 $"excess {fire.ExcessAirFlow:F2}), coal {fire.CoalMass:F1} kg, ash {fire.AshMass:F2}, clinker {fire.ClinkerMass:F2}, " +
-                $"startup x{firebox.StartupMultiplier:F1}, zones back-to-front [{zones}]" +
-                (InjectorRig.TryGetTended(PlayerManager.Car, out var rig) ? $"; {Describe(rig)}" : ""));
+                $"startup x{firebox.StartupMultiplier:F1}, stoked {firebox.TakeContinuousFeed():F1} kg, zones back-to-front [{zones}]" +
+                (DescribeStoker(firebox) is string stoker ? $"; {stoker}" : "") +
+                (InjectorRig.TryGetTended(PlayerManager.Car, out var rig) ? $"; {Describe(rig)}" : "") +
+                (DescribeBooster(firebox.Car) is string booster ? $"; {booster}" : ""));
+        }
+
+        private const float PsiPerBar = 14.5038f;
+
+        /// <summary>The stoker's engine, feed, jets, and losses, for the status log and overlay; null without one.</summary>
+        internal static string DescribeStoker(RealisticFirebox firebox)
+        {
+            if (!firebox.LastStoker.HasValue)
+                return null;
+            var flow = firebox.LastStoker.Value;
+            return $"stoker engine {(flow.Jammed ? "JAMMED (reverse it to clear) " : "")}{firebox.StokerEngineSpeed:P0} ({flow.EnginePressure * PsiPerBar:F0} psi), " +
+                   $"jets {flow.ManifoldPressure * PsiPerBar:F0} psi (front {flow.LeftFrontPressure * PsiPerBar:F0}/{flow.RightFrontPressure * PsiPerBar:F0}, " +
+                   $"back {flow.LeftBackPressure * PsiPerBar:F0}/{flow.RightBackPressure * PsiPerBar:F0}, fines {flow.FinesPressure * PsiPerBar:F0}), " +
+                   $"cinders {flow.CinderRate:F2} kg/s, steam {flow.SteamUsed:F2} kg/s";
+        }
+
+        /// <summary>The booster, for the status log and overlay, or null without one.</summary>
+        internal static string DescribeBooster(TrainCar car)
+        {
+            if (!RealisticBooster.TryGet(car, out var booster))
+                return null;
+            var flow = booster.Flow;
+            return $"booster {flow.State} ({Visuals.BoosterCab.Describe(flow, flow.State != BoosterState.CutOut)}), " +
+                   $"{flow.Force / 4.44822f:F0} lb, {flow.InletPressure * PsiPerBar:F0} psi, {flow.CrankRpm:F0} rpm, " +
+                   $"steam {flow.SteamUsed:F2} kg/s, warm {booster.Model.Warmth:P0}" +
+                   (booster.Clashes > 0 ? $", {booster.Clashes} clashes" : "");
         }
 
         /// <summary>The injector and boiler filling, for the status log and overlay.</summary>
         internal static string Describe(InjectorRig rig)
         {
             var flow = rig.Flow;
-            var injector = flow.State == InjectorState.Working
-                ? $"injector working, {flow.WaterIn:F1} kg/s at {flow.FeedTemperature:F0} C, steam {flow.SteamUsed:F2} kg/s"
-                : flow.State == InjectorState.PickingUp
-                    ? $"injector picking up, spilling {flow.Overflow:F1} kg/s"
-                    : flow.State == InjectorState.KnockedOff
-                        ? $"injector KNOCKED OFF (close and reopen), spilling {flow.Overflow:F1} kg/s"
-                        : "injector off";
+            var injector = DescribeInjector(flow);
             var filling = rig.HydrantFilling ? $", hydrant {rig.FillRate:F1} kg/s" : rig.HandPumping ? $", hand pump {rig.FillRate:F1} kg/s" : "";
-            return $"boiler {rig.BoilerPressure:F1} bar, water {rig.WaterLevel:P0}, {injector}{filling}";
+            var pump = rig.Pump != null ? $"; {Visuals.FeedPumpCab.Hover(rig)}" : "";
+            return $"boiler {rig.BoilerPressure:F1} bar, water {rig.WaterLevel:P0}, {injector}{filling}{pump}";
+        }
+
+        private static string DescribeInjector(InjectorFlow flow)
+        {
+            var spill = $"spilling {flow.Overflow:F1} kg/s water, {flow.OverflowSteam:F1} kg/s steam";
+            var heat = $"{flow.InjectorTemperature:F0} C, takes below {flow.RestartLimit:F0} C";
+            switch (flow.State)
+            {
+                case InjectorState.Working:
+                    return $"injector working, {flow.WaterIn:F1} kg/s at {flow.FeedTemperature:F0} C, steam {flow.SteamUsed:F2} kg/s";
+                case InjectorState.Priming:
+                    return $"injector priming, {spill}";
+                case InjectorState.Hot:
+                    return $"injector HOT ({heat}; hold it cracked to cool it), {spill}";
+                case InjectorState.LowPressure:
+                    return $"injector waiting for pressure, {spill}";
+                case InjectorState.NoWater:
+                    return $"injector NO WATER (tender dry), {spill}";
+                case InjectorState.Broken:
+                    return $"injector BROKEN (shut it, then crack it until it primes; {heat}), {spill}";
+                default:
+                    return flow.InjectorTemperature > flow.RestartLimit ? $"injector off, hot ({heat})" : "injector off";
+            }
         }
 
         private void OnGUI()
+        {
+            var start = PerfMeter.Start();
+            DrawGui();
+            PerfMeter.Stop(PerfSection.Gui, start);
+        }
+
+        private void DrawGui()
         {
             if (notice != null && Time.time - noticeTime <= NoticeTime)
                 DrawLabel(notice, NoticeOffset, new Color(1f, 0.85f, 0.5f));

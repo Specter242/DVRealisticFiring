@@ -1,4 +1,5 @@
 using HarmonyLib;
+using RealisticFiring.Sim;
 using UnityEngine;
 using UnityModManagerNet;
 
@@ -50,7 +51,7 @@ namespace RealisticFiring
             host.AddComponent<FireController>();
 
             modEntry.Logger.Log(ReplacementEnabled
-                ? "Realistic fireboxes enabled for the stock S282 and S060"
+                ? $"Realistic fireboxes enabled for {string.Join(", ", FireboxRegistry.SupportedLiveries)}"
                 : "Realistic fireboxes disabled; every loco keeps the stock firebox");
             return true;
         }
