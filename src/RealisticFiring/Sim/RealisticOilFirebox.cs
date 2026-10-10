@@ -30,6 +30,9 @@ namespace RealisticFiring.Sim
         // A flareback's black cloud clears over this time, in s.
         private const float FlarebackSmokeTime = 3f;
 
+        /// <summary>A shed's steam line, from its stationary boiler: 100 psi, in absolute bar.</summary>
+        public const float SteamLinePressure = 1f + 100f / 14.5038f;
+
         private static readonly AccessTools.FieldRef<PortReference, Port> ReferencedPort =
             AccessTools.FieldRefAccess<PortReference, Port>("port");
 
@@ -59,6 +62,13 @@ namespace RealisticFiring.Sim
         private Port doorPort;
         private Port atomizerPort;
         private Port heaterPort;
+        private Port shopSteamPort;
+        private Port peepHolePort;
+        private bool atPitStop;
+        private float pitStopCheck;
+
+        /// <summary>Whether a pit stop serves a car (checks outside the game stand at one).</summary>
+        internal static System.Func<TrainCar, bool> ServedByPitStop = WaterPoints.Serves;
         private ReciprocatingSteamEngine engine;
         private bool resolved;
         private bool restored;
@@ -124,6 +134,13 @@ namespace RealisticFiring.Sim
         /// <summary>Shows the host's flareback cloud, on a multiplayer client.</summary>
         public void MirrorFlarebackSmoke(float smoke) => FlarebackSmoke = smoke;
 
+        /// <summary>
+        /// How dark the stack is, 0 clear to 1 black: the fire's smoke, or a
+        /// sand burst's or flareback's black cloud. The smoke density readout
+        /// and the stack's look both take it.
+        /// </summary>
+        public float StackDarkness => Mathf.Clamp01(Mathf.Max(Model.StackSmoke, 3f * Mathf.Max(Model.SandBurst, FlarebackSmoke)));
+
         /// <summary>The flareback on the last tick, 0 none to 1 the worst; the effects take it.</summary>
         public float PendingFlareback { get; set; }
 
@@ -132,7 +149,26 @@ namespace RealisticFiring.Sim
 
         public float AtomizerValve => atomizerPort != null ? Mathf.Clamp01(atomizerPort.Value) : OilBurnerFit.Atomizer.Default;
 
+        /// <summary>
+        /// Whether a shed's steam line is hooked to the burner's valves, so a
+        /// dead engine can heat its oil and atomize it to raise its own steam
+        /// (set at a pit stop by the cab controls; not saved).
+        /// </summary>
+        public bool SteamLine { get; set; }
+
         public float HeaterValve => heaterPort != null ? Mathf.Clamp01(heaterPort.Value) : 0f;
+
+        /// <summary>The cab's shop steam valve, 0 shut to 1 wide open; 0 without one.</summary>
+        public float ShopSteamValve => shopSteamPort != null ? Mathf.Clamp01(shopSteamPort.Value) : 0f;
+
+        /// <summary>Whether the engine stands at a pit stop, where a shed's steam line reaches it (checked while the line is wanted).</summary>
+        public bool AtPitStop => atPitStop;
+
+        /// <summary>
+        /// How far the shed's steam line is open to the burner's valves: the
+        /// cab's shop steam valve, or the steam line key's hook-up, at a pit stop.
+        /// </summary>
+        public float SteamLineOpening => atPitStop ? Mathf.Max(SteamLine ? 1f : 0f, ShopSteamValve) : 0f;
 
         /// <summary>Air drawn through the firebox, in kg/s.</summary>
         public float AirFlowIn => airFlow.Value;
@@ -207,12 +243,17 @@ namespace RealisticFiring.Sim
         }
 
         /// <summary>Gives the firebox its cab ports, once the sim graph is built.</summary>
-        public void AttachPorts(Port door, Port atomizer, Port heater)
+        public void AttachPorts(Port door, Port atomizer, Port heater, Port shopSteam = null, Port peepHole = null)
         {
             doorPort = door;
             atomizerPort = atomizer;
             heaterPort = heater;
+            shopSteamPort = shopSteam;
+            peepHolePort = peepHole;
         }
+
+        /// <summary>The fire door's peep hole cover, 0 shut to 1 open; 0 without one.</summary>
+        public float PeepHole => peepHolePort != null ? Mathf.Clamp01(peepHolePort.Value) : 0f;
 
         public override void InitializationAfterConnecting()
         {
@@ -231,6 +272,13 @@ namespace RealisticFiring.Sim
                 return;
             if (!resolved)
                 Resolve();
+            // The pit stop is looked for once a second, only while a line is wanted.
+            pitStopCheck -= delta;
+            if (pitStopCheck <= 0f)
+            {
+                pitStopCheck = 1f;
+                atPitStop = (SteamLine || ShopSteamValve > 0f) && ServedByPitStop(Car);
+            }
             if (ignitionExtIn.Value == 1f)
             {
                 if (intakeWaterContent.Value <= 0.5f)
@@ -258,8 +306,10 @@ namespace RealisticFiring.Sim
                 TenderFuel = Feed != null ? Feed.TenderFuel : 0f,
                 IntakeWater = intakeWaterContent.Value,
                 StartupMultiplier = StartupMultiplier(),
+                SteamLinePressure = SteamLineOpening > 0f ? 1f + (SteamLinePressure - 1f) * SteamLineOpening : 0f,
             });
-            Feed?.Draw(drawn, Model.AtomizerSteam + Model.HeaterSteamUsed, delta);
+            // On the shed's line, the burner's steam is not the boiler's.
+            Feed?.Draw(drawn, Model.OnSteamLine ? 0f : Model.AtomizerSteam + Model.HeaterSteamUsed, delta);
             if (Model.Flareback > 0f)
             {
                 PendingFlareback = Mathf.Max(PendingFlareback, Model.Flareback);
@@ -274,7 +324,10 @@ namespace RealisticFiring.Sim
             FlarebackSmoke *= Mathf.Exp(-delta / FlarebackSmokeTime);
             if (Model.Flareback > 0f)
                 FlarebackSmoke = Mathf.Max(FlarebackSmoke, Model.Flareback);
-            smokeDensityReadOut.Value = Mathf.Max(Model.SmokeDensity, 3f * Mathf.Max(Model.SandBurst, FlarebackSmoke));
+            // The cab's own smoke shades from white to black by this port, and
+            // puffs thick black from 0.3 (the 2901's color readers): the
+            // stack's darkness, not the stock's six times the unburned share.
+            smokeDensityReadOut.Value = StackDarkness;
             combustionRateNormalizedReadOut.Value = Model.CombustionRateNormalized;
             temperatureReadOut.Value = Model.Temperature;
             oxygenAvailabilityReadOut.Value = Model.FireOn ? Mathf.Clamp01(Model.ExcessAir / OilFire.BestExcessAir) : 1f;

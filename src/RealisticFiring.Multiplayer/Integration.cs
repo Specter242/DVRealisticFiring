@@ -74,6 +74,7 @@ namespace RealisticFiring.Multiplayer
                 $"boosters {settings.FitBoosters}",
                 $"feed pumps {settings.FitFeedPumps}",
                 $"oil burners {settings.RealisticOilBurners}",
+                $"realistic cylinders {settings.RealisticCylinders}",
                 $"shovelful {settings.ShovelfulMass.ToString("F1", CultureInfo.InvariantCulture)} kg",
             });
         }
@@ -249,6 +250,10 @@ namespace RealisticFiring.Multiplayer
                 case FireAction.Hydrant:
                     if (rig != null)
                         Tell(sender, FireController.ToggleHydrant(rig));
+                    break;
+                case FireAction.SteamLine:
+                    if (RealisticOilFirebox.TryGet(car, out var lined))
+                        Tell(sender, FireController.ToggleSteamLine(lined));
                     break;
                 case FireAction.Shovelful:
                     firebox?.DeliverShovelful(Mathf.Clamp(packet.Value, 0f, MostCoal), zone);

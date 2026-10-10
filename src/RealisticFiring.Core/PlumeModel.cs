@@ -21,6 +21,19 @@ namespace RealisticFiring.Core
 
         /// <summary>A shovelful's thick smoke leaving the firebox for the stack, in firebox puffs a second.</summary>
         public float FireboxSmokeOut;
+
+        /// <summary>
+        /// How clear the stack is between beats, 0 to 1: 0 shows a clean
+        /// fire's haze, 1 none (an oil fire with too much air).
+        /// </summary>
+        public float ClearStack;
+
+        /// <summary>
+        /// How much of a well-set fire's haze rides in the beats' steam, 0 to
+        /// 1: an oil fire's light haze leaves with its exhaust (a coal fire
+        /// shows its haze between beats only, its beats white steam).
+        /// </summary>
+        public float PuffHaze;
     }
 
     /// <summary>A particle color, 0 to 1 per channel.</summary>
@@ -61,6 +74,12 @@ namespace RealisticFiring.Core
         public float Sparks;
 
         public PlumeColor Color;
+
+        /// <summary>The share of its thickness that is smoke, the rest steam that evaporates (<see cref="PlumeRise"/>).</summary>
+        public float SmokeShare;
+
+        /// <summary>The color of its smoke, which it turns as its white steam evaporates.</summary>
+        public PlumeColor SmokeColor;
     }
 
     /// <summary>The steady plume between beats, from the blower and natural draft.</summary>
@@ -73,6 +92,12 @@ namespace RealisticFiring.Core
         public float Speed;
 
         public PlumeColor Color;
+
+        /// <summary>The share of its thickness that is smoke, the rest steam that evaporates (<see cref="PlumeRise"/>).</summary>
+        public float SmokeShare;
+
+        /// <summary>The color of its smoke, which it turns as its white steam evaporates.</summary>
+        public PlumeColor SmokeColor;
     }
 
     /// <summary>Adjustable look of the chimney smoke; the defaults are the tuned values.</summary>
@@ -113,8 +138,15 @@ namespace RealisticFiring.Core
         /// <summary>How far the hardest beat's jet carries before it spreads, in m.</summary>
         public float JetLength { get; set; } = 3.5f;
 
-        /// <summary>Speed at which spread smoke rises, in m/s.</summary>
-        public float RiseSpeed { get; set; } = 1.2f;
+        /// <summary>
+        /// Multiplier on the plume's buoyancy, the stack's heat
+        /// (<see cref="PlumeRise"/>): spread smoke rises with it, slowing
+        /// with height but never stopping.
+        /// </summary>
+        public float Buoyancy { get; set; } = 1f;
+
+        /// <summary>How long the exhaust steam takes to evaporate in the air, in s: longer in cold, damp air.</summary>
+        public float SteamLinger { get; set; } = 6f;
 
         /// <summary>Multiplier on sparks; at 1 the hardest beat under full draft throws about two.</summary>
         public float Sparks { get; set; } = 0.25f;
@@ -131,7 +163,8 @@ namespace RealisticFiring.Core
         /// <summary>Below this exhaust pressure a beat has no force behind it, in bar.</summary>
         public const float MinBeatPressure = 1f;
 
-        private static readonly PlumeColor Steam = new PlumeColor(0.93f, 0.93f, 0.93f, 1f);
+        /// <summary>White exhaust steam: what a parcel's steam shows as.</summary>
+        public static readonly PlumeColor Steam = new PlumeColor(0.93f, 0.93f, 0.93f, 1f);
         private static readonly PlumeColor CleanHaze = new PlumeColor(0.72f, 0.69f, 0.65f, 1f);
         private static readonly PlumeColor Sooty = new PlumeColor(0.16f, 0.15f, 0.14f, 1f);
 
@@ -182,20 +215,39 @@ namespace RealisticFiring.Core
             var soot = Soot(inputs);
             var flow = Clamp01(inputs.TotalFlowNormalized);
             var darkness = Darkness(tuning, soot);
+            var haze = Clamp01(inputs.PuffHaze);
             return new Puff
             {
-                // The blast's momentum, spent within the first few metres.
-                Speed = 3f + (tuning.LaunchSpeed - 3f) * (float)Math.Sqrt(strength),
+                Speed = PuffSpeed(tuning, strength),
                 Size = Lerp(1.4f, 2.8f, strength) * (1f + HeavySize * heavy) * tuning.PuffSize,
                 Particles = (int)Math.Round(Lerp(5f, 12f, strength) * (1f + HeavyParticles * heavy) * tuning.PuffParticles),
-                SootParticles = soot > 0.4f
-                    ? (int)Math.Round(3f * (soot - 0.4f) / 0.6f * Lerp(0.5f, 1f, strength) * (1f + heavy) * tuning.PuffParticles)
+                // A dark puff carries a denser, darker core.
+                SootParticles = darkness > SootCoreFrom
+                    ? (int)Math.Round(3f * (darkness - SootCoreFrom) / (1f - SootCoreFrom) * Lerp(0.5f, 1f, strength) * (1f + heavy) * tuning.PuffParticles)
                     : 0,
                 LifetimeScale = 1f + HeavyLifetime * heavy,
                 Sparks = inputs.FireOn ? tuning.Sparks * 2f * Math.Max(0f, strength - 0.7f) / 0.3f * flow : 0f,
-                Color = Mix(Steam, Sooty, darkness, Lerp(tuning.SteamOpacity, 0.8f, darkness)),
+                Color = Mix(Mix(Steam, CleanHaze, haze * PuffHazeTint, 1f), Sooty, darkness,
+                    Lerp(tuning.SteamOpacity * ClearSteam(inputs), 0.8f, darkness)),
+                // A puff is exhaust steam, darkened by the soot it carries and
+                // tinted by the haze, which stays as the steam evaporates.
+                SmokeShare = darkness + (1f - darkness) * haze * PuffHazeSmoke,
+                SmokeColor = SmokeOf(darkness, (1f - darkness) * haze * PuffHazeSmoke),
             };
         }
+
+        /// <summary>
+        /// A beat's launch speed, in m/s, for its strength: the blast's
+        /// momentum, spent within the first few metres.
+        /// </summary>
+        public static float PuffSpeed(PlumeTuning tuning, float strength) =>
+            3f + (tuning.LaunchSpeed - 3f) * (float)Math.Sqrt(Clamp01(strength));
+
+        /// <summary>The share of the blower's full flow going up the stack, 0 to 1.</summary>
+        public static float SteamThroughStack(float totalFlowNormalized) => Clamp01(Clamp01(totalFlowNormalized) / FullBlowerFlow);
+
+        /// <summary>The launch speed between beats, in m/s: a lazy draft, faster with the blower's steam.</summary>
+        public static float HazeSpeed(float steam) => Lerp(1.2f, 8f, Clamp01(steam));
 
         /// <summary>
         /// Linear drag on smoke, per second: it stops the hardest beat's
@@ -220,12 +272,20 @@ namespace RealisticFiring.Core
         public static float SparkVelocityAfter(float upwardSpeed, float dt) =>
             upwardSpeed * (float)Math.Exp(-SparkDrag * dt) - Gravity * dt;
 
-        /// <summary>Upward acceleration on smoke, in m/s², that balances the drag at the rise speed.</summary>
-        public static float Lift(PlumeTuning tuning) => tuning.RiseSpeed * JetDrag(tuning);
-
         // The blower at full sends about a tenth of the full-work exhaust flow
         // up the stack (the S282's and Hudson's blowers, 1.1 kg/s and up).
         private const float FullBlowerFlow = 0.1f;
+
+        // A clean fire's haze is this much smoke; the rest is the water its
+        // burning makes, which evaporates as the steam does.
+        private const float CleanHazeSmoke = 0.6f;
+
+        private const float PuffHazeTint = 0.7f;
+        private const float PuffHazeSmoke = 0.7f;
+
+        private const float ClearStackSteamThinning = 0.5f;
+
+        private static float ClearSteam(PlumeInputs inputs) => 1f - ClearStackSteamThinning * Clamp01(inputs.ClearStack);
 
         // A lit fire's lazy column, and the blower's steady stream on top, in
         // particles a second.
@@ -241,22 +301,67 @@ namespace RealisticFiring.Core
         /// </summary>
         public static Haze Between(PlumeTuning tuning, PlumeInputs inputs)
         {
-            var steam = Clamp01(Clamp01(inputs.TotalFlowNormalized) / FullBlowerFlow);
+            var steam = SteamThroughStack(inputs.TotalFlowNormalized);
             var darkness = Darkness(tuning, Soot(inputs));
             var fireboxSmoke = inputs.FireOn ? Math.Max(0f, inputs.FireboxGas) + Math.Max(0f, inputs.FireboxSmokeOut) : 0f;
             var clean = Mix(CleanHaze, Steam, steam, 1f);
-            var opacity = Lerp(Lerp(tuning.HazeOpacity, tuning.SteamOpacity, steam), 0.7f, darkness);
+            var haze = tuning.HazeOpacity * (1f - Clamp01(inputs.ClearStack));
+            var opacity = Lerp(Lerp(haze, tuning.SteamOpacity * ClearSteam(inputs), steam), 0.7f, darkness);
             return new Haze
             {
                 Rate = (inputs.FireOn ? StandingRate : 0f) + StackPuffsPerFireboxPuff * fireboxSmoke + BlowerRate * steam,
-                Speed = Lerp(1.2f, 8f, steam),
+                Speed = HazeSpeed(steam),
                 Color = Mix(clean, Sooty, darkness, opacity),
+                // The blower's stream is steam; a clean fire's own haze is
+                // part smoke, part the water its burning makes.
+                SmokeShare = darkness + (1f - darkness) * (1f - steam) * CleanHazeSmoke,
+                SmokeColor = SmokeOf(darkness, (1f - darkness) * (1f - steam) * CleanHazeSmoke),
             };
         }
 
-        // Light soot only greys the smoke; it takes heavy soot to darken it.
+        /// <summary>
+        /// An oil fire's stack (<see cref="OilFire.StackSmoke"/>: clear, a
+        /// well-set fire's haze at 0.2, black at 1) as the plume's soot and
+        /// clear stack: the haze is a clean fire's, clearing below it with too
+        /// much air, and darker the plume darkens as a coal fire's soot does.
+        /// </summary>
+        public static (float Soot, float ClearStack) OilStack(float stackDarkness)
+        {
+            var dark = Clamp01((stackDarkness - OilFire.HazeSmoke) / (1f - OilFire.HazeSmoke));
+            return (SootForBlack * (float)Math.Pow(dark, 1.0 / 1.3), 1f - Clamp01(stackDarkness / OilFire.HazeSmoke));
+        }
+
+        /// <summary>The plume's inputs for an oil fire's stack, its beats carrying its haze.</summary>
+        public static PlumeInputs OilInputs(float stackDarkness, float exhaustPressure, float totalFlowNormalized, bool fireOn)
+        {
+            var (soot, clear) = OilStack(stackDarkness);
+            return new PlumeInputs
+            {
+                ExhaustPressure = exhaustPressure,
+                TotalFlowNormalized = totalFlowNormalized,
+                Soot = soot,
+                FireOn = fireOn,
+                ClearStack = clear,
+                PuffHaze = 1f - clear,
+            };
+        }
+
+ public const float SootForBlack = 0.5f;
+
+        // A puff this dark carries a darker core.
+        private const float SootCoreFrom = 0.4f;
+
+        // Light soot only greys the smoke; heavy soot blackens it.
         private static float Darkness(PlumeTuning tuning, float soot) =>
-            Clamp01(tuning.SootDarkness * (float)Math.Pow(soot, 1.3));
+            Clamp01(tuning.SootDarkness * (float)Math.Pow(Math.Max(0f, soot) / SootForBlack, 1.3));
+
+        // What a parcel's smoke looks like once its steam has gone: its soot
+        // and its haze, by their shares of its thickness.
+        private static PlumeColor SmokeOf(float soot, float haze)
+        {
+            var total = soot + haze;
+            return total > 1e-4f ? Mix(CleanHaze, Sooty, soot / total, 1f) : Sooty;
+        }
 
         private static PlumeColor Mix(PlumeColor clean, PlumeColor dirty, float t, float alpha) =>
             new PlumeColor(Lerp(clean.R, dirty.R, t), Lerp(clean.G, dirty.G, t), Lerp(clean.B, dirty.B, t), alpha);

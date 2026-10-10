@@ -45,6 +45,8 @@ namespace RealisticFiring
                             (fire.Torch > 0f ? $"   waste burning {fire.Torch:F0} s" : ""));
             foreach (var line in FireController.DescribeOil(shownOil).Split(';'))
                 GUILayout.Label(line.Trim());
+            if (FireController.DescribeCylinders(shownOil.Car) is string cylinders)
+                GUILayout.Label(char.ToUpperInvariant(cylinders[0]) + cylinders.Substring(1));
             GUI.DragWindow();
         }
 
@@ -76,6 +78,8 @@ namespace RealisticFiring
                 GUILayout.Label(char.ToUpperInvariant(stoker[0]) + stoker.Substring(1));
             if (FireController.DescribeBooster(shown.Car) is string booster)
                 GUILayout.Label(char.ToUpperInvariant(booster[0]) + booster.Substring(1));
+            if (FireController.DescribeCylinders(shown.Car) is string cylinders)
+                GUILayout.Label(char.ToUpperInvariant(cylinders[0]) + cylinders.Substring(1));
             var aim = shown.HoverAim;
             var aimed = aim.HasValue && aim.Value.IsLiveAt(now) ? aim.Value.Zone : (GrateZone?)null;
             GUILayout.Label(aimed.HasValue

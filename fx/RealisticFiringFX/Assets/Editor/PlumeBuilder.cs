@@ -66,7 +66,11 @@ namespace RealisticFiringFX
             if (sparkShader == null)
                 throw new InvalidOperationException($"Shader '{SparkShaderName}' did not compile; see the editor log");
 
-            var puff = CreateMaterial(shader, "Puff", ImportFlipbook("smoke_puff_flipbook.png"));
+            // The chimney's smoke: wisps, eight of them a row each, fraying as
+            // they thin (the firebox's smoke keeps the round puffs).
+            var puff = CreateMaterial(shader, "Puff", ImportFlipbook("smoke_wisp_flipbook.png"));
+            puff.SetFloat("_Fray", 0.5f);
+            EditorUtility.SetDirty(puff);
             var jet = CreateMaterial(shader, "Jet", ImportFlipbook("smoke_jet_flipbook.png"));
             var spark = CreateMaterial(sparkShader, "Spark", ImportFlipbook("spark.png"));
             var droplet = CreateMaterial(shader, "Droplet", ImportFlipbook("spark.png"));
@@ -157,12 +161,12 @@ namespace RealisticFiringFX
                 // spills wider than the stack's mouth before it has left it.
                 CreateSystem(root, "Cloud", puff, tiles: 8, lifetime: (6f, 10f), maxParticles: 1500,
                     growth: Curve(0f, 0.25f, 0.15f, 1f, 1f, 2.4f),
-                    fade: Fade((0f, 0f), (0.06f, 0.95f), (0.45f, 0.7f), (1f, 0f)), noise: 0.35f);
+                    fade: Fade((0f, 0f), (0.06f, 0.95f), (0.45f, 0.7f), (1f, 0f)), noise: 0.35f, variants: true);
 
                 // A smaller, darker core when the fire is sooty.
                 CreateSystem(root, "Soot", puff, tiles: 8, lifetime: (4f, 7f), maxParticles: 600,
                     growth: Curve(0f, 0.25f, 0.15f, 1f, 1f, 2f),
-                    fade: Fade((0f, 0f), (0.05f, 1f), (0.4f, 0.75f), (1f, 0f)), noise: 0.3f);
+                    fade: Fade((0f, 0f), (0.05f, 1f), (0.4f, 0.75f), (1f, 0f)), noise: 0.3f, variants: true);
 
                 // Cinders: drawn as streaks along their flight, cooling from
                 // yellow-white through orange to dull red as they burn out.
@@ -335,7 +339,7 @@ namespace RealisticFiringFX
 
                 var steam = CreateSystem(root, "Steam", puff, tiles: 8, lifetime: (1f, 2f), maxParticles: 300,
                     growth: Curve(0f, 0.3f, 0.3f, 1f, 1f, 2f),
-                    fade: Fade((0f, 0f), (0.1f, 0.8f), (0.5f, 0.5f), (1f, 0f)), noise: 0.4f);
+                    fade: Fade((0f, 0f), (0.1f, 0.8f), (0.5f, 0.5f), (1f, 0f)), noise: 0.4f, variants: true);
                 var steamMain = steam.main;
                 steamMain.startSpeed = new ParticleSystem.MinMaxCurve(1f, 2.5f);
                 steamMain.startSize = new ParticleSystem.MinMaxCurve(0.25f, 0.5f);
@@ -366,8 +370,11 @@ namespace RealisticFiringFX
             shape.radius = 0.02f;
         }
 
+        // With variants, each row of the sheet is its own wisp over its life,
+        // and a particle plays a row picked at random.
         private static ParticleSystem CreateSystem(GameObject parent, string name, Material material, int tiles,
-            (float min, float max) lifetime, int maxParticles, AnimationCurve growth, Gradient fade, float noise = 0f)
+            (float min, float max) lifetime, int maxParticles, AnimationCurve growth, Gradient fade, float noise = 0f,
+            bool variants = false)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent.transform, false);
@@ -402,7 +409,9 @@ namespace RealisticFiringFX
             sheet.mode = ParticleSystemAnimationMode.Grid;
             sheet.numTilesX = tiles;
             sheet.numTilesY = tiles;
-            sheet.animation = ParticleSystemAnimationType.WholeSheet;
+            sheet.animation = variants ? ParticleSystemAnimationType.SingleRow : ParticleSystemAnimationType.WholeSheet;
+            if (variants)
+                sheet.rowMode = ParticleSystemAnimationRowMode.Random;
             sheet.frameOverTime = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 0f, 1f, 1f));
             sheet.cycleCount = 1;
 

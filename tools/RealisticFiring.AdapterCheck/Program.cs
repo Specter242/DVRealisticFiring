@@ -152,7 +152,10 @@ namespace RealisticFiring.AdapterCheck
             CheckOilBurner(gameParams);
             CheckClientMirror(gameParams, def);
             CheckBooster();
+            CheckCylinders(gameParams);
 
+            CheckControlSteps();
+            CheckShovelLoads();
             CheckPatchTargets();
             Console.WriteLine(failures == 0 ? "All adapter checks passed" : $"{failures} adapter checks failed");
             return failures == 0 ? 0 : 1;
@@ -531,6 +534,69 @@ namespace RealisticFiring.AdapterCheck
             Check(loaded.Model.FireOn && Math.Abs(loaded.Model.BrickTemperature - oil.Model.BrickTemperature) < 1f
                   && Math.Abs(loaded.Model.OilTemperature - oil.Model.OilTemperature) < 0.1f,
                 $"the oil fire saves and loads (brick {oil.Model.BrickTemperature:F0} C, oil {oil.Model.OilTemperature:F0} C)");
+
+            // A dead engine (1 bar) has no steam to atomize its oil until a
+            // shed's steam line is hooked up, whose steam is not the boiler's.
+            var dead = new RealisticOilFirebox(fireboxDef, null);
+            dead.SetGameParams(gameParams);
+            void DeadFeed(string name, float value) =>
+                dead.GetAllPortReferences().Single(r => r.id == $"{Id}.{name}").SetPortReference(
+                    new Port("src", new PortDefinition(PortType.READONLY_OUT, PortValueType.GENERIC, name), value));
+            DeadFeed("AIR_FLOW", 0.92f * FireModel.AirPerCoal);
+            DeadFeed("BOILER_PRESSURE", 1f);
+            DeadFeed("BOILER_TEMPERATURE", 25f);
+            DeadFeed("FORWARD_SPEED", 0f);
+            dead.Feed = feed;
+            var heater = new Port(OilBurnerFit.Heater.Id, new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"), 1f);
+            dead.AttachPorts(null, atomizer, heater);
+            valve.Value = 0f;
+            for (var t = 0f; t < 1f; t += 0.02f)
+                dead.Tick(0.02f);
+            var coldOil = dead.Model.OilTemperature;
+            P(dead, "IGNITION_EXT_IN").ExternalValueUpdate(1f);
+            valve.Value = 0.4f;
+            for (var t = 0f; t < 10f; t += 0.02f)
+                dead.Tick(0.02f);
+            var unlit = P(dead, "FIRE_ON").Value;
+            var pooledCold = dead.Model.PooledOil;
+            // At a pit stop on the line, the heater warms the oil for ten minutes, then the fire is lit.
+            RealisticOilFirebox.ServedByPitStop = _ => true;
+            dead.SteamLine = true;
+            valve.Value = 0f;
+            for (var t = 0f; t < 600f; t += 0.02f)
+                dead.Tick(0.02f);
+            var warmed = dead.Model.OilTemperature;
+            P(dead, "IGNITION_EXT_IN").ExternalValueUpdate(1f);
+            valve.Value = 0.4f;
+            for (var t = 0f; t < 10f; t += 0.02f)
+            {
+                dead.Tick(0.02f);
+                feed.Tick(0.02f);
+            }
+            var lineSteam = feed.GetAllPorts().Single(p => p.id == "autostoker.STEAM_CONSUMPTION").Value;
+            Check(coldOil < 20f && unlit == 0f && pooledCold == 0f && P(dead, "FIRE_ON").Value == 1f && dead.Model.OnSteamLine && lineSteam == 0f,
+                $"a dead engine's cold oil will not run and it will not light; on a shed's steam line its heater warms the oil " +
+                $"({coldOil:F0} -> {warmed:F0} C in ten minutes) and it lights without drawing the boiler's steam " +
+                $"({dead.Model.FeedRate:F2} kg/s of oil, atomizing {dead.Model.Atomizing:F2})");
+
+            // The cab's shop steam valve opens the line as the key does, as far as it is open, at a pit stop only.
+            var valved = new RealisticOilFirebox(fireboxDef, null);
+            valved.SetGameParams(gameParams);
+            foreach (var reference in valved.GetAllPortReferences())
+                reference.SetPortReference(new Port("src", new PortDefinition(PortType.READONLY_OUT, PortValueType.GENERIC, "OUT"),
+                    reference.id.EndsWith("BOILER_PRESSURE") ? 1f : 0f));
+            var shopSteam = new Port(OilBurnerFit.ShopSteam.Id, new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"), 0.5f);
+            valved.AttachPorts(null, atomizer, heater, shopSteam);
+            RealisticOilFirebox.ServedByPitStop = _ => false;
+            for (var t = 0f; t < 2f; t += 0.02f)
+                valved.Tick(0.02f);
+            var away = valved.Model.OnSteamLine;
+            RealisticOilFirebox.ServedByPitStop = _ => true;
+            for (var t = 0f; t < 2f; t += 0.02f)
+                valved.Tick(0.02f);
+            Check(!away && valved.Model.OnSteamLine && Math.Abs(valved.SteamLineOpening - 0.5f) < 1e-4f,
+                $"the shop steam valve puts the line on the burner at a pit stop only, as far as it is open ({valved.SteamLineOpening:P0})");
+            RealisticOilFirebox.ServedByPitStop = WaterPoints.Serves;
         }
 
         // What a multiplayer host sends clients' views of a loco: captured from
@@ -790,6 +856,146 @@ namespace RealisticFiring.AdapterCheck
         // the game's assemblies, as PatchAll will look it up. One that does
         // not (missing, or ambiguous like Resources.Load(string) against
         // Load<T>(string)) makes PatchAll throw and the whole mod fail to load.
+        // The realistic cylinders on the stock engine with the S282's figures,
+        // patched as in game, against the same engine with the setting off.
+        private static void CheckCylinders(SimGameParams gameParams)
+        {
+            var harmony = new HarmonyLib.Harmony("RealisticFiring.AdapterCheck.Cylinders");
+            foreach (var patch in new[] { typeof(CylinderAdmissionPatch), typeof(CylinderMeanTorquePatch), typeof(CylinderPistonForcePatch), typeof(CylinderExhaustPatch) })
+                harmony.CreateClassProcessor(patch).Patch();
+            var settings = RealisticFiring.Main.Settings;
+            try
+            {
+                // Reverser for a cut-off: the stock notches from 5 % to 90 %.
+                float Notch(float cutoff) => (cutoff - 0.05f) / 0.85f;
+
+                var stockStart = RunEngine(gameParams, false, 1f, 10f);
+                var realStart = RunEngine(gameParams, true, 1f, 10f);
+                Check(realStart.Torque > 0.9f * stockStart.Torque && realStart.Torque < stockStart.Torque,
+                    $"in full gear at a walk the realistic cylinders pull nearly the stock torque ({realStart.Torque:F0} against {stockStart.Torque:F0} N·m)");
+
+                var stockQuarter = RunEngine(gameParams, false, Notch(0.25f), 180f);
+                var realQuarter = RunEngine(gameParams, true, Notch(0.25f), 180f);
+                Check(realQuarter.Torque > 1.3f * stockQuarter.Torque && realQuarter.Exhaust > stockQuarter.Exhaust,
+                    $"notched up to 25 % at 3 turns a second they hold their steam ({realQuarter.Torque:F0} against {stockQuarter.Torque:F0} N·m, " +
+                    $"exhaust {realQuarter.Exhaust:F1} against {stockQuarter.Exhaust:F1} bar)");
+
+                var realFull = RunEngine(gameParams, true, 1f, 180f);
+                Check(realFull.Flow < 6.6f && realFull.Chest < 13f,
+                    $"in full gear at speed the throttle's flow limits them through the steam chest ({realFull.Flow:F2} kg/s, chest {realFull.Chest:F1} bar)");
+
+                var slow = RunEngine(gameParams, true, Notch(0.5f), 40f);
+                var fast = RunEngine(gameParams, true, Notch(0.5f), 70f);
+                Check(Math.Abs(slow.Torque - fast.Torque) < 0.15f * fast.Torque,
+                    $"each piston's force averages to the mean pressure's torque across the stock's blend ({slow.Torque:F0} at 40 rpm, {fast.Torque:F0} at 70)");
+            }
+            finally
+            {
+                settings.RealisticCylinders = true;
+                harmony.UnpatchAll(harmony.Id);
+            }
+        }
+
+        private struct EngineRun
+        {
+            public float Torque;
+            public float Exhaust;
+            public float Chest;
+            public float Flow;
+        }
+
+        // The S282's engine at a steady crank speed and full throttle on 14 bar
+        // of saturated steam for 20 s; its torque averaged over the last 4 s.
+        private static EngineRun RunEngine(SimGameParams gameParams, bool realistic, float reverser, float rpm)
+        {
+            RealisticFiring.Main.Settings.RealisticCylinders = realistic;
+            var def = new ReciprocatingSteamEngineDefinition
+            {
+                ID = "steamEngine",
+                numCylinders = 2,
+                cylinderBore = 0.61f,
+                pistonStroke = 0.711f,
+                minCutoff = 0.05f,
+                maxCutoff = 0.9f,
+                throttleMaxFlow = 6f,
+                steamChestVolume = 1000f,
+            };
+            var engine = new ReciprocatingSteamEngine(def);
+            engine.SetGameParams(gameParams);
+            void Wire(PortReferenceDefinition reference, PortValueType type, float value) =>
+                engine.GetAllPortReferences().Single(r => r.id == $"{def.ID}.{reference.ID}")
+                    .SetPortReference(new Port(reference.ID.ToLowerInvariant(), new PortDefinition(PortType.READONLY_OUT, type, "OUT"), value));
+            Wire(def.throttleControl, PortValueType.CONTROL, 1f);
+            Wire(def.reverserControl, PortValueType.CONTROL, reverser);
+            Wire(def.cylinderCockControl, PortValueType.CONTROL, 0f);
+            Wire(def.intakePressure, PortValueType.PRESSURE, 14f);
+            Wire(def.intakeTemperature, PortValueType.TEMPERATURE, 195f);
+            Wire(def.intakeQuality, PortValueType.GENERIC, 1f);
+            Wire(def.crankRpm, PortValueType.RPM, rpm);
+            Wire(def.lubricationNormalized, PortValueType.OIL, 1f);
+            Port Out(PortDefinition port) => engine.GetAllPorts().Single(p => p.id == $"{def.ID}.{port.ID}");
+            var torque = Out(def.torqueOut);
+            var sum = 0.0;
+            var samples = 0;
+            for (var t = 0f; t < 20f; t += 0.02f)
+            {
+                engine.Tick(0.02f);
+                if (t >= 16f)
+                {
+                    sum += torque.Value;
+                    samples++;
+                }
+            }
+            return new EngineRun
+            {
+                Torque = (float)(sum / samples),
+                Exhaust = Out(def.exhaustPressureReadOut).Value,
+                Chest = Out(def.steamChestPressureReadOut).Value,
+                Flow = Out(def.exhaustFlowReadOut).Value,
+            };
+        }
+
+        // ControlSteps reaches a live lever's and valve's notches by name.
+        private static void CheckControlSteps()
+        {
+            const BindingFlags any = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            var missing = new System.Collections.Generic.List<string>();
+            void Field(Type type, string name)
+            {
+                if (HarmonyLib.AccessTools.Field(type, name) == null)
+                    missing.Add($"{type.Name}.{name}");
+            }
+            Field(typeof(DV.CabControls.LeverBase), "spec");
+            Field(typeof(DV.CabControls.LeverBase), "steppedJoint");
+            Field(typeof(DV.CabControls.RotaryBase), "steppedJoint");
+            Field(typeof(DV.CabControls.RotaryBase), "scrollWheelHoverScroll");
+            if (typeof(DV.CabControls.RotaryBase).GetProperty("Spec", any) == null)
+                missing.Add("RotaryBase.Spec");
+            // The specs live in DV.CabControls.Spec, which this check does not reference.
+            var lever = HarmonyLib.AccessTools.TypeByName("DV.CabControls.Spec.Lever");
+            var rotary = HarmonyLib.AccessTools.TypeByName("DV.CabControls.Spec.Rotary");
+            if (lever == null || rotary == null)
+                missing.Add("the Lever and Rotary specs");
+            else
+            {
+                Field(lever, "notches");
+                Field(lever, "scrollWheelHoverScroll");
+                Field(rotary, "notches");
+                Field(rotary, "scrollWheelHoverScroll");
+            }
+            if (typeof(SteppedJoint).GetProperty("SingleNotchAngle", any)?.GetSetMethod(true) == null)
+                missing.Add("SteppedJoint.SingleNotchAngle (set)");
+            Check(missing.Count == 0, "the members ControlSteps resteps a live control by exist" + (missing.Count > 0 ? $" (not: {string.Join(", ", missing)})" : ""));
+        }
+
+        // SandOnShovelPatch dresses the shovel's load lumps as sand.
+        private static void CheckShovelLoads()
+        {
+            var field = HarmonyLib.AccessTools.Field(typeof(ShovelNonPhysicalCoal), "loadedCoalVisuals");
+            Check(field != null && field.FieldType.FullName == "UnityEngine.GameObject[]",
+                "the shovel keeps its load lumps in 'loadedCoalVisuals', which a load of flue sand dresses as sand");
+        }
+
         private static void CheckPatchTargets()
         {
             var patches = typeof(RealisticFiring.Main).Assembly.GetTypes()

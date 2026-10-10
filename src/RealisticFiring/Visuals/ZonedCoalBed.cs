@@ -43,6 +43,14 @@ namespace RealisticFiring.Visuals
         // much at an even share of coal, in m.
         private const float NominalDepth = 0.25f;
 
+        // A floor over the empty pile's base, up to this far over its top and
+        // reaching this near its sides, is the grate the bed rests on (the
+        // S060's lies 8 mm over its empty pile), sunk this far into it so an
+        // empty zone hides under it, all in m.
+        private const float FloorReach = 0.03f;
+        private const float FloorFit = 0.05f;
+        private const float FloorSink = 0.005f;
+
         // The continuous bed's grid, and its coal lumps' relief as a share of
         // the coal's depth there.
         private const int GridAcross = 16;
@@ -124,6 +132,11 @@ namespace RealisticFiring.Visuals
         private RealisticFirebox firebox;
         private Renderer stockCoal;
         private Transform pivot;
+        // Where the bed stands under the pivot's parent: the empty pile's place,
+        // raised onto a floor that hides it.
+        private Vector3 rest;
+        private float floorLift;
+        private string liftReason = "";
         private Vector3 fullScale;
         private Bounds bed;
         private float zoneShare;
@@ -148,8 +161,12 @@ namespace RealisticFiring.Visuals
             if (forward.z < MinAxisAlignment || right.x < MinAxisAlignment)
                 return $"coal pile axes do not run along the car (forward {forward}, right {right}); keeping the stock coal";
 
+            // On some locos (the S060, the S282) the stock pile also slides up
+            // as coal goes in; the bed shows the coal itself, so it stands
+            // where the pile is when the box is empty.
+            var slider = fire.GetComponentsInChildren<IndicatorSlider>(true).FirstOrDefault(s => s.pointer == pivot);
             var bed = fire.gameObject.AddComponent<ZonedCoalBed>();
-            var kind = bed.Build(firebox, scaler, coal, filter.sharedMesh);
+            var kind = bed.Build(firebox, scaler, coal, filter.sharedMesh, slider);
             // The pile lies on the grate, so its tilt is the grate's slope; a
             // moving loco shakes coal down it.
             var slope = Mathf.Asin(Mathf.Clamp(forward.y, -1f, 1f)) * Mathf.Rad2Deg;
@@ -163,15 +180,18 @@ namespace RealisticFiring.Visuals
             }
             return $"zoned coal bed ({kind}) built from '{coal.name}', {bed.bed.size.x * bed.fullScale.x:F2} m wide " +
                    $"and {bed.bed.size.z * bed.fullScale.z:F2} m long, grate sloping {slope:F1}° " +
-                   $"(up toward the front when positive), turned {Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg:F1}°";
+                   $"(up toward the front when positive), turned {Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg:F1}°" +
+                   (slider != null ? ", at the sliding pile's empty place" : "") +
+                   (bed.floorLift > 0f ? $", raised {bed.floorLift * 100f:F0} cm {bed.liftReason}" : "");
         }
 
-        private string Build(RealisticFirebox owner, IndicatorScaler scaler, Renderer coal, Mesh stockMesh)
+        private string Build(RealisticFirebox owner, IndicatorScaler scaler, Renderer coal, Mesh stockMesh, IndicatorSlider slider)
         {
             firebox = owner;
             stockCoal = coal;
             pivot = scaler.indicatorToScale;
             fullScale = scaler.endScale;
+            rest = slider != null ? slider.startPosition : pivot.localPosition;
             zoneShare = owner.Model.Parameters.MaxCoalCapacity / GrateLayout.ZoneCount;
 
             // The pile's extent in the pivot's own units, before the pivot's scale.
@@ -186,6 +206,13 @@ namespace RealisticFiring.Visuals
                 bed.Encapsulate(pivot.InverseTransformPoint(coal.transform.TransformPoint(corner)));
             }
             var depth = bed.size.y * Mathf.Abs(fullScale.y);
+            // The empty pile lies under the grate, its top at the grate: the
+            // bed stands on that, or on a floor laid over it where there is one.
+            var onFloor = FloorLift();
+            var onTop = slider != null ? Mathf.Max(0f, depth - FloorSink) : 0f;
+            floorLift = Mathf.Max(onFloor, onTop);
+            liftReason = onFloor >= onTop ? "onto the floor over it" : "to the empty pile's top";
+            rest += pivot.localRotation * new Vector3(0f, floorLift, 0f);
             if (depth < 0.05f && Mathf.Abs(fullScale.y) > 1e-4f)
                 bed.max = new Vector3(bed.max.x, bed.min.y + NominalDepth / Mathf.Abs(fullScale.y), bed.max.z);
             owner.SetGrateArea(Mathf.Max(MinGrateArea, Mathf.Abs(bed.size.x * fullScale.x * bed.size.z * fullScale.z)));
@@ -197,6 +224,40 @@ namespace RealisticFiring.Visuals
             return "nine tiles";
         }
 
+        // How far to raise the bed onto a floor laid over the empty pile, in m
+        // along the pile's up: a mesh beside the pile (the firebox's own) that
+        // spans the bed and whose underside lies over the pile's base, no
+        // higher than just over the stock pile's top. Measured before a flat
+        // pile is given its nominal depth.
+        private float FloorLift()
+        {
+            var inverse = Quaternion.Inverse(pivot.localRotation);
+            Vector3 AtRest(Vector3 world) => inverse * (pivot.parent.InverseTransformPoint(world) - rest);
+            var scale = new Vector3(Mathf.Abs(fullScale.x), Mathf.Abs(fullScale.y), Mathf.Abs(fullScale.z));
+            var pile = new Bounds(Vector3.Scale(scale, bed.center), Vector3.Scale(scale, bed.size));
+            var lift = 0f;
+            foreach (var filter in pivot.parent.GetComponentsInChildren<MeshFilter>(true))
+            {
+                var mesh = filter.sharedMesh;
+                if (mesh == null || filter.transform.IsChildOf(pivot))
+                    continue;
+                var local = mesh.bounds;
+                var box = new Bounds(AtRest(filter.transform.TransformPoint(local.center)), Vector3.zero);
+                for (var i = 0; i < 8; i++)
+                {
+                    box.Encapsulate(AtRest(filter.transform.TransformPoint(new Vector3(
+                        (i & 1) == 0 ? local.min.x : local.max.x,
+                        (i & 2) == 0 ? local.min.y : local.max.y,
+                        (i & 4) == 0 ? local.min.z : local.max.z))));
+                }
+                var spans = box.min.x <= pile.min.x + FloorFit && box.max.x >= pile.max.x - FloorFit
+                            && box.min.z <= pile.min.z + FloorFit && box.max.z >= pile.max.z - FloorFit;
+                if (spans && box.min.y > pile.min.y && box.min.y <= pile.max.y + FloorReach)
+                    lift = Mathf.Max(lift, box.min.y - FloorSink - pile.min.y);
+            }
+            return lift;
+        }
+
         // The continuous bed: a grid over the bed's box under the effects
         // prefab, which sits at the pivot unscaled (its flames and smoke stay
         // round); the bed's mesh is scaled into the pivot's units.
@@ -205,7 +266,7 @@ namespace RealisticFiring.Visuals
             var instance = Instantiate(prefab, pivot.parent, false);
             instance.name = "[RealisticFiring firebox]";
             effects = instance.transform;
-            effects.localPosition = pivot.localPosition;
+            effects.localPosition = rest;
             effects.localRotation = pivot.localRotation;
             effects.localScale = Vector3.one;
             bedMesh = effects.Find("Bed");
@@ -481,7 +542,7 @@ namespace RealisticFiring.Visuals
                 Mathf.LerpUnclamped(bed.min.x, bed.max.x, across),
                 Mathf.LerpUnclamped(bed.min.y, bed.max.y, up),
                 Mathf.LerpUnclamped(bed.min.z, bed.max.z, along));
-            return pivot.parent.TransformPoint(pivot.localPosition + pivot.localRotation * Vector3.Scale(fullScale, p));
+            return pivot.parent.TransformPoint(rest + pivot.localRotation * Vector3.Scale(fullScale, p));
         }
 
         /// <summary>Where a zone's coal stands now, as a share of the stock pile's height.</summary>
@@ -522,7 +583,7 @@ namespace RealisticFiring.Visuals
                 x - across * bed.center.x,
                 bed.min.y * (1f - height),
                 z - along * bed.center.z);
-            tiles[index].localPosition = pivot.localPosition + pivot.localRotation * Vector3.Scale(fullScale, offset);
+            tiles[index].localPosition = rest + pivot.localRotation * Vector3.Scale(fullScale, offset);
             tiles[index].localScale = new Vector3(fullScale.x * across, fullScale.y * height, fullScale.z * along);
         }
 

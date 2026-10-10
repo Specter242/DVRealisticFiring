@@ -209,31 +209,121 @@ namespace RealisticFiring.Core.Tests;
         Assert.True(fire.Heat < 0.92f * cleanHeat);
 
         var gentle = fire.FlueSoot;
-        fire.ThrowSand(3f, drawing: 0.1f);
+        // A quart at a time (K02 p. 46).
+        fire.ThrowSand(1.5f, drawing: 0.2f);
         Assert.True(fire.FlueSoot > 0.9f * gentle, "with little pull the sand falls in the pan");
 
-        fire.ThrowSand(3f, drawing: 1f);
-        fire.ThrowSand(3f, drawing: 1f);
-        Assert.True(fire.FlueSoot < 0.05f, $"soot {fire.FlueSoot:F2} after sanding");
+        fire.ThrowSand(1.5f, drawing: 1f);
+        Assert.True(fire.FlueSoot < 0.05f, $"soot {fire.FlueSoot:F2} after a quart of sand under a hard pull");
         Assert.True(fire.SandBurst > 0.5f);
     }
 
     [Fact]
-    public void ColdOilLagsAndSmokesUntilTheHeaterWarmsIt()
+    public void CoolOilLagsAndSmokesUntilTheHeaterWarmsIt()
     {
         var warm = Burning();
-        var cold = Burning();
-        cold.Restore(true, OilFire.HotBrick, OilFire.AmbientTemperature, 0f);
+        var cool = Burning();
+        cool.Restore(true, OilFire.HotBrick, 30f, 0f);
         Run(warm, Inputs(HalfOil), 20f);
-        Run(cold, Inputs(HalfOil), 20f);
+        Run(cool, Inputs(HalfOil), 20f);
 
-        Assert.True(cold.FeedRate < 0.5f * warm.FeedRate, $"cold oil feeds {cold.FeedRate:F2} kg/s against {warm.FeedRate:F2}");
-        Assert.True(cold.Atomizing < 0.6f * warm.Atomizing, $"cold oil atomizing {cold.Atomizing:F2} against {warm.Atomizing:F2}");
-        Assert.True(cold.SootDensity > warm.SootDensity + 0.2f, $"cold oil smokes {cold.SootDensity:F2}");
+        Assert.True(cool.FeedRate < 0.5f * warm.FeedRate, $"cool oil feeds {cool.FeedRate:F2} kg/s against {warm.FeedRate:F2}");
+        Assert.True(cool.Atomizing < 0.6f * warm.Atomizing, $"cool oil atomizing {cool.Atomizing:F2} against {warm.Atomizing:F2}");
+        Assert.True(cool.SootDensity > warm.SootDensity + 0.2f, $"cool oil smokes {cool.SootDensity:F2}");
 
-        Run(cold, Inputs(HalfOil) with { Heater = 1f }, 600f);
-        Assert.True(cold.OilTemperature >= OilFire.WarmOil, $"oil at {cold.OilTemperature:F0} C after ten minutes' heating");
-        Assert.True(cold.HeaterSteamUsed > 0f);
+        Run(cool, Inputs(HalfOil) with { Heater = 1f }, 600f);
+        Assert.True(cool.OilTemperature >= OilFire.WarmOil, $"oil at {cool.OilTemperature:F0} C after ten minutes' heating");
+        Assert.True(cool.HeaterSteamUsed > 0f);
+    }
+
+    [Fact]
+    public void ColdHeavyOilDoesNotRunThroughAnOpenValve()
+    {
+        var fire = new OilFire(Gs4);
+        fire.Restore(false, OilFire.ColdBrick, OilFire.AmbientTemperature, 0f);
+        Run(fire, Inputs(0f) with { FiringValve = 1f, Atomizer = 0f, BoilerPressure = 1f }, 60f);
+
+        Assert.Equal(0f, fire.FeedRate);
+        Assert.Equal(0f, fire.PooledOil);
+    }
+
+    [Fact]
+    public void WithoutBoilerPressureNeitherTheHeaterNorTheAtomizerWorks()
+    {
+        var fire = new OilFire(Gs4);
+        fire.Restore(false, OilFire.ColdBrick, OilFire.AmbientTemperature, 0f);
+        Run(fire, Inputs(0f) with { Heater = 1f, Atomizer = 1f, BoilerPressure = 1f }, 600f);
+
+        Assert.Equal(0f, fire.HeaterSteamUsed);
+        Assert.Equal(0f, fire.AtomizerSteam);
+        Assert.Equal(OilFire.AmbientTemperature, fire.OilTemperature, 1);
+    }
+
+    [Fact]
+    public void TheStackShowsAHazeWhenRightClearWithTooMuchAirAndBlackWhenStarved()
+    {
+        float Stack(float excess, float atomizing = 1.2f)
+        {
+            var fire = Burning();
+            Run(fire, Inputs(HalfOil, excess, atomizing), 20f);
+            return fire.StackSmoke;
+        }
+
+        Assert.InRange(Stack(OilFire.BestExcessAir), 0.12f, 0.3f);
+        Assert.InRange(Stack(2.5f), 0f, 0.05f);
+        Assert.True(Stack(0.7f) > 0.6f, $"short of air {Stack(0.7f):F2}");
+        Assert.True(Stack(OilFire.BestExcessAir, atomizing: 0.4f) > 0.4f, $"starved of steam {Stack(OilFire.BestExcessAir, 0.4f):F2}");
+        // A little too much oil for the air browns the haze; it is not yet black.
+        Assert.InRange(Stack(0.9f), 0.3f, 0.6f);
+    }
+
+    [Fact]
+    public void TheStackDarkensOverSecondsAsTheSmokeWorksThroughTheTubes()
+    {
+        var fire = Burning();
+        Run(fire, Inputs(HalfOil), 20f);
+        Run(fire, Inputs(HalfOil, excess: 0.6f), 1f);
+        var soon = fire.StackSmoke;
+        Run(fire, Inputs(HalfOil, excess: 0.6f), 10f);
+
+        Assert.True(soon < 0.6f && fire.StackSmoke > 0.85f, $"{soon:F2} after a second, {fire.StackSmoke:F2} after ten");
+    }
+
+    [Fact]
+    public void AShedsSteamLineLightsADeadEngine()
+    {
+        var dead = new OilFire(Gs4);
+        Run(dead, Inputs(HalfOil) with { BoilerPressure = 1f }, 1f);
+        dead.Ignite();
+        Run(dead, Inputs(HalfOil) with { BoilerPressure = 1f }, 5f);
+        Assert.False(dead.FireOn, "with no steam the atomizer cannot work, so the oil will not light");
+
+        var lined = new OilFire(Gs4);
+        lined.Ignite();
+        Run(lined, Inputs(HalfOil) with { BoilerPressure = 1f, SteamLinePressure = 7.9f }, 20f);
+        Assert.True(lined.FireOn && lined.OnSteamLine && lined.AtomizerSteam > 0f, $"atomizing {lined.Atomizing:F2}");
+
+        Run(lined, Inputs(HalfOil) with { BoilerPressure = 15f, SteamLinePressure = 7.9f }, 1f);
+        Assert.False(lined.OnSteamLine, "with more steam of its own the engine takes the boiler's");
+    }
+
+    [Fact]
+    public void TheHeaterAndAtomizerPassMoreSteamAsThePressureRises()
+    {
+        float Heated(float pressure)
+        {
+            var fire = new OilFire(Gs4);
+            fire.Restore(false, OilFire.ColdBrick, OilFire.AmbientTemperature, 0f);
+            Run(fire, Inputs(0f) with { Heater = 1f, Atomizer = 1f, BoilerPressure = pressure }, 300f);
+            return fire.OilTemperature;
+        }
+        var low = new OilFire(Gs4);
+        var high = new OilFire(Gs4);
+        Run(low, Inputs(0f) with { Atomizer = 1f, BoilerPressure = 3f }, 1f);
+        Run(high, Inputs(0f) with { Atomizer = 1f, BoilerPressure = 15f }, 1f);
+
+        Assert.True(Heated(3f) > OilFire.AmbientTemperature + 1f && Heated(3f) < Heated(15f) - 3f, $"{Heated(3f):F1} C at 3 bar, {Heated(15f):F1} at 15");
+        Assert.True(low.AtomizerSteam > 0f && low.AtomizerSteam < 0.5f * high.AtomizerSteam);
     }
 
     [Fact]

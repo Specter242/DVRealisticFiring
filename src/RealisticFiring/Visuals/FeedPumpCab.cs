@@ -67,6 +67,17 @@ namespace RealisticFiring.Visuals
         // The cab label beside a lever is within this of it, m.
         private const float LabelReach = 0.45f;
 
+        // A loco with no stoker manifold (an oil burner) carries the pump's
+        // gauge on the cab's side wall by the fireman's handwheel that works
+        // the pump: along the wall (toward the front), up from the handwheel,
+        // and its back out from the wall's collider, m; the gauge sliders
+        // move it until it is seated. The collider can lie outside the drawn
+        // wall (the 2901's does, by a few cm), so the back stands off it.
+        private const string LeverGaugeRoot = "[RealisticFiring feed pump gauge]";
+        private static readonly Vector3 LeverGaugeDefault = new Vector3(0f, 0.25f, 0.06f);
+        private const float WallSearch = 1.5f;
+        private static readonly Dictionary<string, Vector3> LeverGaugeSeats = new Dictionary<string, Vector3>();
+
         /// <summary>
         /// Builds the pump's valve (unless the fireman's injector lever works
         /// it) and gauge in the manifold's frame, which must still be
@@ -107,8 +118,8 @@ namespace RealisticFiring.Visuals
                 notes.Add("its operating valve" + (labelled ? " and plate" : ""));
             }
             var open = fit.Type == FeedHeaterType.Open;
-            var gauge = StokerGauges.BuildOne(frame, cabPrefab, gaugePoint, open ? "FEED PUMP\nPSI" : "FEEDWATER\nPSI",
-                open ? 60f : 400f, open ? 10f : 50f, () => rig.PumpFlow.Gauge);
+            var gauge = StokerGauges.BuildOne(frame, cabPrefab, gaugePoint, open ? "FEED PUMP\nbar" : "FEEDWATER\nbar",
+                open ? 5f : 30f, open ? 1f : 5f, () => rig.PumpFlow.Gauge);
             notes.Add(open ? "a cold-pump gauge" : "a delivery gauge");
             // Its gauge line, from behind the gauge into the boiler.
             notes.Add(StokerCab.PipeToBackhead(frame, car, new Vector2(gaugePoint.x, gaugePoint.y), GaugeDepth - 0.005f, GaugeLineRadius,
@@ -145,7 +156,104 @@ namespace RealisticFiring.Visuals
             feeder.gameObject.AddComponent<FeederRebinder>().Bind(feeder, port);
             feeder.gameObject.AddComponent<HoverName>().Source = () => Hover(rig);
             var relabeled = Relabel(interior, feeder.transform, "FEED PUMP");
-            return $"the fireman's injector lever '{feeder.name}' works the {rig.PumpName} feed pump" + (relabeled ? ", its plate relabeled" : "");
+            var gauge = OilBurnerFit.IsOilBurner(car) ? BuildLeverGauge(car, interior, rig, fit, feeder.transform) : null;
+            return $"the fireman's injector lever '{feeder.name}' works the {rig.PumpName} feed pump" + (relabeled ? ", its plate relabeled" : "") +
+                   (gauge != null ? $", {gauge}" : "");
+        }
+
+        /// <summary>Moves every loaded lever-mounted pump gauge, as the feed pump sliders change.</summary>
+        public static void RebuildLeverGauges()
+        {
+            foreach (var rig in InjectorRig.All)
+            {
+                var car = rig.Car;
+                var interior = car != null && car.loadedInterior != null ? car.loadedInterior.transform : null;
+                var old = interior != null ? interior.Find(LeverGaugeRoot) : null;
+                if (old == null || rig.Pump == null || !FeedwaterFit.TryGet(car.carLivery.id, out var fit))
+                    continue;
+                Object.DestroyImmediate(old.gameObject);
+                var lever = interior.GetComponentsInChildren<InteractablePortFeeder>(true).FirstOrDefault(f => f.portId == FeedwaterFit.Valve.PortId);
+                if (lever != null)
+                    BuildLeverGauge(car, interior, rig, fit, lever.transform);
+            }
+        }
+
+        // The pump's gauge, its line to the backhead, and the pump's sounds,
+        // above the handwheel that works it. Returns a note for the log, or null.
+        private static string BuildLeverGauge(TrainCar car, Transform interior, InjectorRig rig, FeedwaterFit.Fit fit, Transform lever)
+        {
+            if (!DV.Globals.G.Types.TryGetLivery(StokerCab.SourceLivery, out var livery) || livery.interiorPrefab == null)
+                return null;
+            var seated = LeverGaugeSeats.TryGetValue(car.carLivery.id, out var seat);
+            var settings = Main.Settings;
+            var spot = seated ? seat : LeverGaugeDefault + new Vector3(settings.FeedGaugeNudgeAlong, settings.FeedGaugeNudgeUp, settings.FeedGaugeNudgeOut) / 100f;
+            var up = car.transform.up;
+            var at = lever.position + car.transform.forward * spot.x + up * spot.y;
+            // Out to the wall on the handwheel's side of the cab.
+            var outward = car.transform.InverseTransformPoint(lever.position).x < 0f ? -car.transform.right : car.transform.right;
+            var onWall = TryFindWall(car, at, outward, out var wall, out var normal);
+
+            var root = new GameObject(LeverGaugeRoot);
+            root.SetActive(false);
+            root.transform.SetParent(interior, false);
+            var frame = new GameObject("frame").transform;
+            frame.SetParent(root.transform, false);
+            // z into the wall (or the backhead without one), y up; the dial faces -z.
+            frame.SetPositionAndRotation(onWall ? wall : at, Quaternion.LookRotation(onWall ? -normal : car.transform.forward, up));
+            var open = fit.Type == FeedHeaterType.Open;
+            var gauge = StokerGauges.BuildOne(frame, livery.interiorPrefab.transform, Vector3.zero,
+                open ? "FEED PUMP\nbar" : "FEEDWATER\nbar", open ? 5f : 30f, open ? 1f : 5f, () => rig.PumpFlow.Gauge);
+            var dial = frame.childCount > 0 ? frame.GetChild(frame.childCount - 1) : null;
+            if (dial != null && onWall)
+            {
+                // Its back the standoff out from the wall's collider.
+                var back = Back(frame, dial);
+                dial.localPosition += new Vector3(0f, 0f, -spot.z - back);
+            }
+            FeedPumpSounds.Attach(car, rig, fit.Type, frame);
+            root.SetActive(true);
+            gauge.WriteScales();
+            var local = car.transform.InverseTransformPoint(frame.position);
+            return $"its {(open ? "cold-pump" : "delivery")} gauge " + (onWall ? "on the cab wall" : "facing the backhead (no wall found)") +
+                   $" at ({local.x:F2}, {local.y:F2}, {local.z:F2}) m in the car frame" + (seated ? " (seated for the livery)" : "");
+        }
+
+        // The cab's side wall out from a point: the first surface of the loco
+        // facing back in.
+        private static bool TryFindWall(TrainCar car, Vector3 from, Vector3 outward, out Vector3 point, out Vector3 normal)
+        {
+            point = from;
+            normal = -outward;
+            foreach (var hit in Physics.RaycastAll(from, outward, WallSearch, ~0, QueryTriggerInteraction.Ignore).OrderBy(h => h.distance))
+            {
+                if (TrainCar.Resolve(hit.collider.gameObject) != car || Vector3.Dot(hit.normal, -outward) < 0.7f)
+                    continue;
+                point = hit.point;
+                normal = hit.normal;
+                return true;
+            }
+            return false;
+        }
+
+        // How far the gauge's meshes reach along the frame's z (into the wall).
+        private static float Back(Transform frame, Transform gauge)
+        {
+            var back = float.MinValue;
+            foreach (var filter in gauge.GetComponentsInChildren<MeshFilter>(true))
+            {
+                if (filter.sharedMesh == null)
+                    continue;
+                var bounds = filter.sharedMesh.bounds;
+                for (var i = 0; i < 8; i++)
+                {
+                    var corner = new Vector3(
+                        (i & 1) == 0 ? bounds.min.x : bounds.max.x,
+                        (i & 2) == 0 ? bounds.min.y : bounds.max.y,
+                        (i & 4) == 0 ? bounds.min.z : bounds.max.z);
+                    back = Mathf.Max(back, frame.InverseTransformPoint(filter.transform.TransformPoint(corner)).z);
+                }
+            }
+            return back > float.MinValue ? back : 0f;
         }
 
         // The cab plate nearest a lever, named for the injector, gets new text.

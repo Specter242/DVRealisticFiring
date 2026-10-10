@@ -57,7 +57,9 @@ namespace RealisticFiring.Patches
                 __instance.simFlow.TryGetPort(doorId, out var door, canBeNullOrEmpty: true);
                 __instance.simFlow.TryGetPort(OilBurnerFit.Atomizer.PortId, out var atomizer, canBeNullOrEmpty: true);
                 __instance.simFlow.TryGetPort(OilBurnerFit.Heater.PortId, out var heater, canBeNullOrEmpty: true);
-                oil.AttachPorts(door, atomizer, heater);
+                __instance.simFlow.TryGetPort(OilBurnerFit.ShopSteam.PortId, out var shopSteam, canBeNullOrEmpty: true);
+                __instance.simFlow.TryGetPort(OilBurnerFit.PeepHolePortId, out var peepHole, canBeNullOrEmpty: true);
+                oil.AttachPorts(door, atomizer, heater, shopSteam, peepHole);
             }
 
             if (!FireboxRegistry.TryGet(trainCar, out var firebox) || __instance.simFlow == null)

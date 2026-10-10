@@ -12,7 +12,7 @@ namespace RealisticFiring.Visuals
     /// stoker engine's, a duplex gauge for the two front jets (red hand left,
     /// black hand right), and the fine-coal jet's; the back jets had none.
     /// Each is the stock S282's boiler pressure gauge at half size with its
-    /// printed dial swapped for a blank face and our own psi scale, its needle
+    /// printed dial swapped for a blank face and our own bar scale, its needle
     /// driven from the stoker's last tick instead of a sim port.
     /// </summary>
     internal static class StokerGauges
@@ -22,7 +22,7 @@ namespace RealisticFiring.Visuals
         private const string SourceDial = "s282_label_pressuremeter";
         private const string SourceLabelText = "LocoS282A_Interior_Labels/Blower/Label_RM_1/Text";
 
-        internal const float PsiPerBar = 14.5038f;
+        private const float NeedleUpdateThresholdBar = 0.005f;
 
         private const float Scale = 0.5f;
         private const float Column = 0.165f;
@@ -68,9 +68,9 @@ namespace RealisticFiring.Visuals
 
         private static readonly Spec[] Gauges =
         {
-            new Spec(0.03f, "STOKER\nPSI", 100f, 20f, (Reading.Engine, null)),
-            new Spec(-0.08f, "FRONT JETS\nPSI", 60f, 10f, (Reading.LeftFront, RedHand), (Reading.RightFront, BlackHand)),
-            new Spec(-0.19f, "FINES\nPSI", 60f, 10f, (Reading.Fines, null)),
+            new Spec(0.03f, "STOKER\nbar", 7f, 1f, (Reading.Engine, null)),
+            new Spec(-0.08f, "FRONT JETS\nbar", 5f, 1f, (Reading.LeftFront, RedHand), (Reading.RightFront, BlackHand)),
+            new Spec(-0.19f, "FINES\nbar", 5f, 1f, (Reading.Fines, null)),
         };
 
         /// <summary>
@@ -116,17 +116,17 @@ namespace RealisticFiring.Visuals
 
         /// <summary>
         /// One gauge at a point in a frame that must still be inactive, its
-        /// hand reading a pressure in bar gauge, shown in psi.
+        /// hand and scale reading a pressure in bar gauge.
         /// </summary>
-        public static Built BuildOne(Transform frame, Transform cabPrefab, Vector3 at, string title, float fullScalePsi, float stepPsi, System.Func<float> readBar)
+        public static Built BuildOne(Transform frame, Transform cabPrefab, Vector3 at, string title, float fullScaleBar, float stepBar, System.Func<float> readBar)
         {
             var built = new Built();
             if (!Sources(cabPrefab, out var source, out var font))
                 return built;
-            var needles = Clone(frame, source, font, built, at, title, fullScalePsi, stepPsi, new Color?[] { null });
+            var needles = Clone(frame, source, font, built, at, title, fullScaleBar, stepBar, new Color?[] { null });
             var driver = needles[0].gameObject.AddComponent<FuncGaugeDriver>();
             driver.Needle = needles[0];
-            driver.ReadPsi = () => PsiPerBar * readBar();
+            driver.ReadBar = readBar;
             return built;
         }
 
@@ -291,20 +291,20 @@ namespace RealisticFiring.Visuals
             return faceMaterial;
         }
 
-        /// <summary>Moves one gauge's hand to a reading, in psi.</summary>
+        /// <summary>Moves one gauge's hand to a reading, in bar gauge.</summary>
         internal sealed class FuncGaugeDriver : MonoBehaviour
         {
             public IndicatorGauge Needle { get; set; }
 
-            public System.Func<float> ReadPsi { get; set; }
+            public System.Func<float> ReadBar { get; set; }
 
             private void Update()
             {
-                if (Needle == null || ReadPsi == null)
+                if (Needle == null || ReadBar == null)
                     return;
-                var psi = ReadPsi();
-                if (Mathf.Abs(Needle.Value - psi) > 0.05f)
-                    Needle.Value = psi;
+                var bar = ReadBar();
+                if (Mathf.Abs(Needle.Value - bar) > NeedleUpdateThresholdBar)
+                    Needle.Value = bar;
             }
         }
 
@@ -325,9 +325,9 @@ namespace RealisticFiring.Visuals
                 {
                     if (needle == null)
                         continue;
-                    var psi = PsiPerBar * Read(flow, reading);
-                    if (Mathf.Abs(needle.Value - psi) > 0.05f)
-                        needle.Value = psi;
+                    var bar = Read(flow, reading);
+                    if (Mathf.Abs(needle.Value - bar) > NeedleUpdateThresholdBar)
+                        needle.Value = bar;
                 }
             }
 

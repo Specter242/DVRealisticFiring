@@ -5,6 +5,9 @@ The textures are grayscale lit density with alpha, tinted per particle by the
 mod (white steam, grey haze, dark soot), so one set serves every color.
 
   smoke_puff_flipbook.png  8 x 8 frames: a puff that swells and breaks up
+                           (the firebox's smoke)
+  smoke_wisp_flipbook.png  8 rows of 8 frames: eight wisps, each frayed and
+                           drawn out over its life (the chimney plume)
   smoke_jet_flipbook.png   4 x 4 frames: streaky exhaust jet
   spark.png                a cinder's glow: hot core, soft halo
 
@@ -68,12 +71,17 @@ def fbm(shape, base_frequency, octaves, rng, stretch=(1.0, 1.0, 1.0)):
 
 
 def resize_volume(volume, shape):
-    """Nearest-free linear resize of a (d, h, w) volume, frame by frame."""
+    """Linear resize of a (d, h, w) volume: each frame resized, blended between frames in depth."""
+    def resized(frame):
+        image = Image.fromarray(frame.astype(np.float32)).resize((shape[2], shape[1]), Image.BILINEAR)
+        return np.asarray(image)
+
     frames = []
     for z in np.linspace(0, volume.shape[0] - 1, shape[0]):
-        frame = volume[int(round(z))]
-        image = Image.fromarray(frame.astype(np.float32)).resize((shape[2], shape[1]), Image.BILINEAR)
-        frames.append(np.asarray(image))
+        lower = int(np.floor(z))
+        upper = min(lower + 1, volume.shape[0] - 1)
+        f = z - lower
+        frames.append(resized(volume[lower]) * (1 - f) + resized(volume[upper]) * f)
     return np.stack(frames)
 
 
@@ -114,6 +122,69 @@ def puff_frames(count, rng):
     breakup = smoothstep(-0.35, 0.35, fbm(shape, 4.0, 3, rng) + 1.1 - 1.4 * t ** 2)
     density = np.clip(body * detail * breakup, 0.0, 1.0)
     return shade(density), density
+
+
+def sample(volume, ty, tx):
+    """Bilinear samples of each frame of a (frames, h, w) volume at fractional pixel coordinates."""
+    count, h, w = volume.shape
+    y0 = np.floor(ty).astype(int)
+    x0 = np.floor(tx).astype(int)
+    fy = ty - y0
+    fx = tx - x0
+    f = np.arange(count)[:, None, None]
+
+    def at(y, x):
+        return volume[f, np.clip(y, 0, h - 1), np.clip(x, 0, w - 1)]
+
+    return (at(y0, x0) * (1 - fx) * (1 - fy) + at(y0, x0 + 1) * fx * (1 - fy)
+            + at(y0 + 1, x0) * (1 - fx) * fy + at(y0 + 1, x0 + 1) * fx * fy)
+
+
+def wisp_frames(variants, steps, rng):
+    """Smoke wisps rather than puffs: ragged, swirled filaments drawn out
+    along the frame's height, with no round outline. Each variant is a row
+    of frames over its life, coherent from frame to frame, its filaments
+    swirling further, spreading, and thinning as it goes."""
+    lit_rows, density_rows = [], []
+    ys, xs = np.mgrid[-1:1:FRAME * 1j, -1:1:FRAME * 1j]
+    pixels_y, pixels_x = np.mgrid[0:FRAME, 0:FRAME].astype(float)
+    for _ in range(variants):
+        shape = (steps, FRAME, FRAME)
+        t = np.linspace(0.0, 1.0, steps)[:, None, None]
+        # Slow over the frames (a third of the detail along time), so a
+        # wisp evolves rather than flickers.
+        warp_x = fbm(shape, 2.0, 3, rng, stretch=(0.35, 1.0, 1.0))
+        warp_y = fbm(shape, 2.0, 3, rng, stretch=(0.35, 1.0, 1.0))
+        # Filaments: the ridges of noise stretched along the height, swirled by the warp.
+        strands = fbm(shape, 3.0, 5, rng, stretch=(0.35, 0.4, 1.0))
+        body = fbm(shape, 2.5, 4, rng, stretch=(0.35, 1.0, 1.0))
+        reach = (0.16 + 0.12 * t) * FRAME
+        ty = pixels_y[None] + reach * warp_y
+        tx = pixels_x[None] + reach * warp_x
+        ridges = 1.0 - np.abs(sample(strands, ty, tx))
+        filaments = ridges ** (2.5 + 1.5 * t)
+        soft = 0.5 + 0.5 * sample(body, ty, tx)
+        texture = 0.55 * soft + 0.45 * filaments
+
+        # A ragged, drawn-out outline, wider as it spreads.
+        aspect = rng.uniform(1.3, 1.9)
+        radius = np.sqrt((xs + 0.35 * warp_x) ** 2 + ((ys + 0.35 * warp_y) / aspect) ** 2)
+        outline = smoothstep(0.85 + 0.15 * t + 0.15 * body, 0.15, radius)
+        border = smoothstep(1.0, 0.86, np.maximum(np.abs(xs), np.abs(ys)))[None]
+        density = texture * outline * border
+        # Thinning over its life: the faint parts go first.
+        density = np.clip((density - 0.04 - 0.06 * t) / (0.7 - 0.1 * t), 0.0, 1.0)
+        density = density / np.maximum(density.max(axis=(1, 2), keepdims=True), 1e-6) * 0.95
+
+        # Gentle relief: a wisp is lit through, not a ball lit from above.
+        # Its density-weighted mean stays at the puffs' 0.63, which the
+        # mod's plume light setting is set for.
+        relief = shade(density)
+        weighted = (relief * density).sum() / max(density.sum(), 1e-6)
+        lit = np.clip(0.63 + 0.45 * (relief - weighted), 0.0, 1.0)
+        lit_rows.append(lit)
+        density_rows.append(density)
+    return np.concatenate(lit_rows), np.concatenate(density_rows)
 
 
 def jet_frames(count, rng):
@@ -173,11 +244,13 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     puff = atlas(*puff_frames(64, rng), columns=8)
     jet = atlas(*jet_frames(16, rng), columns=4)
+    wisp = atlas(*wisp_frames(8, 8, rng), columns=8)
     puff.save(args.output / "smoke_puff_flipbook.png")
     jet.save(args.output / "smoke_jet_flipbook.png")
+    wisp.save(args.output / "smoke_wisp_flipbook.png")
     spark_texture().save(args.output / "spark.png")
     if args.preview:
-        preview([puff, jet], args.preview)
+        preview([wisp, puff, jet], args.preview)
 
 
 if __name__ == "__main__":

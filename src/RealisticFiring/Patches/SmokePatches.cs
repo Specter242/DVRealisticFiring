@@ -8,8 +8,9 @@ using RealisticFiring.Visuals;
 namespace RealisticFiring.Patches
 {
     /// <summary>
-    /// Hands a realistic firebox's chimney smoke to <see cref="ChimneyPlume"/>
-    /// once the stock reader has found its ports and particle systems.
+    /// Hands a realistic firebox's or oil burner's chimney smoke to
+    /// <see cref="ChimneyPlume"/> once the stock reader has found its ports
+    /// and particle systems.
     /// </summary>
     [HarmonyPatch(typeof(SteamSmokeParticlePortReader), nameof(SteamSmokeParticlePortReader.Init))]
     internal static class SmokeReaderInitPatch
@@ -21,9 +22,13 @@ namespace RealisticFiring.Patches
             try
             {
                 var car = TrainCar.Resolve(__instance.gameObject);
-                if (!FireboxRegistry.TryGet(car, out var firebox))
+                string result;
+                if (FireboxRegistry.TryGet(car, out var firebox))
+                    result = ChimneyPlume.Attach(__instance, simFlow, car, firebox);
+                else if (RealisticOilFirebox.TryGet(car, out var oil))
+                    result = ChimneyPlume.Attach(__instance, simFlow, car, oil);
+                else
                     return;
-                var result = ChimneyPlume.Attach(__instance, simFlow, car, firebox);
                 // Car numbers are assigned after the sim graph is built.
                 if (Main.Settings.LogFireboxCreation)
                     Main.Mod.Logger.Log($"{(string.IsNullOrEmpty(car.ID) ? car.carLivery.id : car.ID)}: {result}");

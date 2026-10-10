@@ -1,8 +1,11 @@
 // Chimney smoke for Realistic Firing: an alpha-blended particle lit by the
 // scene's sky and sun, so smoke darkens at dusk and under cloud. The texture
 // carries density in alpha and baked top-lit relief in RGB; the particle's
-// color tints it (white steam, grey haze, dark soot). Soft particles and fog
-// follow the game's settings.
+// color tints it (white steam, grey haze, dark soot). Fraying: as the
+// particle's alpha falls, the texture's thin parts go first and its dense
+// strands stay, so thinning smoke breaks into wisps rather than fading
+// evenly; at 0 it fades evenly. Soft particles and fog follow the game's
+// settings.
 Shader "RealisticFiring/ChimneySmoke"
 {
     Properties
@@ -12,6 +15,7 @@ Shader "RealisticFiring/ChimneySmoke"
         _SunStrength ("Sun strength", Range(0, 2)) = 0.7
         _SkyStrength ("Sky strength", Range(0, 2)) = 1.0
         _MaxLight ("Brightest light", Range(0.5, 3)) = 1.4
+        _Fray ("Fray as it thins", Range(0, 1)) = 0
     }
 
     SubShader
@@ -41,6 +45,7 @@ Shader "RealisticFiring/ChimneySmoke"
             float _SunStrength;
             float _SkyStrength;
             float _MaxLight;
+            float _Fray;
             UNITY_DECLARE_DEPTH_TEXTURE(_CameraDepthTexture);
 
             struct appdata
@@ -93,7 +98,11 @@ Shader "RealisticFiring/ChimneySmoke"
                 fixed4 tex = tex2D(_MainTex, i.texcoord);
                 fixed4 col;
                 col.rgb = tex.rgb * i.color.rgb * i.light;
-                col.a = tex.a * i.color.a;
+                // Cut the thin density as the particle thins; its overall
+                // coverage stays about what an even fade would give.
+                half cut = _Fray * (1 - i.color.a);
+                half strands = saturate((tex.a - cut) / max(1 - cut, 0.05));
+                col.a = strands * pow(i.color.a, 1 - _Fray);
 
                 #ifdef SOFTPARTICLES_ON
                 float sceneZ = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE_PROJ(_CameraDepthTexture, UNITY_PROJ_COORD(i.projPos)));

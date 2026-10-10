@@ -25,6 +25,12 @@ namespace RealisticFiring.Patches
                 // can be measured before the mod supports them.
                 if (Main.Settings.DumpFireboxGeometry)
                     FireboxGeometryDump.DumpOnce(car, __instance);
+                if (RealisticOilFirebox.TryGet(car, out var oil))
+                {
+                    var look = OilFireLook.Attach(__instance, car, oil);
+                    if (look != null && Main.Settings.LogFireboxCreation)
+                        Main.Mod.Logger.Log($"{car.ID}: {look}");
+                }
                 if (FireboxRegistry.TryGet(car, out var firebox))
                 {
                     var result = ZonedCoalBed.Attach(__instance, car, firebox);

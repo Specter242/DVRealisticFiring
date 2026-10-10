@@ -22,6 +22,7 @@ namespace RealisticFiring
         Hydrant,
         Sand,
         Shovelful,
+        SteamLine,
     }
 
     /// <summary>Something the host's fire did that players near the loco should see and hear.</summary>

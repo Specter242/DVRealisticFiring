@@ -15,7 +15,21 @@ namespace RealisticFiring.Sim
         /// <summary>The oil heater's valve: steam to the tender's oil. Shut by default.</summary>
         public static readonly StokerJetControls.Valve Heater = new StokerJetControls.Valve("rfOilHeater", "Oil heater", null, 0f);
 
+        /// <summary>
+        /// The fire door's peep hole, the sand hole on an oil burner ("sand is
+        /// poured through the sand or peep hole", ICS pp. 54-55). The 2901's cab
+        /// has its cover wired to this control, which its sim never had.
+        /// </summary>
+        public const string PeepHoleId = "peephole";
+        public const string PeepHolePortId = PeepHoleId + ".EXT_IN";
+
+        /// <summary>The shop steam valve: a shed's steam line on the burner's valves, at a pit stop. Shut by default.</summary>
+        public static readonly StokerJetControls.Valve ShopSteam = new StokerJetControls.Valve("rfShopSteam", "Shop steam", null, 0f);
+
+ private static readonly HashSet<string> Unsupported = new HashSet<string> { "S040F", "S484-841A" };
+
         private static readonly Dictionary<TrainCar, bool> Known = new Dictionary<TrainCar, bool>();
+        private static readonly HashSet<string> Skipped = new HashSet<string>();
 
         /// <summary>Whether <paramref name="car"/> fires its firebox with fuel oil through a CCL stoker.</summary>
         public static bool IsOilBurner(TrainCar car)
@@ -28,6 +42,13 @@ namespace RealisticFiring.Sim
                 Known.Remove(stale);
             var simController = car.SimController != null ? car.SimController : car.GetComponentInChildren<SimController>(true);
             var oil = FeedsFuel(simController != null ? simController.connectionsDefinition : null, out _);
+            var type = car.carLivery != null && car.carLivery.parentType != null ? car.carLivery.parentType.id : null;
+            if (oil && type != null && Unsupported.Contains(type))
+            {
+                oil = false;
+                if (Skipped.Add(type))
+                    Main.Mod?.Logger.Log($"{type}: oil-fired, but not supported; it keeps its own firing");
+            }
             Known[car] = oil;
             return oil;
         }

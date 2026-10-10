@@ -24,8 +24,11 @@ namespace RealisticFiring
         [Draw("Fusible plugs where the prototypes had them (the Hudson has a low-water alarm): a bared crown sheet melts the plug, which drowns the fire instead of the boiler failing (needs a restart)")]
         public bool FusiblePlugs = true;
 
-        [Draw("Realistic oil burners on oil-fired custom locos (the GS-4 \"Sunset\", Santa Fe 2901, B&O C-16): firing valve, atomizer, oil heater, flarebacks, flue sanding (needs a restart)")]
+        [Draw("Realistic oil burners on oil-fired custom locos (the GS-4 \"Sunset\", Santa Fe 2901): firing valve, atomizer, oil heater, flarebacks, flue sanding (needs a restart)")]
         public bool RealisticOilBurners = true;
+
+        [Draw("Realistic cylinders on every steam loco: valve events from the gear (lead, release, compression), clearance and cushion, steam through the opening port, and the blast pipe's back pressure")]
+        public bool RealisticCylinders = true;
 
         [Draw("Fit the NYC Hudson with its Franklin trailing-truck booster (needs a restart)")]
         public bool FitBoosters = true;
@@ -38,6 +41,9 @@ namespace RealisticFiring
 
         [Draw("Glow of the fire in the ashpan, under the engine, × (0 off): bright over clean grates, dimmed by dead ash, flaring when fire drops in", DrawType.Slider, Min = 0, Max = 3, Precision = 1)]
         public float AshpanGlow = 1f;
+
+        [Draw("Oil burner's roar and drumming, volume × (0 off)", DrawType.Slider, Min = 0, Max = 2, Precision = 1)]
+        public float OilBurnerVolume = 1f;
 
         [Draw("Realistic chimney smoke on the S282 and S060 (restart required)")]
         public bool RealisticSmoke = true;
@@ -74,8 +80,23 @@ namespace RealisticFiring
         [Draw("Jet width while fast, share of the spread puff", DrawType.Slider, Min = 0.05, Max = 1, Precision = 2)]
         public float SmokeJetWidth = 0.25f;
 
-        [Draw("Rise speed of the spread smoke, m/s", DrawType.Slider, Min = 0, Max = 4, Precision = 1)]
-        public float SmokeRiseSpeed = 1.2f;
+        [Draw("Plume buoyancy, × (the stack's heat lifts the spread smoke, slowing with height but never stopping)", DrawType.Slider, Min = 0, Max = 3, Precision = 1)]
+        public float SmokeBuoyancy = 1f;
+
+        [Draw("Exhaust steam lingers, s (longer in cold, damp air; black smoke towers either way)", DrawType.Slider, Min = 0.5, Max = 30, Precision = 1)]
+        public float SmokeSteamLinger = 6f;
+
+        [Draw("Plume light, × (the sky's and sun's light on the plume; at 1.6 white steam shows white in daylight, the smoke's relief averaging 0.63)", DrawType.Slider, Min = 0.5, Max = 3, Precision = 1)]
+        public float SmokeLight = 1.6f;
+
+        [Draw("Smoke fraying (as the smoke thins it breaks into strands rather than fading evenly; 0 fades evenly)", DrawType.Slider, Min = 0, Max = 1, Precision = 2)]
+        public float SmokeFray = 0.5f;
+
+        [Draw("Plume eddies, × (the turbulence that stirs the rising smoke)", DrawType.Slider, Min = 0, Max = 2, Precision = 1)]
+        public float SmokeEddies = 1f;
+
+        [Draw("Wind, × (from the weather: its direction, a breeze wandering between calm spells and 2 m/s, stronger in rain and storms; 0 for still air)", DrawType.Slider, Min = 0, Max = 3, Precision = 1)]
+        public float SmokeWind = 1f;
 
         [Draw("Narrow-jet zone above the smoke emitter at most, m (smoke there stays thin and moves with the stack; it ends at the stack's lip where the mod finds it)", DrawType.Slider, Min = 0, Max = 3, Precision = 2)]
         public float SmokeJetZone = 1.5f;
@@ -107,6 +128,9 @@ namespace RealisticFiring
 
         [Draw("Wash out the boiler and fill it from a hydrant (at a pit stop with water, boiler cold)")]
         public KeyBinding HydrantKey = Bind(KeyCode.H, ctrl: true, shift: true);
+
+        [Draw("Hook up a shed's steam line to an oil burner's atomizer and heater, to fire a dead engine (at a pit stop)")]
+        public KeyBinding SteamLineKey = Bind(KeyCode.L, ctrl: true, shift: true);
 
         [Draw("Shake grate")]
         public KeyBinding ShakeGrateKey = Bind(KeyCode.G, ctrl: true);
@@ -173,6 +197,16 @@ namespace RealisticFiring
 
         [Draw("Up, cm", DrawType.Slider, Min = -100, Max = 100, Precision = 0)]
         public float FeedNudgeUp;
+
+        [Header("Feed pump gauge placement on the cab wall, on oil burners (fine-tune for your eye; moves it as you slide)")]
+        [Draw("Along the wall, cm (+ toward the front)", DrawType.Slider, Min = -60, Max = 60, Precision = 0)]
+        public float FeedGaugeNudgeAlong;
+
+        [Draw("Up, cm", DrawType.Slider, Min = -60, Max = 60, Precision = 0)]
+        public float FeedGaugeNudgeUp;
+
+        [Draw("Out from the wall, cm (+ into the cab)", DrawType.Slider, Min = -10, Max = 20, Precision = 0)]
+        public float FeedGaugeNudgeOut;
 
         [Header("Drop grate lever placement, from the fire-dump lever (fine-tune for your eye; moves it as you slide)")]
         [Draw("Across, cm (+ right)", DrawType.Slider, Min = -100, Max = 100, Precision = 0)]
@@ -244,6 +278,7 @@ namespace RealisticFiring
         private Vector3 lastManifoldTurn;
         private Vector4 lastBooster;
         private Vector2 lastFeed;
+        private Vector3 lastFeedGauge;
         private Vector2 lastDropGrate;
         private Vector3 lastAshpanLever;
         private Vector3 lastOilValves;
@@ -259,6 +294,12 @@ namespace RealisticFiring
                 lastOilValves = oilValves;
                 lastSandBox = sandBox;
                 Visuals.OilBurnerCab.RebuildLoaded();
+            }
+            var feedGauge = new Vector3(FeedGaugeNudgeAlong, FeedGaugeNudgeUp, FeedGaugeNudgeOut);
+            if (feedGauge != lastFeedGauge)
+            {
+                lastFeedGauge = feedGauge;
+                Visuals.FeedPumpCab.RebuildLeverGauges();
             }
             var ashpanLever = new Vector3(AshpanLeverNudgeAlong, AshpanLeverNudgeUp, AshpanLeverNudgeOut);
             if (ashpanLever != lastAshpanLever)

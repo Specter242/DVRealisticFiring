@@ -42,13 +42,16 @@ namespace RealisticFiring.Core.Tests;
     }
 
     [Fact]
-    public void ColorDarkensSteadilyWithSmoke()
+    public void ColorDarkensSteadilyWithSmokeUntilBlack()
     {
         var previous = float.MaxValue;
-        for (var smoke = 0f; smoke <= 1.001f; smoke += 0.1f)
+        for (var smoke = 0f; smoke <= 1.001f; smoke += 0.05f)
         {
             var brightness = Brightness(PlumeModel.ForBeat(Tuning, Working(5f, smoke)).Color);
-            Assert.True(brightness < previous, $"brightness {brightness} at smoke {smoke}");
+            if (smoke <= PlumeModel.SootForBlack + 0.001f)
+                Assert.True(brightness < previous, $"brightness {brightness} at smoke {smoke}");
+            else
+                Assert.True(brightness <= previous + 1e-4f, $"brightness {brightness} at smoke {smoke}, past black");
             previous = brightness;
         }
     }
@@ -75,10 +78,57 @@ namespace RealisticFiring.Core.Tests;
     }
 
     [Fact]
-    public void SpreadSmokeRisesAtTheTunedSpeed()
+    public void ABeatLaunchesFromADriftToTheHardestSpeed()
     {
-        // Lift balances drag at the rise speed: dv/dt = lift - k v.
-        Assert.Equal(Tuning.RiseSpeed, PlumeModel.Lift(Tuning) / PlumeModel.JetDrag(Tuning), 3);
+        // An oil burner's stack launches the game's beats by the same speeds.
+        Assert.Equal(3f, PlumeModel.PuffSpeed(Tuning, 0f), 3);
+        Assert.Equal(Tuning.LaunchSpeed, PlumeModel.PuffSpeed(Tuning, 1f), 3);
+        Assert.True(PlumeModel.PuffSpeed(Tuning, 0.5f) > PlumeModel.PuffSpeed(Tuning, 0.25f));
+        Assert.Equal(PlumeModel.PuffSpeed(Tuning, 1f), PlumeModel.ForBeat(Tuning, Working(10f)).Speed, 3);
+    }
+
+    [Fact]
+    public void BetweenBeatsTheBlowerSpeedsTheColumn()
+    {
+        Assert.Equal(0f, PlumeModel.SteamThroughStack(0f));
+        Assert.Equal(1f, PlumeModel.SteamThroughStack(0.5f));
+        Assert.True(PlumeModel.HazeSpeed(1f) > PlumeModel.HazeSpeed(0f));
+        var standing = PlumeModel.Between(Tuning, Working(0f, flow: 0f));
+        Assert.Equal(PlumeModel.HazeSpeed(0f), standing.Speed, 3);
+    }
+
+    [Fact]
+    public void AnOilStackReadsAsThePlumesHazeAndSoot()
+    {
+        // Too much air: a clear stack; a well-set fire: a clean fire's haze; black: full soot.
+        Assert.Equal((0f, 1f), PlumeModel.OilStack(0f));
+        Assert.Equal((0f, 0f), PlumeModel.OilStack(OilFire.HazeSmoke));
+        Assert.Equal(PlumeModel.SootForBlack, PlumeModel.OilStack(1f).Soot, 3);
+        Assert.True(PlumeModel.OilStack(0.5f).Soot > 0f && PlumeModel.OilStack(0.5f).Soot < 1f);
+    }
+
+    [Fact]
+    public void AnOilFiresLightHazeTintsItsBeatsAndLingers()
+    {
+        // A light haze read the same as a clear stack: white steam, gone in seconds.
+        var clear = PlumeModel.ForBeat(Tuning, PlumeModel.OilInputs(0f, 4f, 0.5f, true));
+        var haze = PlumeModel.ForBeat(Tuning, PlumeModel.OilInputs(OilFire.HazeSmoke, 4f, 0.5f, true));
+        Assert.True(Brightness(haze.Color) < Brightness(clear.Color) - 0.1f);
+        Assert.Equal(0f, clear.SmokeShare, 3);
+        Assert.True(haze.SmokeShare > 0.2f);
+        // A coal fire's beats stay white steam.
+        Assert.Equal(0f, PlumeModel.ForBeat(Tuning, Working(4f)).SmokeShare, 3);
+        // Too much air thins the steam: a clear stack is thinner than a light haze.
+        Assert.True(clear.Color.A < 0.7f * haze.Color.A);
+    }
+
+    [Fact]
+    public void AClearStackSendsUpNoHazeBetweenBeats()
+    {
+        var clear = Working(0f, flow: 0f);
+        clear.ClearStack = 1f;
+        Assert.Equal(0f, PlumeModel.Between(Tuning, clear).Color.A, 3);
+        Assert.True(PlumeModel.Between(Tuning, Working(0f, flow: 0f)).Color.A > 0.1f);
     }
 
     [Fact]
@@ -124,9 +174,20 @@ namespace RealisticFiring.Core.Tests;
     }
 
     [Fact]
-    public void LightSootOnlyGreysThePuff()
+    public void LightSootOnlyGreysThePuffAndHeavySootBlackensIt()
     {
-        Assert.True(Brightness(PlumeModel.ForBeat(Tuning, Working(5f, smoke: 0.3f)).Color) > 0.6f);
+        Assert.True(Brightness(PlumeModel.ForBeat(Tuning, Working(5f, smoke: 0.1f)).Color) > 0.75f);
+        Assert.True(Brightness(PlumeModel.ForBeat(Tuning, Working(5f, smoke: PlumeModel.SootForBlack)).Color) < 0.25f);
+    }
+
+    [Fact]
+    public void ASootyPuffTurnsItsSmokesColorAsItsSteamGoes()
+    {
+        var puff = PlumeModel.ForBeat(Tuning, Working(5f, smoke: 0.3f));
+        Assert.True(Brightness(puff.SmokeColor) < Brightness(puff.Color) - 0.2f);
+        // A clean fire's haze between beats is the haze's own grey-brown.
+        var haze = PlumeModel.Between(Tuning, Working(0f, flow: 0f));
+        Assert.True(Brightness(haze.SmokeColor) > 0.6f);
     }
 
     [Fact]

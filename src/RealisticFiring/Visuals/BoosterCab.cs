@@ -110,7 +110,7 @@ namespace RealisticFiring.Visuals
                 labels++;
             if (StokerCab.PlaceLabel(sourceControl, sourceLabel, idle, frame, new Vector3(IdleAt.x, IdleAt.y - LabelDrop, Wall - PlateOnWall), "IDLING VALVE"))
                 labels++;
-            var gauge = StokerGauges.BuildOne(frame, cabPrefab, GaugeAt, "BOOSTER\nPSI", 300f, 50f, () => booster.Flow.InletPressure);
+            var gauge = StokerGauges.BuildOne(frame, cabPrefab, GaugeAt, "BOOSTER\nbar", 25f, 5f, () => booster.Flow.InletPressure);
 
             root.SetActive(true);
             gauge.WriteScales();

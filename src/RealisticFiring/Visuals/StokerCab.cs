@@ -167,7 +167,9 @@ namespace RealisticFiring.Visuals
             if (car == null || interior == null || interior.Find(RootName) != null || !Main.Settings.ShowStokerJetValves)
                 return null;
             var flow = car.SimController != null ? car.SimController.SimulationFlow : null;
-            if (flow == null || !flow.TryGetPort(StokerJetControls.Master.PortId, out _))
+            // Looked for by its component first: the port lookup logs an error for every loco without it.
+            if (flow == null || !flow.OrderedSimComps.Any(c => c != null && c.id == StokerJetControls.Master.Id)
+                || !flow.TryGetPort(StokerJetControls.Master.PortId, out _))
                 return null;
 
             // The anchor valve on the fireman's side: the one furthest to the left.

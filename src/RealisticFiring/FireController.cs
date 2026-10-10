@@ -120,6 +120,48 @@ namespace RealisticFiring
 
             if (InjectorRig.TryGetTended(PlayerManager.Car, out var rig))
                 UpdateFilling(rig, settings);
+            if (RealisticOilFirebox.TryGetTended(PlayerManager.Car, out var oil))
+                UpdateSteamLine(oil, settings);
+        }
+
+        private float steamLineCheckTime;
+
+        // The shed's steam line toggles, and comes off once the train has left the pit stop.
+        private void UpdateSteamLine(RealisticOilFirebox oil, Settings settings)
+        {
+            if (settings.SteamLineKey.Down())
+            {
+                if (Net.IsClient)
+                    Net.TrySend(oil.Car, FireAction.SteamLine);
+                else
+                    Notify(ToggleSteamLine(oil));
+                steamLineCheckTime = Time.time;
+            }
+            if (Net.IsClient || !oil.SteamLine || Time.time - steamLineCheckTime < HydrantCheckInterval)
+                return;
+            steamLineCheckTime = Time.time;
+            if (!WaterPoints.Serves(oil.Car))
+            {
+                oil.SteamLine = false;
+                Notify("Steam line off: the train left the pit stop");
+            }
+        }
+
+        /// <summary>
+        /// Hooks a shed's steam line to the burner's valves where there is
+        /// one, or takes it off. Returns the notice for whoever asked.
+        /// </summary>
+        internal static string ToggleSteamLine(RealisticOilFirebox oil)
+        {
+            if (oil.SteamLine)
+            {
+                oil.SteamLine = false;
+                return "Steam line off";
+            }
+            if (!WaterPoints.Serves(oil.Car))
+                return "No steam line here: stand at a pit stop";
+            oil.SteamLine = true;
+            return "Steam line on: the shed's steam at 100 psi for the atomizer and oil heater";
         }
 
         // The hand pump works while its key is held; the hydrant hose toggles,
@@ -223,7 +265,8 @@ namespace RealisticFiring
             {
                 if (RealisticOilFirebox.TryGetTended(PlayerManager.Car, out var oil))
                     Main.Mod.Logger.Log($"{oil.Car.ID} oil status: fire {(oil.Model.FireOn ? "on" : "out")}; {DescribeOil(oil)}" +
-                                        (InjectorRig.TryGetTended(PlayerManager.Car, out var oilRig) ? $"; {Describe(oilRig)}" : ""));
+                                        (InjectorRig.TryGetTended(PlayerManager.Car, out var oilRig) ? $"; {Describe(oilRig)}" : "") +
+                                        (DescribeCylinders(oil.Car) is string oilCylinders ? $"; {oilCylinders}" : ""));
                 return;
             }
 
@@ -239,7 +282,8 @@ namespace RealisticFiring
                 $"startup x{firebox.StartupMultiplier:F1}, stoked {firebox.TakeContinuousFeed():F1} kg, zones back-to-front [{zones}]" +
                 (DescribeStoker(firebox) is string stoker ? $"; {stoker}" : "") +
                 (InjectorRig.TryGetTended(PlayerManager.Car, out var rig) ? $"; {Describe(rig)}" : "") +
-                (DescribeBooster(firebox.Car) is string booster ? $"; {booster}" : ""));
+                (DescribeBooster(firebox.Car) is string booster ? $"; {booster}" : "") +
+                (DescribeCylinders(firebox.Car) is string cylinders ? $"; {cylinders}" : ""));
         }
 
         private const float PsiPerBar = 14.5038f;
@@ -250,9 +294,9 @@ namespace RealisticFiring
             if (!firebox.LastStoker.HasValue)
                 return null;
             var flow = firebox.LastStoker.Value;
-            return $"stoker engine {(flow.Jammed ? "JAMMED (reverse it to clear) " : "")}{firebox.StokerEngineSpeed:P0} ({flow.EnginePressure * PsiPerBar:F0} psi), " +
-                   $"jets {flow.ManifoldPressure * PsiPerBar:F0} psi (front {flow.LeftFrontPressure * PsiPerBar:F0}/{flow.RightFrontPressure * PsiPerBar:F0}, " +
-                   $"back {flow.LeftBackPressure * PsiPerBar:F0}/{flow.RightBackPressure * PsiPerBar:F0}, fines {flow.FinesPressure * PsiPerBar:F0}), " +
+            return $"stoker engine {(flow.Jammed ? "JAMMED (reverse it to clear) " : "")}{firebox.StokerEngineSpeed:P0} ({flow.EnginePressure:F1} bar), " +
+                   $"jets {flow.ManifoldPressure:F1} bar (front {flow.LeftFrontPressure:F1}/{flow.RightFrontPressure:F1}, " +
+                   $"back {flow.LeftBackPressure:F1}/{flow.RightBackPressure:F1}, fines {flow.FinesPressure:F1}), " +
                    $"cinders {flow.CinderRate:F2} kg/s, steam {flow.SteamUsed:F2} kg/s";
         }
 
@@ -263,24 +307,44 @@ namespace RealisticFiring
                 return null;
             var flow = booster.Flow;
             return $"booster {flow.State} ({Visuals.BoosterCab.Describe(flow, flow.State != BoosterState.CutOut)}), " +
-                   $"{flow.Force / 4.44822f:F0} lb, {flow.InletPressure * PsiPerBar:F0} psi, {flow.CrankRpm:F0} rpm, " +
+                   $"{flow.Force / 4.44822f:F0} lb, {flow.InletPressure:F1} bar, {flow.CrankRpm:F0} rpm, " +
                    $"steam {flow.SteamUsed:F2} kg/s, warm {booster.Model.Warmth:P0}" +
                    (booster.Clashes > 0 ? $", {booster.Clashes} clashes" : "");
         }
+
+        /// <summary>The cylinders' indicator diagram this tick, for the status log and overlay, or null without the realistic cylinders.</summary>
+        internal static string DescribeCylinders(TrainCar car)
+        {
+            if (!EngineCylinders.TryGet(car, out var engine, out var cylinders))
+                return null;
+            var cycle = cylinders.Cycle;
+            var events = cycle.Events;
+            return $"cylinders: cutoff {events.Cutoff:P0} (release {events.Release:P0}, compression {events.Compression:P0}), " +
+                   $"chest {Gauge(engine.steamChestPressureReadOut.Value):F0} psi, admitted {Gauge(cycle.Admission):F0}, " +
+                   $"release {Gauge(cycle.ReleasePressure):F0}, back {Gauge(cycle.Back):F0}, mean {cycle.MeanEffectivePressure * PsiPerBar:F0} psi, " +
+                   $"steam {engine.exhaustFlowReadOut.Value:F2} kg/s";
+        }
+
+        private static float Gauge(float bar) => (bar - 1f) * PsiPerBar;
 
         /// <summary>The oil fire, for the status log and overlay: lines separated by semicolons.</summary>
         internal static string DescribeOil(RealisticOilFirebox oil)
         {
             var fire = oil.Model;
             var stack = !fire.FireOn ? (fire.Vapor > 0.05f ? "white vapor" : "clear")
-                : fire.SootDensity > 0.3f ? "black" : fire.ExcessAir > 2f ? "clear (too much air)" : "light haze";
+                : fire.StackSmoke >= 0.6f ? "black" : fire.StackSmoke >= 0.3f ? "grey smoke"
+                : fire.StackSmoke >= 0.08f ? "light haze" : "clear (too much air)";
             return $"Heat {fire.Heat / 1e6f:F2} MW ({fire.Heat / fire.Parameters.MaxHeatOutput:P0} of max), oil {fire.FeedRate:F2} kg/s " +
-                   $"(firing valve {(oil.Feed != null ? oil.Feed.FiringValve : 0f):P0}), burning {fire.BurnRate:F2} kg/s; " +
-                   $"atomizer {oil.AtomizerValve:P0}: {fire.Atomizing:F1}× the oil's need" + (fire.Drumming > 0f ? $", drumming {fire.Drumming:P0}" : "") +
+                   $"(firing valve {(oil.Feed != null ? oil.Feed.FiringValve : 0f) * 100f:0.#} %), burning {fire.BurnRate:F2} kg/s; " +
+                   $"atomizer {oil.AtomizerValve * 100f:0.#} %: {fire.Atomizing:F1}× the oil's need" + (fire.Drumming > 0f ? $", drumming {fire.Drumming:P0}" : "") +
                    $", {fire.AtomizerSteam:F2} kg/s of steam; " +
-                   $"draft {oil.AirFlowIn:F2} kg/s, {fire.ExcessAir:F1}× the air the oil needs, stack {stack}, soot {fire.SootDensity:P0}; " +
+                   $"draft {oil.AirFlowIn:F2} kg/s, {fire.ExcessAir:F1}× the air the oil needs, stack {stack}, soot {fire.SootDensity:P0}" +
+                   (Visuals.ChimneyPlume.TryGet(oil.Car, out var plume) ? $", plume top {plume.PlumeTop:F0} m" : "") + "; " +
                    $"brick {fire.BrickTemperature:F0} C, firebox {fire.Temperature:F0} C, door {oil.DoorOpening:P0}; " +
-                   $"oil {fire.OilTemperature:F0} C ({fire.OilTemperature * 9f / 5f + 32f:F0} F), heater {oil.HeaterValve:P0}; " +
+                   $"oil {fire.OilTemperature:F0} C ({fire.OilTemperature * 9f / 5f + 32f:F0} F), heater {oil.HeaterValve:P0}" +
+                   (oil.SteamLineOpening > 0f
+                       ? (fire.OnSteamLine ? $", on the shed's steam line ({oil.SteamLineOpening:P0})" : ", shed's steam line open (the boiler's own steam is stronger)")
+                       : oil.ShopSteamValve > 0f ? ", shop steam open but no line here (stand at a pit stop)" : "") + "; " +
                    $"flues {fire.FlueSoot:P0} sooted" + (fire.FlueSoot > 0.3f ? " (sand them)" : "") +
                    (fire.Vapor > 0.01f || fire.PooledOil > 0.01f ? $"; vapor {fire.Vapor:F2} kg, pooled oil {fire.PooledOil:F2} kg: clear it with the blower before lighting" : "") +
                    $"; flue sand on the shovel {Visuals.FlueSandBox.Loaded:F1} kg";

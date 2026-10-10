@@ -48,6 +48,11 @@ namespace RealisticFiring.Sim
             ["FEF-3"] = new Fit(FeedHeaterType.Open, "Worthington 5-SA", 0.9f, onInjectorLever: false),
             // An FEF-3 on a made-up road ("Black Arrow"): a Worthington SA.
             ["S484-840A"] = new Fit(FeedHeaterType.Open, "Worthington SA", 0.9f, onInjectorLever: false),
+            // Santa Fe 2900 class: "a Worthington Type 6-SA feed water heater"
+            // (No. 2921). The cab has an injector handwheel each side; as on
+            // the NYC, the fireman's works the pump and the engineman's the
+            // injector.
+            ["A.T.&S.F. 2901-A"] = new Fit(FeedHeaterType.Open, "Worthington 6-SA", 0.9f, onInjectorLever: true),
         };
 
         public static bool TryGet(string liveryId, out Fit fit)

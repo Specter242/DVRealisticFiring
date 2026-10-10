@@ -37,6 +37,9 @@ namespace RealisticFiring.Core
 
         /// <summary>The stock steam-raising speedup, 1 normally.</summary>
         public float StartupMultiplier;
+
+        /// <summary>A shed's steam line on the burner's valves, absolute bar; 0 with none.</summary>
+        public float SteamLinePressure;
     }
 
     /// <summary>What an oil fire shows, to mirror it elsewhere (a multiplayer client).</summary>
@@ -56,6 +59,7 @@ namespace RealisticFiring.Core
         public float Drumming;
         public float SootDensity;
         public float SmokeDensity;
+        public float StackSmoke;
         public float Vapor;
         public float PooledOil;
         public float Torch;
@@ -71,8 +75,7 @@ namespace RealisticFiring.Core
         /// <summary>Atomizing steam needed per kg of oil, at full exhaust, in kg.</summary>
         public const float AtomizingSteamPerKg = 0.25f;
 
-        /// <summary>The atomizer wide open at full pressure passes this many times the full fire's need.</summary>
-        public const float AtomizerCapacity = 2.5f;
+ public const float AtomizerCapacity = 1.5f;
 
         // The atomizer's need rises with the exhaust: standing it needs this share.
         private const float StandingAtomizing = 0.6f;
@@ -89,6 +92,18 @@ namespace RealisticFiring.Core
 
         /// <summary>Air over the stoichiometric need that makes the light haze of a well-fired engine.</summary>
         public const float BestExcessAir = 1.2f;
+
+        // A well-set fire's haze in the stack's darkness, which fades to a
+        // clear stack by this excess air (period: a clear stack wastes oil).
+        public const float HazeSmoke = 0.2f;
+        public const float ClearStackAir = 2f;
+
+        // The stack's soot is gentler than the flues' (black at a third of
+        // the oil unburned) and follows the fire over this time, in s, as the
+        // smoke works through the tubes.
+        private const float StackSootGain = 3f;
+        private const float StackSootTime = 2.5f;
+        private float stackSoot;
 
         // Excess air past this wastes this share of the heat per unit of
         // excess, at most the cap.
@@ -144,8 +159,11 @@ namespace RealisticFiring.Core
         /// <summary>Fully fouled flues pass this share less of the fire's heat.</summary>
         public const float SootedHeatLoss = 0.25f;
 
-        /// <summary>Sand that scours fully fouled flues clean under a full pull, in kg.</summary>
-        public const float SandToScour = 6f;
+        /// <summary>
+        /// Sand that scours fully fouled flues clean under a full pull, in kg:
+        /// "about a quart at a time" every 10 to 12 miles smoking hard (K02 p. 46).
+        /// </summary>
+        public const float SandToScour = 1.5f;
 
         // The black cloud a sanding throws clears over this time, in s.
         private const float SandBurstTime = 6f;
@@ -160,9 +178,10 @@ namespace RealisticFiring.Core
         private const float HeaterWarming = 0.06f;
         private const float OilCoolTime = 4f * 3600f;
 
-        // Cold oil flows this share at the air's temperature, and wants this
-        // much more atomizing.
-        private const float ColdOilFlow = 0.35f;
+        // Heavy fuel oil hardly runs below this, in °C, and runs freely once
+        // warm: the tender feeds the burner by gravity, so only the heater's
+        // steam makes cold oil flow. Cold oil also wants this much more atomizing.
+        public const float OilStops = 20f;
         private const float ColdOilAtomizing = 1.5f;
 
         /// <summary>Heater steam with the valve wide open, in kg/s.</summary>
@@ -222,6 +241,9 @@ namespace RealisticFiring.Core
         /// <summary>Heater steam used, in kg/s.</summary>
         public float HeaterSteamUsed { get; private set; }
 
+        /// <summary>Whether the atomizer and heater take their steam from a shed's steam line, at more than the boiler has.</summary>
+        public bool OnSteamLine { get; private set; }
+
         /// <summary>How hard over-atomized oil drums in the firebox, 0 to 1.</summary>
         public float Drumming { get; private set; }
 
@@ -230,6 +252,15 @@ namespace RealisticFiring.Core
 
         /// <summary>Smoke as the stock firebox reports it: six times the unburned share.</summary>
         public float SmokeDensity { get; private set; }
+
+        /// <summary>
+        /// The stack's darkness for the cab's own smoke, 0 white (the exhaust's
+        /// steam alone) to 1 black: a light haze from a well-set fire, fading to
+        /// nothing as the air runs past what it wastes, and blackening with the
+        /// oil that does not burn ("a light gray or brown haze is right", ICS
+        /// p. 54; RME22 p. 688).
+        /// </summary>
+        public float StackSmoke { get; private set; }
 
         /// <summary>Oil vapor in the firebox, in firebox kg; it shows as white smoke.</summary>
         public float Vapor { get; private set; }
@@ -269,6 +300,7 @@ namespace RealisticFiring.Core
             Drumming = Drumming,
             SootDensity = SootDensity,
             SmokeDensity = SmokeDensity,
+            StackSmoke = StackSmoke,
             Vapor = Vapor,
             PooledOil = PooledOil,
             Torch = Torch,
@@ -293,6 +325,7 @@ namespace RealisticFiring.Core
             Drumming = state.Drumming;
             SootDensity = state.SootDensity;
             SmokeDensity = state.SmokeDensity;
+            StackSmoke = state.StackSmoke;
             Vapor = state.Vapor;
             PooledOil = state.PooledOil;
             Torch = state.Torch;
@@ -339,8 +372,9 @@ namespace RealisticFiring.Core
         {
             if (!(kg > 0f))
                 return;
+            // Only a strong draft carries sand through the flues.
             var pull = Smoothing.Clamp01(drawing);
-            var scoured = Math.Min(FlueSoot, kg / SandToScour * pull);
+            var scoured = Math.Min(FlueSoot, kg / SandToScour * pull * pull);
             FlueSoot -= scoured;
             SandBurst = Smoothing.Clamp01(SandBurst + 0.3f * pull + 2f * scoured);
         }
@@ -353,12 +387,17 @@ namespace RealisticFiring.Core
                 return 0f;
             clock += dt;
 
-            HeatOil(dt, inputs);
+            // The burner's steam valves take the boiler's steam, or a shed's
+            // steam line's where it is stronger.
+            OnSteamLine = inputs.SteamLinePressure > inputs.BoilerPressure;
+            var valvePressure = Math.Max(inputs.BoilerPressure, inputs.SteamLinePressure);
+            HeatOil(dt, inputs, valvePressure);
 
-            // The oil: the valve's opening, as freely as its warmth lets it flow.
+            // The oil runs to the burner by gravity through the valve, as freely
+            // as its warmth lets it: cold, it does not run at all.
             var cold = Smoothing.Clamp01((WarmOil - OilTemperature) / (WarmOil - AmbientTemperature));
             var hot = Smoothing.Clamp01((OilTemperature - HotOil) / 30f);
-            var flow = 1f - (1f - ColdOilFlow) * cold;
+            var flow = Smoothing.Clamp01((OilTemperature - OilStops) / (WarmOil - OilStops));
             // Overheated oil sputters as it flashes in the line.
             var sputter = hot > 0f ? 1f + 0.35f * hot * (float)Math.Sin(clock * 7.3) * (float)Math.Sin(clock * 2.9) : 1f;
             var asked = Smoothing.Clamp01(inputs.FiringValve) * MaxFeed;
@@ -372,8 +411,8 @@ namespace RealisticFiring.Core
             // The atomizer: its steam against what the oil needs, more against
             // a hard exhaust; cold, thick oil wants much more, however little of
             // it gets through.
-            var pressure = (float)Math.Sqrt(Smoothing.Clamp01((inputs.BoilerPressure - 1f) / 13f));
-            AtomizerSteam = Smoothing.Clamp01(inputs.Atomizer) * AtomizerCapacity * AtomizingSteamPerKg * MaxFeed * pressure;
+            AtomizerSteam = Smoothing.Clamp01(inputs.Atomizer) * AtomizerCapacity * AtomizingSteamPerKg * MaxFeed
+                            * SteamValveShare(valvePressure);
             var need = Math.Max(oil, cold > 0f ? Math.Min(asked, oil / Math.Max(0.01f, flow)) : oil) * AtomizingSteamPerKg
                        * (StandingAtomizing + (1f - StandingAtomizing) * Smoothing.Clamp01(inputs.Exhaust))
                        * (1f + ColdOilAtomizing * cold);
@@ -439,6 +478,11 @@ namespace RealisticFiring.Core
             var sootTarget = Smoothing.Clamp01(4f * unburned);
             SootDensity += (sootTarget - SootDensity) * Math.Min(1f, dt / 1f);
             SmokeDensity = 6f * unburned;
+            var haze = FireOn && oil > 0f
+                ? HazeSmoke * (1f - Smoothing.Clamp01((ExcessAir - WastefulExcessAir) / (ClearStackAir - WastefulExcessAir)))
+                : 0f;
+            stackSoot += (Smoothing.Clamp01(StackSootGain * unburned) - stackSoot) * Math.Min(1f, dt / StackSootTime);
+            StackSmoke = haze + (1f - haze) * stackSoot;
 
             // The flues soot from smoke, and gum slowly even from a clean fire.
             var share = parameters.MaxCombustionRate > 0f ? Smoothing.Clamp01(fed / parameters.MaxCombustionRate) : 0f;
@@ -506,9 +550,17 @@ namespace RealisticFiring.Core
             }
         }
 
-        private void HeatOil(float dt, OilFireInputs inputs)
+        /// <summary>
+        /// A steam valve's flow at a boiler pressure (absolute bar) as a share
+        /// of its flow at 14 bar: none without steam, more as the pressure rises
+        /// (ICS p. 56).
+        /// </summary>
+        public static float SteamValveShare(float boilerPressure) =>
+            (float)Math.Sqrt(Smoothing.Clamp01((boilerPressure - 1f) / 13f));
+
+        private void HeatOil(float dt, OilFireInputs inputs, float valvePressure)
         {
-            var steam = Smoothing.Clamp01(inputs.Heater) * (inputs.BoilerPressure > 1.5f ? 1f : 0f);
+            var steam = Smoothing.Clamp01(inputs.Heater) * SteamValveShare(valvePressure);
             HeaterSteamUsed = steam * HeaterSteam;
             OilTemperature += (steam * HeaterWarming - (OilTemperature - AmbientTemperature) / OilCoolTime) * dt;
         }
