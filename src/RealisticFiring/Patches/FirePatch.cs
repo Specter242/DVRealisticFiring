@@ -49,6 +49,9 @@ namespace RealisticFiring.Patches
                 var feedLever = FeedPumpCab.RebindInjectorLever(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
                 if (feedLever != null && Main.Settings.LogFireboxCreation)
                     Main.Mod.Logger.Log($"{car.ID}: {feedLever}");
+                var guard = BoilerAlarms.Attach(car, __instance);
+                if (guard != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{car.ID}: {guard}");
                 if (InjectorRig.TryGet(car, out var rig))
                 {
                     var roots = new[] { car.transform, __instance.transform.root, car.loadedInterior != null ? car.loadedInterior.transform : null };

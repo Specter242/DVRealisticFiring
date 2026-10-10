@@ -24,8 +24,10 @@ namespace RealisticFiring.Items
         private const string SourcePrefab = "shovel";
         private const float Mass = 4.5f;
 
-        // The shovel's own behaviour and its coal-carrying parts.
-        private static readonly string[] ShovelComponents = { "ShovelAudio", "Shovel", "ShopRestocker", "ShovelNonPhysicalCoal" };
+        // The shovel's own behaviour and its coal-carrying parts. Its
+        // ShopRestocker stays: the shops count bought irons by it, and give
+        // the stock back when one is destroyed.
+        private static readonly string[] ShovelComponents = { "ShovelAudio", "Shovel", "ShovelNonPhysicalCoal" };
         private static readonly string[] ShovelChildren = { "scoop pivot", "[spawn anchors]", "[visual coal anchor]", "[ShovelMountAnchor]" };
 
         private static GameObject template;
@@ -61,6 +63,8 @@ namespace RealisticFiring.Items
 
             var spec = iron.GetComponent<InventoryItemSpec>();
             AccessTools.Field(typeof(InventoryItemSpec), "itemPrefabName").SetValue(spec, PrefabName);
+            // The shops read the template's name for the shelf tag and receipt.
+            spec.NameOverride = DisplayName;
             SetIcons(spec);
             foreach (var name in ShovelComponents)
             {

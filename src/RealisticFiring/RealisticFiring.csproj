@@ -25,6 +25,7 @@
     <Reference Include="DV.ThingTypes" HintPath="$(DvManagedDir)/DV.ThingTypes.dll" Private="false" />
     <Reference Include="DV.Utils" HintPath="$(DvManagedDir)/DV.Utils.dll" Private="false" />
     <Reference Include="Newtonsoft.Json" HintPath="$(DvManagedDir)/Newtonsoft.Json.dll" Private="false" />
+    <Reference Include="WorldStreamer" HintPath="$(DvManagedDir)/WorldStreamer.dll" Private="false" />
     <Reference Include="Unity.TextMeshPro" HintPath="$(DvManagedDir)/Unity.TextMeshPro.dll" Private="false" />
     <Reference Include="UnityEngine" HintPath="$(DvManagedDir)/UnityEngine.dll" Private="false" />
     <Reference Include="UnityEngine.AudioModule" HintPath="$(DvManagedDir)/UnityEngine.AudioModule.dll" Private="false" />

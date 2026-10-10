@@ -35,6 +35,19 @@ namespace RealisticFiring
         private float noticeTime = float.NegativeInfinity;
         private float hydrantCheckTime;
 
+        private static FireController instance;
+
+        private void Awake() => instance = this;
+
+        /// <summary>Shows a notice under the crosshair, and logs it.</summary>
+        internal static void Announce(string text)
+        {
+            if (instance != null)
+                instance.Notify(text);
+            else
+                Main.Mod?.Logger.Log(text);
+        }
+
         private void FixedUpdate() => PerfMeter.PhysicsStep();
 
         private void Update()
@@ -66,6 +79,26 @@ namespace RealisticFiring
                 {
                     Notify("No stoker on this loco to jam");
                 }
+            }
+            if (settings.FoulBoilerWaterNow)
+            {
+                settings.FoulBoilerWaterNow = false;
+                if (BoilerWaterRig.TryGetTended(PlayerManager.Car, out var water))
+                {
+                    water.Foul(BoilerWater.FoamOnsetPpm + 0.75f * (BoilerWater.FoamFullPpm - BoilerWater.FoamOnsetPpm));
+                    Notify("Boiler water fouled: work the engine and watch the glass");
+                }
+                else
+                {
+                    Notify("No boiler on this loco to foul");
+                }
+            }
+            if (settings.MeltPlugNow)
+            {
+                settings.MeltPlugNow = false;
+                Notify(BoilerWaterRig.TryGetTended(PlayerManager.Car, out var plugged) && plugged.MeltPlug()
+                    ? "Fusible plug melted: steam is blowing into the firebox"
+                    : "No fusible plug on this loco");
             }
             if (settings.ToggleOverlayKey.Down())
                 settings.ShowOverlay = !settings.ShowOverlay;
@@ -105,15 +138,24 @@ namespace RealisticFiring
                 }
                 else if (rig.BoilerPressure > InjectorRig.HydrantMaxPressure)
                     Notify("The boiler is under pressure: a hose can only fill a cold boiler");
-                else if (!rig.CanHydrantFill)
-                    Notify("The boiler is already full to the top of the glass");
                 else if (!WaterPoints.Serves(rig.Car))
                     Notify("No hydrant here: stand at a pit stop with water");
                 else
                 {
-                    rig.HydrantFilling = true;
-                    hydrantCheckTime = Time.time;
-                    Notify("Hydrant hose on: filling the boiler");
+                    // With the boiler cold at the shed, the hose washes it out first.
+                    var washed = BoilerWaterRig.TryGet(rig.Car, out var water) && (Main.Settings.BoilerWaterImpurities || water.Plug != null);
+                    if (washed)
+                        water.Washout();
+                    if (rig.CanHydrantFill)
+                    {
+                        rig.HydrantFilling = true;
+                        hydrantCheckTime = Time.time;
+                        Notify(washed ? "Hydrant hose on: boiler washed out, filling it with fresh water" : "Hydrant hose on: filling the boiler");
+                    }
+                    else
+                    {
+                        Notify(washed ? "Boiler washed out and filled with fresh water" : "The boiler is already full to the top of the glass");
+                    }
                 }
             }
 
@@ -201,7 +243,22 @@ namespace RealisticFiring
             var injector = DescribeInjector(flow);
             var filling = rig.HydrantFilling ? $", hydrant {rig.FillRate:F1} kg/s" : rig.HandPumping ? $", hand pump {rig.FillRate:F1} kg/s" : "";
             var pump = rig.Pump != null ? $"; {Visuals.FeedPumpCab.Hover(rig)}" : "";
-            return $"boiler {rig.BoilerPressure:F1} bar, water {rig.WaterLevel:P0}, {injector}{filling}{pump}";
+            var water = BoilerWaterRig.TryGet(rig.Car, out var waterRig) ? $"; {DescribeWater(waterRig)}" : "";
+            return $"boiler {rig.BoilerPressure:F1} bar, water {rig.WaterLevel:P0}, {injector}{filling}{pump}{water}";
+        }
+
+        /// <summary>The boiler water and its guard, for the status log and overlay.</summary>
+        internal static string DescribeWater(BoilerWaterRig rig)
+        {
+            var water = rig.Water;
+            var quality = Main.Settings.BoilerWaterImpurities
+                ? $"water {water.FoamingConcentration:F0} ppm ({water.Concentration:F0} dissolved, sludge {water.SettledSludge:F2} kg settled), " +
+                  $"foam {water.Foam:P0}, glass {rig.GlassLevel:F2} over {rig.TrueLevel:F2} true, carryover {water.Carryover:P0}"
+                : "water impurities off";
+            var guard = rig.Plug != null
+                ? rig.Plug.Melted ? $", fusible plug MELTED, blowing {rig.PlugVent:F2} kg/s" : $", fusible plug at {rig.Plug.CoreTemperature:F0} C"
+                : rig.Alarm != null ? rig.Alarm.Sounding ? ", LOW-WATER ALARM" : ", low-water alarm quiet" : "";
+            return quality + guard;
         }
 
         private static string DescribeInjector(InjectorFlow flow)

@@ -141,6 +141,13 @@ namespace RealisticFiring.Core
         /// </summary>
         public float BackLaneShare { get; set; } = 0.065f;
 
+        /// <summary>
+        /// How much more of the lump coal goes to the left lanes than the
+        /// right, as a share of each lane: a Standard HT's screw sends the
+        /// fines right and the lumps left, so its right back corner runs short.
+        /// </summary>
+        public float LumpsLeftBias { get; set; }
+
         /// <summary>Share of a front lane that lands on its own side; the rest goes up the middle.</summary>
         public float FrontLaneSideShare { get; set; } = 0.72f;
 
@@ -317,15 +324,17 @@ namespace RealisticFiring.Core
 
             // Back jets blow their lanes sideways into the back corners; short
             // of reach the coal drops off the table under the door.
+            var left = 1f + Math.Max(-1f, Math.Min(1f, Spec.LumpsLeftBias));
+            var right = 2f - left;
             var backLane = lump * Spec.BackLaneShare;
-            ThrowBack(backLane, manifold * Clamp01(controls.LeftBack), draft, 0, lumpShares);
-            ThrowBack(backLane, manifold * Clamp01(controls.RightBack), draft, GrateLayout.Columns - 1, lumpShares);
+            ThrowBack(backLane * left, manifold * Clamp01(controls.LeftBack), draft, 0, lumpShares);
+            ThrowBack(backLane * right, manifold * Clamp01(controls.RightBack), draft, GrateLayout.Columns - 1, lumpShares);
 
             // Front jets throw their halves up the grate; past the front row
             // the coal goes over the arch.
             var frontLane = lump * (1f - 2f * Spec.BackLaneShare) / 2f;
-            lost += ThrowFront(frontLane, manifold * Clamp01(controls.LeftFront), draft, 0, lumpShares);
-            lost += ThrowFront(frontLane, manifold * Clamp01(controls.RightFront), draft, GrateLayout.Columns - 1, lumpShares);
+            lost += ThrowFront(frontLane * left, manifold * Clamp01(controls.LeftFront), draft, 0, lumpShares);
+            lost += ThrowFront(frontLane * right, manifold * Clamp01(controls.RightFront), draft, GrateLayout.Columns - 1, lumpShares);
 
             // Fines: the draft lifts part of them straight out of the stack;
             // the fine-coal jet spreads the rest, or they fall at the door.
@@ -439,8 +448,10 @@ namespace RealisticFiring.Core
                 : Spec.EngineWorkingPressure * EngineSpeed;
         }
 
+        // The manifold's gauge pressure: the boiler's (absolute) less the
+        // atmosphere's, so a cold boiler blows nothing through the jets.
         private float ManifoldPressure(StokerControls controls, float boilerPressure) =>
-            Clamp01(controls.MasterJet) * Math.Min(Spec.ManifoldMaxPressure, Math.Max(0f, boilerPressure));
+            Clamp01(controls.MasterJet) * Math.Min(Spec.ManifoldMaxPressure, Math.Max(0f, boilerPressure - 1f));
 
         // Draft as a share of what the stock maximum combustion rate needs.
         private float DraftFraction(float airFlow) =>

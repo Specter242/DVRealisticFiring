@@ -44,10 +44,9 @@ namespace RealisticFiring.Visuals
         private const float CardCool = 0.18f;
         private const float CardGreen = 0.28f;
 
-        // Smoke puffs a second per zone of all-green coal giving off its gas,
-        // and for the fire's own smoke over the whole bed.
-        private const float SmokePerZone = 26f;
-        private const float SmokeFromFire = 18f;
+        // The most puffs of each kind a zone emits in one frame. How much
+        // smoke the fire makes comes from the firebox's FireboxSmoke, which
+        // the stack lets out too.
         private const int MaxPerFrame = 12;
 
         // An exhaust beat: how fast its pulse dies away (s), and how much more
@@ -78,20 +77,10 @@ namespace RealisticFiring.Visuals
         private const float SmokeUnlit = 0.3f;
 
         // A shovelful of green coal on a hot fire smokes the box out: its dust
-        // as it lands, then its gas, thick and dark, filling the firebox
-        // until it catches and the draft clears it. A jump of at least this
-        // much green coal in a zone in one frame is a shovelful landing (a
-        // stoker's trickle is grams), in kg. Each kg landed puffs this much
-        // dust and charges the zone, which smokes this many puffs a second
-        // per kg of charge left, anywhere in the box's height over and around
-        // the zone; the charge clears over these times, in s, from a dull
-        // fire under a weak draft to a forced one, sooner with the door open.
-        private const float LandingMass = 0.1f;
+        // as it lands, this many puffs per kg, then its gas, thick and dark,
+        // anywhere in the box's height over and around the zone, filling the
+        // firebox until it catches and the draft clears it.
         private const float DustPerKg = 5f;
-        private const float SmokeOutPerKg = 8f;
-        private const float SmokeOutSlow = 7f;
-        private const float SmokeOutFast = 3f;
-        private const float DoorClearing = 0.4f;
         private static readonly Color SmokeOutColor = new Color(0.2f, 0.17f, 0.15f, 1f);
         private static readonly Color DustColor = new Color(0.17f, 0.16f, 0.15f, 0.9f);
         private const int MinSmokeParticles = 1500;
@@ -102,6 +91,15 @@ namespace RealisticFiring.Visuals
         private const float SmotherCharge = 2f;
         private const float SmotherDim = 0.7f;
 
+        // A melted fusible plug blows steam and water down from the crown
+        // sheet's highest point, toward the front of the box: this many puffs
+        // a second per kg/s blowing, the jet spending itself on the fire and
+        // the steam rolling out to fill the box. Lit only by what is left of
+        // the fire.
+        private const float SteamPerKg = 60f;
+        private static readonly Color SteamColor = new Color(0.86f, 0.87f, 0.89f, 0.9f);
+        private const float SteamUnlit = 0.5f;
+
         private enum SmokeKind
         {
             // Green coal's gas and the fire's own smoke.
@@ -110,6 +108,8 @@ namespace RealisticFiring.Visuals
             SmokeOut,
             // A shovelful's dust, thrown out as it lands.
             Dust,
+            // Steam from a melted fusible plug.
+            Steam,
         }
 
         // The smoke stays in the firebox: the firebox's own shell where the
@@ -137,10 +137,8 @@ namespace RealisticFiring.Visuals
         private ParticleSystem smoke;
         private Renderer stockFlames;
         private readonly float[] smokeDue = new float[GrateLayout.ZoneCount];
-        private readonly float[] smokeOut = new float[GrateLayout.ZoneCount];
         private readonly float[] smokeOutDue = new float[GrateLayout.ZoneCount];
-        private readonly float[] lastFresh = new float[GrateLayout.ZoneCount];
-        private bool freshKnown;
+        private bool dustDrained;
         private Color lightColor = Color.white;
         private ExhaustBeatCounter beats;
         private Port crank;
@@ -150,6 +148,9 @@ namespace RealisticFiring.Visuals
         private float front = 1f;
         private readonly SeedMemory<float> smokeSizes = new SeedMemory<float>();
         private float glowLevel;
+        private float diagnoseAt = float.NaN;
+        private BoilerWaterRig boilerWater;
+        private float steamDue;
 
         private MeshRenderer cardRenderer;
         private Mesh cards;
@@ -354,15 +355,14 @@ namespace RealisticFiring.Visuals
             if (cardRenderer != null)
                 cardRenderer.enabled = shown;
             var model = firebox.Model;
+            if (smoke != null && shown)
+                BlowSteam(Time.deltaTime);
             if (!shown || !model.FireOn)
             {
                 UpdateCards(model, 0f, false);
                 Light(0f, 0f);
                 if (smoke != null)
                     Confine(0f, Time.deltaTime);
-                // Coal laid on a dead fire smokes nothing when it is lit.
-                freshKnown = false;
-                System.Array.Clear(smokeOut, 0, smokeOut.Length);
                 return;
             }
 
@@ -380,55 +380,82 @@ namespace RealisticFiring.Visuals
 
             var hottest = 0f;
             var meanHeat = 0f;
-            var warming = Mathf.Clamp01(0.4f + 0.6f * model.Temperature / 900f);
-            var burnOff = 1f - 0.6f * model.OverFireBurnout * Mathf.Clamp01(model.DoorAirFlow * 10f);
-            var clearing = Mathf.Lerp(SmokeOutSlow, SmokeOutFast, bed.FireForcing)
-                           * (1f - DoorClearing * Mathf.Clamp01(model.DoorAirFlow * 2f));
+            var source = firebox.Smoke;
+            // Coal that landed before the view was here throws no dust now.
+            if (!dustDrained)
+            {
+                for (var i = 0; i < GrateLayout.ZoneCount; i++)
+                    source.TakeLanded((GrateZone)i);
+                dustDrained = true;
+            }
             for (var i = 0; i < GrateLayout.ZoneCount; i++)
             {
                 var zone = (GrateZone)i;
-                var state = model.Zones[i];
                 var heat = bed.ZoneHeat(zone);
                 meanHeat += heat / GrateLayout.ZoneCount;
                 hottest = Mathf.Max(hottest, heat);
-
-                // A shovelful landing: dust at once, and a charge of smoke.
-                var landed = state.Fresh - lastFresh[i];
-                lastFresh[i] = state.Fresh;
-                if (smoke != null && freshKnown && landed >= LandingMass)
-                {
-                    smokeOut[i] += landed;
-                    for (var n = Mathf.RoundToInt(DustPerKg * landed); n > 0; n--)
-                        EmitSmoke(zone, draft, SmokeKind.Dust);
-                }
-                if (smoke == null || state.Coal < 0.2f)
-                {
-                    smokeOut[i] = 0f;
+                if (smoke == null)
                     continue;
-                }
 
-                // Green coal gives off its gas as it heats: thick smoke until it
-                // catches; the fire's own smoke rises over the whole bed. Air over
-                // the fire (an open door) burns it off.
-                var green = bed.ZoneGreen(zone);
-                var smoky = (SmokePerZone * green * warming + SmokeFromFire * model.SmokeDensity) * burnOff;
-                smokeDue[i] = Mathf.Min(smokeDue[i] + dt * smoky, MaxPerFrame);
+                // A shovelful landing throws its dust at once.
+                for (var n = Mathf.RoundToInt(DustPerKg * source.TakeLanded(zone)); n > 0; n--)
+                    EmitSmoke(zone, draft, SmokeKind.Dust);
+
+                // Green coal's gas and the fire's own smoke rise over the zone;
+                // a shovelful's gas fills the box before it catches.
+                smokeDue[i] = Mathf.Min(smokeDue[i] + dt * source.GasRate(zone), MaxPerFrame);
                 for (; smokeDue[i] >= 1f; smokeDue[i] -= 1f)
                     EmitSmoke(zone, draft, SmokeKind.Gas);
-
-                // A shovelful's gas fills the box before it catches, clearing
-                // as the fire lights it and the draft draws it off.
-                smokeOutDue[i] = Mathf.Min(smokeOutDue[i] + dt * SmokeOutPerKg * smokeOut[i] * warming, MaxPerFrame);
+                smokeOutDue[i] = Mathf.Min(smokeOutDue[i] + dt * source.SmokeOutRate(zone), MaxPerFrame);
                 for (; smokeOutDue[i] >= 1f; smokeOutDue[i] -= 1f)
                     EmitSmoke(zone, draft, SmokeKind.SmokeOut);
-                smokeOut[i] *= Mathf.Exp(-dt / clearing);
             }
-            freshKnown = true;
             if (smoke != null)
                 Confine(draft, dt);
             glowLevel = meanHeat;
             UpdateCards(model, draft, true);
+            EnsureDepth();
+            Diagnose(model);
             Light(meanHeat, hottest);
+        }
+
+        // The flame cards fade into the coal by the camera's depth texture, which
+        // a camera in forward rendering only draws when something asks for it.
+        private static void EnsureDepth()
+        {
+            var camera = Camera.main;
+            if (camera != null && (camera.depthTextureMode & DepthTextureMode.Depth) == 0)
+                camera.depthTextureMode |= DepthTextureMode.Depth;
+        }
+
+        // Once, ten seconds after the flames start: what they are doing and
+        // what the camera gives them, for the log.
+        private void Diagnose(FireModel model)
+        {
+            if (float.IsNaN(diagnoseAt))
+                diagnoseAt = Time.time + 10f;
+            if (Time.time < diagnoseAt || float.IsInfinity(diagnoseAt))
+                return;
+            diagnoseAt = float.PositiveInfinity;
+            if (!Main.Settings.LogFireboxCreation || cardColors == null)
+                return;
+            var burning = 0;
+            var burnSum = 0f;
+            var heightSum = 0f;
+            for (var c = 0; c < cardColors.Length; c += 4)
+            {
+                if (cardColors[c].a <= 0f)
+                    continue;
+                burning++;
+                burnSum += cardColors[c].r;
+                heightSum += cardColors[c].a;
+            }
+            var camera = Camera.main;
+            var smother = firebox.Smoke.TotalCharge;
+            Main.Mod.Logger.Log($"{firebox.Car?.ID}: flames: {burning} of {cardColors.Length / 4} cards burning" +
+                                (burning > 0 ? $", strength {burnSum / burning:F2}, height {heightSum / burning:F2} m" : "") +
+                                $", smoke-out charge {smother:F1} kg, renderer {(cardRenderer != null && cardRenderer.enabled ? "on" : "off")}; " +
+                                (camera != null ? $"camera {camera.actualRenderingPath}, depth texture {camera.depthTextureMode}" : "no main camera"));
         }
 
         // Each card stands on its zone's coal, as tall and bright as the zone burns.
@@ -440,7 +467,7 @@ namespace RealisticFiring.Visuals
             {
                 var zone = (GrateZone)(c / CardsPerZone);
                 var state = model.Zones[(int)zone];
-                var smothered = SmotherDim * Mathf.Clamp01(smokeOut[(int)zone] / SmotherCharge);
+                var smothered = SmotherDim * Mathf.Clamp01(firebox.Smoke.Charge(zone) / SmotherCharge);
                 var burn = lit && state.Coal >= 0.2f ? bed.ZoneForcing(zone) * (1f - smothered) : 0f;
                 var green = bed.ZoneCover(zone);
                 var cool = 1f - bed.ZoneHeat(zone);
@@ -525,6 +552,22 @@ namespace RealisticFiring.Visuals
             smoke.SetParticles(live, count);
         }
 
+        // A melted plug's steam, for as long as the boiler has pressure to blow it.
+        private void BlowSteam(float dt)
+        {
+            if (boilerWater == null && !BoilerWaterRig.TryGet(firebox.Car, out boilerWater))
+                return;
+            var vent = boilerWater.PlugVent;
+            if (!(vent > 0f))
+            {
+                steamDue = 0f;
+                return;
+            }
+            steamDue = Mathf.Min(steamDue + dt * SteamPerKg * vent, MaxPerFrame);
+            for (; steamDue >= 1f; steamDue -= 1f)
+                EmitSmoke(GrateZone.Center, 0f, SmokeKind.Steam);
+        }
+
         private void EmitSmoke(GrateZone zone, float draft, SmokeKind kind)
         {
             // Over the zone; a shovelful's gas rolls out over its neighbors too.
@@ -550,6 +593,16 @@ namespace RealisticFiring.Visuals
                     velocity = new Vector3(Random.Range(-0.3f, 0.3f), Random.Range(-0.1f, 0.2f), Random.Range(-0.3f, 0.3f));
                     lifetime = Random.Range(4f, 7f) * Mathf.Lerp(1f, 0.7f, draft);
                     size = Random.Range(1f, 1.8f);
+                    break;
+                case SmokeKind.Steam:
+                    color = Lit(SteamColor, Mathf.Lerp(SteamUnlit, 1f, glow));
+                    // From the plug, at the crown sheet a third of the way to the tube plate.
+                    var tubePlate = front > 0f ? smokeBox.max.z : smokeBox.min.z;
+                    from = new Vector3(smokeBox.center.x + Random.Range(-0.05f, 0.05f), smokeBox.max.y - 0.1f,
+                        Mathf.Lerp(smokeBox.center.z, tubePlate, 0.3f) + Random.Range(-0.05f, 0.05f));
+                    velocity = new Vector3(Random.Range(-1.5f, 1.5f), -Random.Range(2f, 4f), Random.Range(-1.5f, 1.5f));
+                    lifetime = Random.Range(3f, 5f);
+                    size = Random.Range(0.8f, 1.6f);
                     break;
                 case SmokeKind.Dust:
                     color = Lit(DustColor, Mathf.Lerp(0.35f, 0.8f, glow));

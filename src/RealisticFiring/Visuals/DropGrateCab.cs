@@ -53,6 +53,11 @@ namespace RealisticFiring.Visuals
             if (dump == null)
                 return $"no fire-dump lever ('{dumpPort}') in the cab to put the drop grate lever by";
 
+            // The fire-dump lever also rocks the grate; a quick flick threw it
+            // full travel, so a short rock was hard to give. Make its drag finer.
+            var feel = dump.GetComponent<Patches.LeverFeel>() ?? dump.gameObject.AddComponent<Patches.LeverFeel>();
+            feel.Sensitivity = () => Main.Settings.GrateLeverSensitivity;
+
             if (!Globals.G.Types.TryGetLivery(StokerCab.SourceLivery, out var livery) || livery.interiorPrefab == null)
                 return $"no {StokerCab.SourceLivery} cab to take the drop grate lever from";
             var cabPrefab = livery.interiorPrefab.transform;

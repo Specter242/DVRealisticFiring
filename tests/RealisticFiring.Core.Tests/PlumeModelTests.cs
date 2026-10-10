@@ -139,12 +139,28 @@ namespace RealisticFiring.Core.Tests;
     }
 
     [Fact]
+    public void SloggingAtLongCutoffThrowsTheBiggestPuffs()
+    {
+        var running = PlumeModel.ForBeat(Tuning, Working(6.5f));
+        var slogging = PlumeModel.ForBeat(Tuning, Working(12f));
+        var quiet = PlumeModel.ForBeat(new PlumeTuning { HeavyVolume = 0f }, Working(12f));
+
+        Assert.True(slogging.Particles >= 2 * running.Particles, $"{running.Particles} -> {slogging.Particles} particles");
+        Assert.True(slogging.Size > 1.4f * running.Size, $"size {running.Size:F1} -> {slogging.Size:F1} m");
+        Assert.True(slogging.LifetimeScale > 1.3f);
+        Assert.Equal(running.Speed, slogging.Speed, 3);
+        Assert.Equal(PlumeModel.ForBeat(Tuning, Working(6f)).Particles, quiet.Particles);
+    }
+
+    [Fact]
     public void TuningScalesThePuff()
     {
-        var tuned = new PlumeTuning { PuffParticles = 2f, LaunchSpeed = 10f, MaxBeatPressure = 4f };
+        var doubled = new PlumeTuning { PuffParticles = 2f };
+        var faster = new PlumeTuning { LaunchSpeed = 10f, MaxBeatPressure = 4f };
 
-        Assert.Equal(2 * PlumeModel.ForBeat(Tuning, Working(10f)).Particles, PlumeModel.ForBeat(tuned, Working(10f)).Particles);
-        Assert.Equal(10f, PlumeModel.ForBeat(tuned, Working(4f)).Speed, 3);
+        Assert.InRange(PlumeModel.ForBeat(doubled, Working(10f)).Particles,
+            2 * PlumeModel.ForBeat(Tuning, Working(10f)).Particles - 1, 2 * PlumeModel.ForBeat(Tuning, Working(10f)).Particles + 1);
+        Assert.Equal(10f, PlumeModel.ForBeat(faster, Working(4f)).Speed, 3);
     }
 
     [Fact]

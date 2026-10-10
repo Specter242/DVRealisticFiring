@@ -15,6 +15,15 @@ namespace RealisticFiring
         [Draw("Injector technique and heat: crack the lever until it primes before opening it; a hot injector won't take")]
         public bool InjectorTechniqueAndHeat = true;
 
+        [Draw("Boiler water impurities: they build up as the water boils off until it foams (a lively, high glass, then water carried over to the cylinders); short blowdowns keep them down, a washout clears them")]
+        public bool BoilerWaterImpurities = true;
+
+        [Draw("Feed water quality: how much dissolved solids it brings", DrawType.ToggleGroup)]
+        public Core.FeedWaterQuality BoilerWaterQuality = Core.FeedWaterQuality.Average;
+
+        [Draw("Fusible plugs where the prototypes had them (the Hudson has a low-water alarm): a bared crown sheet melts the plug, which drowns the fire instead of the boiler failing (needs a restart)")]
+        public bool FusiblePlugs = true;
+
         [Draw("Fit the NYC Hudson with its Franklin trailing-truck booster (needs a restart)")]
         public bool FitBoosters = true;
 
@@ -46,6 +55,12 @@ namespace RealisticFiring
         [Header("Chimney smoke tuning (applies to new puffs as you move a slider)")]
         [Draw("Exhaust pressure for the hardest beat, bar", DrawType.Slider, Min = 2, Max = 12, Precision = 1)]
         public float SmokeMaxBeatPressure = 6f;
+
+        [Draw("Exhaust pressure for the heaviest beat (a long cutoff at full steam, slogging up a grade), bar", DrawType.Slider, Min = 4, Max = 16, Precision = 1)]
+        public float SmokeHeavyBeatPressure = 11f;
+
+        [Draw("Heavy beats' extra volume, × (0 none; at 1 the heaviest puff is 2.5× the particles, 1.6× the size, and lasts 1.5× as long)", DrawType.Slider, Min = 0, Max = 3, Precision = 1)]
+        public float SmokeHeavyVolume = 1f;
 
         [Draw("Hardest puff's launch speed, m/s", DrawType.Slider, Min = 5, Max = 40, Precision = 0)]
         public float SmokeLaunchSpeed = 18f;
@@ -87,11 +102,14 @@ namespace RealisticFiring
         [Draw("Work the boiler hand pump (hold)")]
         public KeyBinding HandPumpKey = Bind(KeyCode.P, ctrl: true, shift: true);
 
-        [Draw("Fill the boiler from a hydrant (at a pit stop with water, boiler cold)")]
+        [Draw("Wash out the boiler and fill it from a hydrant (at a pit stop with water, boiler cold)")]
         public KeyBinding HydrantKey = Bind(KeyCode.H, ctrl: true, shift: true);
 
         [Draw("Shake grate")]
         public KeyBinding ShakeGrateKey = Bind(KeyCode.G, ctrl: true);
+
+        [Draw("Grate shaker (fire-dump) lever's drag, × (lower for finer rocking: a short rock wiggles the grate, a half stroke shakes it)", DrawType.Slider, Min = 0.1f, Max = 1f, Precision = 2)]
+        public float GrateLeverSensitivity = 0.35f;
 
         [Draw("Put a fire iron (slice bar) in front of me (unticks itself). Through the open door: click slices, the mouse wheel pushes and pulls, Shift with the wheel pushes sideways")]
         public bool GiveFireIron;
@@ -173,6 +191,12 @@ namespace RealisticFiring
         [Header("Diagnostics")]
         [Draw("Jam the stoker now, on the loco you're on (testing; unticks itself)")]
         public bool JamStokerNow;
+
+        [Draw("Foul the boiler water now, on the loco you're on, to where it foams when worked (testing; unticks itself)")]
+        public bool FoulBoilerWaterNow;
+
+        [Draw("Melt the fusible plug now, on the loco you're on (testing; unticks itself; a washout renews it)")]
+        public bool MeltPlugNow;
 
         [Draw("Show the chimney smoke and cinders (untick to see what they cost the frame rate)")]
         public bool ShowChimneySmoke = true;

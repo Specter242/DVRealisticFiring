@@ -18,8 +18,8 @@ namespace RealisticFiring.Sim
             "LocoS282A",
             "LocoS060",
             // LittleNiko36's NYC Dreyfuss Hudson (Nexus 1688; measured
-            // 2026-10-08) and 4-8-4 (Nexus 1494; livery ID from its car type,
-            // not yet measured).
+            // 2026-10-08) and 4-8-4 (Nexus 1494), a UP FEF-3 in a made-up
+            // road's livery ("Black Arrow", per its bundle).
             "S464-730",
             "S484-840A",
             // Cypress and LittleNiko36's UP FEF-3 No. 844 (Nexus 1590, 1.0.58),

@@ -63,13 +63,25 @@ namespace RealisticFiring.Visuals
         private const float ShakeSmokePerKg = 8f;
         private const float ShakeSmokeClearing = 3f;
 
+        // The firebox's smoke takes about this long through the tubes and
+        // smokebox to the stack, in s.
+        private const float TubeTransit = 1.5f;
+
+        // A melted fusible plug's steam finds its way through the tubes and
+        // out of the stack, pushed by its own pressure: this many puffs a
+        // second per kg/s blowing, white, rising at this speed, in m/s.
+        private const float PlugSteamPerKg = 15f;
+        private const float PlugSteamSpeed = 3f;
+        private static readonly Color PlugSteamColor = new Color(0.92f, 0.92f, 0.93f, 0.8f);
+
         // A beat's particles leave at a spread of speeds, so they stretch into a column.
         private const float PuffSlowest = 0.45f;
         private const float PuffFastest = 1.1f;
 
-        // Puffs at speed (up to ~15 beats/s, 8 particles each, 5-10 s lifetimes)
-        // need more room than the stock cap of 300.
-        private const int MinMaxParticles = 1000;
+        // Puffs at speed (up to ~15 beats/s, 8 particles each, 5-10 s
+        // lifetimes) and heavy beats (up to 30 particles, living half as long
+        // again) need more room than the stock cap of 300.
+        private const int MinMaxParticles = 2000;
 
         // Within the narrow-jet zone above the game's smoke emitter (inside the
         // stack, however deep its emitter sits) smoke is at most this wide and
@@ -111,12 +123,17 @@ namespace RealisticFiring.Visuals
         private Port crankRotation;
         private Port exhaustPressure;
         private Port totalFlow;
+        private SteamExhaust exhaustSim;
         private Port boilerBroken;
         private ParticleSystem smoke;
         private ParticleSystem sootCore;
         private ParticleSystem jet;
         private ParticleSystem[] embers;
         private float hazeDue;
+        private float tubeGas;
+        private float tubeSmokeOut;
+        private float plugSteamDue;
+        private BoilerWaterRig boilerWater;
         private float stokerCinders;
         private float shakeCinders;
         private float shakeCindersSeen = float.NaN;
@@ -188,6 +205,7 @@ namespace RealisticFiring.Visuals
             plume.crankRotation = crank;
             plume.exhaustPressure = pressure;
             plume.totalFlow = total;
+            plume.exhaustSim = flow.OrderedSimComps.OfType<SteamExhaust>().FirstOrDefault(c => c.id == exhaust.ID);
             plume.boilerBroken = broken;
             var custom = Main.Settings.CustomSmokeEffects && PlumeAssets.Prefab != null && plume.UseCustomEffect(systems);
             if (!custom)
@@ -197,6 +215,12 @@ namespace RealisticFiring.Visuals
                 plume.sootCore = systems.FirstOrDefault(s => s != plume.smoke);
             }
             plume.embers = plume.ChooseSparks(reader, custom);
+            // The stock systems take the origin-shift space only once awake.
+            if (!custom)
+            {
+                foreach (var system in new[] { plume.smoke, plume.sootCore }.Concat(plume.embers))
+                    WorldParticles.FollowOriginShifts(system);
+            }
             plume.TakeOver();
             var sorting = plume.MatchSorting(car);
             plume.stackLip = MeasureStackLip(car, Emitter(plume.smoke), plume.smoke.transform.up, out var lip);
@@ -205,7 +229,8 @@ namespace RealisticFiring.Visuals
                    (plume.sootCore != null ? $", soot '{plume.sootCore.name}'" : "") +
                    (plume.jet != null ? $", jet '{plume.jet.name}'" : "") +
                    $", sparks {string.Join("/", plume.embers.Select(s => $"'{s.name}'"))}" +
-                   $", {2 * engine.numCylinders} beats per revolution from '{engineId}', flow from '{exhaust.ID}'; {sorting}; {lip}";
+                   $", {2 * engine.numCylinders} beats per revolution from '{engineId}', flow from '{exhaust.ID}'; {sorting}; {lip}; " +
+                   $"simulated in {(plume.smoke.main.simulationSpace == ParticleSystemSimulationSpace.Custom && plume.smoke.main.customSimulationSpace != null ? $"'{plume.smoke.main.customSimulationSpace.name}'" : plume.smoke.main.simulationSpace.ToString())}";
         }
 
         // The stack's lip above the game's smoke emitter, along the stack's
@@ -299,8 +324,8 @@ namespace RealisticFiring.Visuals
         }
 
         // Puts the custom plume where the stock smoke leaves the stack, in the
-        // stock systems' simulation space (the game's world-origin shifts move
-        // it), and switches the stock smoke systems off.
+        // game's world-origin-shift space, as the stock smoke has once awake,
+        // and switches the stock smoke systems off.
         private bool UseCustomEffect(ParticleSystem[] stockSystems)
         {
             var stockSmoke = stockSystems.OrderByDescending(s => s.main.maxParticles).First();
@@ -315,10 +340,16 @@ namespace RealisticFiring.Visuals
             var stockShape = stockSmoke.shape;
             foreach (var system in fx.GetComponentsInChildren<ParticleSystem>(true))
             {
-                var main = system.main;
-                main.simulationSpace = stockMain.simulationSpace;
-                if (stockMain.simulationSpace == ParticleSystemSimulationSpace.Custom)
-                    main.customSimulationSpace = stockMain.customSimulationSpace;
+                // The stock smoke only takes the world's origin-shift space
+                // when it wakes, which can be after this: set it directly, or
+                // the smoke is left behind at each origin shift.
+                if (!WorldParticles.FollowOriginShifts(system))
+                {
+                    var main = system.main;
+                    main.simulationSpace = stockMain.simulationSpace;
+                    if (stockMain.simulationSpace == ParticleSystemSimulationSpace.Custom)
+                        main.customSimulationSpace = stockMain.customSimulationSpace;
+                }
                 var shape = system.shape;
                 shape.shapeType = stockShape.shapeType;
                 shape.angle = stockShape.angle;
@@ -415,6 +446,8 @@ namespace RealisticFiring.Visuals
         {
             var settings = Main.Settings;
             tuning.MaxBeatPressure = settings.SmokeMaxBeatPressure;
+            tuning.HeavyBeatPressure = settings.SmokeHeavyBeatPressure;
+            tuning.HeavyVolume = settings.SmokeHeavyVolume;
             tuning.LaunchSpeed = settings.SmokeLaunchSpeed;
             tuning.PuffParticles = settings.SmokePuffParticles;
             tuning.PuffSize = settings.SmokePuffSize;
@@ -535,12 +568,18 @@ namespace RealisticFiring.Visuals
             shakeCindersSeen = fire.ShakeCinders;
             shakeCinders = Mathf.Min(shakeCinders + shaken, MaxShakeCinderBacklog);
             shakeSmoke = Mathf.Clamp01(shakeSmoke * Mathf.Exp(-dt / ShakeSmokeClearing) + shaken * ShakeSmokePerKg);
+            // The firebox's smoke reaches the stack through the tubes a moment later.
+            var transit = 1f - Mathf.Exp(-dt / TubeTransit);
+            tubeGas += (firebox.Smoke.TotalGasRate - tubeGas) * transit;
+            tubeSmokeOut += (firebox.Smoke.TotalSmokeOutRate - tubeSmokeOut) * transit;
             var inputs = new PlumeInputs
             {
                 ExhaustPressure = exhaustPressure.Value,
-                TotalFlowNormalized = totalFlow.Value,
+                TotalFlowNormalized = StackSteamFlow(),
                 Soot = Mathf.Max(fire.SootDensity, shakeSmoke),
                 FireOn = fire.FireOn,
+                FireboxGas = tubeGas,
+                FireboxSmokeOut = tubeSmokeOut,
             };
 
             // A beat with no steam behind it (drifting, regulator shut) makes no puff.
@@ -558,6 +597,14 @@ namespace RealisticFiring.Visuals
             for (; hazeDue >= 1f; hazeDue -= 1f)
                 Emit(smoke, haze.Speed, 1.2f * tuning.PuffSize, ToColor(haze.Color), carVelocity, HazeSpread, 0.85f, 1.15f);
 
+            if (boilerWater != null || BoilerWaterRig.TryGet(firebox.Car, out boilerWater))
+            {
+                var vent = boilerWater.PlugVent;
+                plugSteamDue = vent > 0f ? Mathf.Min(plugSteamDue + PlugSteamPerKg * vent * dt, MaxBeatsPerFrame * 4f) : 0f;
+                for (; plugSteamDue >= 1f; plugSteamDue -= 1f)
+                    Emit(smoke, PlugSteamSpeed, 1.2f * tuning.PuffSize, PlugSteamColor, carVelocity, HazeSpread, 0.7f, 1.3f);
+            }
+
             Drift(smoke, dt, lift: true);
             Drift(sootCore, dt, lift: true);
             Drift(jet, dt, lift: true);
@@ -573,7 +620,7 @@ namespace RealisticFiring.Visuals
             beatCount++;
             var color = ToColor(puff.Color);
             for (var i = 0; i < puff.Particles; i++)
-                Emit(smoke, puff.Speed, puff.Size, color, carVelocity, PuffSpread, PuffSlowest, PuffFastest);
+                Emit(smoke, puff.Speed, puff.Size, color, carVelocity, PuffSpread, PuffSlowest, PuffFastest, Lifetime(smoke, puff.LifetimeScale));
 
             // The custom effects add streaks for the jet itself, right above the stack.
             if (jet != null)
@@ -587,7 +634,7 @@ namespace RealisticFiring.Visuals
             {
                 var soot = new Color(color.r * 0.8f, color.g * 0.8f, color.b * 0.8f, Mathf.Min(1f, color.a + 0.1f));
                 for (var i = 0; i < puff.SootParticles; i++)
-                    Emit(sootCore, puff.Speed * 0.9f, puff.Size * 0.6f, soot, carVelocity, PuffSpread, PuffSlowest, PuffFastest);
+                    Emit(sootCore, puff.Speed * 0.9f, puff.Size * 0.6f, soot, carVelocity, PuffSpread, PuffSlowest, PuffFastest, Lifetime(sootCore, puff.LifetimeScale));
             }
 
             // Usually well under one spark a beat: round at random. A stoker's
@@ -766,6 +813,37 @@ namespace RealisticFiring.Visuals
 
         private static Color ToColor(PlumeColor c) => new Color(c.R, c.G, c.B, c.A);
 
+        // A particle's lifetime drawn as the system draws it, scaled; 0 (the
+        // system's own) when unscaled.
+        private static float Lifetime(ParticleSystem system, float scale)
+        {
+            if (!(scale > 1.001f))
+                return 0f;
+            var curve = system.main.startLifetime;
+            var life = curve.mode == ParticleSystemCurveMode.TwoConstants
+                ? Random.Range(curve.constantMin, curve.constantMax)
+                : curve.mode == ParticleSystemCurveMode.Constant ? curve.constant : curve.Evaluate(Random.value);
+            return life * scale;
+        }
+
+        // The stock total flow through the smokebox counts the stack's natural
+        // draft, air that flows even through a dead engine; the plume wants
+        // the steam (exhaust and blower) and the air it draws, so a cold
+        // engine shows no stream. Takes the natural draft's share off as the
+        // stock exhaust works it out.
+        private float StackSteamFlow()
+        {
+            var total = totalFlow.Value;
+            if (exhaustSim == null)
+                return total;
+            var engineMax = exhaustSim.engineMaxFlowReader.Value;
+            var maxTotal = engineMax + exhaustSim.passiveExhaust + exhaustSim.entrainmentRatio * engineMax;
+            if (!(maxTotal > 0f))
+                return total;
+            var natural = exhaustSim.passiveExhaust * Mathf.Lerp(SteamExhaust.MIN_DAMPER, 1f, exhaustSim.damperControl.Value);
+            return Mathf.Max(0f, total - natural / maxTotal);
+        }
+
         private void LogStatus(PlumeInputs inputs)
         {
             var interval = Main.Settings.FireStatusLogInterval;
@@ -776,8 +854,9 @@ namespace RealisticFiring.Visuals
             statusTime = Time.time;
             var puff = LastPuff;
             Main.Mod.Logger.Log($"{firebox.Car.ID} smoke: {beatCount} beats in {interval} s, exhaust {inputs.ExhaustPressure:F1} bar " +
-                                $"(strength {PlumeModel.BeatStrength(tuning, inputs.ExhaustPressure):P0}), flow {inputs.TotalFlowNormalized:P0}, " +
-                                $"soot {inputs.Soot:P0}; last puff {puff.Speed:F1} m/s, {puff.Particles}+{puff.SootParticles} particles, " +
+                                $"(strength {PlumeModel.BeatStrength(tuning, inputs.ExhaustPressure):P0}, heavy {PlumeModel.Heaviness(tuning, inputs.ExhaustPressure):P0}), " +
+                                $"flow {inputs.TotalFlowNormalized:P0}, soot {inputs.Soot:P0} (firebox {PlumeModel.FireboxSoot(inputs):P0}); " +
+                                $"last puff {puff.Speed:F1} m/s, {puff.Size:F1} m, {puff.Particles}+{puff.SootParticles} particles, life ×{puff.LifetimeScale:F1}, " +
                                 $"{puff.Sparks:F2} sparks, color #{ColorUtility.ToHtmlStringRGBA(ToColor(puff.Color))}; " +
                                 $"alive {string.Join(", ", Systems().Select(s => $"{s.name} {s.particleCount}"))}" +
                                 (shown ? "" : " (hidden)"));

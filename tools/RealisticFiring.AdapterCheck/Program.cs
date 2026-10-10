@@ -147,6 +147,7 @@ namespace RealisticFiring.AdapterCheck
                 "a stoker's trickle feeds the fire as continuous feed, not as shovelfuls");
 
             CheckInjector(gameParams);
+            CheckBoilerWater();
             CheckStoker(gameParams, def);
             CheckBooster();
 
@@ -293,6 +294,163 @@ namespace RealisticFiring.AdapterCheck
             valve.Value = 0.25f;
             Run(pumpRig, 5f);
             Check(pumpRig.PumpFlow.State == FeedPumpState.Choked, "with the throttle shut its drifting valve chokes it to half");
+        }
+
+        // The boiler water rig on a stock boiler with the S282's crown sheet,
+        // its hooks run between the stock steps in tick order as the patches do
+        // (the stock damage step needs Unity's curves, so its crown sheet test
+        // is read instead).
+        private static void CheckBoilerWater()
+        {
+            var failuresOn = new SimGameParams(true, false, false, 1f, 1f);
+            var injector = new Port("injector", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"));
+            var blowdown = new Port("blowdown", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"));
+            var tenderWater = new Port("tender", new PortDefinition(PortType.READONLY_OUT, PortValueType.WATER, "AMOUNT"), 40000f);
+            var consumed = new Port("tender", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.WATER, "CONSUME_EXT_IN"));
+            var heat = new Port("firebox", new PortDefinition(PortType.READONLY_OUT, PortValueType.HEAT_RATE, "HEAT"));
+            var fireTemperature = new Port("firebox", new PortDefinition(PortType.READONLY_OUT, PortValueType.TEMPERATURE, "TEMPERATURE"), 1000f);
+            var steamDraw = new Port("steam", new PortDefinition(PortType.READONLY_OUT, PortValueType.MASS_RATE, "CONSUMPTION"));
+
+            Boiler NewBoiler(float waterVolume)
+            {
+                var def = new BoilerDefinition
+                {
+                    ID = "boiler",
+                    diameter = 1.7f,
+                    length = 8.8f,
+                    capacityMultiplier = 0.85f,
+                    maxInjectorRate = 20f,
+                    waterConsumptionMultiplier = 4f,
+                    maxBlowdownRate = 100f,
+                    safetyValveOpeningPressure = 15f,
+                    safetyValveClosingPressure = 14.8f,
+                    spawnPressure = 14f,
+                    spawnWaterLevel = waterVolume,
+                    crownSheetNormalizedWaterLevel = 0.6f,
+                    crownSheetTempSmoothTime = 60f,
+                    crownSheetOverheatTemp = 600f,
+                    minimumExplosionPressure = 5f,
+                    steamOutletNormalizedWaterLevel = 0.98f,
+                };
+                var boiler = (Boiler)def.InstantiateImplementation();
+                boiler.SetGameParams(failuresOn);
+                void Connect(string name, Port port) => boiler.GetAllPortReferences().Single(r => r.id == "boiler." + name).SetPortReference(port);
+                Connect("INJECTOR", injector);
+                Connect("BLOWDOWN", blowdown);
+                Connect("WATER", tenderWater);
+                Connect("WATER_CONSUMPTION", consumed);
+                Connect("HEAT", heat);
+                Connect("FIREBOX_TEMPERATURE", fireTemperature);
+                Connect("STEAM_CONSUMPTION", steamDraw);
+                return boiler;
+            }
+
+            void Call(Boiler boiler, string step, float dt) =>
+                typeof(Boiler).GetMethod(step, BindingFlags.Instance | BindingFlags.NonPublic).Invoke(boiler, new object[] { dt });
+
+            void Run(Boiler boiler, BoilerWaterRig rig, float seconds)
+            {
+                const float dt = 0.02f;
+                for (var t = 0f; t < seconds; t += dt)
+                {
+                    rig.BeginTick();
+                    Call(boiler, "SimulateInjector", dt);
+                    rig.AfterFeed();
+                    Call(boiler, "SimulateSteamConsumption", dt);
+                    Call(boiler, "SimulateSafetyValve", dt);
+                    var before = rig.MassNow;
+                    Call(boiler, "SimulateBlowdown", dt);
+                    rig.AfterBlowdown(before);
+                    Call(boiler, "SimulateEvaporation", dt);
+                    Call(boiler, "SimulateWaterLevel", dt);
+                    rig.AfterWaterLevel(dt);
+                    rig.SimulateCrownSheet(dt);
+                }
+            }
+
+            RealisticFiring.Main.Settings.BoilerWaterQuality = FeedWaterQuality.Average;
+
+            // The feed brings solids at the setting's concentration; the blowdown takes them out.
+            var fed = NewBoiler(12000f);
+            var fedRig = BoilerWaterRig.Create(fed, null, BoilerWaterRig.Guard.None);
+            var massBefore = fedRig.MassNow;
+            var solidsBefore = fedRig.Water.Solids + fedRig.Water.SuspendedSludge;
+            injector.Value = 0.5f;
+            Run(fed, fedRig, 10f);
+            injector.Value = 0f;
+            var added = fedRig.MassNow - massBefore;
+            var brought = fedRig.Water.Solids + fedRig.Water.SuspendedSludge + fedRig.Water.SettledSludge - solidsBefore;
+            var expected = added * fedRig.Water.FeedConcentration * 1e-6f;
+            Check(added > 50f && Math.Abs(brought - expected) < 0.1f * expected,
+                $"the feed brings its solids ({added:F0} kg fed, {brought * 1000f:F1} g of solids, {expected * 1000f:F1} g expected)");
+            blowdown.Value = 1f;
+            var beforeBlow = fedRig.MassNow;
+            Run(fed, fedRig, 3f);
+            blowdown.Value = 0f;
+            Check(beforeBlow - fedRig.MassNow > 200f && fedRig.Water.BlownOut > 0f,
+                $"a 3-second blowdown takes the water and its solids ({beforeBlow - fedRig.MassNow:F0} kg, {fedRig.Water.BlownOut * 1000f:F1} g of solids)");
+
+            // Water past foaming shows in the glass and carries water over.
+            var foamy = NewBoiler(12000f);
+            var foamyRig = BoilerWaterRig.Create(foamy, null, BoilerWaterRig.Guard.None);
+            foamyRig.Water.Restore(foamyRig.MassNow * 6000e-6f, 0f, 0f, foamyRig.MassNow);
+            Run(foamy, foamyRig, 20f);
+            var rise = 0f;
+            for (var i = 0; i < 50; i++)
+            {
+                Run(foamy, foamyRig, 0.1f);
+                rise = Math.Max(rise, foamyRig.GlassLevel - foamyRig.TrueLevel);
+            }
+            var quality = foamy.outletSteamQualityReadOut.Value;
+            Check(foamyRig.Water.Foam > 0.1f && rise > 0.01f && quality < 0.99f,
+                $"foaming water lifts the glass and wets the steam (foam {foamyRig.Water.Foam:F2}, glass up to {rise:F3} high, steam quality {quality:F3})");
+
+            // A bared crown sheet: the plug melts and saves the sheet; without one it fails.
+            var plugged = NewBoiler(8000f);
+            var plugRig = BoilerWaterRig.Create(plugged, null, BoilerWaterRig.Guard.FusiblePlug);
+            var bare = NewBoiler(8000f);
+            var bareRig = BoilerWaterRig.Create(bare, null, BoilerWaterRig.Guard.None);
+            // A new boiler's crown sheet starts at 0 C: let it reach the water's
+            // temperature under a dead fire before the fire heats the bared sheet.
+            fireTemperature.Value = 0f;
+            Run(plugged, plugRig, 600f);
+            Run(bare, bareRig, 600f);
+            fireTemperature.Value = 1000f;
+            var pressureBefore = plugRig.BoilerPressure;
+            var meltTime = 0f;
+            while (!plugRig.Plug.Melted && meltTime < 60f)
+            {
+                Run(plugged, plugRig, 0.5f);
+                meltTime += 0.5f;
+            }
+            Run(plugged, plugRig, 120f);
+            Run(bare, bareRig, 120f + meltTime);
+            Check(plugRig.Plug.Melted && meltTime < 15f && !plugRig.CrownSheetWouldFail && plugRig.PlugVent > 0f && plugRig.BoilerPressure < pressureBefore,
+                $"bared, the plug melts in {meltTime:F1} s and blows into the firebox ({plugRig.PlugVent:F2} kg/s, {pressureBefore:F1} -> {plugRig.BoilerPressure:F1} bar), " +
+                $"holding the crown sheet at {plugRig.CrownSheetTemperatureNow:F0} C");
+            Check(bareRig.CrownSheetWouldFail, $"without a plug the stock crown sheet fails ({bareRig.CrownSheetTemperatureNow:F0} C at {bareRig.BoilerPressure:F1} bar)");
+
+            var alarmed = NewBoiler(8000f);
+            var alarmRig = BoilerWaterRig.Create(alarmed, null, BoilerWaterRig.Guard.LowWaterAlarm);
+            Run(alarmed, alarmRig, 1f);
+            var quiet = NewBoiler(12000f);
+            var quietRig = BoilerWaterRig.Create(quiet, null, BoilerWaterRig.Guard.LowWaterAlarm);
+            Run(quiet, quietRig, 1f);
+            Check(alarmRig.Alarm.Sounding && !quietRig.Alarm.Sounding,
+                $"the alarm blows at {alarmRig.TrueLevel:F2} of the boiler and not at {quietRig.TrueLevel:F2} (crown sheet at 0.60)");
+
+            // Saved and loaded beside the stock keys; a washout renews it all.
+            var data = plugged.GetSaveStateData();
+            plugRig.Save(data);
+            var loaded = NewBoiler(8000f);
+            var loadedRig = BoilerWaterRig.Create(loaded, null, BoilerWaterRig.Guard.FusiblePlug);
+            loaded.SetSaveStateData(data);
+            BoilerWaterRig.OnLoaded(loaded, data);
+            Check(loadedRig.Plug.Melted && Math.Abs(loadedRig.Water.Solids - plugRig.Water.Solids) < 1e-4f,
+                "the water and the melted plug save and load with the boiler");
+            loadedRig.Washout();
+            Check(!loadedRig.Plug.Melted && loadedRig.Water.SettledSludge == 0f && loadedRig.PlugVent == 0f,
+                "a washout renews the plug and freshens the water");
         }
 
         // The Hudson's booster in the sim: between the main engine's torque and
@@ -501,20 +659,30 @@ namespace RealisticFiring.AdapterCheck
                     if (prepare != null && prepare.GetParameters().Length == 0 && !(bool)prepare.Invoke(null, null))
                         continue;
                     var targetMethod = HarmonyLib.AccessTools.DeclaredMethod(type, "TargetMethod");
-                    MethodBase original;
                     if (targetMethod != null)
                     {
-                        original = (MethodBase)targetMethod.Invoke(null, null);
+                        if (targetMethod.Invoke(null, null) == null)
+                            bad.Add($"{type.Name}: no target");
+                        continue;
                     }
-                    else
+                    // The class's attributes, merged with each patch method's
+                    // own where it names its target, as PatchAll does.
+                    var classInfo = HarmonyLib.HarmonyMethodExtensions.GetFromType(type);
+                    var methodInfos = type.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
+                        .Select(m => HarmonyLib.HarmonyMethodExtensions.GetFromMethod(m))
+                        .Where(list => list.Count > 0)
+                        .ToList();
+                    var targets = methodInfos.Count > 0
+                        ? methodInfos.Select(list => HarmonyLib.HarmonyMethod.Merge(classInfo.Concat(list).ToList())).ToList()
+                        : new System.Collections.Generic.List<HarmonyLib.HarmonyMethod> { HarmonyLib.HarmonyMethod.Merge(classInfo) };
+                    foreach (var info in targets)
                     {
-                        var info = HarmonyLib.HarmonyMethod.Merge(HarmonyLib.HarmonyMethodExtensions.GetFromType(type));
-                        original = info.methodType == HarmonyLib.MethodType.Constructor
+                        var original = info.methodType == HarmonyLib.MethodType.Constructor
                             ? (MethodBase)HarmonyLib.AccessTools.DeclaredConstructor(info.declaringType, info.argumentTypes)
                             : HarmonyLib.AccessTools.DeclaredMethod(info.declaringType, info.methodName, info.argumentTypes);
+                        if (original == null)
+                            bad.Add($"{type.Name}: no target for {info.methodName ?? "(unnamed)"}");
                     }
-                    if (original == null)
-                        bad.Add($"{type.Name}: no target");
                 }
                 catch (Exception e)
                 {

@@ -44,6 +44,13 @@ namespace RealisticFiring.Patches
                     Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {injectors}");
             }
 
+            if (__instance.simFlow != null)
+            {
+                var water = BoilerWaterRig.Attach(trainCar, __instance.simFlow);
+                if (water != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {water}");
+            }
+
             if (!FireboxRegistry.TryGet(trainCar, out var firebox) || __instance.simFlow == null)
                 return;
 

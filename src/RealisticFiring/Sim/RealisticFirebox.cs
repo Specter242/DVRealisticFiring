@@ -94,8 +94,10 @@ namespace RealisticFiring.Sim
                 fDef.combustionRateSmoothTime,
                 fDef.temperatureSmoothTime));
             shovel = new ShovelDelivery(Model.Parameters);
-            if (car != null && car.carLivery != null && GrateSlopes.TryGetValue(car.carLivery.id, out var slope))
-                Model.GrateSlope = slope;
+            Character = FireboxCharacters.For(car);
+            Model.Character = Character.Grate;
+            Model.GrateSlope = FireboxCharacters.Slope(car,
+                car != null && car.carLivery != null && GrateSlopes.TryGetValue(car.carLivery.id, out var slope) ? slope : 0f);
             if (car != null && car.carLivery != null && GrateAreas.TryGetValue(car.carLivery.id, out var area))
                 Model.GrateArea = area;
 
@@ -127,6 +129,12 @@ namespace RealisticFiring.Sim
 
         public TrainCar Car { get; }
 
+        /// <summary>This loco's own firebox: its grate, its coal, and its stoker's habits.</summary>
+        public FireboxCharacters.Firebox Character { get; }
+
+        /// <summary>The visible smoke the fire makes, for the firebox view and the stack.</summary>
+        public FireboxSmoke Smoke { get; } = new FireboxSmoke();
+
         /// <summary>
         /// Each livery's grate slope, in degrees, as measured from its coal
         /// pile when a cab first loads; later fireboxes of that livery start
@@ -138,7 +146,7 @@ namespace RealisticFiring.Sim
         /// <summary>Records the grate's measured slope for this firebox and its livery.</summary>
         public void SetGrateSlope(float degrees)
         {
-            Model.GrateSlope = degrees;
+            Model.GrateSlope = FireboxCharacters.Slope(Car, degrees);
             if (Car != null && Car.carLivery != null)
                 GrateSlopes[Car.carLivery.id] = degrees;
         }
@@ -181,6 +189,16 @@ namespace RealisticFiring.Sim
         public float AirFlowIn => airFlow.Value;
 
         public float DoorOpening => doorPort != null ? Mathf.Clamp01(doorPort.Value) : 0f;
+
+        /// <summary>
+        /// Steam and water from a melted fusible plug, as intake water, 0 to 1:
+        /// over half puts the fire out and keeps it from being lit. Set by the
+        /// boiler's water rig.
+        /// </summary>
+        public float PlugDrowning { get; set; }
+
+        // Water at the grate: the stock water detector's, or a melted plug's.
+        private float IntakeWater => Mathf.Max(intakeWaterContent.Value, PlugDrowning);
 
         public bool HasDoorPort => doorPort != null;
 
@@ -399,7 +417,7 @@ namespace RealisticFiring.Sim
             var consumed = Model.Step(delta, new FireInputs
             {
                 AirFlow = airFlow.Value,
-                IntakeWater = intakeWaterContent.Value,
+                IntakeWater = IntakeWater,
                 DoorOpening = DoorOpening,
                 StartupMultiplier = StartupMultiplier,
                 BoilerTemperature = boilerTemperature.Value,
@@ -407,6 +425,7 @@ namespace RealisticFiring.Sim
             });
             if (consumed > 0f)
                 coalEnvDamage.Value += consumed;
+            Smoke.Step(delta, Model);
 
             fireOnReadOut.Value = Model.FireOn ? 1f : 0f;
             heatReadOut.Value = Model.Heat;
@@ -461,7 +480,7 @@ namespace RealisticFiring.Sim
         {
             if (ignitionExtIn.Value == 1f)
             {
-                if (intakeWaterContent.Value <= 0.5f)
+                if (IntakeWater <= 0.5f)
                 {
                     Model.Ignite();
                     fireOnReadOut.Value = 1f;

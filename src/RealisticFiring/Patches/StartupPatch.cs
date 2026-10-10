@@ -15,6 +15,9 @@ namespace RealisticFiring.Patches
     {
         private static void Postfix(TrainCar loco)
         {
+            // Ready as from the shed: fresh water and a sound plug.
+            if (BoilerWaterRig.TryGet(loco, out var water))
+                water.Washout();
             if (FireboxRegistry.TryGet(loco, out var firebox))
                 firebox.PrepareFire();
         }

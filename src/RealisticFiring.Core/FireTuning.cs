@@ -81,16 +81,7 @@ namespace RealisticFiring.Core
         /// <summary>Soot density per unit of unburned fresh-coal gas fraction.</summary>
         public float SootGain { get; set; } = 4f;
 
-        // Grate character.
-
-        /// <summary>Draft at the back row of the grate, under the door, before normalizing.</summary>
-        public float BackRowDraft { get; set; } = 0.9f;
-
-        /// <summary>Draft at the front row, near the tube plate and the arch's throat, before normalizing.</summary>
-        public float FrontRowDraft { get; set; } = 1.12f;
-
-        /// <summary>Draft along the sides, where air slips up beside the firebox walls, against the center column.</summary>
-        public float SideDraft { get; set; } = 1.07f;
+        // Grate slope (each firebox's own draft pattern is its GrateCharacter).
 
         /// <summary>
         /// Share of a zone's coal a moving loco shakes down a sloping grate to

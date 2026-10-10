@@ -397,6 +397,9 @@ namespace RealisticFiring.Visuals
                 spec.notches = notches.Length;
                 spec.useSteppedJoint = true;
                 spec.steppedValueUpdate = true;
+                // A wheel tick turns a stepped lever by this many notches; the
+                // cylinder cock lever's own setting skipped Neutral.
+                spec.scrollWheelHoverScroll = 1f;
             }
             control.gameObject.AddComponent<DV.HUD.NotchedControlCustomNames>().customNames = notches;
             var feeder = control.GetComponent<InteractablePortFeeder>();

@@ -275,10 +275,16 @@ namespace RealisticFiring.Sim
             var parameters = firebox != null
                 ? firebox.Model.Parameters
                 : new FireboxParameters(Mathf.Max(1f, fireboxCoalCapacity.Value), FallbackBurnTime);
+            var habits = firebox != null ? firebox.Character : null;
+            var typical = new StokerSpec(parameters, 1f);
             stoker = new Stoker(new StokerSpec(parameters, maxTransferRate / coalMultiplier)
             {
+                // This loco's stoker: whether its back corners run short, and
+                // which side its screw sends the lumps.
+                BackLaneShare = typical.BackLaneShare * (habits != null ? habits.StokerBackLanes : 1f),
+                LumpsLeftBias = habits != null ? habits.StokerLumpsLeft : 0f,
                 // Jams need the operating lever to clear them.
-                MeanCoalBetweenJams = Main.Settings.StokerJams && reversePort != null ? new StokerSpec(parameters, 1f).MeanCoalBetweenJams : 0f,
+                MeanCoalBetweenJams = Main.Settings.StokerJams && reversePort != null ? typical.MeanCoalBetweenJams : 0f,
                 MinWorkingPressure = MinWorkingPressure,
                 FullSpeedPressure = Mathf.Max(MinWorkingPressure + 0.1f, fullSpeedPressure),
                 EngineSmoothTime = Mathf.Max(0.1f, smoothTime),

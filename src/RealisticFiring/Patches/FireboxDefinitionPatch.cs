@@ -21,6 +21,7 @@ namespace RealisticFiring.Patches
             var car = __instance.GetComponentInParent<TrainCar>();
             var carName = car != null && car.carLivery != null ? car.carLivery.id : __instance.transform.root.name;
             var replace = Main.ReplacementEnabled && FireboxRegistry.IsSupported(car);
+            var character = "";
 
             if (replace)
             {
@@ -29,6 +30,7 @@ namespace RealisticFiring.Patches
                     var firebox = new RealisticFirebox(__instance, car);
                     FireboxRegistry.Register(firebox);
                     __result = firebox;
+                    character = $"; {firebox.Character.Summary}, grate slope {firebox.Model.GrateSlope:F1}°";
                 }
                 catch (Exception e)
                 {
@@ -41,7 +43,7 @@ namespace RealisticFiring.Patches
             {
                 Main.Mod.Logger.Log(
                     $"{(replace ? "Realistic" : "Stock")} firebox '{__instance.ID}' created on {carName} " +
-                    $"(capacity {__instance.maxCoalCapacity} kg, burn time {__instance.burnTime} s)");
+                    $"(capacity {__instance.maxCoalCapacity} kg, burn time {__instance.burnTime} s){character}");
             }
 
             return !replace;

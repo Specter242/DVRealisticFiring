@@ -68,25 +68,42 @@ namespace RealisticFiring.Core
             carbonBurnTime = (parameters.BurnTime - ignitionTime) / (1f - this.tuning.VolatileFraction);
 
             Temperature = 100f;
+            WeighDraft();
+        }
 
-            // The front and sides draw more air than the back; the weights
-            // average 1, so an even bed draws the stock total.
+        public FireboxParameters Parameters => parameters;
+
+        private GrateCharacter character = GrateCharacter.Typical;
+
+        /// <summary>This firebox's own character: its draft pattern, how it burns its smoke, and its road's coal.</summary>
+        public GrateCharacter Character
+        {
+            get => character;
+            set
+            {
+                character = value ?? GrateCharacter.Typical;
+                WeighDraft();
+            }
+        }
+
+        // The front and sides draw more air than the back, by the firebox's
+        // character; the weights average 1, so an even bed draws the stock total.
+        private void WeighDraft()
+        {
             var sum = 0f;
             for (var i = 0; i < draftWeights.Length; i++)
             {
                 var zone = (GrateZone)i;
                 var row = GrateLayout.Row(zone);
-                var rowDraft = row == 0 ? this.tuning.BackRowDraft : row == GrateLayout.Rows - 1 ? this.tuning.FrontRowDraft : 1f;
+                var rowDraft = row == 0 ? character.BackRowDraft : row == GrateLayout.Rows - 1 ? character.FrontRowDraft : 1f;
                 var column = GrateLayout.Column(zone);
-                var sideDraft = column == 0 || column == GrateLayout.Columns - 1 ? this.tuning.SideDraft : 1f;
+                var sideDraft = column == 0 || column == GrateLayout.Columns - 1 ? character.SideDraft : 1f;
                 draftWeights[i] = rowDraft * sideDraft;
                 sum += draftWeights[i];
             }
             for (var i = 0; i < draftWeights.Length; i++)
                 draftWeights[i] *= draftWeights.Length / sum;
         }
-
-        public FireboxParameters Parameters => parameters;
 
         /// <summary>
         /// Slope of the grate in degrees; negative when it falls toward the
@@ -165,7 +182,10 @@ namespace RealisticFiring.Core
         }
 
         // Fire falls into the ashpan regardless and burns down to its ash there.
-        private void FireIntoAshpan(float coal) => Ashpan += Math.Max(0f, coal) * tuning.AshFraction;
+        private void FireIntoAshpan(float coal) => Ashpan += Math.Max(0f, coal) * AshFraction;
+
+        // The coal's ash, by its road's coal.
+        private float AshFraction => tuning.AshFraction * character.AshFactor;
 
         /// <summary>
         /// Holds the ashpan's hopper doors open, 0 to 1, for one tick: the
@@ -769,7 +789,7 @@ namespace RealisticFiring.Core
             // cold door air cools it more than air warmed by the bed.
             var doorAir = DoorAirFlow * dryAir;
             var mixedDoorAir = tuning.DoorAirMixing * doorAir;
-            OverFireBurnout = overFireDemand > 0f ? Math.Min(1f, (freePrimaryAir + mixedDoorAir) / overFireDemand) : 1f;
+            OverFireBurnout = overFireDemand > 0f ? Math.Min(1f, character.OverFireMixing * (freePrimaryAir + mixedDoorAir) / overFireDemand) : 1f;
             var overFireNeed = DesignExcessAir * overFireDemand;
             var primaryUsed = Math.Min(freePrimaryAir, overFireNeed);
             var doorUsed = Math.Min(mixedDoorAir, overFireNeed - primaryUsed);
@@ -907,21 +927,22 @@ namespace RealisticFiring.Core
         // faster again once clinker has started to choke the zone.
         private void FormAsh(ZoneState zone, float burned, float rate, float dt)
         {
-            zone.Ash += tuning.AshFraction * burned;
+            zone.Ash += AshFraction * burned;
             var sifted = zone.Ash * Math.Min(1f, dt / tuning.AshSiftTime);
             zone.Ash -= sifted * IntoAshpan(sifted);
             zone.Stirred -= zone.Stirred * Math.Min(1f, dt / tuning.StirDecayTime);
 
             var forcing = rate / ForcedZoneRate;
             var heat = Smoothing.Clamp01((forcing - tuning.ClinkerHeatThreshold) / (1f - tuning.ClinkerHeatThreshold));
-            if (heat <= 0f || tuning.ClinkerTendency <= 0f || zone.Ash <= 0f)
+            var tendency = tuning.ClinkerTendency * character.ClinkerFactor;
+            if (heat <= 0f || tendency <= 0f || zone.Ash <= 0f)
                 return;
             var thickAsh = 1f + zone.Ash / (tuning.ThickAshShare * referenceZoneMass);
             var thinFire = 1f + tuning.ThinFireClinkerBoost * (1f - Smoothing.Clamp01(zone.Coal / referenceZoneMass));
             var growth = 1f + tuning.ClinkerGrowth * Smoothing.Clamp01(zone.Clinker / (tuning.ClinkerChokeShare * referenceZoneMass));
             var stirred = 1f + tuning.StirClinkerBoost * zone.Stirred;
             var heatedFromBelow = 1f + tuning.AshpanClinkerBoost * AshpanOverfill;
-            var speed = tuning.ClinkerTendency * heat * thickAsh * thinFire * growth * stirred * heatedFromBelow;
+            var speed = tendency * heat * thickAsh * thinFire * growth * stirred * heatedFromBelow;
             var fused = zone.Ash * Math.Min(1f, speed * dt / tuning.ClinkerFormationTime);
             zone.Ash -= fused;
             zone.Clinker += fused;

@@ -15,6 +15,12 @@ namespace RealisticFiring.Core
         public float Soot;
 
         public bool FireOn;
+
+        /// <summary>Gas and the fire's own smoke leaving the firebox for the stack, in firebox puffs a second.</summary>
+        public float FireboxGas;
+
+        /// <summary>A shovelful's thick smoke leaving the firebox for the stack, in firebox puffs a second.</summary>
+        public float FireboxSmokeOut;
     }
 
     /// <summary>A particle color, 0 to 1 per channel.</summary>
@@ -48,6 +54,9 @@ namespace RealisticFiring.Core
         /// <summary>Extra dark particles for the puff's sooty core.</summary>
         public int SootParticles;
 
+        /// <summary>Its particles' lifetime against the stock smoke's: heavy beats tower and linger.</summary>
+        public float LifetimeScale;
+
         /// <summary>Expected sparks thrown out by the beat; usually well under one.</summary>
         public float Sparks;
 
@@ -71,6 +80,17 @@ namespace RealisticFiring.Core
     {
         /// <summary>Exhaust pressure that makes the hardest beat, in bar (stock smoke uses 10).</summary>
         public float MaxBeatPressure { get; set; } = 6f;
+
+        /// <summary>
+        /// Exhaust pressure of the heaviest beat, in bar: a long cutoff at
+        /// full steam, slogging up a grade (the stock exhaust pressure is the
+        /// cutoff times the steam's admission pressure, so it reads the steam
+        /// each beat carries). Beats past the hardest swell toward it.
+        /// </summary>
+        public float HeavyBeatPressure { get; set; } = 11f;
+
+        /// <summary>Multiplier on how much more a heavy beat throws than a hard one (0 none).</summary>
+        public float HeavyVolume { get; set; } = 1f;
 
         /// <summary>Launch speed of the hardest beat's puff, in m/s; a drifting beat leaves at 3.</summary>
         public float LaunchSpeed { get; set; } = 18f;
@@ -119,21 +139,59 @@ namespace RealisticFiring.Core
         public static float BeatStrength(PlumeTuning tuning, float exhaustPressure) =>
             Clamp01((exhaustPressure - MinBeatPressure) / Math.Max(0.1f, tuning.MaxBeatPressure - MinBeatPressure));
 
+        // What the firebox makes leaves by the stack: a firebox puff makes
+        // this many of the stack's (they are bigger and live longer). Thick
+        // smoke-out darkens the smoke fully and the fire's gas this much, the
+        // more so the more of it there is, fully at this many puffs a second.
+        private const float StackPuffsPerFireboxPuff = 0.15f;
+        private const float GasDarkness = 0.35f;
+        private const float ThickSmokeRate = 40f;
+
+        /// <summary>
+        /// How sooty the firebox's smoke makes what leaves the stack, 0 to 1:
+        /// the share of it that is thick smoke-out (the gas counting for
+        /// less), scaled by how much smoke there is.
+        /// </summary>
+        public static float FireboxSoot(PlumeInputs inputs)
+        {
+            var gas = Math.Max(0f, inputs.FireboxGas);
+            var smokeOut = Math.Max(0f, inputs.FireboxSmokeOut);
+            var total = gas + smokeOut;
+            if (!inputs.FireOn || total <= 0f)
+                return 0f;
+            return Clamp01((smokeOut + GasDarkness * gas) / total * Clamp01(total / ThickSmokeRate));
+        }
+
+        private static float Soot(PlumeInputs inputs) =>
+            inputs.FireOn ? Clamp01(Math.Max(inputs.Soot, FireboxSoot(inputs))) : 0f;
+
+        // A heaviest beat throws this many times more particles, this much
+        // bigger, living this much longer than a hard one (at HeavyVolume 1).
+        private const float HeavyParticles = 1.5f;
+        private const float HeavySize = 0.6f;
+        private const float HeavyLifetime = 0.5f;
+
+        /// <summary>How far a beat is past the hardest toward the heaviest, 0 to 1.</summary>
+        public static float Heaviness(PlumeTuning tuning, float exhaustPressure) =>
+            Clamp01((exhaustPressure - tuning.MaxBeatPressure) / Math.Max(0.5f, tuning.HeavyBeatPressure - tuning.MaxBeatPressure));
+
         public static Puff ForBeat(PlumeTuning tuning, PlumeInputs inputs)
         {
             var strength = BeatStrength(tuning, inputs.ExhaustPressure);
-            var soot = inputs.FireOn ? Clamp01(inputs.Soot) : 0f;
+            var heavy = Heaviness(tuning, inputs.ExhaustPressure) * Math.Max(0f, tuning.HeavyVolume);
+            var soot = Soot(inputs);
             var flow = Clamp01(inputs.TotalFlowNormalized);
             var darkness = Darkness(tuning, soot);
             return new Puff
             {
                 // The blast's momentum, spent within the first few metres.
                 Speed = 3f + (tuning.LaunchSpeed - 3f) * (float)Math.Sqrt(strength),
-                Size = Lerp(1.4f, 2.8f, strength) * tuning.PuffSize,
-                Particles = (int)Math.Round(Lerp(5f, 12f, strength) * tuning.PuffParticles),
+                Size = Lerp(1.4f, 2.8f, strength) * (1f + HeavySize * heavy) * tuning.PuffSize,
+                Particles = (int)Math.Round(Lerp(5f, 12f, strength) * (1f + HeavyParticles * heavy) * tuning.PuffParticles),
                 SootParticles = soot > 0.4f
-                    ? (int)Math.Round(3f * (soot - 0.4f) / 0.6f * Lerp(0.5f, 1f, strength) * tuning.PuffParticles)
+                    ? (int)Math.Round(3f * (soot - 0.4f) / 0.6f * Lerp(0.5f, 1f, strength) * (1f + heavy) * tuning.PuffParticles)
                     : 0,
+                LifetimeScale = 1f + HeavyLifetime * heavy,
                 Sparks = inputs.FireOn ? tuning.Sparks * 2f * Math.Max(0f, strength - 0.7f) / 0.3f * flow : 0f,
                 Color = Mix(Steam, Sooty, darkness, Lerp(tuning.SteamOpacity, 0.8f, darkness)),
             };
@@ -176,19 +234,21 @@ namespace RealisticFiring.Core
 
         /// <summary>
         /// What leaves the stack between beats: a lit fire always sends a lazy
-        /// column up by its own draft, faint when clean and dark after a fresh
-        /// charge; steam through the stack (the blower, mostly) makes a steady,
-        /// faster, whiter stream on top of it.
+        /// column up by its own draft, faint when clean, fuller and darker as
+        /// the firebox smokes (a fresh charge's smoke-out darkest); steam
+        /// through the stack (the blower, mostly) makes a steady, faster,
+        /// whiter stream on top of it.
         /// </summary>
         public static Haze Between(PlumeTuning tuning, PlumeInputs inputs)
         {
             var steam = Clamp01(Clamp01(inputs.TotalFlowNormalized) / FullBlowerFlow);
-            var darkness = Darkness(tuning, inputs.FireOn ? Clamp01(inputs.Soot) : 0f);
+            var darkness = Darkness(tuning, Soot(inputs));
+            var fireboxSmoke = inputs.FireOn ? Math.Max(0f, inputs.FireboxGas) + Math.Max(0f, inputs.FireboxSmokeOut) : 0f;
             var clean = Mix(CleanHaze, Steam, steam, 1f);
             var opacity = Lerp(Lerp(tuning.HazeOpacity, tuning.SteamOpacity, steam), 0.7f, darkness);
             return new Haze
             {
-                Rate = (inputs.FireOn ? StandingRate : 0f) + BlowerRate * steam,
+                Rate = (inputs.FireOn ? StandingRate : 0f) + StackPuffsPerFireboxPuff * fireboxSmoke + BlowerRate * steam,
                 Speed = Lerp(1.2f, 8f, steam),
                 Color = Mix(clean, Sooty, darkness, opacity),
             };

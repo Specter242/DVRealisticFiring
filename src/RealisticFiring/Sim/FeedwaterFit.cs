@@ -46,7 +46,7 @@ namespace RealisticFiring.Sim
             ["S464-730"] = new Fit(FeedHeaterType.Closed, "Elesco K40", 0.9f, onInjectorLever: true),
             // UP 844 as preserved: a Worthington 5-SA from the early 1950s.
             ["FEF-3"] = new Fit(FeedHeaterType.Open, "Worthington 5-SA", 0.9f, onInjectorLever: false),
-            // A 1940s 4-8-4: a Worthington SA.
+            // An FEF-3 on a made-up road ("Black Arrow"): a Worthington SA.
             ["S484-840A"] = new Fit(FeedHeaterType.Open, "Worthington SA", 0.9f, onInjectorLever: false),
         };
 

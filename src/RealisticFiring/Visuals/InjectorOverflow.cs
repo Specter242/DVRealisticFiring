@@ -196,9 +196,9 @@ namespace RealisticFiring.Visuals
             }
             foreach (var system in new[] { water, steam }.Where(s => s != null))
             {
-                var main = system.main;
-                if (reference != null)
+                if (!WorldParticles.FollowOriginShifts(system) && reference != null)
                 {
+                    var main = system.main;
                     main.simulationSpace = ParticleSystemSimulationSpace.Custom;
                     main.customSimulationSpace = reference.main.customSimulationSpace;
                 }
