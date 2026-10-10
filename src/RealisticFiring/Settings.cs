@@ -24,6 +24,9 @@ namespace RealisticFiring
         [Draw("Fusible plugs where the prototypes had them (the Hudson has a low-water alarm): a bared crown sheet melts the plug, which drowns the fire instead of the boiler failing (needs a restart)")]
         public bool FusiblePlugs = true;
 
+        [Draw("Realistic oil burners on oil-fired custom locos (the GS-4 \"Sunset\", Santa Fe 2901, B&O C-16): firing valve, atomizer, oil heater, flarebacks, flue sanding (needs a restart)")]
+        public bool RealisticOilBurners = true;
+
         [Draw("Fit the NYC Hudson with its Franklin trailing-truck booster (needs a restart)")]
         public bool FitBoosters = true;
 
@@ -178,6 +181,22 @@ namespace RealisticFiring
         [Draw("Along, cm (+ forward)", DrawType.Slider, Min = -100, Max = 100, Precision = 0)]
         public float DropGrateNudgeAlong;
 
+        [Header("Oil burner valves placement, beside the firing valve (fine-tune for your eye; moves them as you slide)")]
+        [Draw("Inboard, cm", DrawType.Slider, Min = -60, Max = 60, Precision = 0)]
+        public float OilValvesNudgeAcross;
+
+        [Draw("Up, cm", DrawType.Slider, Min = -60, Max = 60, Precision = 0)]
+        public float OilValvesNudgeUp;
+
+        [Draw("Out from the backhead, cm", DrawType.Slider, Min = -20, Max = 40, Precision = 0)]
+        public float OilValvesNudgeOut;
+
+        [Draw("Flue sand box, across (+ right), cm", DrawType.Slider, Min = -100, Max = 100, Precision = 0)]
+        public float SandBoxNudgeAcross;
+
+        [Draw("Flue sand box, along (+ toward the fire), cm", DrawType.Slider, Min = -100, Max = 100, Precision = 0)]
+        public float SandBoxNudgeAlong;
+
         [Header("Ashpan handle placement, out from the fireman's side (fine-tune for your eye; moves it as you slide)")]
         [Draw("Along, cm (+ forward)", DrawType.Slider, Min = -150, Max = 150, Precision = 0)]
         public float AshpanLeverNudgeAlong;
@@ -227,10 +246,20 @@ namespace RealisticFiring
         private Vector2 lastFeed;
         private Vector2 lastDropGrate;
         private Vector3 lastAshpanLever;
+        private Vector3 lastOilValves;
+        private Vector2 lastSandBox;
 
         public void OnChange()
         {
             Core.FireTuning.Default.ClinkerTendency = ClinkerTendency;
+            var oilValves = new Vector3(OilValvesNudgeAcross, OilValvesNudgeUp, OilValvesNudgeOut);
+            var sandBox = new Vector2(SandBoxNudgeAcross, SandBoxNudgeAlong);
+            if (oilValves != lastOilValves || sandBox != lastSandBox)
+            {
+                lastOilValves = oilValves;
+                lastSandBox = sandBox;
+                Visuals.OilBurnerCab.RebuildLoaded();
+            }
             var ashpanLever = new Vector3(AshpanLeverNudgeAlong, AshpanLeverNudgeUp, AshpanLeverNudgeOut);
             if (ashpanLever != lastAshpanLever)
             {

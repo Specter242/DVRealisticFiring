@@ -27,6 +27,10 @@ namespace RealisticFiring.Sim
             ["FEF-3"] = Guard.FusiblePlug,
         };
 
+        /// <summary>What players near the loco are told when its plug melts.</summary>
+        public const string PlugMeltedNotice = "The fusible plug has melted: steam is blowing into the firebox and has put the fire out. " +
+                                               "Take the engine to a pit stop with water and wash out the boiler (hydrant, boiler cold) to renew it.";
+
         private const string SolidsKey = "rfSolids";
         private const string SettledKey = "rfSludgeSettled";
         private const string SuspendedKey = "rfSludgeSuspended";
@@ -102,7 +106,7 @@ namespace RealisticFiring.Sim
         public float CrownSheetLevelNormalized => CrownSheetLevel(boiler);
 
         /// <summary>What blows through a melted plug into the firebox, in kg/s.</summary>
-        public float PlugVent { get; private set; }
+        public float PlugVent { get; internal set; }
 
         public float BoilerPressure => Vessel(boiler)?.pressure ?? 1f;
 
@@ -148,6 +152,9 @@ namespace RealisticFiring.Sim
         }
 
         public static bool TryGet(Boiler boiler, out BoilerWaterRig rig) => ByBoiler.TryGetValue(boiler, out rig);
+
+        /// <summary>Every rig on a car, by car.</summary>
+        public static IEnumerable<BoilerWaterRig> All => ByCar.Where(pair => pair.Key != null).Select(pair => pair.Value).ToList();
 
         public static bool TryGet(TrainCar car, out BoilerWaterRig rig)
         {
@@ -298,8 +305,8 @@ namespace RealisticFiring.Sim
             {
                 Log($"fusible plug melted at {vessel.pressure:F1} bar, crown sheet {crown:F0} C, water {TrueLevel:F2} " +
                     $"(crown sheet at {CrownSheetLevel(boiler):F2}, glass showing {GlassLevel:F2})");
-                FireController.Announce("The fusible plug has melted: steam is blowing into the firebox and has put the fire out. " +
-                                        "Take the engine to a pit stop with water and wash out the boiler (hydrant, boiler cold) to renew it.");
+                FireController.Announce(PlugMeltedNotice);
+                Net.Broadcast(Car, FireEvent.PlugMelted);
             }
             if (!Plug.Melted)
                 return;

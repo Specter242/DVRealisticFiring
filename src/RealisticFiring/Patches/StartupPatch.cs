@@ -18,6 +18,8 @@ namespace RealisticFiring.Patches
             // Ready as from the shed: fresh water and a sound plug.
             if (BoilerWaterRig.TryGet(loco, out var water))
                 water.Washout();
+            if (RealisticOilFirebox.TryGet(loco, out var oil))
+                oil.PrepareFire();
             if (FireboxRegistry.TryGet(loco, out var firebox))
                 firebox.PrepareFire();
         }

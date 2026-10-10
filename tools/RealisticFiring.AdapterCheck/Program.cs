@@ -149,6 +149,8 @@ namespace RealisticFiring.AdapterCheck
             CheckInjector(gameParams);
             CheckBoilerWater();
             CheckStoker(gameParams, def);
+            CheckOilBurner(gameParams);
+            CheckClientMirror(gameParams, def);
             CheckBooster();
 
             CheckPatchTargets();
@@ -453,6 +455,140 @@ namespace RealisticFiring.AdapterCheck
                 "a washout renews the plug and freshens the water");
         }
 
+        // An oil burner: the oil firebox has the stock firebox's contract, the
+        // oil feed CCL's stoker's; lit waste and oil with the atomizer light the
+        // fire, the tender pays at the stoker's multiplier, and the burner's
+        // steam comes from the boiler.
+        private static void CheckOilBurner(SimGameParams gameParams)
+        {
+            var fireboxDef = new FireboxDefinition { ID = Id, maxCoalCapacity = 200f, burnTime = 100f, efficiencyAtMaxCombustion = 0.6f, startupMaxPressure = 22f };
+            var stock = new Firebox(fireboxDef);
+            var oil = new RealisticOilFirebox(fireboxDef, null);
+            oil.SetGameParams(gameParams);
+            Check(Describe(stock) == Describe(oil) && stock.id == oil.id && oil.HasSaveData,
+                $"the oil firebox keeps the stock firebox's ID, ports, and references ({oil.GetAllPorts().Count} ports, {oil.GetAllPortReferences().Count} references)" +
+                Difference(Describe(stock), Describe(oil)));
+
+            var dv = Environment.GetEnvironmentVariable("DV_INSTALL_DIR")
+                     ?? Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? "", ".local/share/Steam/steamapps/common/Derail Valley");
+            var importer = Path.Combine(dv, "Mods", "DVCustomCarLoader", "CCL.Importer.dll");
+            if (!File.Exists(importer))
+            {
+                Console.WriteLine("skip oil feed checks: Custom Car Loader is not installed");
+                return;
+            }
+            var cclDefType = Assembly.LoadFrom(importer).GetType(OilBurnerFit.StokerTypeName);
+            var cclDef = (SimComponentDefinition)Activator.CreateInstance(cclDefType);
+            cclDef.ID = "autostoker";
+            var ccl = cclDef.InstantiateImplementation();
+            var feed = new OilFeed(StokerDefinitionPatch.Read(cclDef), null, 0.5f, steamWired: false);
+            feed.SetGameParams(gameParams);
+            Check(Describe(ccl) == Describe(feed) && ccl.id == feed.id,
+                $"the oil feed keeps CCL's stoker's ID, ports, and references ({feed.GetAllPorts().Count} ports, {feed.GetAllPortReferences().Count} references)");
+
+            var valve = new Port("stokerControl", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"));
+            var tender = new Port("tenderCoal", new PortDefinition(PortType.READONLY_OUT, PortValueType.FUEL, "AMOUNT"), 5000f);
+            var consume = new Port("tenderCoal", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.FUEL, "CONSUME_EXT_IN"));
+            var atomizer = new Port(OilBurnerFit.Atomizer.Id, new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"), 0.3f);
+            feed.GetAllPortReferences().Single(r => r.id == "autostoker.CONTROL").SetPortReference(valve);
+            feed.GetAllPortReferences().Single(r => r.id == "autostoker.COAL_AMOUNT").SetPortReference(tender);
+            feed.GetAllPortReferences().Single(r => r.id == "autostoker.COAL_CONSUMPTION").SetPortReference(consume);
+            void Feed(string name, float value) =>
+                oil.GetAllPortReferences().Single(r => r.id == $"{Id}.{name}").SetPortReference(
+                    new Port("src", new PortDefinition(PortType.READONLY_OUT, PortValueType.GENERIC, name), value));
+            // The draft a well-set fire of 0.92 kg/s wants: its design excess air.
+            Feed("AIR_FLOW", 0.92f * FireModel.AirPerCoal);
+            Feed("BOILER_PRESSURE", 15f);
+            Feed("BOILER_TEMPERATURE", 198f);
+            // Moving, so the stock steam-raising speedup (it burns fuel and
+            // makes heat faster at a stand) stays out of the comparison.
+            Feed("FORWARD_SPEED", 10f);
+            oil.Feed = feed;
+            oil.AttachPorts(null, atomizer, null);
+
+            P(oil, "IGNITION_EXT_IN").ExternalValueUpdate(1f);
+            valve.Value = 0.4f;
+            float tenderDrawn = 0f;
+            for (var t = 0f; t < 30f; t += 0.02f)
+            {
+                consume.Value = 0f;
+                oil.Tick(0.02f);
+                feed.Tick(0.02f);
+                tenderDrawn += consume.Value;
+            }
+            var burned = oil.Model.FeedRate;
+            Check(P(oil, "FIRE_ON").Value == 1f && P(oil, "HEAT").Value > 1e6f && oil.Model.SootDensity < 0.2f,
+                $"lit waste and oil with the atomizer light the fire ({P(oil, "HEAT").Value / 1e6f:F1} MW at {burned:F2} kg/s, soot {oil.Model.SootDensity:F2}, " +
+                $"excess air {oil.Model.ExcessAir:F2}, atomizing {oil.Model.Atomizing:F2})");
+            var feedSteam = feed.GetAllPorts().Single(p => p.id == "autostoker.STEAM_CONSUMPTION").Value;
+            var fed = oil.Model.FeedRate * 30f;
+            Check(tenderDrawn > 0f && Math.Abs(tenderDrawn - 0.5f * fed) < 0.25f * fed && feedSteam > 0f,
+                $"the tender pays at the stoker's multiplier ({tenderDrawn:F1} units for about {fed:F1} kg) and the burner takes steam ({feedSteam:F3} kg/s)");
+
+            var data = oil.GetSaveStateData();
+            var loaded = new RealisticOilFirebox(fireboxDef, null);
+            loaded.SetSaveStateData(data);
+            Check(loaded.Model.FireOn && Math.Abs(loaded.Model.BrickTemperature - oil.Model.BrickTemperature) < 1f
+                  && Math.Abs(loaded.Model.OilTemperature - oil.Model.OilTemperature) < 0.1f,
+                $"the oil fire saves and loads (brick {oil.Model.BrickTemperature:F0} C, oil {oil.Model.OilTemperature:F0} C)");
+        }
+
+        // What a multiplayer host sends clients' views of a loco: captured from
+        // the real parts and shown on fresh ones, it reads back the same.
+        private static void CheckClientMirror(SimGameParams gameParams, FireboxDefinition def)
+        {
+            var host = Create(def, gameParams);
+            host.SetSaveStateData(new JObject { ["fireOn"] = true, ["coalMass"] = 40f });
+            host.DeliverShovelful(5f, GrateZone.Front);
+            host.LastStoker = new StokerFlow { Fed = 0.4f, Jammed = true, ManifoldPressure = 3.2f };
+            host.StokerEngineSpeed = 0.6f;
+
+            Boiler NewBoiler()
+            {
+                var boilerDef = new BoilerDefinition
+                {
+                    ID = "boiler", diameter = 1.7f, length = 8.8f, capacityMultiplier = 0.85f, maxInjectorRate = 20f,
+                    waterConsumptionMultiplier = 4f, safetyValveOpeningPressure = 15f, safetyValveClosingPressure = 14.8f,
+                    spawnPressure = 12f, spawnWaterLevel = 9000f, crownSheetNormalizedWaterLevel = 0.6f,
+                };
+                var boiler = (Boiler)boilerDef.InstantiateImplementation();
+                boiler.SetGameParams(gameParams);
+                boiler.GetAllPortReferences().Single(r => r.id == "boiler.INJECTOR")
+                    .SetPortReference(new Port("injector", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN")));
+                return boiler;
+            }
+            var hostBoiler = NewBoiler();
+            InjectorRig.TryCreate(null, hostBoiler, out _);
+            InjectorRig.TryGet(hostBoiler, out var hostRig);
+            hostRig.Flow = new InjectorFlow { State = InjectorState.Priming, Overflow = 1.3f, OverflowSteam = 0.2f, WaterIn = 0f };
+            hostRig.HydrantFilling = true;
+            var hostWater = BoilerWaterRig.Create(hostBoiler, null, BoilerWaterRig.Guard.FusiblePlug);
+            hostWater.MeltPlug();
+            hostWater.PlugVent = 0.8f;
+            var oilDef = new FireboxDefinition { ID = Id, maxCoalCapacity = 200f, burnTime = 100f, efficiencyAtMaxCombustion = 0.6f };
+            var hostOil = new RealisticOilFirebox(oilDef, null);
+            hostOil.Model.PrepareFire();
+
+            var data = ClientMirror.Capture(host, hostRig, hostWater, null, hostOil);
+
+            var client = Create(def, gameParams);
+            var clientBoiler = NewBoiler();
+            InjectorRig.TryCreate(null, clientBoiler, out _);
+            InjectorRig.TryGet(clientBoiler, out var clientRig);
+            var clientWater = BoilerWaterRig.Create(clientBoiler, null, BoilerWaterRig.Guard.FusiblePlug);
+            var clientOil = new RealisticOilFirebox(oilDef, null);
+            ClientMirror.Apply(data, client, clientRig, clientWater, null, clientOil);
+
+            Check(client.Model.FireOn && client.Model.SaveZones().SequenceEqual(host.Model.SaveZones())
+                  && client.LastStoker is StokerFlow flow && flow.Jammed && flow.Fed == 0.4f && client.StokerEngineSpeed == 0.6f,
+                $"a client's view gets the host's bed zone by zone and its stoker's reading ({data.Length} bytes; " +
+                $"front zone {client.Model.Zones[(int)GrateZone.Front].Coal:F1} kg)");
+            Check(clientRig.Flow.State == InjectorState.Priming && clientRig.Flow.Overflow == 1.3f && clientRig.HydrantFilling
+                  && clientWater.Plug.Melted && clientWater.PlugVent == 0.8f,
+                "and the injector's overflow, the hose, and the melted plug's blow");
+            Check(clientOil.Model.Snapshot().Equals(hostOil.Model.Snapshot()), "and the oil fire's state");
+        }
+
         // The Hudson's booster in the sim: between the main engine's torque and
         // the traction, on the steam chest and the reverser, dropping its latch
         // when the reverser is hooked up.
@@ -631,6 +767,16 @@ namespace RealisticFiring.AdapterCheck
 
         private static Port P(SimComponent component, string portId) =>
             component.GetAllPorts().Single(p => p.id == $"{Id}.{portId}");
+
+        // What one description has that the other lacks, for a failed comparison.
+        private static string Difference(string expected, string actual)
+        {
+            if (expected == actual)
+                return "";
+            var a = expected.Split('\n');
+            var b = actual.Split('\n');
+            return " [missing: " + string.Join("; ", a.Except(b)) + "] [extra: " + string.Join("; ", b.Except(a)) + "]";
+        }
 
         private static string Describe(SimComponent component)
         {

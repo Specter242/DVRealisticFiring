@@ -56,6 +56,8 @@ namespace RealisticFiring
             var start = PerfMeter.Start();
             HandleKeys();
             Visuals.StokerCab.EnsureBuilt();
+            Visuals.OilBurnerCab.EnsureBuilt();
+            Visuals.OilFlareback.Update();
             PerfMeter.Stop(PerfSection.Controller, start);
         }
 
@@ -65,7 +67,8 @@ namespace RealisticFiring
             if (settings.GiveFireIron)
             {
                 settings.GiveFireIron = false;
-                Notify(Items.FireIron.GiveToPlayer());
+                // In multiplayer only the host makes items; the shops sell the iron.
+                Notify(Net.IsClient ? "In multiplayer, buy the fire iron at a shop, beside the shovel" : Items.FireIron.GiveToPlayer());
             }
             if (settings.JamStokerNow)
             {
@@ -124,6 +127,11 @@ namespace RealisticFiring
         // the train has left the water point.
         private void UpdateFilling(InjectorRig rig, Settings settings)
         {
+            if (Net.IsClient)
+            {
+                UpdateFillingRemotely(rig, settings);
+                return;
+            }
             var pumping = settings.HandPumpKey.Pressed() && TimeUtil.IsFlowing;
             if (pumping && !rig.HandPumping && !rig.CanHandPump)
                 Notify($"The hand pump cannot force water in above {InjectorRig.HandPumpMaxPressure:F0} bar");
@@ -131,32 +139,8 @@ namespace RealisticFiring
 
             if (settings.HydrantKey.Down())
             {
-                if (rig.HydrantFilling)
-                {
-                    rig.HydrantFilling = false;
-                    Notify("Hydrant hose off");
-                }
-                else if (rig.BoilerPressure > InjectorRig.HydrantMaxPressure)
-                    Notify("The boiler is under pressure: a hose can only fill a cold boiler");
-                else if (!WaterPoints.Serves(rig.Car))
-                    Notify("No hydrant here: stand at a pit stop with water");
-                else
-                {
-                    // With the boiler cold at the shed, the hose washes it out first.
-                    var washed = BoilerWaterRig.TryGet(rig.Car, out var water) && (Main.Settings.BoilerWaterImpurities || water.Plug != null);
-                    if (washed)
-                        water.Washout();
-                    if (rig.CanHydrantFill)
-                    {
-                        rig.HydrantFilling = true;
-                        hydrantCheckTime = Time.time;
-                        Notify(washed ? "Hydrant hose on: boiler washed out, filling it with fresh water" : "Hydrant hose on: filling the boiler");
-                    }
-                    else
-                    {
-                        Notify(washed ? "Boiler washed out and filled with fresh water" : "The boiler is already full to the top of the glass");
-                    }
-                }
+                Notify(ToggleHydrant(rig));
+                hydrantCheckTime = Time.time;
             }
 
             if (rig.HydrantFilling)
@@ -178,6 +162,49 @@ namespace RealisticFiring
             }
         }
 
+        private bool remotePumping;
+
+        // On a multiplayer client the host fills the boiler: the hand pump and
+        // hose go to it as requests, and it answers with a notice.
+        private void UpdateFillingRemotely(InjectorRig rig, Settings settings)
+        {
+            var pumping = settings.HandPumpKey.Pressed() && TimeUtil.IsFlowing;
+            if (pumping != remotePumping)
+            {
+                remotePumping = pumping;
+                Net.TrySend(rig.Car, pumping ? FireAction.HandPumpOn : FireAction.HandPumpOff);
+            }
+            if (settings.HydrantKey.Down())
+                Net.TrySend(rig.Car, FireAction.Hydrant);
+        }
+
+        /// <summary>
+        /// Turns the hydrant hose off, or on where it can fill the boiler,
+        /// washing a cold boiler out first. Returns the notice for whoever asked.
+        /// </summary>
+        internal static string ToggleHydrant(InjectorRig rig)
+        {
+            if (rig.HydrantFilling)
+            {
+                rig.HydrantFilling = false;
+                return "Hydrant hose off";
+            }
+            if (rig.BoilerPressure > InjectorRig.HydrantMaxPressure)
+                return "The boiler is under pressure: a hose can only fill a cold boiler";
+            if (!WaterPoints.Serves(rig.Car))
+                return "No hydrant here: stand at a pit stop with water";
+            // With the boiler cold at the shed, the hose washes it out first.
+            var washed = BoilerWaterRig.TryGet(rig.Car, out var water) && (Main.Settings.BoilerWaterImpurities || water.Plug != null);
+            if (washed)
+                water.Washout();
+            if (rig.CanHydrantFill)
+            {
+                rig.HydrantFilling = true;
+                return washed ? "Hydrant hose on: boiler washed out, filling it with fresh water" : "Hydrant hose on: filling the boiler";
+            }
+            return washed ? "Boiler washed out and filled with fresh water" : "The boiler is already full to the top of the glass";
+        }
+
         private void Notify(string text)
         {
             notice = text;
@@ -193,7 +220,12 @@ namespace RealisticFiring
             lastStatusTime = Time.time;
             Main.Mod.Logger.Log($"Performance: {PerfMeter.Report()}");
             if (!FireboxRegistry.TryGetTended(PlayerManager.Car, out var firebox))
+            {
+                if (RealisticOilFirebox.TryGetTended(PlayerManager.Car, out var oil))
+                    Main.Mod.Logger.Log($"{oil.Car.ID} oil status: fire {(oil.Model.FireOn ? "on" : "out")}; {DescribeOil(oil)}" +
+                                        (InjectorRig.TryGetTended(PlayerManager.Car, out var oilRig) ? $"; {Describe(oilRig)}" : ""));
                 return;
+            }
 
             var fire = firebox.Model;
             var zones = string.Join(" ", fire.Zones.Select(z => z.Coal.ToString("F0")));
@@ -234,6 +266,24 @@ namespace RealisticFiring
                    $"{flow.Force / 4.44822f:F0} lb, {flow.InletPressure * PsiPerBar:F0} psi, {flow.CrankRpm:F0} rpm, " +
                    $"steam {flow.SteamUsed:F2} kg/s, warm {booster.Model.Warmth:P0}" +
                    (booster.Clashes > 0 ? $", {booster.Clashes} clashes" : "");
+        }
+
+        /// <summary>The oil fire, for the status log and overlay: lines separated by semicolons.</summary>
+        internal static string DescribeOil(RealisticOilFirebox oil)
+        {
+            var fire = oil.Model;
+            var stack = !fire.FireOn ? (fire.Vapor > 0.05f ? "white vapor" : "clear")
+                : fire.SootDensity > 0.3f ? "black" : fire.ExcessAir > 2f ? "clear (too much air)" : "light haze";
+            return $"Heat {fire.Heat / 1e6f:F2} MW ({fire.Heat / fire.Parameters.MaxHeatOutput:P0} of max), oil {fire.FeedRate:F2} kg/s " +
+                   $"(firing valve {(oil.Feed != null ? oil.Feed.FiringValve : 0f):P0}), burning {fire.BurnRate:F2} kg/s; " +
+                   $"atomizer {oil.AtomizerValve:P0}: {fire.Atomizing:F1}× the oil's need" + (fire.Drumming > 0f ? $", drumming {fire.Drumming:P0}" : "") +
+                   $", {fire.AtomizerSteam:F2} kg/s of steam; " +
+                   $"draft {oil.AirFlowIn:F2} kg/s, {fire.ExcessAir:F1}× the air the oil needs, stack {stack}, soot {fire.SootDensity:P0}; " +
+                   $"brick {fire.BrickTemperature:F0} C, firebox {fire.Temperature:F0} C, door {oil.DoorOpening:P0}; " +
+                   $"oil {fire.OilTemperature:F0} C ({fire.OilTemperature * 9f / 5f + 32f:F0} F), heater {oil.HeaterValve:P0}; " +
+                   $"flues {fire.FlueSoot:P0} sooted" + (fire.FlueSoot > 0.3f ? " (sand them)" : "") +
+                   (fire.Vapor > 0.01f || fire.PooledOil > 0.01f ? $"; vapor {fire.Vapor:F2} kg, pooled oil {fire.PooledOil:F2} kg: clear it with the blower before lighting" : "") +
+                   $"; flue sand on the shovel {Visuals.FlueSandBox.Loaded:F1} kg";
         }
 
         /// <summary>The injector and boiler filling, for the status log and overlay.</summary>
@@ -296,7 +346,11 @@ namespace RealisticFiring
             if (notice != null && Time.time - noticeTime <= NoticeTime)
                 DrawLabel(notice, NoticeOffset, new Color(1f, 0.85f, 0.5f));
             if (!FireboxRegistry.TryGetTended(PlayerManager.Car, out var firebox))
+            {
+                if (Main.Settings.ShowOverlay && RealisticOilFirebox.TryGetTended(PlayerManager.Car, out var oil))
+                    overlay.DrawOil(oil);
                 return;
+            }
             if (Main.Settings.ShowOverlay)
                 overlay.Draw(firebox, Time.time);
             if (Main.Settings.ShowAimLabel && firebox.HoverAim is DoorAimSample aim && aim.IsLiveAt(Time.time)

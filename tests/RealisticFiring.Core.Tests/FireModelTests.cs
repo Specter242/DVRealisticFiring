@@ -412,4 +412,40 @@ public class FireModelTests
         Assert.Equal(fire.Zones[(int)GrateZone.UnderDoor].Fresh, copy.Zones[(int)GrateZone.UnderDoor].Fresh, 4);
         Assert.False(copy.RestoreZones(true, new float[3]));
     }
+
+    [Fact]
+    public void MatchingCoalKeepsTheBedsShape()
+    {
+        var fire = FireTestKit.BurningFire(Stock, 30f);
+        fire.AddCoal(10f, GrateZone.BackLeft);
+        var shareBefore = fire.Zones[(int)GrateZone.BackLeft].Coal / fire.CoalMass;
+
+        fire.MatchCoal(20f);
+
+        Assert.Equal(20f, fire.CoalMass, 2);
+        Assert.Equal(shareBefore, fire.Zones[(int)GrateZone.BackLeft].Coal / fire.CoalMass, 3);
+
+        var empty = new FireModel(Stock);
+        empty.Ignite();
+        empty.MatchCoal(18f);
+        Assert.Equal(18f, empty.CoalMass, 2);
+        Assert.Equal(2f, empty.Zones[(int)GrateZone.Center].Burning, 2);
+    }
+
+    [Fact]
+    public void AMirroredBedKeepsItsOwnBurnRates()
+    {
+        var host = FireTestKit.BurningFire(Stock, 40f);
+        var mirror = FireTestKit.BurningFire(Stock, 40f);
+        FireTestKit.Run(host, FireTestKit.Inputs(10f), 30f);
+        FireTestKit.Run(mirror, FireTestKit.Inputs(10f), 30f);
+        host.AddCoal(5f, GrateZone.Front);
+        var rate = mirror.Zones[(int)GrateZone.Center].CombustionRate;
+
+        Assert.True(mirror.MirrorZones(host.FireOn, host.SaveZones()));
+
+        Assert.Equal(host.CoalMass, mirror.CoalMass, 3);
+        Assert.Equal(host.Zones[(int)GrateZone.Front].Fresh, mirror.Zones[(int)GrateZone.Front].Fresh, 3);
+        Assert.Equal(rate, mirror.Zones[(int)GrateZone.Center].CombustionRate);
+    }
 }

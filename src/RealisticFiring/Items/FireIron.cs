@@ -3,6 +3,7 @@ using DV.CabControls;
 using DV.Utils;
 using HarmonyLib;
 using RealisticFiring.Visuals;
+using DV;
 using UnityEngine;
 
 namespace RealisticFiring.Items
@@ -45,6 +46,22 @@ namespace RealisticFiring.Items
                 }
                 return template;
             }
+        }
+
+        /// <summary>
+        /// Lists the fire iron among the game's items, where the Multiplayer
+        /// mod looks up an item's prefab by name to make it on clients. Only
+        /// done in a multiplayer session; returns whether it is listed.
+        /// </summary>
+        public static bool RegisterAsGameItem()
+        {
+            var spec = Template != null ? Template.GetComponent<InventoryItemSpec>() : null;
+            var items = Globals.G != null && Globals.G.Items != null ? Globals.G.Items.items : null;
+            if (spec == null || items == null)
+                return false;
+            if (!items.Contains(spec))
+                items.Add(spec);
+            return true;
         }
 
         private static GameObject Build()

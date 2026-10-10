@@ -29,6 +29,9 @@ namespace RealisticFiring.Sim
 
         private static readonly Dictionary<TrainCar, RealisticFirebox> Fireboxes = new Dictionary<TrainCar, RealisticFirebox>();
 
+        /// <summary>Every realistic firebox, by car.</summary>
+        public static IEnumerable<RealisticFirebox> All => Fireboxes.Where(pair => pair.Key != null).Select(pair => pair.Value).ToList();
+
         public static bool IsSupported(TrainCar car) =>
             car != null && car.carLivery != null && SupportedLiveries.Contains(car.carLivery.id);
 

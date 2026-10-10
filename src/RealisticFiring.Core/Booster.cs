@@ -217,6 +217,9 @@ namespace RealisticFiring.Core
         /// <summary>How warm its cylinders are, 0 cold to 1 warm.</summary>
         public float Warmth { get; private set; }
 
+        /// <summary>Shows another booster's warmth, as a multiplayer client shows the host's.</summary>
+        public void MirrorWarmth(float warmth) => Warmth = Smoothing.Clamp01(warmth);
+
         public bool InGear => State == BoosterState.CocksOpen || State == BoosterState.Working;
 
         /// <param name="steamVolume">Specific volume of saturated steam at an absolute pressure, m³/kg.</param>

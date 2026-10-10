@@ -20,6 +20,22 @@ namespace RealisticFiring.Patches
         {
             var car = __instance.GetComponentInParent<TrainCar>();
             var carName = car != null && car.carLivery != null ? car.carLivery.id : __instance.transform.root.name;
+            if (OilBurnerFit.IsOilBurner(car))
+            {
+                try
+                {
+                    __result = new RealisticOilFirebox(__instance, car);
+                    if (Main.Settings.LogFireboxCreation)
+                        Main.Mod.Logger.Log($"Realistic oil firebox '{__instance.ID}' created on {carName} " +
+                                            $"(stock {__instance.maxCoalCapacity} kg over {__instance.burnTime} s)");
+                    return false;
+                }
+                catch (Exception e)
+                {
+                    Main.Mod.Logger.LogException($"Realistic oil firebox failed on {carName}; keeping the stock firebox", e);
+                    return true;
+                }
+            }
             var replace = Main.ReplacementEnabled && FireboxRegistry.IsSupported(car);
             var character = "";
 

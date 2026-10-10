@@ -87,10 +87,13 @@ namespace RealisticFiring.Sim
         public Booster Model { get; }
 
         /// <summary>What it did on the last tick.</summary>
-        public BoosterFlow Flow { get; private set; }
+        public BoosterFlow Flow { get; internal set; }
 
         /// <summary>Clashes since the loco was loaded.</summary>
-        public int Clashes { get; private set; }
+        public int Clashes { get; internal set; }
+
+        /// <summary>Every booster, by car.</summary>
+        public static IEnumerable<RealisticBooster> All => ByCar.Where(pair => pair.Key != null).Select(pair => pair.Value).ToList();
 
         public static bool TryGet(TrainCar car, out RealisticBooster booster)
         {
@@ -104,6 +107,9 @@ namespace RealisticFiring.Sim
 
         public override void Tick(float delta)
         {
+            // On a multiplayer client the host simulates; its ports carry the host's values.
+            if (Net.IsClient)
+                return;
             if (!resolved)
                 Resolve();
             if (def.FrictionCoefficient > 0f)

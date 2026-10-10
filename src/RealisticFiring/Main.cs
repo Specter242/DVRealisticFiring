@@ -46,6 +46,7 @@ namespace RealisticFiring
             modEntry.Hotkey = Settings.OpenSettingsKey;
 
             new Harmony(modEntry.Info.Id).PatchAll(typeof(Main).Assembly);
+            Net.TryStartAddOn(modEntry);
 
             var host = new GameObject("RealisticFiring");
             Object.DontDestroyOnLoad(host);

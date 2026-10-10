@@ -51,6 +51,15 @@ namespace RealisticFiring.Patches
                     Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {water}");
             }
 
+            if (__instance.simFlow != null && RealisticOilFirebox.TryGet(trainCar, out var oil))
+            {
+                var doorId = __instance.firebox != null ? __instance.firebox.fireboxDoorPortId : null;
+                __instance.simFlow.TryGetPort(doorId, out var door, canBeNullOrEmpty: true);
+                __instance.simFlow.TryGetPort(OilBurnerFit.Atomizer.PortId, out var atomizer, canBeNullOrEmpty: true);
+                __instance.simFlow.TryGetPort(OilBurnerFit.Heater.PortId, out var heater, canBeNullOrEmpty: true);
+                oil.AttachPorts(door, atomizer, heater);
+            }
+
             if (!FireboxRegistry.TryGet(trainCar, out var firebox) || __instance.simFlow == null)
                 return;
 

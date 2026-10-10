@@ -250,7 +250,12 @@ namespace RealisticFiring.Sim
         private float dropGrateCoalBefore;
         private float dropGrateAshBefore;
 
-        public void ShakeGrate() => Model.ShakeGrate();
+        public void ShakeGrate()
+        {
+            if (Net.TrySend(Car, FireAction.Shake))
+                return;
+            Model.ShakeGrate();
+        }
 
         /// <summary>Records where the player points a shovel in the door.</summary>
         public void NoteAim(DoorAimSample aim) => HoverAim = aim;
@@ -258,6 +263,8 @@ namespace RealisticFiring.Sim
         /// <summary>Runs the slice bar under <paramref name="zone"/>'s fire, as with the fire iron.</summary>
         public void Slice(GrateZone zone)
         {
+            if (Net.TrySend(Car, FireAction.Slice, (int)zone))
+                return;
             var before = Model.Zones[(int)zone].Clinker;
             Model.Slice(zone);
             if (Main.Settings.LogCoalDeliveries)
@@ -268,6 +275,8 @@ namespace RealisticFiring.Sim
         /// <summary>Works <paramref name="zone"/> with the fire iron as a hoe toward <paramref name="direction"/>.</summary>
         public void Push(GrateZone zone, GrateDirection direction)
         {
+            if (Net.TrySend(Car, FireAction.Push, (int)zone, (int)direction))
+                return;
             var before = Model.Zones[(int)zone].Coal;
             var hookedBefore = Model.HookedOut;
             Model.Push(zone, direction);
@@ -282,6 +291,8 @@ namespace RealisticFiring.Sim
         /// </summary>
         public void Rake(GrateZone zone)
         {
+            if (Net.TrySend(Car, FireAction.Rake, (int)zone))
+                return;
             var before = Model.Zones[(int)zone].Coal;
             Model.Rake(zone);
             if (Main.Settings.LogCoalDeliveries)
@@ -338,15 +349,7 @@ namespace RealisticFiring.Sim
             else if (coalMassDelta > 0f)
             {
                 var aim = TakeFreshAim();
-                var accepted = shovel.Deliver(Model, coalMassDelta, aim?.Zone);
-                LastDeliveryMass = accepted;
-                LastDeliveryAim = aim;
-                if (Main.Settings.LogCoalDeliveries)
-                {
-                    Main.Mod.Logger.Log($"{Car?.ID}: {coalMassDelta:F2} kg delivered " +
-                                        $"({(aim.HasValue ? "aimed at " + aim.Value : "following the fire")}), {accepted:F2} kg accepted, " +
-                                        $"door {DoorOpening:P0}, door air {Model.DoorAirFlow:F2} kg/s");
-                }
+                DeliverShovelful(coalMassDelta, aim?.Zone, aim);
             }
             else
             {
@@ -357,11 +360,45 @@ namespace RealisticFiring.Sim
             coalControlExtIn.Value = 0f;
         }
 
+        /// <summary>
+        /// A shovelful into the fire, landing around <paramref name="zone"/> or,
+        /// unaimed, where the fire needs it: the player's own, or a multiplayer
+        /// client's on the host. Returns the coal accepted.
+        /// </summary>
+        public float DeliverShovelful(float mass, GrateZone? zone, DoorAimSample? aim = null)
+        {
+            var accepted = shovel.Deliver(Model, mass, zone);
+            LastDeliveryMass = accepted;
+            LastDeliveryAim = aim;
+            UpdateCoalLevel();
+            if (Main.Settings.LogCoalDeliveries)
+            {
+                Main.Mod.Logger.Log($"{Car?.ID}: {mass:F2} kg delivered " +
+                                    $"({(aim.HasValue ? "aimed at " + aim.Value : zone.HasValue ? "aimed at " + zone.Value : "following the fire")}), " +
+                                    $"{accepted:F2} kg accepted, door {DoorOpening:P0}, door air {Model.DoorAirFlow:F2} kg/s");
+            }
+            return accepted;
+        }
+
+        /// <summary>
+        /// On a multiplayer client: a shovelful thrown here goes to the host
+        /// with where it was aimed, and lands in this view's fire at once so
+        /// firing feels immediate; the host's next update settles it.
+        /// </summary>
+        public void DeliverFromClient(float mass)
+        {
+            var aim = TakeFreshAim();
+            shovel.Deliver(Model, mass, aim?.Zone);
+            LastDeliveryMass = mass;
+            LastDeliveryAim = aim;
+            Net.TrySend(Car, FireAction.Shovelful, aim.HasValue ? (int)aim.Value.Zone : -1, value: mass);
+        }
+
         /// <summary>The last tick's stoker reading, if a stoker feeds this firebox.</summary>
-        public StokerFlow? LastStoker { get; private set; }
+        public StokerFlow? LastStoker { get; internal set; }
 
         /// <summary>Stoker engine speed at the last tick, as a share of full speed.</summary>
-        public float StokerEngineSpeed { get; private set; }
+        public float StokerEngineSpeed { get; internal set; }
 
         /// <summary>The stoker feeding this firebox, once it has run.</summary>
         public Stoker StokerModel { get; private set; }
@@ -401,6 +438,11 @@ namespace RealisticFiring.Sim
 
         public override void Tick(float delta)
         {
+            if (Net.IsClient)
+            {
+                FollowHost(delta);
+                return;
+            }
             var start = PerfMeter.Start();
             Step(delta);
             PerfMeter.Stop(PerfSection.Firebox, start);
@@ -474,6 +516,46 @@ namespace RealisticFiring.Sim
                                     $"temp {temperatureAtDoorOpen:F0} -> {Model.Temperature:F0} C, smoke {Model.SmokeDensity:P0}, " +
                                     $"smoke burnt {Model.OverFireBurnout:P0}");
             }
+        }
+
+        // Seconds between pinning a client's fire to the host's.
+        private const float FollowInterval = 1f;
+        private float followDue;
+
+        // On a multiplayer client the host simulates this fire and its ports
+        // carry the host's values. The model shadows it for the firebox view
+        // and the stack: it steps on the host's draft and door, writes no
+        // ports, and is pinned each second to the host's fire and coal.
+        private void FollowHost(float delta)
+        {
+            if (!(delta > 0f))
+                return;
+            var hostFireOn = fireOnReadOut.Value == 1f;
+            if (hostFireOn != Model.FireOn)
+            {
+                if (hostFireOn)
+                    Model.Ignite();
+                else
+                    Model.Extinguish();
+            }
+            followDue -= delta;
+            if (followDue <= 0f)
+            {
+                followDue = FollowInterval;
+                var hostCoal = coalLevelReadOut.Value;
+                if (Mathf.Abs(Model.CoalMass - hostCoal) > 0.5f)
+                    Model.MatchCoal(hostCoal);
+            }
+            Model.Step(delta, new FireInputs
+            {
+                AirFlow = airFlow.Value,
+                IntakeWater = IntakeWater,
+                DoorOpening = DoorOpening,
+                StartupMultiplier = 1f,
+                BoilerTemperature = boilerTemperature.Value,
+                Speed = Mathf.Abs(forwardSpeed.Value),
+            });
+            Smoke.Step(delta, Model);
         }
 
         private void CheckIgnition()

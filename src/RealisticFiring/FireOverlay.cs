@@ -30,6 +30,24 @@ namespace RealisticFiring
             window = GUILayout.Window(WindowId, window, DrawWindow, "Realistic Firing");
         }
 
+        private RealisticOilFirebox shownOil;
+
+        public void DrawOil(RealisticOilFirebox firebox)
+        {
+            shownOil = firebox;
+            window = GUILayout.Window(WindowId, window, DrawOilWindow, "Realistic Firing: oil burner");
+        }
+
+        private void DrawOilWindow(int id)
+        {
+            var fire = shownOil.Model;
+            GUILayout.Label($"{shownOil.Car.carLivery.id} {shownOil.Car.ID}   fire {(fire.FireOn ? "ON" : "out")}" +
+                            (fire.Torch > 0f ? $"   waste burning {fire.Torch:F0} s" : ""));
+            foreach (var line in FireController.DescribeOil(shownOil).Split(';'))
+                GUILayout.Label(line.Trim());
+            GUI.DragWindow();
+        }
+
         private void DrawWindow(int id)
         {
             var fire = shown.Model;

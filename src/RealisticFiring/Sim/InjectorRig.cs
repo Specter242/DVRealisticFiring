@@ -85,7 +85,7 @@ namespace RealisticFiring.Sim
         public string PumpName { get; private set; }
 
         /// <summary>What the pump did on the last tick.</summary>
-        public FeedPumpFlow PumpFlow { get; private set; }
+        public FeedPumpFlow PumpFlow { get; internal set; }
 
         /// <summary>The pump's operating valve, 0 to 1.</summary>
         public float PumpValve => pumpValve != null ? pumpValve.Value : 0f;
@@ -122,7 +122,7 @@ namespace RealisticFiring.Sim
         }
 
         /// <summary>What the injector did on the last tick.</summary>
-        public InjectorFlow Flow { get; private set; }
+        public InjectorFlow Flow { get; internal set; }
 
         public float BoilerPressure => Vessel(boiler)?.pressure ?? 1f;
 
@@ -132,11 +132,14 @@ namespace RealisticFiring.Sim
         /// <summary>Set by the cab controls while the hand pump is being worked.</summary>
         public bool HandPumping { get; set; }
 
+        /// <summary>Set while a multiplayer client works the hand pump on this boiler.</summary>
+        public bool RemoteHandPumping { get; set; }
+
         /// <summary>Set by the cab controls while a hydrant hose is filling the boiler.</summary>
         public bool HydrantFilling { get; set; }
 
         /// <summary>Water the hand pump or hose put in on the last tick, in kg/s.</summary>
-        public float FillRate { get; private set; }
+        public float FillRate { get; internal set; }
 
         public bool CanHandPump => BoilerPressure <= HandPumpMaxPressure;
 
@@ -203,6 +206,9 @@ namespace RealisticFiring.Sim
         internal static WaterPressureVessel VesselOf(Boiler boiler) => boiler != null ? Vessel(boiler) : null;
 
         public static bool TryGet(Boiler boiler, out InjectorRig rig) => ByBoiler.TryGetValue(boiler, out rig);
+
+        /// <summary>Every rig on a car, by car.</summary>
+        public static IEnumerable<InjectorRig> All => ByCar.Where(pair => pair.Key != null).Select(pair => pair.Value).ToList();
 
         public static bool TryGet(TrainCar car, out InjectorRig rig)
         {
@@ -295,7 +301,7 @@ namespace RealisticFiring.Sim
                 vessel.AddWater(hose, TenderWaterTemperature);
                 FillRate = hose / delta;
             }
-            else if (HandPumping && !broken && CanHandPump)
+            else if ((HandPumping || RemoteHandPumping) && !broken && CanHandPump)
             {
                 var pumped = Mathf.Min(HandPumpRate * delta, space, Mathf.Max(0f, tender - drawn));
                 vessel.AddWater(pumped, TenderWaterTemperature);

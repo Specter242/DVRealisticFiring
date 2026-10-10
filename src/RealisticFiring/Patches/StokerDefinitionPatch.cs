@@ -33,6 +33,8 @@ namespace RealisticFiring.Patches
         private static bool Prefix(SimComponentDefinition __instance, ref SimComponent __result)
         {
             var car = __instance.GetComponentInParent<TrainCar>();
+            if (OilBurnerFit.IsOilBurner(car))
+                return !TryOilFeed(__instance, car, ref __result);
             if (!Main.ReplacementEnabled || !FireboxRegistry.IsSupported(car))
                 return true;
 
@@ -55,6 +57,30 @@ namespace RealisticFiring.Patches
             {
                 Main.Mod.Logger.LogException($"Realistic stoker failed on {car.carLivery.id}; keeping CCL's stoker", e);
                 return true;
+            }
+        }
+
+        // An oil burner's stoker becomes its oil feed, at the stoker's own
+        // multiplier from tender units to firebox kg.
+        private static bool TryOilFeed(SimComponentDefinition def, TrainCar car, ref SimComponent result)
+        {
+            try
+            {
+                var values = Read(def);
+                var simController = car.SimController != null ? car.SimController : car.GetComponentInChildren<SimController>(true);
+                var connections = simController != null ? simController.connectionsDefinition : null;
+                var steamPort = $"{values.Id}.{values.SteamConsumptionReadOut.ID}";
+                var steamWired = connections != null && connections.portReferenceConnections != null
+                                 && connections.portReferenceConnections.Any(r => r.portId == steamPort);
+                var feed = new OilFeed(values, car, Field<float>(def, "FireboxCoalConsumptionMultiplier"), steamWired);
+                feed.JoinFirebox();
+                result = feed;
+                return true;
+            }
+            catch (Exception e)
+            {
+                Main.Mod.Logger.LogException($"Oil feed failed on {car.carLivery.id}; keeping CCL's stoker", e);
+                return false;
             }
         }
 

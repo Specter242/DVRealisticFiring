@@ -78,6 +78,9 @@ namespace RealisticFiring.Core
 
         public bool Sounding { get; private set; }
 
+        /// <summary>Shows another alarm's state, as a multiplayer client shows the host's.</summary>
+        public void Mirror(bool sounding) => Sounding = sounding;
+
         public bool Step(float level, float crownSheetLevel)
         {
             var threshold = crownSheetLevel + Margin;

@@ -126,6 +126,9 @@ namespace RealisticFiring.Sim
 
         public override void Tick(float delta)
         {
+            // On a multiplayer client the host simulates; its ports carry the host's values.
+            if (Net.IsClient)
+                return;
             var start = PerfMeter.Start();
             Step(delta);
             PerfMeter.Stop(PerfSection.Stoker, start);

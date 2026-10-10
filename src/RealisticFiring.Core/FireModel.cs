@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 
 namespace RealisticFiring.Core
@@ -604,6 +605,35 @@ namespace RealisticFiring.Core
             FireOn = fireOn;
         }
 
+        /// <summary>
+        /// Brings the coal to <paramref name="coalMass"/> keeping the bed's
+        /// shape: each zone's fresh and burning coal scaled alike, or spread
+        /// evenly (burning if the fire is on) onto an empty grate. For a fire
+        /// that follows another's total, as a multiplayer client's does the host's.
+        /// </summary>
+        public void MatchCoal(float coalMass)
+        {
+            coalMass = Math.Max(0f, Math.Min(coalMass, parameters.MaxCoalCapacity));
+            var current = CoalMass;
+            if (current < NegligibleMass)
+            {
+                foreach (var zone in zones)
+                {
+                    if (FireOn)
+                        zone.Burning += coalMass * zoneArea;
+                    else
+                        zone.Fresh += coalMass * zoneArea;
+                }
+                return;
+            }
+            var scale = coalMass / current;
+            foreach (var zone in zones)
+            {
+                zone.Fresh *= scale;
+                zone.Burning *= scale;
+            }
+        }
+
         /// <summary>Zone masses as a flat array: fresh, burning, ash, clinker per zone.</summary>
         public float[] SaveZones()
         {
@@ -630,6 +660,27 @@ namespace RealisticFiring.Core
         }
 
         /// <summary>Restores zones written by <see cref="SaveZones"/>; false if the data does not fit.</summary>
+        /// <summary>
+        /// Shows another fire's zones (fresh, burning, ash, clinker each, as
+        /// <see cref="SaveZones"/> gives them), keeping this fire's own air
+        /// and burn rates, so a mirror (a multiplayer client's) does not dim
+        /// between updates. Returns false and changes nothing on bad data.
+        /// </summary>
+        public bool MirrorZones(bool fireOn, float[] data)
+        {
+            if (data == null || data.Length != GrateLayout.ZoneCount * 4 || data.Any(value => !(value >= 0f) || float.IsInfinity(value)))
+                return false;
+            for (var i = 0; i < zones.Length; i++)
+            {
+                zones[i].Fresh = data[i * 4];
+                zones[i].Burning = data[i * 4 + 1];
+                zones[i].Ash = data[i * 4 + 2];
+                zones[i].Clinker = data[i * 4 + 3];
+            }
+            FireOn = fireOn;
+            return true;
+        }
+
         public bool RestoreZones(bool fireOn, float[] data)
         {
             if (data == null || data.Length != GrateLayout.ZoneCount * 4)
