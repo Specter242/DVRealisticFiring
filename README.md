@@ -8,6 +8,10 @@ locomotives, with optional Multiplayer integration.
 Requires Derail Valley and Unity Mod Manager. Install custom locomotives through
 Custom Car Loader separately. Game and third-party mod assemblies are not included.
 
+Download the installable ZIP from [GitHub Releases](https://github.com/Specter242/DVRealisticFiring/releases/latest).
+See the [changelog](CHANGELOG.md) for version history. Release tags contain
+sanitized source snapshots; older tags describe the behavior of that version.
+
 Build with the .NET 10 SDK and your own installed game assemblies:
 
 ```sh

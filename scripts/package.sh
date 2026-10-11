@@ -13,7 +13,11 @@ zipfile="$repo/dist/RealisticFiring-$version.zip"
 
 dotnet test "$repo/tests/RealisticFiring.Core.Tests" -c Release -nologo -v quiet
 "$repo/scripts/check-adapter.sh"
-dotnet build "$repo/src/RealisticFiring.Multiplayer/RealisticFiring.Multiplayer.csproj" \
+project="$repo/src/RealisticFiring/RealisticFiring.csproj"
+if [[ -f "$repo/src/RealisticFiring.Multiplayer/RealisticFiring.Multiplayer.csproj" ]]; then
+    project="$repo/src/RealisticFiring.Multiplayer/RealisticFiring.Multiplayer.csproj"
+fi
+dotnet build "$project" \
     -c Release -p:DvInstallDir="$dv" -warnaserror -nologo
 
 if [[ -x "$unity" ]]; then
@@ -28,14 +32,18 @@ stage="$(mktemp -d "$repo/dist/package.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
 mkdir "$stage/RealisticFiring"
 cp "$out/Info.json" "$out/RealisticFiring.dll" "$out/RealisticFiring.Core.dll" \
-    "$mp/RealisticFiring.Multiplayer.dll" "$bundle" "$repo/LICENSE" "$stage/RealisticFiring/"
+    "$bundle" "$repo/LICENSE" "$stage/RealisticFiring/"
+files=(RealisticFiring/Info.json RealisticFiring/RealisticFiring.dll
+       RealisticFiring/RealisticFiring.Core.dll RealisticFiring/realisticfiring_fx
+       RealisticFiring/LICENSE)
+if [[ "$project" == */RealisticFiring.Multiplayer.csproj ]]; then
+    cp "$mp/RealisticFiring.Multiplayer.dll" "$stage/RealisticFiring/"
+    files+=(RealisticFiring/RealisticFiring.Multiplayer.dll)
+fi
 
 # Select the archive's contents explicitly; never include assemblies copied
 # for adapter checks, local settings, logs, or development documents.
 rm -f "$zipfile"
-(cd "$stage" && zip -q -X "$zipfile" \
-    RealisticFiring/Info.json RealisticFiring/RealisticFiring.dll \
-    RealisticFiring/RealisticFiring.Core.dll RealisticFiring/RealisticFiring.Multiplayer.dll \
-    RealisticFiring/realisticfiring_fx RealisticFiring/LICENSE)
+(cd "$stage" && zip -q -X "$zipfile" "${files[@]}")
 echo "Built $zipfile"
 (cd "$(dirname "$zipfile")" && sha256sum "$(basename "$zipfile")")
