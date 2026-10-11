@@ -1,0 +1,11 @@
+{
+  "Id": "RealisticFiring",
+  "DisplayName": "Realistic Firing",
+  "Author": "Specter242",
+  "Version": "1.6.1",
+  "ManagerVersion": "0.28.2",
+  "AssemblyName": "RealisticFiring.dll",
+  "EntryMethod": "RealisticFiring.Main.Load",
+  "LoadAfter": ["DVCustomCarLoader", "Multiplayer"],
+  "MultiplayerCompatibility": "All"
+}

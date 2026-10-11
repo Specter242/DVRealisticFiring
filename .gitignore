@@ -1,0 +1,35 @@
+bin/
+obj/
+dist/
+__pycache__/
+*.pyc
+*.user
+.vs/
+.idea/
+fx/build/
+
+# Game assemblies, third-party binaries, and generated debug symbols.
+*.dll
+*.pdb
+*.exe
+*.zip
+
+# Local documentation, assistant configuration, research, and saved data.
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.agents/
+.claude/
+.codex/
+.cursor/
+.t3/
+.decompiled/
+.save-backups/
+docs/
+research/
+manuals/
+memory/
+direction/
+*.pdf
+.env
+.env.*

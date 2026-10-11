@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>RealisticFiring.Multiplayer</AssemblyName>
+    <RootNamespace>RealisticFiring.Multiplayer</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <!-- Compiled against only: the Multiplayer mod ships the API at runtime. -->
+    <PackageReference Include="DVMultiplayerAPI" Version="1.1.0" ExcludeAssets="runtime" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../RealisticFiring/RealisticFiring.csproj" Private="false" />
+    <ProjectReference Include="../RealisticFiring.Core/RealisticFiring.Core.csproj" Private="false" />
+  </ItemGroup>
+
+  <!-- Game and loader assemblies are referenced in place and never copied. -->
+  <ItemGroup>
+    <Reference Include="UnityModManager" HintPath="$(DvModManagerDir)/UnityModManager.dll" Private="false" />
+    <Reference Include="Assembly-CSharp" HintPath="$(DvManagedDir)/Assembly-CSharp.dll" Private="false" />
+    <Reference Include="DV.Simulation" HintPath="$(DvManagedDir)/DV.Simulation.dll" Private="false" />
+    <Reference Include="DV.ThingTypes" HintPath="$(DvManagedDir)/DV.ThingTypes.dll" Private="false" />
+    <Reference Include="DV.Utils" HintPath="$(DvManagedDir)/DV.Utils.dll" Private="false" />
+    <Reference Include="UnityEngine" HintPath="$(DvManagedDir)/UnityEngine.dll" Private="false" />
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(DvManagedDir)/UnityEngine.CoreModule.dll" Private="false" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>RealisticFiring</AssemblyName>
+    <RootNamespace>RealisticFiring</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../RealisticFiring.Core/RealisticFiring.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Game and loader assemblies are referenced in place and never copied. -->
+  <ItemGroup>
+    <Reference Include="0Harmony" HintPath="$(DvModManagerDir)/0Harmony.dll" Private="false" />
+    <Reference Include="UnityModManager" HintPath="$(DvModManagerDir)/UnityModManager.dll" Private="false" />
+    <Reference Include="Assembly-CSharp" HintPath="$(DvManagedDir)/Assembly-CSharp.dll" Private="false" />
+    <Reference Include="DV.BrakeSystem" HintPath="$(DvManagedDir)/DV.BrakeSystem.dll" Private="false" />
+    <Reference Include="DV.CabControls.Spec" HintPath="$(DvManagedDir)/DV.CabControls.Spec.dll" Private="false" />
+    <Reference Include="DV.Interaction" HintPath="$(DvManagedDir)/DV.Interaction.dll" Private="false" />
+    <Reference Include="DV.NAudio" HintPath="$(DvManagedDir)/DV.NAudio.dll" Private="false" />
+    <Reference Include="DV.PointSet" HintPath="$(DvManagedDir)/DV.PointSet.dll" Private="false" />
+    <Reference Include="DV.RailTrack" HintPath="$(DvManagedDir)/DV.RailTrack.dll" Private="false" />
+    <Reference Include="net.smkd.vector3d" HintPath="$(DvManagedDir)/net.smkd.vector3d.dll" Private="false" />
+    <Reference Include="DV.Simulation" HintPath="$(DvManagedDir)/DV.Simulation.dll" Private="false" />
+    <Reference Include="DV.ThingTypes" HintPath="$(DvManagedDir)/DV.ThingTypes.dll" Private="false" />
+    <Reference Include="DV.Utils" HintPath="$(DvManagedDir)/DV.Utils.dll" Private="false" />
+    <Reference Include="DV.WeatherSystem" HintPath="$(DvManagedDir)/DV.WeatherSystem.dll" Private="false" />
+    <Reference Include="Newtonsoft.Json" HintPath="$(DvManagedDir)/Newtonsoft.Json.dll" Private="false" />
+    <Reference Include="WorldStreamer" HintPath="$(DvManagedDir)/WorldStreamer.dll" Private="false" />
+    <Reference Include="Unity.TextMeshPro" HintPath="$(DvManagedDir)/Unity.TextMeshPro.dll" Private="false" />
+    <Reference Include="UnityEngine" HintPath="$(DvManagedDir)/UnityEngine.dll" Private="false" />
+    <Reference Include="UnityEngine.AudioModule" HintPath="$(DvManagedDir)/UnityEngine.AudioModule.dll" Private="false" />
+    <Reference Include="UnityEngine.AssetBundleModule" HintPath="$(DvManagedDir)/UnityEngine.AssetBundleModule.dll" Private="false" />
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(DvManagedDir)/UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="UnityEngine.IMGUIModule" HintPath="$(DvManagedDir)/UnityEngine.IMGUIModule.dll" Private="false" />
+    <Reference Include="UnityEngine.ParticleSystemModule" HintPath="$(DvManagedDir)/UnityEngine.ParticleSystemModule.dll" Private="false" />
+    <Reference Include="UnityEngine.PhysicsModule" HintPath="$(DvManagedDir)/UnityEngine.PhysicsModule.dll" Private="false" />
+    <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(DvManagedDir)/UnityEngine.TextRenderingModule.dll" Private="false" />
+    <Reference Include="UnityEngine.UI" HintPath="$(DvManagedDir)/UnityEngine.UI.dll" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Info.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
