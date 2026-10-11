@@ -4,14 +4,22 @@ using UnityEngine;
 
 namespace RealisticFiring.Sim
 {
-    /// <summary>
-    /// Where a boiler can be filled from the mains: the game has no separate
-    /// water towers, so every water refill point is a pit stop with a water
-    /// module, and a pit stop knows which car (and train) stands in it.
-    /// </summary>
-    internal static class WaterPoints
+ internal static class WaterPoints
     {
-        public static bool Serves(TrainCar car)
+        /// <summary>How players are told where these are.</summary>
+        public const string Where = "a service track (a service station with water, a loco parking track, or a roundhouse stall by a turntable)";
+
+        // A roundhouse's stalls radiate from its turntable: within this of its
+        // middle, in m, an engine stands in one.
+        private const float RoundhouseReach = 50f;
+
+        // The game's locomotive parking tracks end in this type letter.
+        private const string ParkingType = "P";
+
+        public static bool Serves(TrainCar car) => car != null && (AtServiceStation(car) || OnParkingTrack(car) || ByTurntable(car));
+
+        /// <summary>Whether the engine stands in a service station with water, where the game refills and repairs.</summary>
+        public static bool AtServiceStation(TrainCar car)
         {
             if (car == null)
                 return false;
@@ -27,6 +35,21 @@ namespace RealisticFiring.Sim
                     return true;
             }
             return false;
+        }
+
+        private static bool OnParkingTrack(TrainCar car)
+        {
+            var id = car.logicCar != null && car.logicCar.CurrentTrack != null ? car.logicCar.CurrentTrack.ID : null;
+            if (id == null || id.IsGeneric())
+                return false;
+            var parts = id.FullID.Split('-');
+            return parts.Length > 0 && parts[parts.Length - 1] == ParkingType;
+        }
+
+        private static bool ByTurntable(TrainCar car)
+        {
+            var turntable = TurntableController.FindClosestTo(car.transform.position);
+            return turntable != null && Vector3.Distance(turntable.transform.position, car.transform.position) <= RoundhouseReach;
         }
     }
 }

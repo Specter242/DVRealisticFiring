@@ -73,6 +73,10 @@ namespace RealisticFiring.Core
         /// <summary>Below this the steam valve counts as shut.</summary>
         public const float OpenThreshold = 0.05f;
 
+ public const float SteamPrimeFrom = 0.25f;
+        public const float SteamFeedFrom = 0.75f;
+        public const float SteamPrime = 0.5f;
+
         public InjectorSpec(float maxDelivery, float ratedPressure)
         {
             if (maxDelivery <= 0f)
@@ -101,6 +105,20 @@ namespace RealisticFiring.Core
 
         /// <summary>Share of the water it would lift that spills while it is not feeding.</summary>
         public float SpillShare { get; set; } = 0.6f;
+
+        /// <summary>
+        /// A lifting injector, above the tender's water, lifts it with its
+        /// priming steam (the JK3's, as Finnish engines carried); a non-lifter
+        /// (Nathan, Chicago, Hancock, on the American engines) sits below it
+        /// and the water runs to it by gravity: with its own water valve open
+        /// and the steam shut, the water runs out of the overflow (research,
+        /// 2026-10-11: "admit water first; when it appears at the overflow,
+        /// the steam valve should be opened").
+        /// </summary>
+        public bool Lifting { get; set; }
+
+        /// <summary>A non-lifter's gravity flow out of the overflow, steam shut, as a share of its full delivery at the water valve's opening.</summary>
+        public float GravityShare { get; set; } = 0.25f;
 
  public float LeastWaste { get; set; } = 0.3f;
 
@@ -193,8 +211,14 @@ namespace RealisticFiring.Core
     /// <summary>What the boiler, tender, and cab give the injector each tick.</summary>
     public struct InjectorInputs
     {
-        /// <summary>Steam valve opening, 0 shut to 1 wide open (the cab's injector lever).</summary>
+        /// <summary>
+        /// Steam valve opening, 0 shut to 1 wide open (the cab's injector
+        /// lever); with a separate <see cref="WaterValve"/>, the three-position
+        /// steam valve (shut, prime, wide open).
+        /// </summary>
         public float SteamValve;
+
+ public float? WaterValve;
 
         /// <summary>Boiler pressure, absolute bar.</summary>
         public float BoilerPressure;
@@ -277,35 +301,79 @@ namespace RealisticFiring.Core
         {
             if (steam == null)
                 throw new ArgumentNullException(nameof(steam));
-            var lever = Math.Min(1f, inputs.SteamValve);
             var pressure = inputs.BoilerPressure;
-            var limit = RestartLimitAt(pressure, lever);
+            var hasWater = inputs.TenderWater > 0f;
+            // The lever sets the jet (its water); the steam valve's opening
+            // sets the steam that blows through when the jet is not working.
+            float lever, steamOpening;
+            bool shut, cracked;
+            if (inputs.WaterValve is float waterValve)
+            {
+                var water = Math.Max(0f, Math.Min(1f, waterValve));
+                shut = inputs.SteamValve < InjectorSpec.SteamPrimeFrom;
+                cracked = inputs.SteamValve < InjectorSpec.SteamFeedFrom;
+                steamOpening = cracked ? spec.CrackOpening : 1f;
+                lever = cracked ? Math.Min(spec.CrackOpening, water) : water;
+                hasWater &= water > InjectorSpec.OpenThreshold;
+                if (shut)
+                    return Shut(dt, inputs, pressure, water);
+            }
+            else
+            {
+                lever = Math.Min(1f, inputs.SteamValve);
+                steamOpening = lever;
+                cracked = lever <= spec.CrackOpening;
+                if (lever <= InjectorSpec.OpenThreshold)
+                    return Shut(dt, inputs, pressure, 0f);
+            }
+            var limit = RestartLimitAt(pressure, steamOpening);
             if (!(dt > 0f))
                 return new InjectorFlow { State = State, FeedTemperature = inputs.TenderWaterTemperature, InjectorTemperature = Temperature, RestartLimit = limit };
 
-            if (lever <= InjectorSpec.OpenThreshold)
-            {
-                State = InjectorState.Off;
-                pickUpTimer = 0f;
-                taken = false;
-                Relax(spec.AmbientTemperature, spec.ShutCoolingTime, dt);
-                return new InjectorFlow { State = State, FeedTemperature = inputs.TenderWaterTemperature, InjectorTemperature = Temperature, RestartLimit = limit };
-            }
+            State = Next(dt, cracked, pressure, hasWater, limit);
 
-            State = Next(dt, lever, pressure, inputs.TenderWater > 0f, limit);
-
-            // What it lifts with this much steam valve at this pressure.
+            // What it lifts with this much jet at this pressure.
             var steamShare = 1f / (1f + spec.WaterPerSteam);
-            var full = spec.MaxDelivery * lever * Capacity(pressure);
+            var capacity = Capacity(pressure);
+            var full = spec.MaxDelivery * lever * capacity;
             var steamFlow = full * steamShare;
+            var blowing = spec.MaxDelivery * steamOpening * capacity * steamShare;
             // The tender limits the water it can lift.
             var lifted = Math.Min(full - steamFlow, Math.Max(0f, inputs.TenderWater) / dt);
 
-            var flow = Flow(dt, inputs, steam, pressure, steamFlow, lifted, lever);
+            var flow = Flow(dt, inputs, steam, pressure, steamFlow, blowing, lifted, lever);
             HeatOrCool(inputs.TenderWaterTemperature, steam.SaturationTemperature(pressure), dt);
             flow.InjectorTemperature = Temperature;
             flow.RestartLimit = limit;
             return flow;
+        }
+
+        // Steam shut: it cools, and a non-lifter with its water valve open runs
+        // the tender's water out of the overflow.
+        private InjectorFlow Shut(float dt, InjectorInputs inputs, float pressure, float water)
+        {
+            var limit = RestartLimitAt(pressure, 0f);
+            if (!(dt > 0f))
+                return new InjectorFlow { State = State, FeedTemperature = inputs.TenderWaterTemperature, InjectorTemperature = Temperature, RestartLimit = limit };
+            State = InjectorState.Off;
+            pickUpTimer = 0f;
+            taken = false;
+            var gravity = !spec.Lifting && water > InjectorSpec.OpenThreshold
+                ? Math.Min(spec.GravityShare * spec.MaxDelivery * water, Math.Max(0f, inputs.TenderWater) / dt)
+                : 0f;
+            if (gravity > 0f)
+                Relax(inputs.TenderWaterTemperature, spec.SpillCoolingTime, dt);
+            else
+                Relax(spec.AmbientTemperature, spec.ShutCoolingTime, dt);
+            return new InjectorFlow
+            {
+                State = State,
+                TenderDraw = gravity,
+                Overflow = gravity,
+                FeedTemperature = inputs.TenderWaterTemperature,
+                InjectorTemperature = Temperature,
+                RestartLimit = limit,
+            };
         }
 
         /// <summary>What it feeds with the lever wide open at <paramref name="pressure"/>, in kg/s.</summary>
@@ -321,12 +389,11 @@ namespace RealisticFiring.Core
             return spec.RestartLimit - spec.RestartLimitDropPerBar * nozzle;
         }
 
-        private InjectorState Next(float dt, float lever, float pressure, bool hasWater, float limit)
+        private InjectorState Next(float dt, bool cracked, float pressure, bool hasWater, float limit)
         {
             if (State == InjectorState.Broken)
                 return InjectorState.Broken;
             var heat = spec.TechniqueAndHeat;
-            var cracked = lever <= spec.CrackOpening;
             // A fresh start must be cracked until it takes hold.
             if (heat && !taken && !cracked)
                 return InjectorState.Broken;
@@ -361,7 +428,7 @@ namespace RealisticFiring.Core
             return InjectorState.Working;
         }
 
-        private InjectorFlow Flow(float dt, InjectorInputs inputs, ISteamProperties steam, float pressure, float steamFlow, float lifted, float lever)
+        private InjectorFlow Flow(float dt, InjectorInputs inputs, ISteamProperties steam, float pressure, float steamFlow, float blowing, float lifted, float lever)
         {
             var spill = spec.SpillShare * lifted;
             switch (State)
@@ -405,13 +472,14 @@ namespace RealisticFiring.Core
                 {
                     // Some of the water flashes off the hot tubes.
                     var flash = spec.HotFlashShare * spill;
-                    return new InjectorFlow { State = State, SteamUsed = steamFlow, TenderDraw = spill, Overflow = spill - flash, OverflowSteam = steamFlow + flash, FeedTemperature = inputs.TenderWaterTemperature };
+                    return new InjectorFlow { State = State, SteamUsed = blowing, TenderDraw = spill, Overflow = spill - flash, OverflowSteam = blowing + flash, FeedTemperature = inputs.TenderWaterTemperature };
                 }
                 case InjectorState.NoWater:
-                    return new InjectorFlow { State = State, SteamUsed = steamFlow, OverflowSteam = steamFlow, FeedTemperature = inputs.TenderWaterTemperature };
+                    // Dry (the tender, or its water valve shut): the steam valve's steam blows through.
+                    return new InjectorFlow { State = State, SteamUsed = blowing, OverflowSteam = blowing, FeedTemperature = inputs.TenderWaterTemperature };
                 default:
                     // Broken: the steam blows straight through, with some water.
-                    return new InjectorFlow { State = State, SteamUsed = steamFlow, TenderDraw = spill, Overflow = spill, OverflowSteam = steamFlow, FeedTemperature = inputs.TenderWaterTemperature };
+                    return new InjectorFlow { State = State, SteamUsed = blowing, TenderDraw = spill, Overflow = spill, OverflowSteam = blowing, FeedTemperature = inputs.TenderWaterTemperature };
             }
         }
 

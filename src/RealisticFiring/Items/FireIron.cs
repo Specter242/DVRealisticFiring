@@ -1,4 +1,7 @@
+using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Reflection.Emit;
 using DV.CabControls;
 using DV.Utils;
 using HarmonyLib;
@@ -14,7 +17,7 @@ namespace RealisticFiring.Items
     /// dormant under an inactive holder (so nothing on it wakes), stripped of
     /// the shovel's own behaviour, scoop, and coal visuals, given the iron's
     /// mesh, look, colliders, and <see cref="FireIronUse"/>, and named so the
-    /// game saves it; <see cref="ResourcesLoadPatch"/> hands it back when a
+    /// game saves it; <see cref="FireIronLoading"/> hands it back when a
     /// save or shop asks for that name. Without the mod a saved iron is
     /// skipped and dropped, nothing breaks.
     /// </summary>
@@ -194,25 +197,37 @@ namespace RealisticFiring.Items
     }
 
     /// <summary>
-    /// Saves and shops load items by prefab name through Resources.Load; the
-    /// fire iron is not a resource, so hand back its template. The target is
-    /// picked by hand: Load(string) and Load&lt;T&gt;(string) share their
-    /// parameters, which Harmony's attribute lookup cannot tell apart.
+    /// Resolve the fire iron only at the game's saved-item and purchased-item
+    /// load sites. Patching the small Unity Resources.Load wrapper globally
+    /// can break unrelated resource loads during startup on the game's Mono.
+    /// Keep the rest of item instantiation, accounting, and restoration stock.
     /// </summary>
     [HarmonyPatch]
-    internal static class ResourcesLoadPatch
+    internal static class FireIronLoading
     {
-        private static System.Reflection.MethodBase TargetMethod() =>
+        internal static MethodInfo ResourceLoad =>
             AccessTools.GetDeclaredMethods(typeof(Resources)).First(m =>
                 m.Name == nameof(Resources.Load) && !m.IsGenericMethodDefinition
                 && m.GetParameters().Length == 1 && m.GetParameters()[0].ParameterType == typeof(string));
 
-        private static bool Prefix(string path, ref Object __result)
+        internal static IEnumerable<MethodBase> TargetMethods()
         {
-            if (path != FireIron.PrefabName)
-                return true;
-            __result = FireIron.Template;
-            return false;
+            yield return AccessTools.DeclaredMethod(typeof(StartingItemsController), "InstantiateItem");
+            yield return AccessTools.EnumeratorMoveNext(
+                AccessTools.DeclaredMethod(typeof(DV.Shops.GlobalShopController), "InstantiatePurchasedItems"));
+        }
+
+        internal static Object LoadPrefab(string path) =>
+            path == FireIron.PrefabName ? FireIron.Template : Resources.Load(path);
+
+        internal static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        {
+            var original = ResourceLoad;
+            var replacement = AccessTools.DeclaredMethod(typeof(FireIronLoading), nameof(LoadPrefab));
+            foreach (var instruction in instructions)
+                yield return instruction.Calls(original)
+                    ? new CodeInstruction(instruction) { opcode = OpCodes.Call, operand = replacement }
+                    : instruction;
         }
     }
 }

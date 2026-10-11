@@ -30,7 +30,7 @@ namespace RealisticFiring.Sim
 
         /// <summary>What players near the loco are told when its plug melts.</summary>
         public const string PlugMeltedNotice = "The fusible plug has melted: steam is blowing into the firebox and has put the fire out. " +
-                                               "Take the engine to a pit stop and have it repaired, or wash out the boiler there (hydrant, boiler cold), to renew it.";
+                                               "Have the engine repaired at a service station, or wash out the boiler on a service track (hydrant hose, boiler cold), to renew it.";
 
         private const string SolidsKey = "rfSolids";
         private const string SettledKey = "rfSludgeSettled";

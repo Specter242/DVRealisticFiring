@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.7.0 (2026-10-11)
+
+- Split the injector into a water valve and an Off / Prime / Feed steam lever on the S282, S060, JK3, Hudson, 844, S484-840, and 2901.
+- Size each fired engine's blower and natural draft from period practice.
+- Show each step of firing up a cold oil engine, and accept any service station with water, loco parking track, or roundhouse stall for shop steam, the hydrant hose, and washouts.
+- Give the JK3 its own firebox character.
+- Find Multiplayer 0.1.16 cab controls by their port feeders, including both JK3 injector handles, and ignore interior-unload notifications.
+- Resolve fire-iron prefabs only when restoring saved items or spawning purchases.
+- Keep effects and fire-iron assets intact through main-menu bundle cleanup.
+
 ## 1.6.1 (2026-10-11)
 
 - Leave the B&O C-16 entirely stock, including its injectors, boiler water, and cylinders.

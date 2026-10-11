@@ -155,7 +155,7 @@ namespace RealisticFiring
         internal static IEnumerable<string> Notices(FiremanNotice notices)
         {
             if (notices.HasFlag(FiremanNotice.FireOut))
-                yield return "The fire is out: light it, and he will tend it.";
+                yield return "The fire is out: light it (your lighter, lit, at the open fire door), and he will tend it.";
             if (notices.HasFlag(FiremanNotice.TenderWaterOut))
                 yield return "The tender is dry: he has stopped firing.";
             if (notices.HasFlag(FiremanNotice.LowWater))

@@ -18,4 +18,6 @@ if grep -q -E "warning CS" <<<"$build"; then
     grep -E "warning CS" <<<"$build" | sort -u >&2
     exit 1
 fi
-mono "$project/bin/Release/net48/RealisticFiring.AdapterCheck.exe"
+# Optional Multiplayer checks load its installed assembly and dependencies
+# in place, never copying third-party mod binaries into a package.
+mono "$project/bin/Release/net48/RealisticFiring.AdapterCheck.exe" "$dv/Mods/Multiplayer/Multiplayer.dll"

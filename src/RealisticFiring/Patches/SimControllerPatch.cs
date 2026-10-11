@@ -45,6 +45,13 @@ namespace RealisticFiring.Patches
                 return;
             }
 
+            if (FireboxRegistry.TryGet(trainCar, out _) || RealisticOilFirebox.TryGet(trainCar, out _))
+            {
+                var blower = BlowerFit.Attach(trainCar, __instance.simFlow);
+                if (blower != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {blower}");
+            }
+
             if (Main.RealisticInjectorsEnabled && __instance.simFlow != null)
             {
                 var injectors = InjectorRig.Attach(trainCar, __instance.simFlow);

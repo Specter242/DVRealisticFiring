@@ -12,6 +12,7 @@ namespace RealisticFiring
         public bool RealisticSmoke { get; private set; }
         public bool CustomSmokeEffects { get; private set; }
         public bool RealisticInjectors { get; private set; }
+        public bool InjectorSteamValves { get; private set; }
         public bool FusiblePlugs { get; private set; }
         public bool RealisticOilBurners { get; private set; }
         public bool FitBoosters { get; private set; }
@@ -25,6 +26,7 @@ namespace RealisticFiring
             RealisticSmoke = settings.ReplaceStockFireboxes && settings.RealisticSmoke,
             CustomSmokeEffects = settings.CustomSmokeEffects,
             RealisticInjectors = settings.RealisticInjectors,
+            InjectorSteamValves = settings.RealisticInjectors && settings.SeparateInjectorSteamValve,
             FusiblePlugs = settings.FusiblePlugs,
             RealisticOilBurners = settings.RealisticOilBurners,
             FitBoosters = settings.FitBoosters,

@@ -66,6 +66,7 @@ namespace RealisticFiring.Sim
         private readonly ResourceContainer sand;
         private readonly FiremanHand door;
         private readonly FiremanHand injector;
+        private readonly FiremanHand injectorSteam;
         private readonly FiremanHand pump;
         private readonly FiremanHand blower;
         private readonly FiremanHand damper;
@@ -105,6 +106,9 @@ namespace RealisticFiring.Sim
             injector = new FiremanHand("injector", rig != null && rig.Circuits.Count > 0
                 ? rig.Circuits[0].Control
                 : Control(boiler.injectorControl), LeverPace);
+            // Its own steam valve, where it has one: the lever is then its water valve.
+            var steamValve = rig != null && rig.Circuits.Count > 0 ? rig.Circuits[0].Steam : null;
+            injectorSteam = steamValve != null ? new FiremanHand("injector steam", Control(steamValve), DoorPace) : null;
             pump = rig != null && rig.Pump != null ? new FiremanHand("feed pump", Control(rig.PumpValvePort), ValvePace) : null;
             blowdown = new FiremanHand("blowdown", Control(boiler.blowdownControl), LeverPace);
             blower = new FiremanHand("blower", exhaust != null ? Control(exhaust.blowerControl) : null, ValvePace);
@@ -156,7 +160,7 @@ namespace RealisticFiring.Sim
         public FiremanActions Actions { get; private set; }
 
         private IEnumerable<FiremanHand> AllHands =>
-            new[] { door, injector, pump, blower, damper, blowdown, firingValve, atomizer, heater, stokerThrottle, stokerLever }
+            new[] { door, injector, injectorSteam, pump, blower, damper, blowdown, firingValve, atomizer, heater, stokerThrottle, stokerLever }
                 .Concat(stokerJets ?? new FiremanHand[0])
                 .Where(h => h != null);
 
@@ -300,6 +304,7 @@ namespace RealisticFiring.Sim
 
             door.Work(actions.Door, clock);
             injector.Work(actions.Injector, clock);
+            injectorSteam?.Work(actions.InjectorSteam, clock);
             pump?.Work(actions.Pump, clock);
             blower.Work(actions.Blower, clock);
             damper.Work(actions.Damper, clock);
@@ -387,6 +392,8 @@ namespace RealisticFiring.Sim
                 TenderCoal = OilFirebox != null ? OilFirebox.Feed != null ? OilFirebox.Feed.TenderFuel : 0f : TenderCoal(),
                 Injector = injectorState,
                 InjectorLever = injector.Port != null ? injector.Port.Value : 0f,
+                InjectorSteamValve = injectorSteam != null && injectorSteam.Port != null,
+                InjectorSteam = injectorSteam != null && injectorSteam.Port != null ? injectorSteam.Port.Value : 0f,
                 InjectorCrack = jet != null ? jet.Spec.CrackOpening : 0.2f,
                 InjectorStartPressure = jet != null ? jet.Spec.StartPressure : InjectorSpec.DefaultStartPressure,
                 InjectorFullFeed = jet != null ? jet.FullDelivery(pressure) : 4f,

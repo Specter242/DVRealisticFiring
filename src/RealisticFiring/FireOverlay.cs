@@ -42,8 +42,9 @@ namespace RealisticFiring
         private void DrawOilWindow(int id)
         {
             var fire = shownOil.Model;
-            GUILayout.Label($"{shownOil.Car.carLivery.id} {shownOil.Car.ID}   fire {(fire.FireOn ? "ON" : "out")}" +
-                            (fire.Torch > 0f ? $"   waste burning {fire.Torch:F0} s" : ""));
+            GUILayout.Label($"{shownOil.Car.carLivery.id} {shownOil.Car.ID}   fire {(fire.FireOn ? "ON" : "out")}");
+            if (FireController.OilLightingHint(shownOil) is string lighting)
+                GUILayout.Label(lighting);
             foreach (var line in FireController.DescribeOil(shownOil).Split(';'))
                 GUILayout.Label(line.Trim());
             if (FireController.DescribeCylinders(shownOil.Car) is string cylinders)

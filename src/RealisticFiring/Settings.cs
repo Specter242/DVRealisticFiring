@@ -12,8 +12,11 @@ namespace RealisticFiring
         [Draw("Realistic injectors on every steam loco (restart required)")]
         public bool RealisticInjectors = true;
 
-        [Draw("Injector technique and heat: crack the lever until it primes before opening it; a hot injector won't take")]
+        [Draw("Injector technique and heat: prime it before opening it; a hot injector won't take")]
         public bool InjectorTechniqueAndHeat = true;
+
+        [Draw("Separate injector steam valve: the injector lever becomes the water valve, with an Off / Prime / Feed steam lever beside it (restart required)")]
+        public bool SeparateInjectorSteamValve = true;
 
         [Draw("Boiler water impurities: they build up as the water boils off until it foams (a lively, high glass, then water carried over to the cylinders); short blowdowns keep them down, a washout clears them")]
         public bool BoilerWaterImpurities = true;
@@ -126,10 +129,10 @@ namespace RealisticFiring
         [Draw("Work the boiler hand pump (hold)")]
         public KeyBinding HandPumpKey = Bind(KeyCode.P, ctrl: true, shift: true);
 
-        [Draw("Wash out the boiler and fill it from a hydrant (at a pit stop with water, boiler cold)")]
+        [Draw("Wash out the boiler and fill it from a hydrant (on a service track: a service station with water, a loco parking track, or a roundhouse stall; boiler cold)")]
         public KeyBinding HydrantKey = Bind(KeyCode.H, ctrl: true, shift: true);
 
-        [Draw("Hook up a shed's steam line to an oil burner's atomizer and heater, to fire a dead engine (at a pit stop)")]
+        [Draw("Hook up a shed's steam line to an oil burner's atomizer and heater, to fire a dead engine (on a service track)")]
         public KeyBinding SteamLineKey = Bind(KeyCode.L, ctrl: true, shift: true);
 
         [Draw("Shake grate")]
@@ -237,6 +240,25 @@ namespace RealisticFiring
         [Draw("Flue sand box, along (+ toward the fire), cm", DrawType.Slider, Min = -100, Max = 100, Precision = 0)]
         public float SandBoxNudgeAlong;
 
+        [Header("Injector steam lever placement, on engines not yet seated in the mod (moves it as you slide)")]
+        [Draw("Injector steam lever on the backhead: across, cm (+ toward the cab's middle)", DrawType.Slider, Min = -150, Max = 150, Precision = 0)]
+        public float InjectorSteamNudgeAcross;
+
+        [Draw("Injector steam lever on the backhead: up, cm", DrawType.Slider, Min = -200, Max = 100, Precision = 0)]
+        public float InjectorSteamNudgeUp;
+
+        [Draw("Injector steam lever: out from the backhead, cm", DrawType.Slider, Min = -10, Max = 20, Precision = 0)]
+        public float InjectorSteamNudgeForward;
+
+        [Draw("Injector steam lever: turn, degrees (about the backhead's up)", DrawType.Slider, Min = -180, Max = 180, Precision = 0)]
+        public float InjectorSteamTurn;
+
+        [Draw("Injector steam lever: tilt, degrees (top toward or away from the backhead)", DrawType.Slider, Min = -180, Max = 180, Precision = 0)]
+        public float InjectorSteamTilt;
+
+        [Draw("Injector steam lever: twist, degrees (about the backhead's face)", DrawType.Slider, Min = -180, Max = 180, Precision = 0)]
+        public float InjectorSteamTwist;
+
         [Header("Ashpan handle placement, out from the fireman's side (fine-tune for your eye; moves it as you slide)")]
         [Draw("Along, cm (+ forward)", DrawType.Slider, Min = -150, Max = 150, Precision = 0)]
         public float AshpanLeverNudgeAlong;
@@ -257,7 +279,7 @@ namespace RealisticFiring
         [Draw("Melt the fusible plug now, on the loco you're on (testing; unticks itself; a washout renews it)")]
         public bool MeltPlugNow;
 
-        [Draw("Renew the boiler and its fusible plug now, on the loco you're on, as a pit stop's repair does (recovery for an engine stranded with a melted plug; unticks itself)")]
+        [Draw("Renew the boiler and its fusible plug now, on the loco you're on, as a service station's repair does (recovery for an engine stranded with a melted plug; unticks itself)")]
         public bool RenewBoilerNow;
 
         [Draw("Show the chimney smoke and cinders (untick to see what they cost the frame rate)")]
@@ -292,6 +314,8 @@ namespace RealisticFiring
         private Vector3 lastAshpanLever;
         private Vector3 lastOilValves;
         private Vector2 lastSandBox;
+        private Vector3 lastInjectorSteam;
+        private Vector3 lastInjectorSteamTurns;
 
         public void OnChange()
         {
@@ -303,6 +327,14 @@ namespace RealisticFiring
                 lastOilValves = oilValves;
                 lastSandBox = sandBox;
                 Visuals.OilBurnerCab.RebuildLoaded();
+            }
+            var injectorSteam = new Vector3(InjectorSteamNudgeAcross, InjectorSteamNudgeUp, InjectorSteamNudgeForward);
+            var injectorSteamTurns = new Vector3(InjectorSteamTurn, InjectorSteamTilt, InjectorSteamTwist);
+            if (injectorSteam != lastInjectorSteam || injectorSteamTurns != lastInjectorSteamTurns)
+            {
+                lastInjectorSteam = injectorSteam;
+                lastInjectorSteamTurns = injectorSteamTurns;
+                Visuals.InjectorSteamCab.RebuildLoaded();
             }
             var feedGauge = new Vector3(FeedGaugeNudgeAlong, FeedGaugeNudgeUp, FeedGaugeNudgeOut);
             if (feedGauge != lastFeedGauge)

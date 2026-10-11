@@ -115,8 +115,17 @@ internal sealed class Footplate
     public float Damper = 1f;
     public float InjectorLever;
 
+    /// <summary>With its own steam valve (the lever then its water valve), where that sits; null for the one lever.</summary>
+    public float? InjectorSteam;
+
+    /// <summary>Water run out of the overflow, in kg.</summary>
+    public float Overflowed;
+
     public float Glass => WaterMass / GlassMass;
-    public float Air => (PassiveAir + Entrainment * (EngineSteam + Blower * BlowerSteam)) * (0.1f + 0.9f * Damper);
+    // The draft as the mod fits it: the blower's steam entrains more air a kg than the exhaust's.
+    public SteamDraft Draft => new SteamDraft(BlowerSteam, PassiveAir, Entrainment, SafetyValve);
+    public float BlowerFlow => Draft.BlowerSteam(Pressure, Blower);
+    public float Air => Draft.Air(EngineSteam, BlowerFlow, Damper);
     public float Time { get; private set; }
 
     // What happened.
@@ -149,6 +158,8 @@ internal sealed class Footplate
         TenderCoal = TenderCoal,
         Injector = Injector.State,
         InjectorLever = InjectorLever,
+        InjectorSteamValve = InjectorSteam.HasValue,
+        InjectorSteam = InjectorSteam ?? 0f,
         InjectorCrack = Injector.Spec.CrackOpening,
         InjectorStartPressure = Injector.Spec.StartPressure,
         InjectorFullFeed = Injector.FullDelivery(Pressure),
@@ -195,6 +206,8 @@ internal sealed class Footplate
             Blowdown = actions.Blowdown;
             Damper = actions.Damper;
             InjectorLever = actions.Injector;
+            if (InjectorSteam.HasValue)
+                InjectorSteam = actions.InjectorSteam;
             PumpValve = actions.Pump;
             StokerControls = new StokerControls
             {
@@ -230,13 +243,15 @@ internal sealed class Footplate
 
         var flow = Injector.Step(Dt, new InjectorInputs
         {
-            SteamValve = InjectorLever,
+            SteamValve = InjectorSteam ?? InjectorLever,
+            WaterValve = InjectorSteam.HasValue ? InjectorLever : (float?)null,
             BoilerPressure = Pressure,
             TenderWater = TenderWater,
             BoilerSpace = 10_000f,
             TenderWaterTemperature = 15f,
         }, Water);
         InjectorBroke |= flow.State == InjectorState.Broken;
+        Overflowed += flow.Overflow * Dt;
         TenderWater = Math.Max(0f, TenderWater - flow.TenderDraw * Dt);
 
         var pumped = 0f;
@@ -260,7 +275,7 @@ internal sealed class Footplate
             stokerSteam += PumpFlow.SteamUsed;
         }
 
-        var steamOut = EngineSteam + Blower * BlowerSteam + flow.SteamUsed + stokerSteam;
+        var steamOut = EngineSteam + BlowerFlow + flow.SteamUsed + stokerSteam;
         var blown = Pressure > 1.5f ? Blowdown * BlowdownRate : 0f;
         var heat = Fire.Heat - LossPerDegree * (saturation - 20f) - steamOut * Latent - flow.WaterIn * 4190f * Math.Max(0f, saturation - flow.FeedTemperature)
                    - pumpWarmth;

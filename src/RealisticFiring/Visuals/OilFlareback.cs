@@ -70,7 +70,7 @@ namespace RealisticFiring.Visuals
         }
 
         private const string Notice = "Flareback! Oil vapor in the firebox went up when it lit. Clear the firebox with the blower " +
-                                      "before lighting, throw in the waste, then the atomizer, then the oil.";
+                                      "before lighting; then the atomizer, your lighter at the open fire door, and the oil.";
 
         // The fire door's control in the cab, if the cab is loaded.
         private static Vector3? DoorPosition(TrainCar car)

@@ -51,6 +51,14 @@ namespace RealisticFiring.Sim
             ["LocoS060"] = new Firebox("a switcher's small, narrow box: draws evenly, smokes readily",
                 new GrateCharacter { BackRowDraft = 0.96f, FrontRowDraft = 1.04f, SideDraft = 1.04f, OverFireMixing = 0.8f }),
 
+            // Lilla and Cruzer's fictional 1897-1912 shunter. Its modeled
+            // grate is narrow, long, and level (0.897 by 1.593 m). A modest
+            // pull toward the tubes and limited over-fire mixing give it
+            // a hand-fired small-box character. These are inferred firing
+            // traits, not documented fittings or a historical prototype.
+            ["Jk3A"] = new Firebox("a small, long, level box: modest pull to the front; fresh rounds smoke readily",
+                new GrateCharacter { BackRowDraft = 0.94f, FrontRowDraft = 1.08f, SideDraft = 1.03f, OverFireMixing = 0.85f }),
+
             // NYC J-3a (RME May 1938): a 43-in combustion chamber, four arch
             // tubes, four combustion tubes through each side sheet; the mud
             // ring 16 in higher at the back, about 7°. Standard HT stoker: the
@@ -93,7 +101,10 @@ namespace RealisticFiring.Sim
         };
 
         public static Firebox For(TrainCar car) =>
-            car != null && car.carLivery != null && ByLivery.TryGetValue(car.carLivery.id, out var firebox) ? firebox : Typical;
+            ForLivery(car != null && car.carLivery != null ? car.carLivery.id : null);
+
+        internal static Firebox ForLivery(string livery) =>
+            livery != null && ByLivery.TryGetValue(livery, out var firebox) ? firebox : Typical;
 
         /// <summary>The grate's slope: as measured from the coal pile, or the prototype's where the pile is modeled level.</summary>
         public static float Slope(TrainCar car, float measured)

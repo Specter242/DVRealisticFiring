@@ -15,8 +15,9 @@ namespace RealisticFiring.Core.Tests;
         private const float HeatPerBar = 2.5e8f;
         private const float Latent = 1.95e6f;
         private const float LossPerDegree = 1500f;
-        // The 2901's draft: (1 + 2 × (blower + exhaust steam)) × lerp(0.1, 1, damper), its blower 2.5 kg/s.
-        private const float BlowerSteam = 2.5f;
+        // The 2901's draft as the mod fits it: natural 1.0 kg/s, 2 kg of air a
+        // kg of exhaust steam, and a period blower of 0.85 kg/s at 5.
+        private const float BlowerSteam = 0.85f;
         public const float FullWorkSteam = 12f;
         public const float GlassMass = 8000f;
 
@@ -58,7 +59,9 @@ namespace RealisticFiring.Core.Tests;
         public float? HeldDamper;
 
         public float Glass => WaterMass / GlassMass;
-        public float Air => (1f + 2f * (Last.Blower * BlowerSteam + EngineSteam)) * (0.1f + 0.9f * (HeldDamper ?? Last.Damper));
+        public SteamDraft Draft => new SteamDraft(BlowerSteam, 1f, 2f, SafetyValve);
+        public float BlowerFlow => Draft.BlowerSteam(Pressure, Last.Blower);
+        public float Air => Draft.Air(EngineSteam, BlowerFlow, HeldDamper ?? Last.Damper);
 
         public void Run(float seconds, Action<OilFootplate>? each = null)
         {
@@ -125,7 +128,7 @@ namespace RealisticFiring.Core.Tests;
                 TenderWaterTemperature = 15f,
             }, Water);
 
-            var steamOut = EngineSteam + Last.Blower * BlowerSteam + Fire.AtomizerSteam + Fire.HeaterSteamUsed + flow.SteamUsed;
+            var steamOut = EngineSteam + BlowerFlow + Fire.AtomizerSteam + Fire.HeaterSteamUsed + flow.SteamUsed;
             var heat = Fire.Heat - LossPerDegree * (saturation - 20f) - steamOut * Latent
                        - flow.WaterIn * 4190f * Math.Max(0f, saturation - flow.FeedTemperature);
             Pressure = Math.Min(SafetyValve, Pressure + heat / HeatPerBar * Dt);

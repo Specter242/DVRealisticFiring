@@ -41,6 +41,7 @@ namespace RealisticFiring.Multiplayer
                 mod.Logger.Warning("The Multiplayer mod's API is not available; the fire will not be shared in a session");
                 return;
             }
+            CabControlsCompatibility.Install(mod.Info.Id + ".cab-controls", mod.Logger.Log, mod.Logger.Warning);
             api.SetModCompatibility(mod.Info.Id, MultiplayerCompatibility.All);
             Net.ClientCheck = IsClient;
             Net.Sender = Send;
@@ -75,6 +76,7 @@ namespace RealisticFiring.Multiplayer
             {
                 $"realistic fireboxes {session.RealisticFireboxes}",
                 $"realistic injectors {session.RealisticInjectors}",
+                $"injector steam valves {session.InjectorSteamValves}",
                 $"fusible plugs {session.FusiblePlugs}",
                 $"S282 stoker {session.RetrofitS282Stoker}",
                 $"stoker jams {session.StokerJams}",

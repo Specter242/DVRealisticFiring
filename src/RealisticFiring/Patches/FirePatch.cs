@@ -55,6 +55,10 @@ namespace RealisticFiring.Patches
                 var feedLever = FeedPumpCab.RebindInjectorLever(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
                 if (feedLever != null && Main.Settings.LogFireboxCreation)
                     Main.Mod.Logger.Log($"{car.ID}: {feedLever}");
+                // After the feed pump takes the fireman's lever on a cab with two.
+                var steamLevers = InjectorSteamCab.Attach(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
+                if (steamLevers != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{car.ID}: {steamLevers}");
                 var guard = BoilerAlarms.Attach(car, __instance);
                 if (guard != null && Main.Settings.LogFireboxCreation)
                     Main.Mod.Logger.Log($"{car.ID}: {guard}");

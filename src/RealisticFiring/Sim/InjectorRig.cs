@@ -304,6 +304,20 @@ namespace RealisticFiring.Sim
                 controls.Length == 1 ? "" : i == 0 ? "right" : "left",
                 ports?.SingleOrDefault(p => p.id == $"injectorParticles.INJECTOR_{(i == 0 ? "R" : "L")}_PARTICLES_CLAMP")))
                 .ToList().AsReadOnly();
+            // Each injector's own steam valve, where the engine has them: the stock lever is then its water valve.
+            var steamValves = 0;
+            if (components != null && InjectorValves.Fits(livery))
+            {
+                var all = components.SelectMany(c => c.GetAllPorts()).ToList();
+                for (var i = 0; i < circuits.Count; i++)
+                {
+                    circuits[i].Steam = all.FirstOrDefault(p => p.id == InjectorValves.For(i).PortId);
+                    if (circuits[i].Steam == null)
+                        continue;
+                    circuits[i].Injector.Spec.Lifting = InjectorValves.Lifting(livery);
+                    steamValves++;
+                }
+            }
             var rig = new InjectorRig(car, boiler, circuits);
             PruneDestroyedCars();
             ByBoiler[boiler] = rig;
@@ -313,7 +327,8 @@ namespace RealisticFiring.Sim
                    string.Join(" and ", controls.Select(p => $"'{p.id}'")) +
                    $": {maxRate / controls.Length:F1} kg/s{(controls.Length > 1 ? " each" : "")} at {rated:F1} bar" +
                    (resized ? $" (a period size; the game's is {stockRate:F1})" : "") +
-                   $", picks up from {InjectorSpec.DefaultStartPressure:F1} bar";
+                   $", picks up from {InjectorSpec.DefaultStartPressure:F1} bar" +
+                   (steamValves > 0 ? $"; {(InjectorValves.Lifting(livery) ? "lifting" : "non-lifting")}, its own steam valve{(steamValves > 1 ? "s" : "")}, the lever its water valve" : "");
             return true;
         }
 
@@ -399,7 +414,8 @@ namespace RealisticFiring.Sim
                 circuit.Injector.Spec.TechniqueAndHeat = Main.Settings.InjectorTechniqueAndHeat;
                 var flow = circuit.Injector.Step(delta, new InjectorInputs
                 {
-                    SteamValve = broken ? 0f : circuit.Control.Value,
+                    SteamValve = broken ? 0f : circuit.Steam != null ? circuit.Steam.Value : circuit.Control.Value,
+                    WaterValve = circuit.Steam != null ? circuit.Control.Value : (float?)null,
                     BoilerPressure = vessel.pressure,
                     TenderWater = Mathf.Max(0f, tender - drawn),
                     BoilerSpace = space,

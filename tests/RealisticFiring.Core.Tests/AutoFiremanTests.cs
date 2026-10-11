@@ -596,6 +596,36 @@ namespace RealisticFiring.Core.Tests;
     }
 
     [Fact]
+    public void WithItsOwnSteamValveHeStartsTheInjectorWaterFirstAndHoldsTheGlass()
+    {
+        var engine = new Footplate(glass: 0.45f, injectorDelivery: 4.6f) { InjectorSteam = 0f };
+        engine.EngineSteam = 2.5f;
+        var low = 1f;
+        var high = 0f;
+        engine.Run(600f, e =>
+        {
+            if (e.Time > 180f)
+            {
+                low = Math.Min(low, e.Glass);
+                high = Math.Max(high, e.Glass);
+            }
+        });
+        output.WriteLine($"glass {low:F2}-{high:F2}, steam {engine.InjectorSteam:F2}, water {engine.InjectorLever:F2}, broke {engine.InjectorBroke}, overflowed {engine.Overflowed:F0} kg");
+        Assert.False(engine.InjectorBroke);
+        Assert.InRange(low, AutoFireman.GlassGoal - 0.1f, 1f);
+        Assert.InRange(high, 0f, AutoFireman.GlassGoal + 0.15f);
+
+        // Standing with the glass full he shuts it, steam first, then the water: none runs to waste.
+        engine.EngineSteam = 0f;
+        engine.Standing = true;
+        engine.Run(300f);
+        var overflowed = engine.Overflowed;
+        engine.Run(120f);
+        output.WriteLine($"standing: steam {engine.InjectorSteam:F2}, water {engine.InjectorLever:F2}, overflowed {engine.Overflowed - overflowed:F1} kg in two minutes");
+        Assert.True(engine.Overflowed - overflowed < 20f, $"ran {engine.Overflowed - overflowed:F1} kg out of the overflow standing");
+    }
+
+    [Fact]
     public void EasingOffLetsTheFireBurnDownAndFillsTheBoiler()
     {
         var engine = new Footplate();

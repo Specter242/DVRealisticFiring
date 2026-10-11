@@ -131,6 +131,9 @@ namespace RealisticFiring.Core
         /// </summary>
         public const float PumpAfter = 120f;
 
+        /// <summary>The water valve he starts a two-valve injector on, before he regulates it; at least its least.</summary>
+        public const float StartWater = 0.6f;
+
         // The pump turns down as far as he likes; he keeps it this open while
         // feeding. Tripped (its overspeed trip fallen) or without suction, he
         // shuts it and feeds with the injector this long, in s, while it
@@ -473,6 +476,46 @@ namespace RealisticFiring.Core
                 if (actions.Pump <= 0f)
                 {
                     pumpLever = float.NaN;
+                    fillSteam = 0f;
+                }
+            }
+            else if (r.InjectorSteamValve)
+            {
+                canFeed &= brokenRest <= 0f;
+                // Water first, then steam to its priming notch; picked up,
+                // the steam wide open and the feed regulated with the water
+                // valve. Stopping, the steam shut and the water after it, so a
+                // non-lifter runs none out of the overflow.
+                var start = Math.Max(least, StartWater);
+                var watered = r.InjectorLever > InjectorSpec.OpenThreshold + 0.05f;
+                switch (r.Injector)
+                {
+                    case InjectorState.Off:
+                    case InjectorState.NoWater when r.TenderWater > 0f:
+                        var go = canFeed && r.Pressure >= r.InjectorStartPressure;
+                        actions.Injector = go ? start : 0f;
+                        actions.InjectorSteam = go && watered ? InjectorSpec.SteamPrime : 0f;
+                        break;
+                    case InjectorState.Priming:
+                    case InjectorState.Hot:
+                        actions.Injector = canFeed ? start : 0f;
+                        actions.InjectorSteam = canFeed ? InjectorSpec.SteamPrime : 0f;
+                        break;
+                    case InjectorState.Working:
+                        actions.Injector = canFeed
+                            ? Regulate(dt, r, goal, least, r.InjectorFullFeed, ref feedLever, ref leverPerWork, hardAhead)
+                            : 0f;
+                        actions.InjectorSteam = actions.Injector > 0f ? 1f : 0f;
+                        break;
+                    default:
+                        // Low pressure, a dry tender, or a broken jet: steam shut, then the water.
+                        actions.InjectorSteam = 0f;
+                        actions.Injector = r.InjectorSteam < InjectorSpec.SteamPrimeFrom ? 0f : r.InjectorLever;
+                        break;
+                }
+                if (r.Injector != InjectorState.Working || actions.Injector <= 0f)
+                {
+                    feedLever = float.NaN;
                     fillSteam = 0f;
                 }
             }

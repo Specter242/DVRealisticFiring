@@ -259,22 +259,42 @@ namespace RealisticFiring.Visuals
         // The cab plate nearest a lever, named for the injector, gets new text.
         private static bool Relabel(Transform interior, Transform lever, string text)
         {
-            var plate = interior.GetComponentsInChildren<TextMeshPro>(true)
+            var plate = InjectorPlate(interior, lever);
+            if (plate == null)
+                return false;
+            Retext(plate, text);
+            return true;
+        }
+
+        /// <summary>The cab's injector plate nearest <paramref name="lever"/>, or null.</summary>
+        internal static TextMeshPro InjectorPlate(Transform interior, Transform lever) =>
+            interior.GetComponentsInChildren<TextMeshPro>(true)
                 .Where(t => Path(t.transform).ToLowerInvariant().Contains("injector"))
                 .Select(t => (Text: t, Distance: Vector3.Distance(t.transform.position, lever.position)))
                 .Where(t => t.Distance < LabelReach)
                 .OrderBy(t => t.Distance)
                 .Select(t => t.Text)
                 .FirstOrDefault();
+
+        /// <summary>Gives a plate plain text in place of its localization key.</summary>
+        internal static void Retext(TextMeshPro plate, string text)
+        {
             if (plate == null)
-                return false;
+                return;
             foreach (var localize in plate.GetComponentsInParent<MonoBehaviour>(true)
                          .Concat(plate.GetComponentsInChildren<MonoBehaviour>(true))
                          .Where(c => c.GetType().Name == "Localize" || c.GetType().Name == "LabelLocalizer")
                          .ToList())
                 Object.DestroyImmediate(localize);
+            // Shrunk to fit its plate if longer than the stock word ("INJ STEA").
+            if (!plate.enableAutoSizing)
+            {
+                plate.fontSizeMax = plate.fontSize;
+                plate.fontSizeMin = plate.fontSize * 0.5f;
+                plate.enableAutoSizing = true;
+            }
+            plate.textWrappingMode = TextWrappingModes.NoWrap;
             plate.text = text;
-            return true;
         }
 
         private static string Path(Transform t)

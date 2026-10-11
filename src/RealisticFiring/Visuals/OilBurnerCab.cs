@@ -215,9 +215,11 @@ namespace RealisticFiring.Visuals
         {
             var valve = firebox.ShopSteamValve;
             if (valve <= 0f)
-                return "Shop steam: shut (at a pit stop, open it to fire a dead engine on the shed's steam)";
+                return firebox.AtServiceTrack
+                    ? "Shop steam: shut (open it to fire a dead engine on this service track's steam line)"
+                    : "Shop steam: shut (on a service track, open it to fire a dead engine on the shed's steam)";
             if (!firebox.AtPitStop)
-                return $"Shop steam: {valve:P0}, no steam line here (stand at a pit stop)";
+                return $"Shop steam: {valve:P0}, no steam line here (stand on a service track: a service station with water, a loco parking track, or a roundhouse stall)";
             return $"Shop steam: {valve:P0}, the shed's steam line at {(firebox.SteamLineOpening * 100f):F0} psi" +
                    (firebox.Model.OnSteamLine ? " to the atomizer and heater" : " (the boiler's own steam is stronger)");
         }

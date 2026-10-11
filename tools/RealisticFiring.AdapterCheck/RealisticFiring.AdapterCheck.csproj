@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/RealisticFiring/RealisticFiring.csproj" />
+    <ProjectReference Include="../../src/RealisticFiring.Multiplayer/RealisticFiring.Multiplayer.csproj" />
   </ItemGroup>
 
   <ItemGroup>

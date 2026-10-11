@@ -17,7 +17,8 @@ namespace RealisticFiring.Sim
     /// loco's own stoker control is the firing valve, read through the
     /// <see cref="OilFeed"/> that stands in for its stoker; the atomizer and
     /// oil heater are the mod's valves; the draft is the stock exhaust's, its
-    /// dampers included. The stock ignite request throws in lit waste.
+    /// dampers included. The stock ignite request (the game's lighter held at
+    /// the open fire door) stands for the lit waste a crew threw in.
     /// </summary>
     internal sealed class RealisticOilFirebox : SimComponent
     {
@@ -70,6 +71,7 @@ namespace RealisticFiring.Sim
 
         /// <summary>Whether a pit stop serves a car (checks outside the game stand at one).</summary>
         internal static System.Func<TrainCar, bool> ServedByPitStop = WaterPoints.Serves;
+        private bool atServiceTrack;
         private ReciprocatingSteamEngine engine;
         private bool resolved;
         private bool restored;
@@ -162,8 +164,14 @@ namespace RealisticFiring.Sim
         /// <summary>The cab's shop steam valve, 0 shut to 1 wide open; 0 without one.</summary>
         public float ShopSteamValve => shopSteamPort != null ? Mathf.Clamp01(shopSteamPort.Value) : 0f;
 
-        /// <summary>Whether the engine stands at a pit stop, where a shed's steam line reaches it (checked while the line is wanted).</summary>
+        /// <summary>Whether the engine stands on a service track with the shed's steam line hooked up (the valve open or the key).</summary>
         public bool AtPitStop => atPitStop;
+
+        /// <summary>Whether the engine stands on a service track, where a shed's steam line reaches it (checked once a second).</summary>
+        public bool AtServiceTrack => atServiceTrack;
+
+        /// <summary>The boiler's pressure, absolute bar.</summary>
+        internal float BoilerPressure => boilerPressure.Value;
 
         /// <summary>
         /// How far the shed's steam line is open to the burner's valves: the
@@ -278,7 +286,8 @@ namespace RealisticFiring.Sim
             if (pitStopCheck <= 0f)
             {
                 pitStopCheck = 1f;
-                atPitStop = (SteamLine || ShopSteamValve > 0f) && ServedByPitStop(Car);
+                atServiceTrack = ServedByPitStop(Car);
+                atPitStop = (SteamLine || ShopSteamValve > 0f) && atServiceTrack;
             }
             if (ignitionExtIn.Value == 1f)
             {

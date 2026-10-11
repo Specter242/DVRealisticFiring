@@ -928,9 +928,7 @@ namespace RealisticFiring.Visuals
         {
             if (exhaust == null)
                 return 0f;
-            var blower = exhaust.maxBlowerFlow * Mathf.Min(Mathf.InverseLerp(1f, exhaust.pressureForMaxBlowerFlow, exhaust.boilerPressure.Value),
-                exhaust.blowerControl.Value);
-            return Mathf.Max(0f, exhaust.exhaustFlow.Value) + Mathf.Max(0f, blower);
+            return Mathf.Max(0f, exhaust.exhaustFlow.Value) + Mathf.Max(0f, BlowerFit.BlowerSteam(exhaust));
         }
 
         // A world point in the space the system simulates in (the game moves
@@ -1016,10 +1014,12 @@ namespace RealisticFiring.Visuals
             if (exhaustSim == null)
                 return total;
             var engineMax = exhaustSim.engineMaxFlowReader.Value;
-            var maxTotal = engineMax + exhaustSim.passiveExhaust + exhaustSim.entrainmentRatio * engineMax;
+            var maxTotal = BlowerFit.TryGet(exhaustSim, out var draft)
+                ? draft.MaxTotal(engineMax)
+                : engineMax + exhaustSim.passiveExhaust + exhaustSim.entrainmentRatio * engineMax;
             if (!(maxTotal > 0f))
                 return total;
-            var natural = exhaustSim.passiveExhaust * Mathf.Lerp(SteamExhaust.MIN_DAMPER, 1f, exhaustSim.damperControl.Value);
+            var natural = BlowerFit.Natural(exhaustSim) * Mathf.Lerp(SteamExhaust.MIN_DAMPER, 1f, exhaustSim.damperControl.Value);
             return Mathf.Max(0f, total - natural / maxTotal);
         }
 

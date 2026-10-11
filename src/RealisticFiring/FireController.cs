@@ -142,7 +142,26 @@ namespace RealisticFiring
             else
                 LetGoOfPump(null);
             if (RealisticOilFirebox.TryGetTended(PlayerManager.Car, out var oil))
+            {
                 UpdateSteamLine(oil, settings);
+                AnnounceFireUp(oil);
+            }
+        }
+
+        private string lastFireUpStep;
+        private float fireUpCheckTime;
+
+        private void AnnounceFireUp(RealisticOilFirebox oil)
+        {
+            if (Time.time - fireUpCheckTime < 1f)
+                return;
+            fireUpCheckTime = Time.time;
+            var hint = OilLightingHint(oil);
+            // The step, without its live figures, so a changing count does not repeat it.
+            var step = hint == null ? null : hint.Split('(')[0];
+            if (step != null && step != lastFireUpStep)
+                Notify(hint);
+            lastFireUpStep = step;
         }
 
         private float steamLineCheckTime;
@@ -164,7 +183,7 @@ namespace RealisticFiring
             if (!WaterPoints.Serves(oil.Car))
             {
                 oil.SteamLine = false;
-                Notify("Steam line off: the train left the pit stop");
+                Notify("Steam line off: the engine left the service track");
             }
         }
 
@@ -180,7 +199,7 @@ namespace RealisticFiring
                 return "Steam line off";
             }
             if (!WaterPoints.Serves(oil.Car))
-                return "No steam line here: stand at a pit stop";
+                return $"No steam line here: stand the engine on {WaterPoints.Where}";
             oil.SteamLine = true;
             return "Steam line on: the shed's steam at 100 psi for the atomizer and oil heater";
         }
@@ -258,7 +277,7 @@ namespace RealisticFiring
             if (rig.BoilerPressure > InjectorRig.HydrantMaxPressure)
                 return "The boiler is under pressure: a hose can only fill a cold boiler";
             if (!WaterPoints.Serves(rig.Car))
-                return "No hydrant here: stand at a pit stop with water";
+                return $"No hydrant here: stand the engine on {WaterPoints.Where}";
             // With the boiler cold at the shed, the hose washes it out first.
             var washed = BoilerWaterRig.TryGet(rig.Car, out var water) && (Main.Settings.BoilerWaterImpurities || water.Plug != null);
             if (washed)
@@ -357,7 +376,39 @@ namespace RealisticFiring
 
         private static float Gauge(float bar) => (bar - 1f) * PsiPerBar;
 
-        /// <summary>The oil fire, for the status log and overlay: lines separated by semicolons.</summary>
+ internal static string OilLightingHint(RealisticOilFirebox oil)
+        {
+            var fire = oil.Model;
+            if (fire.FireOn)
+            {
+                // Firing on the shed's line with steam of its own: let it go.
+                return fire.OnSteamLine || oil.SteamLineOpening <= 0f || oil.BoilerPressure < OwnSteam
+                    ? null
+                    : $"The boiler makes its own steam ({oil.BoilerPressure - 1f:F1} bar): shut SHOP STEAM before you leave";
+            }
+            if (fire.Vapor > 0.01f || fire.PooledOil > 0.01f)
+                return "Oil vapor in the firebox: clear it with the blower before lighting, or it flares back";
+            // A dead engine: no steam to atomize or heat the oil but the shed's.
+            if (!fire.OnSteamLine && oil.BoilerPressure < DeadBoiler)
+                return oil.AtServiceTrack
+                    ? "No steam for the burner: open SHOP STEAM (or Ctrl+Shift+L) to put the shed's steam line on the atomizer and heater"
+                    : $"No steam for the burner: stand the engine on {WaterPoints.Where}, towing it there if it cannot move, then open SHOP STEAM (or Ctrl+Shift+L)";
+            if (fire.OilTemperature < OilFire.WarmOil - 5f)
+                return $"Warm the oil first: OIL HEATER open ({fire.OilTemperature:F0} C; it runs from about {OilFire.WarmOil:F0} C, about ten minutes from cold)";
+            if (fire.Torch > 0f)
+                return $"Lit: open the firing valve a little now, the atomizer on ({fire.Torch:F0} s left)";
+            if (fire.BrickTemperature > OilFire.BrickRelights)
+                return "The brick is hot enough to relight it: open the atomizer, then the firing valve a little";
+            return $"To light: blower on, atomizer open a little, then open the fire door, hold your lit lighter in it, " +
+                   $"and open the firing valve a little within {OilFire.TorchTime:F0} s";
+        }
+
+        // Below this the boiler has too little steam to atomize or heat oil;
+        // past this it makes its own and the shed's line can come off, in
+        // absolute bar.
+        private const float DeadBoiler = 2f;
+        private const float OwnSteam = 7.9f;
+
         internal static string DescribeOil(RealisticOilFirebox oil)
         {
             var fire = oil.Model;
@@ -374,7 +425,7 @@ namespace RealisticFiring
                    $"oil {fire.OilTemperature:F0} C ({fire.OilTemperature * 9f / 5f + 32f:F0} F), heater {oil.HeaterValve:P0}" +
                    (oil.SteamLineOpening > 0f
                        ? (fire.OnSteamLine ? $", on the shed's steam line ({oil.SteamLineOpening:P0})" : ", shed's steam line open (the boiler's own steam is stronger)")
-                       : oil.ShopSteamValve > 0f ? ", shop steam open but no line here (stand at a pit stop)" : "") + "; " +
+                       : oil.ShopSteamValve > 0f ? ", shop steam open but no line here (stand on a service track)" : "") + "; " +
                    $"flues {fire.FlueSoot:P0} sooted" + (fire.FlueSoot > 0.3f ? " (sand them)" : "") +
                    (fire.Vapor > 0.01f || fire.PooledOil > 0.01f ? $"; vapor {fire.Vapor:F2} kg, pooled oil {fire.PooledOil:F2} kg: clear it with the blower before lighting" : "") +
                    $"; flue sand on the shovel {Visuals.FlueSandBox.Loaded:F1} kg";
@@ -409,6 +460,40 @@ namespace RealisticFiring
         private const float WorkingSpill = 0.05f;
 
         private static string DescribeInjector(InjectorCircuit circuit, float pressure)
+        {
+            if (circuit.Steam == null)
+                return DescribeLever(circuit, pressure);
+            // Its own steam valve: say where both valves sit and what to do next.
+            var flow = circuit.Flow;
+            var valves = $"injector steam {InjectorValves.Position(circuit.Steam.Value)}, water {circuit.Control.Value:P0}";
+            switch (flow.State)
+            {
+                case InjectorState.Working:
+                {
+                    var working = $"{valves}: working, {flow.WaterIn:F1} kg/s at {flow.FeedTemperature:F0} C, steam {flow.SteamUsed:F2} kg/s";
+                    if (circuit.Steam.Value < InjectorSpec.SteamFeedFrom)
+                        return $"{working}: picked up, steam to Feed";
+                    if (flow.Overflow < WorkingSpill)
+                        return working;
+                    var least = circuit.Injector.Spec.LeastShare(pressure);
+                    return circuit.Control.Value < least
+                        ? $"{working}, spilling {flow.Overflow:F1} kg/s: open the water valve past {least:P0} to feed without waste"
+                        : $"{working}, spilling {flow.Overflow:F1} kg/s: the boiler is full";
+                }
+                case InjectorState.Off:
+                    return flow.Overflow > 0f ? $"{valves}: off, water running out of the overflow ({flow.Overflow:F1} kg/s): steam to Prime, or shut the water" : $"{valves}: off";
+                case InjectorState.NoWater:
+                    return circuit.Control.Value <= InjectorSpec.OpenThreshold
+                        ? $"{valves}: NO WATER, steam blowing at the overflow: open the water valve first"
+                        : $"{valves}: NO WATER (tender dry)";
+                default:
+                    return $"{valves}: " + DescribeLever(circuit, pressure).Replace("injector ", "")
+                        .Replace("hold it cracked to cool it", "hold the steam at Prime to cool it")
+                        .Replace("shut it, then crack it until it primes", "steam Off, then Prime until it picks up");
+            }
+        }
+
+        private static string DescribeLever(InjectorCircuit circuit, float pressure)
         {
             var flow = circuit.Flow;
             var spill = $"spilling {flow.Overflow:F1} kg/s water, {flow.OverflowSteam:F1} kg/s steam";

@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using HarmonyLib;
 using LocoSim.Definitions;
 using LocoSim.Implementations;
 using Newtonsoft.Json.Linq;
@@ -17,7 +18,7 @@ namespace RealisticFiring.AdapterCheck
 
         private static int failures;
 
-        private static int Main()
+        private static int Main(string[] args)
         {
             RealisticFiring.Main.Settings = new Settings { LogCoalDeliveries = false };
             var gameParams = new SimGameParams(false, false, false, 1f, 1f);
@@ -148,6 +149,7 @@ namespace RealisticFiring.AdapterCheck
                 "a stoker's trickle feeds the fire as continuous feed, not as shovelfuls");
 
             CheckInjector(gameParams);
+            CheckInjectorSteamValve(gameParams);
             CheckJk3Injectors(gameParams);
             CheckJk3Firebox(gameParams);
             CheckBoilerWater();
@@ -156,11 +158,15 @@ namespace RealisticFiring.AdapterCheck
             CheckClientMirror(gameParams, def);
             CheckBooster();
             CheckCylinders(gameParams);
+            CheckBlower(gameParams);
 
             CheckControlSteps();
             CheckShovelLoads();
             CheckFiremanHand();
             CheckPatchTargets();
+            CheckFireIronLoading();
+            if (args.Length > 0 && File.Exists(args[0]))
+                CheckMultiplayerCabHooks(args[0]);
             Console.WriteLine(failures == 0 ? "All adapter checks passed" : $"{failures} adapter checks failed");
             return failures == 0 ? 0 : 1;
         }
@@ -169,6 +175,62 @@ namespace RealisticFiring.AdapterCheck
         {
             for (var t = 0f; t < seconds; t += 0.02f)
                 component.Tick(0.02f);
+        }
+
+        private static void CheckMultiplayerCabHooks(string path)
+        {
+            const string harmonyId = "RealisticFiring.AdapterCheck.MultiplayerCab";
+            var modFolder = Path.GetDirectoryName(path);
+            var gameFolder = Path.GetDirectoryName(Path.GetDirectoryName(modFolder));
+            // Resolve game/mod dependencies without adding the game's
+            // mscorlib to MONO_PATH and replacing Mono's own core library.
+            ResolveEventHandler resolve = (_, request) =>
+            {
+                var name = new AssemblyName(request.Name).Name;
+                if (name == "mscorlib" || name == "netstandard" || name.StartsWith("System", StringComparison.Ordinal))
+                    return null;
+                foreach (var folder in new[] { modFolder, Path.Combine(gameFolder, "DerailValley_Data", "Managed") })
+                {
+                    var file = Path.Combine(folder, name + ".dll");
+                    if (File.Exists(file))
+                        return Assembly.LoadFrom(file);
+                }
+                return null;
+            };
+            AppDomain.CurrentDomain.AssemblyResolve += resolve;
+            try
+            {
+                var assembly = Assembly.LoadFrom(path);
+                var type = assembly.GetType("Multiplayer.Components.Networking.Train.NetworkedTrainCar", throwOnError: true);
+                var targets = Multiplayer.CabControlsCompatibility.PatchTargets(type);
+                var helpers = targets.SelectMany(method => Multiplayer.CabControlsCompatibility.Transpile(
+                    HarmonyLib.PatchProcessor.GetOriginalInstructions(method)))
+                    .Select(instruction => instruction.operand as MethodInfo)
+                    .Where(method => method?.DeclaringType == typeof(Multiplayer.CabControlsCompatibility)).ToArray();
+                Check(targets.Length == 4 && helpers.Count(method => method.Name == "Discover") == 1
+                    && helpers.Count(method => method.Name == "ResolvePort") == 2 && helpers.Count(method => method.Name == "Kind") == 2,
+                    "installed Multiplayer cab hookup uses feeder discovery, both port reads, and null-safe scroll logging");
+                var warnings = new System.Collections.Generic.List<string>();
+                Multiplayer.CabControlsCompatibility.Install(harmonyId, _ => { }, warnings.Add);
+                var load = HarmonyLib.AccessTools.DeclaredMethod(type, "OnTrainCarInteriorLoaded");
+                Check(warnings.Count == 0 && targets.Concat(new MethodBase[] { load }).All(method =>
+                    HarmonyLib.Harmony.GetPatchInfo(method)?.Owners.Contains(harmonyId) == true),
+                    "all five Multiplayer cab patches compile and install against the installed assembly"
+                    + (warnings.Count > 0 ? ": " + string.Join("; ", warnings) : ""));
+                // The unload notification exits before touching a Unity
+                // component; invoking the patched original proves that path.
+                load.Invoke(System.Runtime.Serialization.FormatterServices.GetUninitializedObject(type), new object[] { null });
+                Check(true, "a null interior notification skips Multiplayer's load coroutine");
+            }
+            catch (Exception e)
+            {
+                Check(false, "Multiplayer cab compatibility: " + e.GetBaseException().Message);
+            }
+            finally
+            {
+                new HarmonyLib.Harmony(harmonyId).UnpatchAll(harmonyId);
+                AppDomain.CurrentDomain.AssemblyResolve -= resolve;
+            }
         }
 
         private static void CheckJk3Firebox(SimGameParams gameParams)
@@ -207,6 +269,32 @@ namespace RealisticFiring.AdapterCheck
                   && stock.GetSaveStateData().Value<bool>("fireOn")
                   && stock.GetSaveStateData().Value<float>("coalEnvDmg") == 12f,
                 "the stock JK3 firebox can load the realistic fire's coal, ignition, and damage state");
+
+            var character = FireboxCharacters.ForLivery("Jk3A");
+            var jk3 = new FireModel(fire.Model.Parameters) { Character = character.Grate, GrateArea = 1.430f };
+            var smallSwitcher = new FireModel(fire.Model.Parameters) { Character = FireboxCharacters.ForLivery("LocoS060").Grate, GrateArea = 1.430f };
+            var typical = new FireModel(fire.Model.Parameters) { GrateArea = 1.430f };
+            float Pull(FireModel model) => model.DraftWeight(GrateZone.Front) / model.DraftWeight(GrateZone.UnderDoor);
+            Check(Pull(smallSwitcher) < Pull(jk3) && Pull(jk3) < Pull(typical) && !character.PrototypeSlope.HasValue,
+                $"the level JK3 grate draws moderately forward (front/back {Pull(jk3):F2}, S060 {Pull(smallSwitcher):F2}, typical {Pull(typical):F2})");
+
+            float FreshRound(FireModel model)
+            {
+                model.Restore(fireOn: true, coalMass: 35f);
+                var inputs = new FireInputs { AirFlow = 0.5f * model.Parameters.MaxCombustionRate * FireModel.AirPerCoal,
+                    StartupMultiplier = 1f, BoilerTemperature = 180f };
+                for (var t = 0f; t < 60f; t += 0.02f)
+                    model.Step(0.02f, inputs);
+                model.AddCoalEvenly(17.5f);
+                for (var t = 0f; t < 10f; t += 0.02f)
+                    model.Step(0.02f, inputs);
+                return model.SootDensity;
+            }
+            var jk3Smoke = FreshRound(jk3);
+            var switcherSmoke = FreshRound(smallSwitcher);
+            var typicalSmoke = FreshRound(typical);
+            Check(jk3Smoke > typicalSmoke && jk3Smoke < switcherSmoke,
+                $"a fresh JK3 round smokes more than the typical box, less than the S060 profile (soot {jk3Smoke:F2}, typical {typicalSmoke:F2}, S060 {switcherSmoke:F2})");
         }
 
         // The realistic injector against a stock boiler with the S282's figures.
@@ -772,6 +860,55 @@ namespace RealisticFiring.AdapterCheck
             return (boiler, right, left, new SimComponent[] { divisor, right, left, add, normalized, particles, boiler }, water, consumed);
         }
 
+        // An engine fitted with its own injector steam valve: the stock lever
+        // is the water valve, the new control shut, primed, or wide open.
+        private static void CheckInjectorSteamValve(SimGameParams gameParams)
+        {
+            var water = new Port("injector", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"));
+            var tenderWater = new Port("tender", new PortDefinition(PortType.READONLY_OUT, PortValueType.WATER, "AMOUNT"), 40000f);
+            var consumed = new Port("tender", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.WATER, "CONSUME_EXT_IN"));
+            var steamControl = (ExternalControl)new ExternalControlDefinition { ID = InjectorValves.Steam.Id }.InstantiateImplementation();
+            var def = new BoilerDefinition
+            {
+                ID = "boiler", diameter = 1.7f, length = 8.8f, capacityMultiplier = 0.85f, maxInjectorRate = 5f,
+                waterConsumptionMultiplier = 4f, safetyValveOpeningPressure = 15f, safetyValveClosingPressure = 14.8f,
+                spawnPressure = 13f, spawnWaterLevel = 9000f,
+            };
+            var boiler = (Boiler)def.InstantiateImplementation();
+            boiler.SetGameParams(gameParams);
+            boiler.GetAllPortReferences().Single(r => r.id == "boiler.INJECTOR").SetPortReference(water);
+            boiler.GetAllPortReferences().Single(r => r.id == "boiler.WATER").SetPortReference(tenderWater);
+            boiler.GetAllPortReferences().Single(r => r.id == "boiler.WATER_CONSUMPTION").SetPortReference(consumed);
+            var made = InjectorRig.TryCreate(null, boiler, "LocoS060", new SimComponent[] { boiler, steamControl }, out var note);
+            InjectorRig.TryGet(boiler, out var rig);
+            var steam = steamControl.controlExtIn;
+            InjectorFlow Run(float steamAt, float waterAt, float seconds)
+            {
+                steam.Value = steamAt;
+                water.Value = waterAt;
+                for (var t = 0f; t < seconds; t += 0.02f)
+                {
+                    consumed.Value = 0f;
+                    rig.Simulate(0.02f);
+                    rig.BoilerVessel.Update();
+                }
+                return rig.Circuits[0].Flow;
+            }
+            if (!made || rig == null || rig.Circuits[0].Steam == null)
+            {
+                Check(false, $"the S060 gets its injector steam valve ({note})");
+                return;
+            }
+            var gravity = Run(0f, 1f, 1f);
+            Run(InjectorSpec.SteamPrime, 1f, 3f);
+            var full = Run(1f, 1f, 2f);
+            var part = Run(1f, 0.6f, 2f);
+            Check(gravity.State == InjectorState.Off && gravity.Overflow > 0f && full.State == InjectorState.Working
+                  && part.State == InjectorState.Working && Math.Abs(part.WaterIn / full.WaterIn - 0.6f) < 0.05f,
+                $"with its own steam valve the S060's water runs from the overflow until it is primed ({gravity.Overflow:F2} kg/s), " +
+                $"then feeds as its water valve sets ({part.WaterIn:F2} kg/s at 60 %, {full.WaterIn:F2} wide open)");
+        }
+
         private static void CheckJk3Injectors(SimGameParams gameParams)
         {
             InjectorRig Rig((Boiler Boiler, ExternalControl Right, ExternalControl Left, SimComponent[] Components, Port Water, Port Consumed) setup)
@@ -1241,6 +1378,48 @@ namespace RealisticFiring.AdapterCheck
             }
         }
 
+        // The period blower on the game's exhaust, patched as in game: the
+        // S060's stock exhaust, then with its fitted blower and natural draft.
+        private static void CheckBlower(SimGameParams gameParams)
+        {
+            var harmony = new HarmonyLib.Harmony("RealisticFiring.AdapterCheck.Blower");
+            harmony.CreateClassProcessor(typeof(BlowerPatch)).Patch();
+            try
+            {
+                SteamExhaust New(out Port air, out Port steam)
+                {
+                    var def = new SteamExhaustDefinition { ID = "exhaust", passiveExhaust = 0.2f, entrainmentRatio = 1.95f, maxBlowerFlow = 0.2f, pressureForMaxBlowerFlow = 3f };
+                    var exhaust = (SteamExhaust)def.InstantiateImplementation();
+                    exhaust.SetGameParams(gameParams);
+                    void Wire(PortReferenceDefinition reference, PortValueType type, float value) =>
+                        exhaust.GetAllPortReferences().Single(r => r.id == $"{def.ID}.{reference.ID}")
+                            .SetPortReference(new Port(reference.ID.ToLowerInvariant(), new PortDefinition(PortType.READONLY_OUT, type, "OUT"), value));
+                    Wire(def.exhaustFlow, PortValueType.MASS_RATE, 0f);
+                    Wire(def.engineMaxFlowReader, PortValueType.MASS_RATE, 2f);
+                    Wire(def.boilerPressure, PortValueType.PRESSURE, 13.4f);
+                    Wire(def.blowerControl, PortValueType.CONTROL, 1f);
+                    Wire(def.whistleControl, PortValueType.CONTROL, 0f);
+                    Wire(def.damperControl, PortValueType.CONTROL, 1f);
+                    air = exhaust.GetAllPorts().Single(p => p.id == $"{def.ID}.{def.airFlowReadOut.ID}");
+                    steam = exhaust.GetAllPorts().Single(p => p.id == $"{def.ID}.{def.steamConsumptionReadOut.ID}");
+                    return exhaust;
+                }
+
+                var stock = New(out var stockAir, out var stockSteam);
+                stock.Tick(0.02f);
+                var fitted = New(out var fittedAir, out var fittedSteam);
+                BlowerFit.Fit(fitted, new SteamDraft(0.4f, 0.3f, fitted.entrainmentRatio, 13.4f));
+                fitted.Tick(0.02f);
+                Check(Math.Abs(stockAir.Value - 0.59f) < 0.01f && Math.Abs(fittedAir.Value - 2.3f) < 0.01f && Math.Abs(fittedSteam.Value - 0.4f) < 0.01f,
+                    $"the S060's period blower wide open draws {fittedAir.Value:F2} kg/s of air for {fittedSteam.Value:F2} kg/s of steam " +
+                    $"(the game's {stockAir.Value:F2} for {stockSteam.Value:F2})");
+            }
+            finally
+            {
+                harmony.UnpatchAll(harmony.Id);
+            }
+        }
+
         private struct EngineRun
         {
             public float Torque;
@@ -1420,6 +1599,14 @@ namespace RealisticFiring.AdapterCheck
                     var prepare = HarmonyLib.AccessTools.DeclaredMethod(type, "Prepare");
                     if (prepare != null && prepare.GetParameters().Length == 0 && !(bool)prepare.Invoke(null, null))
                         continue;
+                    var targetMethods = HarmonyLib.AccessTools.DeclaredMethod(type, "TargetMethods");
+                    if (targetMethods != null)
+                    {
+                        var originals = ((System.Collections.Generic.IEnumerable<MethodBase>)targetMethods.Invoke(null, null)).ToList();
+                        if (originals.Count == 0 || originals.Any(m => m == null))
+                            bad.Add($"{type.Name}: missing target methods");
+                        continue;
+                    }
                     var targetMethod = HarmonyLib.AccessTools.DeclaredMethod(type, "TargetMethod");
                     if (targetMethod != null)
                     {
@@ -1452,6 +1639,31 @@ namespace RealisticFiring.AdapterCheck
                 }
             }
             Check(bad.Count == 0, $"all {patches.Count} Harmony patch targets resolve" + (bad.Count > 0 ? $" (not: {string.Join("; ", bad)})" : ""));
+        }
+
+        private static void CheckFireIronLoading()
+        {
+            var targets = Items.FireIronLoading.TargetMethods().ToList();
+            Check(targets.Count == 2 && targets.All(m => m != null && m.DeclaringType.Assembly == typeof(StartingItemsController).Assembly),
+                "fire iron patches only saved-item and purchased-item game methods");
+            var resourceLoad = Items.FireIronLoading.ResourceLoad;
+            foreach (var target in targets.Where(m => m != null))
+            {
+                var original = HarmonyLib.PatchProcessor.GetOriginalInstructions(target);
+                var patched = Items.FireIronLoading.Transpiler(original).ToList();
+                var loadIndexes = Enumerable.Range(0, original.Count).Where(i => original[i].Calls(resourceLoad)).ToList();
+                var replacement = HarmonyLib.AccessTools.DeclaredMethod(typeof(Items.FireIronLoading), "LoadPrefab");
+                Check(loadIndexes.Count == 1 && patched.Count == original.Count
+                      && loadIndexes.All(i => patched[i].Calls(replacement)
+                          && patched[i].labels.SequenceEqual(original[i].labels)
+                          && patched[i].blocks.SequenceEqual(original[i].blocks))
+                      && Enumerable.Range(0, original.Count).Except(loadIndexes).All(i => ReferenceEquals(patched[i], original[i])),
+                    $"{target.DeclaringType.Name}.{target.Name}: redirects only the prefab lookup, preserving the stock item lifecycle");
+            }
+            var patches = typeof(RealisticFiring.Main).Assembly.GetTypes()
+                .Where(t => t.GetCustomAttributes(typeof(HarmonyLib.HarmonyPatch), true).Length > 0);
+            Check(!patches.Any(t => HarmonyLib.HarmonyMethodExtensions.GetFromType(t).Any(info => info.declaringType == typeof(UnityEngine.Resources)))
+                  && !targets.Contains(resourceLoad), "no global Unity Resources.Load patch");
         }
 
         private static void Check(bool ok, string what)

@@ -1,5 +1,7 @@
+using System;
 using System.IO;
 using UnityEngine;
+using Object = UnityEngine.Object;
 
 namespace RealisticFiring.Visuals
 {
@@ -18,7 +20,6 @@ namespace RealisticFiring.Visuals
         public const string FireIronMaterialName = "FireIron";
 
         private static bool loaded;
-        private static AssetBundle bundle;
         private static GameObject prefab;
         private static GameObject overflowPrefab;
         private static GameObject fireboxPrefab;
@@ -85,21 +86,13 @@ namespace RealisticFiring.Visuals
             }
         }
 
-        // Loads the bundle on first use, and its assets again if the game has
-        // unloaded them. Going back to the main menu, the game unloads every
-        // asset no scene object uses, and these, held only here, went with
-        // it: every loco built after that had the stock smoke and a bed of
-        // nine tiles with no smoke or flames in the firebox (in game,
-        // 2026-10-10, on the S060 after a reload).
+        // SceneSwitcher destroys all loaded bundles and their assets on the
+        // way back to the menu. Detach ours after reading it; unused-asset
+        // protection alone cannot stop UnloadAllAssetBundles(true).
         private static void Ensure()
         {
-            if (!loaded)
+            if (!loaded || Unloaded())
                 Load();
-            else if (bundle != null && Unloaded())
-            {
-                LoadAssets();
-                Main.Mod.Logger.Log("Custom smoke effects reloaded: the game had unloaded them");
-            }
         }
 
         // An asset loaded once and since destroyed: Unity's null for a dead object.
@@ -108,40 +101,57 @@ namespace RealisticFiring.Visuals
 
         private static bool Lost(Object asset) => !ReferenceEquals(asset, null) && asset == null;
 
-        // The bundle stays loaded: the prefab's materials and textures live in it.
         private static void Load()
         {
             loaded = true;
+            prefab = overflowPrefab = fireboxPrefab = null;
+            fireIronMaterial = null;
+            fireIronIcon = fireIronIconDropped = null;
             var path = Path.Combine(Main.Mod.Path, BundleFile);
             if (!File.Exists(path))
             {
                 Main.Mod.Logger.Log($"No custom smoke bundle at {path}; using the game's smoke systems");
                 return;
             }
-            bundle = AssetBundle.LoadFromFile(path);
-            if (bundle == null)
+            AssetBundle bundle = null;
+            try
             {
-                Main.Mod.Logger.Warning($"Could not load the custom smoke bundle {path}; using the game's smoke systems");
-                return;
+                bundle = AssetBundle.LoadFromFile(path);
+                if (bundle == null)
+                {
+                    Main.Mod.Logger.Warning($"Could not load the custom smoke bundle {path}; using the game's smoke systems");
+                    return;
+                }
+                prefab = Keep(bundle.LoadAsset<GameObject>(PrefabName));
+                overflowPrefab = Keep(bundle.LoadAsset<GameObject>(OverflowPrefabName));
+                fireboxPrefab = Keep(bundle.LoadAsset<GameObject>(FireboxPrefabName));
+                fireIronMaterial = Keep(bundle.LoadAsset<Material>(FireIronMaterialName));
+                fireIronIcon = Keep(bundle.LoadAsset<Texture2D>("fire_iron_icon"));
+                fireIronIconDropped = Keep(bundle.LoadAsset<Texture2D>("fire_iron_icon_dropped"));
+                Main.Mod.Logger.Log(prefab != null
+                    ? "Custom smoke effects loaded"
+                    : $"The smoke bundle has no '{PrefabName}'; using the game's smoke systems");
             }
-            LoadAssets();
-            Main.Mod.Logger.Log(prefab != null
-                ? "Custom smoke effects loaded"
-                : $"The smoke bundle has no '{PrefabName}'; using the game's smoke systems");
+            catch (Exception e)
+            {
+                Main.Mod.Logger.LogException("Could not load custom effects; using stock visuals", e);
+            }
+            finally
+            {
+                // Release the bundle's file data, keeping the objects and their
+                // dependencies alive independently of global bundle cleanup.
+                if (bundle != null)
+                    bundle.Unload(false);
+            }
         }
 
-        // Every asset in the bundle, the prefabs' materials, textures, and
-        // meshes among them, kept through the game's unloading of unused ones.
-        private static void LoadAssets()
+        // Retain only the assets we use. Their referenced materials, meshes,
+        // shaders, and textures are reachable through these retained roots.
+        private static T Keep<T>(T asset) where T : Object
         {
-            foreach (var asset in bundle.LoadAllAssets())
+            if (asset != null)
                 asset.hideFlags |= HideFlags.DontUnloadUnusedAsset;
-            prefab = bundle.LoadAsset<GameObject>(PrefabName);
-            overflowPrefab = bundle.LoadAsset<GameObject>(OverflowPrefabName);
-            fireboxPrefab = bundle.LoadAsset<GameObject>(FireboxPrefabName);
-            fireIronMaterial = bundle.LoadAsset<Material>(FireIronMaterialName);
-            fireIronIcon = bundle.LoadAsset<Texture2D>("fire_iron_icon");
-            fireIronIconDropped = bundle.LoadAsset<Texture2D>("fire_iron_icon_dropped");
+            return asset;
         }
     }
 }

@@ -121,9 +121,13 @@ namespace RealisticFiring.Core
         /// <summary>Fuel in the tender, coal or oil, in kg as it goes on the fire.</summary>
         public float TenderCoal;
 
-        /// <summary>The injector's state and its lever's opening.</summary>
+        /// <summary>The injector's state and its lever's opening (its water valve, where it has a steam valve).</summary>
         public InjectorState Injector;
         public float InjectorLever;
+
+        /// <summary>Whether the injector has its own three-position steam valve, and where that sits.</summary>
+        public bool InjectorSteamValve;
+        public float InjectorSteam;
 
         /// <summary>The lever opening that primes the injector (<see cref="InjectorSpec.CrackOpening"/>).</summary>
         public float InjectorCrack;
@@ -172,8 +176,11 @@ namespace RealisticFiring.Core
         /// <summary>Rock the grate now.</summary>
         public ShakeStroke? Shake;
 
-        /// <summary>The injector lever, 0 shut to 1 open.</summary>
+        /// <summary>The injector lever, 0 shut to 1 open (its water valve, where it has a steam valve).</summary>
         public float Injector;
+
+        /// <summary>The injector's steam valve, where it has one: 0 shut, <see cref="InjectorSpec.SteamPrime"/>, or 1 wide open.</summary>
+        public float InjectorSteam;
 
         /// <summary>The feed pump's operating valve, 0 shut to 1 open.</summary>
         public float Pump;

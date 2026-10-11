@@ -3,7 +3,7 @@ using RealisticFiring.Core;
 
 namespace RealisticFiring.Sim
 {
-    /// <summary>One steam valve and injector, with its own jet and body temperature.</summary>
+    /// <summary>One injector and its cab valves, with its own jet and body temperature.</summary>
     internal sealed class InjectorCircuit
     {
         public InjectorCircuit(Port control, Injector injector, string name, Port workingReadout = null)
@@ -14,7 +14,11 @@ namespace RealisticFiring.Sim
             this.workingReadout = workingReadout;
         }
 
+        /// <summary>The stock lever: the steam valve and feed together, or the water valve where <see cref="Steam"/> is fitted.</summary>
         public Port Control { get; }
+
+        /// <summary>The three-position steam valve, where fitted (<see cref="InjectorValves"/>); null for the one lever.</summary>
+        public Port Steam { get; internal set; }
         public Injector Injector { get; }
         public string Name { get; }
         private readonly Port workingReadout;
