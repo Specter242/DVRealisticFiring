@@ -37,6 +37,14 @@ namespace RealisticFiring.Patches
                 }
             }
 
+            if (LeftStock.Is(trainCar))
+            {
+                LeftStock.Keep(__instance.simFlow);
+                if (Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: left stock, not part of the mod");
+                return;
+            }
+
             if (Main.RealisticInjectorsEnabled && __instance.simFlow != null)
             {
                 var injectors = InjectorRig.Attach(trainCar, __instance.simFlow);

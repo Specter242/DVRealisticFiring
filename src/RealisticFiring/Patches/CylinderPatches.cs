@@ -19,7 +19,7 @@ namespace RealisticFiring.Patches
         private static bool Prefix(ReciprocatingSteamEngine __instance, float ___cutoff, float ___steamChestSteamMass, float ___cylinderVolume,
             ref float ___steamMassPerChuff, ref float ___admissionPressure)
         {
-            if (!EngineCylinders.Enabled)
+            if (!EngineCylinders.Works(__instance))
                 return true;
             var cylinders = EngineCylinders.Of(__instance);
             var model = cylinders.Model;
@@ -51,7 +51,7 @@ namespace RealisticFiring.Patches
     {
         private static bool Prefix(ReciprocatingSteamEngine __instance, float admissionPressure, float ___pistonArea, ref float __result)
         {
-            if (!EngineCylinders.Enabled)
+            if (!EngineCylinders.Works(__instance))
                 return true;
             var mean = EngineCylinders.Of(__instance).Model.Cycle(admissionPressure).MeanEffectivePressure;
             __result = Mathf.Max(0f, mean) * 100000f * ___pistonArea * (2f / (float)Math.PI) * __instance.pistonStroke / 2f
@@ -76,7 +76,7 @@ namespace RealisticFiring.Patches
 
         private static bool Prefix(ReciprocatingSteamEngine ___sim, float ___admissionPressure, float ___positionWithinStroke, ref float __result)
         {
-            if (!EngineCylinders.Enabled || ___sim == null)
+            if (!EngineCylinders.Works(___sim))
                 return true;
             var cycle = EngineCylinders.Of(___sim).Model.Cycle(Mathf.Abs(___admissionPressure));
             var s = Mathf.Clamp01(___positionWithinStroke);
@@ -96,7 +96,7 @@ namespace RealisticFiring.Patches
     {
         private static void Postfix(ReciprocatingSteamEngine __instance, float ___admissionPressure)
         {
-            if (!EngineCylinders.Enabled || !EngineCylinders.TryGet(__instance, out var cylinders))
+            if (!EngineCylinders.Works(__instance) || !EngineCylinders.TryGet(__instance, out var cylinders))
                 return;
             // The pressure acting on the pistons, after the cocks' and a crack's leaks, as the stock works it out.
             var gauge = Mathf.Max(0f, ___admissionPressure - 1f);

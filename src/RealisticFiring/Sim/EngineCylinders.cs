@@ -20,6 +20,9 @@ namespace RealisticFiring.Sim
 
         public static bool Enabled => Main.Settings != null && Main.Settings.RealisticCylinders;
 
+        /// <summary>Whether the model works <paramref name="engine"/>: the setting is on and its loco is not left stock.</summary>
+        public static bool Works(ReciprocatingSteamEngine engine) => Enabled && engine != null && !LeftStock.Kept(engine);
+
         public SteamCylinders Model { get; }
 
         /// <summary>This tick's indicator diagram at the pressure acting on the pistons.</summary>
@@ -40,7 +43,7 @@ namespace RealisticFiring.Sim
             cylinders = null;
             var flow = car != null && car.SimController != null ? car.SimController.SimulationFlow : null;
             engine = flow != null ? flow.OrderedSimComps.OfType<ReciprocatingSteamEngine>().FirstOrDefault() : null;
-            return engine != null && Enabled && TryGet(engine, out cylinders);
+            return Works(engine) && TryGet(engine, out cylinders);
         }
 
         // The game's steam table, as its steam chest uses it: L/kg from absolute bar, and back.

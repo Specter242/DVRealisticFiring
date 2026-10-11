@@ -63,11 +63,6 @@ namespace RealisticFiring.Sim
             ["LocoS282A"] = 4.6f,
             // USRA 0-6-0: "No. 11 non-lifting Nathan injector" (RME Nov 1918). The game's is 5.
             ["LocoS060"] = 4.6f,
-            // B&O C-16 0-4-0T, 19 by 24 in.: Baldwin gave 19-inch engines No.
-            // 8s (Kneass 1910, Table IX, p.129), 2,710 gal/h at 200 psi as a
-            // Hancock lifter (manual p.25); inferred, no description found.
-            // The game's is 5.
-            ["S040F"] = 2.85f,
             // NYC J-3a: no injector given (RME May 1938); the NYC fitted
             // Nathan non-lifters beside its feedwater heaters (L-3, RME Jan
             // 1941), about 10,000 gal/h (inferred). The game's is 36.

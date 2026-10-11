@@ -1224,6 +1224,11 @@ namespace RealisticFiring.AdapterCheck
                 Check(realFull.Flow < 6.6f && realFull.Chest < 13f,
                     $"in full gear at speed the throttle's flow limits them through the steam chest ({realFull.Flow:F2} kg/s, chest {realFull.Chest:F1} bar)");
 
+                // A loco left stock (the C-16) keeps the game's own cylinders with the setting on.
+                var keptQuarter = RunEngine(gameParams, true, Notch(0.25f), 180f, leftStock: true);
+                Check(Math.Abs(keptQuarter.Torque - stockQuarter.Torque) < 0.01f * Math.Abs(stockQuarter.Torque) + 1f,
+                    $"a loco left stock keeps the game's cylinders ({keptQuarter.Torque:F0} against the stock {stockQuarter.Torque:F0} N·m)");
+
                 var slow = RunEngine(gameParams, true, Notch(0.5f), 40f);
                 var fast = RunEngine(gameParams, true, Notch(0.5f), 70f);
                 Check(Math.Abs(slow.Torque - fast.Torque) < 0.15f * fast.Torque,
@@ -1246,7 +1251,7 @@ namespace RealisticFiring.AdapterCheck
 
         // The S282's engine at a steady crank speed and full throttle on 14 bar
         // of saturated steam for 20 s; its torque averaged over the last 4 s.
-        private static EngineRun RunEngine(SimGameParams gameParams, bool realistic, float reverser, float rpm)
+        private static EngineRun RunEngine(SimGameParams gameParams, bool realistic, float reverser, float rpm, bool leftStock = false)
         {
             RealisticFiring.Main.Settings.RealisticCylinders = realistic;
             var def = new ReciprocatingSteamEngineDefinition
@@ -1262,6 +1267,8 @@ namespace RealisticFiring.AdapterCheck
             };
             var engine = new ReciprocatingSteamEngine(def);
             engine.SetGameParams(gameParams);
+            if (leftStock)
+                LeftStock.Keep(engine);
             void Wire(PortReferenceDefinition reference, PortValueType type, float value) =>
                 engine.GetAllPortReferences().Single(r => r.id == $"{def.ID}.{reference.ID}")
                     .SetPortReference(new Port(reference.ID.ToLowerInvariant(), new PortDefinition(PortType.READONLY_OUT, type, "OUT"), value));
