@@ -14,11 +14,18 @@ namespace RealisticFiring.Sim
         private const byte Water = 3;
         private const byte Booster = 4;
         private const byte Oil = 5;
+        private const byte InjectorCircuits = 6;
 
-        /// <summary>Every car with something of the mod's to mirror.</summary>
+        /// <summary>
+        /// Every car with something of the mod's to mirror: each part that
+        /// captures a section, so a loco with only boiler water or a booster
+        /// (the fireboxes or injectors turned off) is not missed.
+        /// </summary>
         public static IEnumerable<TrainCar> Cars() =>
             FireboxRegistry.All.Select(f => f.Car)
                 .Concat(InjectorRig.All.Select(r => r.Car))
+                .Concat(BoilerWaterRig.All.Select(w => w.Car))
+                .Concat(RealisticBooster.All.Select(b => b.Car))
                 .Concat(RealisticOilFirebox.All.Select(o => o.Car))
                 .Where(car => car != null)
                 .Distinct();
@@ -67,6 +74,7 @@ namespace RealisticFiring.Sim
                         w.Write(firebox.StokerEngineSpeed);
                     });
                 if (rig != null)
+                {
                     Section(writer, Injector, w =>
                     {
                         Codec<InjectorFlow>.Write(w, rig.Flow);
@@ -75,6 +83,17 @@ namespace RealisticFiring.Sim
                         w.Write(rig.HandPumping || rig.RemoteHandPumping);
                         w.Write(rig.FillRate);
                     });
+                    if (rig.Circuits.Count > 1)
+                        Section(writer, InjectorCircuits, w =>
+                        {
+                            w.Write((byte)rig.Circuits.Count);
+                            foreach (var circuit in rig.Circuits)
+                            {
+                                w.Write(circuit.Control.id);
+                                Codec<InjectorFlow>.Write(w, circuit.Flow);
+                            }
+                        });
+                }
                 if (water != null)
                     Section(writer, Water, w =>
                     {
@@ -106,23 +125,33 @@ namespace RealisticFiring.Sim
         {
             if (data == null)
                 return;
-            using (var reader = new BinaryReader(new MemoryStream(data)))
+            const int header = 3;
+            var at = 0;
+            while (at < data.Length)
             {
-                while (reader.BaseStream.Position < reader.BaseStream.Length)
+                if (data.Length - at < header)
                 {
-                    var tag = reader.ReadByte();
-                    var length = reader.ReadUInt16();
-                    var end = reader.BaseStream.Position + length;
-                    try
-                    {
-                        ApplySection(tag, reader, firebox, rig, water, booster, oil);
-                    }
-                    catch (Exception e) when (e is EndOfStreamException || e is IOException)
-                    {
-                        Main.Mod?.Logger.Warning($"{carName}: the host's state section {tag} did not read");
-                    }
-                    reader.BaseStream.Position = end;
+                    Main.Mod?.Logger.Warning($"{carName}: the host's state ends in a broken section header");
+                    return;
                 }
+                var tag = data[at];
+                var length = data[at + 1] | data[at + 2] << 8;
+                at += header;
+                if (length > data.Length - at)
+                {
+                    Main.Mod?.Logger.Warning($"{carName}: the host's state section {tag} runs past the end");
+                    return;
+                }
+                try
+                {
+                    using (var reader = new BinaryReader(new MemoryStream(data, at, length, writable: false)))
+                        ApplySection(tag, reader, firebox, rig, water, booster, oil);
+                }
+                catch (Exception e) when (e is EndOfStreamException || e is IOException || e is InvalidDataException)
+                {
+                    Main.Mod?.Logger.Warning($"{carName}: the host's state section {tag} did not read");
+                }
+                at += length;
             }
         }
 
@@ -131,46 +160,86 @@ namespace RealisticFiring.Sim
         {
             switch (tag)
             {
+                // Each section is read whole before any of it is shown.
                 case Firebox when firebox != null:
                 {
                     var fireOn = r.ReadBoolean();
                     var zones = new float[GrateLayout.ZoneCount * 4];
                     for (var i = 0; i < zones.Length; i++)
-                        zones[i] = r.ReadSingle();
-                    var ashpan = r.ReadSingle();
+                        zones[i] = Finite(r);
+                    var ashpan = Finite(r);
+                    var stoker = r.ReadBoolean() ? Codec<StokerFlow>.Read(r) : (StokerFlow?)null;
+                    var speed = Finite(r);
                     firebox.Model.MirrorZones(fireOn, zones);
                     firebox.Model.RestoreAshpan(ashpan);
-                    firebox.LastStoker = r.ReadBoolean() ? Codec<StokerFlow>.Read(r) : (StokerFlow?)null;
-                    firebox.StokerEngineSpeed = r.ReadSingle();
+                    firebox.LastStoker = stoker;
+                    firebox.StokerEngineSpeed = speed;
                     break;
                 }
                 case Injector when rig != null:
-                    rig.Flow = Codec<InjectorFlow>.Read(r);
-                    rig.PumpFlow = Codec<FeedPumpFlow>.Read(r);
-                    rig.HydrantFilling = r.ReadBoolean();
-                    rig.HandPumping = r.ReadBoolean();
-                    rig.FillRate = r.ReadSingle();
+                {
+                    var flow = Codec<InjectorFlow>.Read(r);
+                    var pump = Codec<FeedPumpFlow>.Read(r);
+                    var hydrant = r.ReadBoolean();
+                    var pumping = r.ReadBoolean();
+                    var fill = Finite(r);
+                    rig.Flow = flow;
+                    rig.PumpFlow = pump;
+                    rig.HydrantFilling = hydrant;
+                    rig.HandPumping = pumping;
+                    rig.FillRate = fill;
                     break;
+                }
+                case InjectorCircuits when rig != null:
+                {
+                    var count = r.ReadByte();
+                    var flows = new List<(InjectorCircuit, InjectorFlow)>();
+                    for (var i = 0; i < count; i++)
+                        flows.Add((rig.CircuitFor(r.ReadString()), Codec<InjectorFlow>.Read(r)));
+                    foreach (var (circuit, flow) in flows)
+                        if (circuit != null)
+                            circuit.Flow = flow;
+                    break;
+                }
                 case Water when water != null:
                 {
-                    water.PlugVent = r.ReadSingle();
+                    var vent = Finite(r);
                     var melted = r.ReadBoolean();
                     var sounding = r.ReadBoolean();
+                    water.PlugVent = vent;
                     if (water.Plug != null && water.Plug.Melted != melted)
                         water.Plug.Restore(melted, water.Plug.CoreTemperature);
                     water.Alarm?.Mirror(sounding);
                     break;
                 }
                 case Booster when booster != null:
-                    booster.Flow = Codec<BoosterFlow>.Read(r);
-                    booster.Clashes = r.ReadInt32();
-                    booster.Model.MirrorWarmth(r.ReadSingle());
+                {
+                    var flow = Codec<BoosterFlow>.Read(r);
+                    var clashes = r.ReadInt32();
+                    var warmth = Finite(r);
+                    booster.Flow = flow;
+                    booster.Clashes = clashes;
+                    booster.Model.MirrorWarmth(warmth);
                     break;
+                }
                 case Oil when oil != null:
-                    oil.Model.Mirror(Codec<OilFireState>.Read(r));
-                    oil.MirrorFlarebackSmoke(r.ReadSingle());
+                {
+                    var state = Codec<OilFireState>.Read(r);
+                    var smoke = Finite(r);
+                    oil.Model.Mirror(state);
+                    oil.MirrorFlarebackSmoke(smoke);
                     break;
+                }
             }
+        }
+
+        // A number from the host that must be a number.
+        private static float Finite(BinaryReader r)
+        {
+            var value = r.ReadSingle();
+            if (float.IsNaN(value) || float.IsInfinity(value))
+                throw new InvalidDataException("not a finite number");
+            return value;
         }
 
         private static void Section(BinaryWriter writer, byte tag, Action<BinaryWriter> write)
@@ -212,6 +281,8 @@ namespace RealisticFiring.Sim
                         w.Write((int)v);
                     else if (type.IsEnum)
                         w.Write(Convert.ToInt32(v));
+                    else
+                        throw new InvalidOperationException($"{typeof(T).Name}.{field.Name} is a {type.Name}, which the codec does not carry");
                 }
             }
 
@@ -222,13 +293,20 @@ namespace RealisticFiring.Sim
                 {
                     var type = field.FieldType;
                     if (type == typeof(float))
-                        field.SetValue(boxed, r.ReadSingle());
+                        field.SetValue(boxed, Finite(r));
                     else if (type == typeof(bool))
                         field.SetValue(boxed, r.ReadBoolean());
                     else if (type == typeof(int))
                         field.SetValue(boxed, r.ReadInt32());
                     else if (type.IsEnum)
-                        field.SetValue(boxed, Enum.ToObject(type, r.ReadInt32()));
+                    {
+                        var raw = r.ReadInt32();
+                        if (!Enum.IsDefined(type, raw))
+                            throw new InvalidDataException($"no {type.Name} {raw}");
+                        field.SetValue(boxed, Enum.ToObject(type, raw));
+                    }
+                    else
+                        throw new InvalidDataException($"{typeof(T).Name}.{field.Name} is a {type.Name}, which the codec does not carry");
                 }
                 return (T)boxed;
             }

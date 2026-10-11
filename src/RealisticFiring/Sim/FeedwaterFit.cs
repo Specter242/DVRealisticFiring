@@ -15,11 +15,11 @@ namespace RealisticFiring.Sim
 
         internal sealed class Fit
         {
-            public Fit(FeedHeaterType type, string name, float capacityShare, bool onInjectorLever)
+            public Fit(FeedHeaterType type, string name, float capacity, bool onInjectorLever)
             {
                 Type = type;
                 Name = name;
-                CapacityShare = capacityShare;
+                Capacity = capacity;
                 OnInjectorLever = onInjectorLever;
             }
 
@@ -28,8 +28,8 @@ namespace RealisticFiring.Sim
             /// <summary>Its make and type, for the log and overlay.</summary>
             public string Name { get; }
 
-            /// <summary>Its capacity as a share of the loco's injector: a 9,000 gal/h 5-SA beside a 10,000 gal/h injector.</summary>
-            public float CapacityShare { get; }
+            /// <summary>Its pump's rated capacity, in kg/s (US gal/h × 3.785 / 3600).</summary>
+            public float Capacity { get; }
 
             /// <summary>
             /// The fireman's injector lever works the pump instead (a loco with
@@ -41,24 +41,25 @@ namespace RealisticFiring.Sim
 
         private static readonly Dictionary<string, Fit> Fits = new Dictionary<string, Fit>
         {
-            // NYC J-3a: "Elesco type K40 feedwater heater", a centrifugal
-            // turbine pump on the left, the injector on the right.
-            ["S464-730"] = new Fit(FeedHeaterType.Closed, "Elesco K40", 0.9f, onInjectorLever: true),
-            // UP 844 as preserved: a Worthington 5-SA from the early 1950s.
-            ["FEF-3"] = new Fit(FeedHeaterType.Open, "Worthington 5-SA", 0.9f, onInjectorLever: false),
-            // An FEF-3 on a made-up road ("Black Arrow"): a Worthington SA.
-            ["S484-840A"] = new Fit(FeedHeaterType.Open, "Worthington SA", 0.9f, onInjectorLever: false),
+            // NYC J-3a: "Elesco type K40 feedwater heater" (RME May 1938
+            // p.167), its pump on the left, the injector on the right.
+            ["S464-730"] = new Fit(FeedHeaterType.Closed, "Elesco K40", 8.4f, onInjectorLever: true),
+            // UP 844 as preserved: a Worthington 5-SA from 1953, replacing
+            // its exhaust steam injector.
+            ["FEF-3"] = new Fit(FeedHeaterType.Open, "Worthington 5-SA", 9.46f, onInjectorLever: false),
+            // An FEF-3 on a made-up road ("Black Arrow"): a Worthington SA, as the 844's.
+            ["S484-840A"] = new Fit(FeedHeaterType.Open, "Worthington SA", 9.46f, onInjectorLever: false),
             // Santa Fe 2900 class: "a Worthington Type 6-SA feed water heater"
             // (No. 2921). The cab has an injector handwheel each side; as on
             // the NYC, the fireman's works the pump and the engineman's the
             // injector.
-            ["A.T.&S.F. 2901-A"] = new Fit(FeedHeaterType.Open, "Worthington 6-SA", 0.9f, onInjectorLever: true),
+            ["A.T.&S.F. 2901-A"] = new Fit(FeedHeaterType.Open, "Worthington 6-SA", 12.6f, onInjectorLever: true),
         };
 
         public static bool TryGet(string liveryId, out Fit fit)
         {
             fit = null;
-            return Main.Settings.FitFeedPumps && liveryId != null && Fits.TryGetValue(liveryId, out fit);
+            return Main.Session.FitFeedPumps && liveryId != null && Fits.TryGetValue(liveryId, out fit);
         }
     }
 }

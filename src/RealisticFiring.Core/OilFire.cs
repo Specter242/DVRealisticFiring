@@ -344,13 +344,17 @@ namespace RealisticFiring.Core
         }
 
         /// <summary>Restores a saved fire.</summary>
-        public void Restore(bool fireOn, float brickTemperature, float oilTemperature, float flueSoot)
+        public void Restore(bool fireOn, float brickTemperature, float oilTemperature, float flueSoot,
+            float pooledOil = 0f, float vapor = 0f)
         {
             FireOn = fireOn;
             BrickTemperature = Clean(brickTemperature, ColdBrick);
             OilTemperature = Clean(oilTemperature, WarmOil);
             FlueSoot = Smoothing.Clamp01(flueSoot);
-            Vapor = PooledOil = 0f;
+            // The oil pooled in the pan and its vapor are saved too, so a
+            // reload keeps the flareback they make (audit 2026-10-10).
+            PooledOil = Math.Max(0f, Clean(pooledOil, 0f));
+            Vapor = Math.Max(0f, Clean(vapor, 0f));
             burning = 0f;
         }
 
@@ -402,8 +406,15 @@ namespace RealisticFiring.Core
             var sputter = hot > 0f ? 1f + 0.35f * hot * (float)Math.Sin(clock * 7.3) * (float)Math.Sin(clock * 2.9) : 1f;
             var asked = Smoothing.Clamp01(inputs.FiringValve) * MaxFeed;
             var target = asked * flow * sputter;
-            target = Math.Min(target, Math.Max(0f, inputs.TenderFuel) / dt);
+            // The tender holds only so much for this tick, at the stock
+            // steam-raising speedup that burns it faster: no more runs to the
+            // burner, however the feed was settling (audit 2026-10-10: an
+            // emptied tender kept burning on the settled feed).
+            var speedup = inputs.StartupMultiplier > 0f ? inputs.StartupMultiplier : 1f;
+            var available = Math.Max(0f, inputs.TenderFuel) / (speedup * dt);
+            target = Math.Min(target, available);
             FeedRate = Smoothing.SmoothApproach(FeedRate, Math.Max(0f, target), ref responseVelocity, ResponseTime, dt);
+            FeedRate = Math.Min(FeedRate, available);
             if (FeedRate < 1e-5f)
                 FeedRate = 0f;
             var oil = FeedRate;
@@ -422,10 +433,13 @@ namespace RealisticFiring.Core
             var air = Math.Max(0f, inputs.AirFlow) + 4f * Smoothing.Clamp01(inputs.DoorOpening) * Math.Max(0.2f, inputs.AirFlow);
             ExcessAir = oil > 0f ? air / (oil * FireModel.StoichiometricAirPerCoal) : 0f;
 
+            // Drowned, it goes out and nothing lights it while the water lies
+            // there (audit 2026-10-10: hot brick relit it the same tick).
             var drowned = inputs.IntakeWater > 0.5f;
             if (drowned)
                 FireOn = false;
-            Light(oil);
+            else
+                Light(oil);
             Torch = Math.Max(0f, Torch - dt);
             BlowOut(oil, drowned);
 
@@ -465,7 +479,6 @@ namespace RealisticFiring.Core
 
             // The heat: the stock heat for the oil burned, less what too much
             // air, over-atomizing, an open door, and sooted flues take away.
-            var speedup = inputs.StartupMultiplier > 0f ? inputs.StartupMultiplier : 1f;
             var efficiency = Smoothing.Lerp(1f, parameters.EfficiencyAtMaxCombustion, burning / parameters.MaxCombustionRate);
             var excessLoss = Math.Min(MaxExcessAirLoss, ExcessAirLoss * Math.Max(0f, ExcessAir - WastefulExcessAir));
             var gross = burning * FireboxParameters.CoalHeatContent * efficiency * (1f - excessLoss);

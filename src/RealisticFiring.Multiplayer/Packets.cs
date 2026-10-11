@@ -74,10 +74,17 @@ namespace RealisticFiring.Multiplayer
                 writer.Write(Data);
         }
 
+        /// <summary>The most a snapshot carries, in bytes; a loco's is a few hundred.</summary>
+        public const int MaxData = 16 * 1024;
+
         public void Deserialize(BinaryReader reader)
         {
             Car = reader.ReadUInt16();
-            Data = reader.ReadBytes(reader.ReadInt32());
+            // A length out of range, or fewer bytes than it claims, is
+            // dropped whole rather than read on into what follows.
+            var length = reader.ReadInt32();
+            var data = length >= 0 && length <= MaxData ? reader.ReadBytes(length) : null;
+            Data = data != null && data.Length == length ? data : new byte[0];
         }
     }
 

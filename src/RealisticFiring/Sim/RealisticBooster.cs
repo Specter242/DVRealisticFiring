@@ -86,6 +86,9 @@ namespace RealisticFiring.Sim
 
         public Booster Model { get; }
 
+        /// <summary>The loco it is fitted to.</summary>
+        public TrainCar Car => car;
+
         /// <summary>What it did on the last tick.</summary>
         public BoosterFlow Flow { get; internal set; }
 

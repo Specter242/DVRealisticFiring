@@ -28,12 +28,12 @@ namespace RealisticFiring
         private const float ShakeCooldown = 1.5f;
 
         private readonly FireOverlay overlay = new FireOverlay();
+        private readonly FiremanPanel firemanPanel = new FiremanPanel();
         private float lastShakeTime = float.NegativeInfinity;
         private float lastStatusTime;
         private GUIStyle aimLabel;
         private string notice;
         private float noticeTime = float.NegativeInfinity;
-        private float hydrantCheckTime;
 
         private static FireController instance;
 
@@ -103,8 +103,27 @@ namespace RealisticFiring
                     ? "Fusible plug melted: steam is blowing into the firebox"
                     : "No fusible plug on this loco");
             }
+            if (settings.RenewBoilerNow)
+            {
+                settings.RenewBoilerNow = false;
+                Notify(Net.IsClient ? "Only the host can renew the boiler"
+                    : BoilerWaterRig.TryGetTended(PlayerManager.Car, out var renewed) && renewed.Renew("renewed from the settings")
+                        ? "Boiler renewed with a new fusible plug: relight the fire"
+                        : "No boiler on this loco to renew");
+            }
             if (settings.ToggleOverlayKey.Down())
                 settings.ShowOverlay = !settings.ShowOverlay;
+
+            var withFireman = FiremanRig.TryGetTended(PlayerManager.Car, out _);
+            if (settings.FiremanKey.Down())
+            {
+                if (withFireman)
+                    firemanPanel.Toggle();
+                else
+                    Notify("No fireman here: board a coal-fired steam loco");
+            }
+            if (!withFireman)
+                firemanPanel.SetOpen(false);
 
             if (settings.ShakeGrateKey.Down() && TimeUtil.IsFlowing
                 && FireboxRegistry.TryGetTended(PlayerManager.Car, out var firebox)
@@ -120,6 +139,8 @@ namespace RealisticFiring
 
             if (InjectorRig.TryGetTended(PlayerManager.Car, out var rig))
                 UpdateFilling(rig, settings);
+            else
+                LetGoOfPump(null);
             if (RealisticOilFirebox.TryGetTended(PlayerManager.Car, out var oil))
                 UpdateSteamLine(oil, settings);
         }
@@ -164,60 +185,63 @@ namespace RealisticFiring
             return "Steam line on: the shed's steam at 100 psi for the atomizer and oil heater";
         }
 
-        // The hand pump works while its key is held; the hydrant hose toggles,
-        // and stops itself once the glass is full, the boiler has pressure, or
-        // the train has left the water point.
+        // The hand pump works while its key is held, on the loco being tended:
+        // leaving it, or turning to another, lets go (audit 2026-10-10). The
+        // hydrant hose toggles; the rig itself stops it once the glass is
+        // full, the boiler has pressure, or the train has left the water point.
         private void UpdateFilling(InjectorRig rig, Settings settings)
         {
+            var pumping = settings.HandPumpKey.Pressed() && TimeUtil.IsFlowing;
             if (Net.IsClient)
             {
-                UpdateFillingRemotely(rig, settings);
+                PumpRemotely(pumping ? rig.Car : null);
+                if (settings.HydrantKey.Down())
+                    Net.TrySend(rig.Car, FireAction.Hydrant);
                 return;
             }
-            var pumping = settings.HandPumpKey.Pressed() && TimeUtil.IsFlowing;
+            LetGoOfPump(rig);
             if (pumping && !rig.HandPumping && !rig.CanHandPump)
                 Notify($"The hand pump cannot force water in above {InjectorRig.HandPumpMaxPressure:F0} bar");
             rig.HandPumping = pumping;
+            pumpedRig = pumping ? rig : null;
 
             if (settings.HydrantKey.Down())
-            {
                 Notify(ToggleHydrant(rig));
-                hydrantCheckTime = Time.time;
-            }
+            if (rig.TakeHoseStopped() is string reason)
+                Notify("Hydrant hose off: " + reason);
+        }
 
-            if (rig.HydrantFilling)
+        private InjectorRig pumpedRig;
+        private TrainCar remotePumpCar;
+
+        // Lets go of the hand pump on any loco but this one.
+        private void LetGoOfPump(InjectorRig keep)
+        {
+            if (Net.IsClient)
             {
-                if (!rig.CanHydrantFill)
-                {
-                    rig.HydrantFilling = false;
-                    Notify(rig.BoilerPressure > InjectorRig.HydrantMaxPressure ? "Hydrant hose off: the boiler has pressure" : "Hydrant hose off: the boiler is full");
-                }
-                else if (Time.time - hydrantCheckTime >= HydrantCheckInterval)
-                {
-                    hydrantCheckTime = Time.time;
-                    if (!WaterPoints.Serves(rig.Car))
-                    {
-                        rig.HydrantFilling = false;
-                        Notify("Hydrant hose off: the train left the water point");
-                    }
-                }
+                if (keep == null)
+                    PumpRemotely(null);
+                return;
+            }
+            if (pumpedRig != null && pumpedRig != keep)
+            {
+                pumpedRig.HandPumping = false;
+                pumpedRig = null;
             }
         }
 
-        private bool remotePumping;
-
-        // On a multiplayer client the host fills the boiler: the hand pump and
-        // hose go to it as requests, and it answers with a notice.
-        private void UpdateFillingRemotely(InjectorRig rig, Settings settings)
+        // On a multiplayer client the host fills the boiler: the hand pump goes
+        // to it as a request for the loco pumped, and stops there, wherever the
+        // player has gone since.
+        private void PumpRemotely(TrainCar car)
         {
-            var pumping = settings.HandPumpKey.Pressed() && TimeUtil.IsFlowing;
-            if (pumping != remotePumping)
-            {
-                remotePumping = pumping;
-                Net.TrySend(rig.Car, pumping ? FireAction.HandPumpOn : FireAction.HandPumpOff);
-            }
-            if (settings.HydrantKey.Down())
-                Net.TrySend(rig.Car, FireAction.Hydrant);
+            if (car == remotePumpCar)
+                return;
+            if (remotePumpCar != null)
+                Net.TrySend(remotePumpCar, FireAction.HandPumpOff);
+            if (car != null)
+                Net.TrySend(car, FireAction.HandPumpOn);
+            remotePumpCar = car;
         }
 
         /// <summary>
@@ -266,7 +290,10 @@ namespace RealisticFiring
                 if (RealisticOilFirebox.TryGetTended(PlayerManager.Car, out var oil))
                     Main.Mod.Logger.Log($"{oil.Car.ID} oil status: fire {(oil.Model.FireOn ? "on" : "out")}; {DescribeOil(oil)}" +
                                         (InjectorRig.TryGetTended(PlayerManager.Car, out var oilRig) ? $"; {Describe(oilRig)}" : "") +
-                                        (DescribeCylinders(oil.Car) is string oilCylinders ? $"; {oilCylinders}" : ""));
+                                        (DescribeCylinders(oil.Car) is string oilCylinders ? $"; {oilCylinders}" : "") +
+                                        (FiremanRig.TryGet(oil.Car, out var oilFireman) && oilFireman.Fireman.Mode != FiremanMode.Off
+                                            ? $"; fireman {oilFireman.Fireman.Mode}: {string.Join("; ", FiremanPanel.Describe(oilFireman))}, trim {oilFireman.Fireman.Trim:F2}"
+                                            : ""));
                 return;
             }
 
@@ -283,7 +310,10 @@ namespace RealisticFiring
                 (DescribeStoker(firebox) is string stoker ? $"; {stoker}" : "") +
                 (InjectorRig.TryGetTended(PlayerManager.Car, out var rig) ? $"; {Describe(rig)}" : "") +
                 (DescribeBooster(firebox.Car) is string booster ? $"; {booster}" : "") +
-                (DescribeCylinders(firebox.Car) is string cylinders ? $"; {cylinders}" : ""));
+                (DescribeCylinders(firebox.Car) is string cylinders ? $"; {cylinders}" : "") +
+                (FiremanRig.TryGet(firebox.Car, out var fireman) && fireman.Fireman.Mode != FiremanMode.Off
+                    ? $"; fireman {fireman.Fireman.Mode}: {string.Join("; ", FiremanPanel.Describe(fireman))}, trim {fireman.Fireman.Trim:F2}"
+                    : ""));
         }
 
         private const float PsiPerBar = 14.5038f;
@@ -353,8 +383,8 @@ namespace RealisticFiring
         /// <summary>The injector and boiler filling, for the status log and overlay.</summary>
         internal static string Describe(InjectorRig rig)
         {
-            var flow = rig.Flow;
-            var injector = DescribeInjector(flow);
+            var injector = string.Join("; ", rig.Circuits.Select(c =>
+                (string.IsNullOrEmpty(c.Name) ? "" : c.Name + " ") + DescribeInjector(c, rig.BoilerPressure)));
             var filling = rig.HydrantFilling ? $", hydrant {rig.FillRate:F1} kg/s" : rig.HandPumping ? $", hand pump {rig.FillRate:F1} kg/s" : "";
             var pump = rig.Pump != null ? $"; {Visuals.FeedPumpCab.Hover(rig)}" : "";
             var water = BoilerWaterRig.TryGet(rig.Car, out var waterRig) ? $"; {DescribeWater(waterRig)}" : "";
@@ -375,14 +405,26 @@ namespace RealisticFiring
             return quality + guard;
         }
 
-        private static string DescribeInjector(InjectorFlow flow)
+        // Working spills this much or more, in kg/s, before it is worth saying.
+        private const float WorkingSpill = 0.05f;
+
+        private static string DescribeInjector(InjectorCircuit circuit, float pressure)
         {
+            var flow = circuit.Flow;
             var spill = $"spilling {flow.Overflow:F1} kg/s water, {flow.OverflowSteam:F1} kg/s steam";
             var heat = $"{flow.InjectorTemperature:F0} C, takes below {flow.RestartLimit:F0} C";
             switch (flow.State)
             {
                 case InjectorState.Working:
-                    return $"injector working, {flow.WaterIn:F1} kg/s at {flow.FeedTemperature:F0} C, steam {flow.SteamUsed:F2} kg/s";
+                {
+                    var working = $"injector working, {flow.WaterIn:F1} kg/s at {flow.FeedTemperature:F0} C, steam {flow.SteamUsed:F2} kg/s";
+                    if (flow.Overflow < WorkingSpill)
+                        return working;
+                    var least = circuit.Injector.Spec.LeastShare(pressure);
+                    return circuit.Control.Value < least
+                        ? $"{working}, {spill}: turned down too far, open it past {least:P0} to feed without waste"
+                        : $"{working}, {spill}: the boiler is full";
+                }
                 case InjectorState.Priming:
                     return $"injector priming, {spill}";
                 case InjectorState.Hot:
@@ -409,6 +451,8 @@ namespace RealisticFiring
         {
             if (notice != null && Time.time - noticeTime <= NoticeTime)
                 DrawLabel(notice, NoticeOffset, new Color(1f, 0.85f, 0.5f));
+            if (FiremanRig.TryGetTended(PlayerManager.Car, out var fireman))
+                firemanPanel.Draw(fireman);
             if (!FireboxRegistry.TryGetTended(PlayerManager.Car, out var firebox))
             {
                 if (Main.Settings.ShowOverlay && RealisticOilFirebox.TryGetTended(PlayerManager.Car, out var oil))

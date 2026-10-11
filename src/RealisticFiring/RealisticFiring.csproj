@@ -19,8 +19,13 @@
     <Reference Include="0Harmony" HintPath="$(DvModManagerDir)/0Harmony.dll" Private="false" />
     <Reference Include="UnityModManager" HintPath="$(DvModManagerDir)/UnityModManager.dll" Private="false" />
     <Reference Include="Assembly-CSharp" HintPath="$(DvManagedDir)/Assembly-CSharp.dll" Private="false" />
+    <Reference Include="DV.BrakeSystem" HintPath="$(DvManagedDir)/DV.BrakeSystem.dll" Private="false" />
     <Reference Include="DV.CabControls.Spec" HintPath="$(DvManagedDir)/DV.CabControls.Spec.dll" Private="false" />
     <Reference Include="DV.Interaction" HintPath="$(DvManagedDir)/DV.Interaction.dll" Private="false" />
+    <Reference Include="DV.NAudio" HintPath="$(DvManagedDir)/DV.NAudio.dll" Private="false" />
+    <Reference Include="DV.PointSet" HintPath="$(DvManagedDir)/DV.PointSet.dll" Private="false" />
+    <Reference Include="DV.RailTrack" HintPath="$(DvManagedDir)/DV.RailTrack.dll" Private="false" />
+    <Reference Include="net.smkd.vector3d" HintPath="$(DvManagedDir)/net.smkd.vector3d.dll" Private="false" />
     <Reference Include="DV.Simulation" HintPath="$(DvManagedDir)/DV.Simulation.dll" Private="false" />
     <Reference Include="DV.ThingTypes" HintPath="$(DvManagedDir)/DV.ThingTypes.dll" Private="false" />
     <Reference Include="DV.Utils" HintPath="$(DvManagedDir)/DV.Utils.dll" Private="false" />

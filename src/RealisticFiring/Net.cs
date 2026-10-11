@@ -23,6 +23,8 @@ namespace RealisticFiring
         Sand,
         Shovelful,
         SteamLine,
+        FiremanMode,
+        FiremanCall,
     }
 
     /// <summary>Something the host's fire did that players near the loco should see and hear.</summary>

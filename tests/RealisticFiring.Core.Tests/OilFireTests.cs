@@ -352,4 +352,81 @@ namespace RealisticFiring.Core.Tests;
         Assert.Equal(fire.Snapshot(), mirror.Snapshot());
         Assert.True(mirror.FireOn && mirror.SootDensity > 0f);
     }
+
+
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(25f)]
+    public void AnEmptyTenderBurnsNothingWhateverTheFeedWasDoing(float speedup)
+    {
+        var fire = Burning();
+        Run(fire, Inputs(1f), 60f);
+        var empty = Inputs(1f);
+        empty.TenderFuel = 0f;
+        empty.StartupMultiplier = speedup;
+        var drawn = fire.Step(Dt, empty);
+        Assert.Equal(0f, drawn);
+        Assert.Equal(0f, fire.Heat);
+    }
+
+    [Theory]
+    [InlineData(1f, 0.02f)]
+    [InlineData(25f, 0.02f)]
+    [InlineData(25f, 0.1f)]
+    public void ItNeverDrawsMoreThanTheTenderHolds(float speedup, float dt)
+    {
+        var fire = Burning();
+        Run(fire, Inputs(1f), 60f);
+        var low = Inputs(1f);
+        low.TenderFuel = 0.01f;
+        low.StartupMultiplier = speedup;
+        var drawn = fire.Step(dt, low);
+        Assert.InRange(drawn, 0f, 0.01f + 1e-6f);
+        Assert.True(float.IsFinite(fire.Heat) && fire.Heat >= 0f);
+    }
+
+    [Fact]
+    public void ADrownedFireStaysOutUntilTheWaterClears()
+    {
+        var fire = Burning();
+        Run(fire, Inputs(1f), 60f);
+        var flooded = Inputs(1f);
+        flooded.IntakeWater = 1f;
+        // The brick is hot enough to relight oil, and the oil still runs.
+        Assert.True(fire.BrickTemperature > OilFire.BrickRelights);
+        for (var i = 0; i < 50; i++)
+        {
+            fire.Step(Dt, flooded);
+            Assert.False(fire.FireOn);
+            Assert.Equal(0f, fire.Heat);
+        }
+
+        // Cleared, the hot brick lights the oil again.
+        Run(fire, Inputs(1f), 2f);
+        Assert.True(fire.FireOn);
+    }
+
+    [Fact]
+    public void PooledOilAndVaporSurviveARestoreAndStillFlareBack()
+    {
+        var fire = new OilFire(Gs4);
+        fire.Restore(false, OilFire.ColdBrick, OilFire.WarmOil, 0f, pooledOil: 3f, vapor: 1f);
+        Assert.Equal(3f, fire.PooledOil);
+        Assert.Equal(1f, fire.Vapor);
+
+        // Lit with waste, what gathered goes up at once.
+        fire.Ignite();
+        fire.Step(Dt, Inputs(0.2f));
+        Assert.True(fire.Flareback > 0f);
+    }
+
+    [Fact]
+    public void ARestoreRejectsNonsense()
+    {
+        var fire = new OilFire(Gs4);
+        fire.Restore(false, float.NaN, float.PositiveInfinity, 0f, pooledOil: -2f, vapor: float.NaN);
+        Assert.Equal(0f, fire.PooledOil);
+        Assert.Equal(0f, fire.Vapor);
+        Assert.True(float.IsFinite(fire.BrickTemperature) && float.IsFinite(fire.OilTemperature));
+    }
 }

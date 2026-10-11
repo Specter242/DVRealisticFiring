@@ -248,7 +248,7 @@ namespace RealisticFiring.Visuals
             plume.totalFlow = total;
             plume.exhaustSim = flow.OrderedSimComps.OfType<SteamExhaust>().FirstOrDefault(c => c.id == exhaust.ID);
             plume.boilerBroken = broken;
-            var custom = Main.Settings.CustomSmokeEffects && PlumeAssets.Prefab != null && plume.UseCustomEffect(systems);
+            var custom = Main.Session.CustomSmokeEffects && PlumeAssets.Prefab != null && plume.UseCustomEffect(systems);
             if (!custom)
             {
                 // The largest stock system carries the plume; a second one, if any, the sooty core.

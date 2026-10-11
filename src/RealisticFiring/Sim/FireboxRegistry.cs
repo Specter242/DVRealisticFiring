@@ -10,13 +10,16 @@ namespace RealisticFiring.Sim
     internal static class FireboxRegistry
     {
         /// <summary>
-        /// Liveries whose firebox the mod replaces: the stock coal locos, and
-        /// custom (CCL) locos under test for phase 2.
+        /// Liveries whose coal firebox the mod replaces: the stock coal locos
+        /// and the custom (CCL) locos with compatible controls and interiors.
         /// </summary>
         public static readonly IReadOnlyCollection<string> SupportedLiveries = new HashSet<string>
         {
             "LocoS282A",
             "LocoS060",
+            // Lilla and Cruzer's hand-fired JK3 (Nexus 1334, 1.0.1), read
+            // from its release bundle 2026-10-10. Jk3B is its tender.
+            "Jk3A",
             // LittleNiko36's NYC Dreyfuss Hudson (Nexus 1688; measured
             // 2026-10-08) and 4-8-4 (Nexus 1494), a UP FEF-3 in a made-up
             // road's livery ("Black Arrow", per its bundle).

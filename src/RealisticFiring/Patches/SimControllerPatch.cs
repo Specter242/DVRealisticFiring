@@ -60,6 +60,9 @@ namespace RealisticFiring.Patches
                 __instance.simFlow.TryGetPort(OilBurnerFit.ShopSteam.PortId, out var shopSteam, canBeNullOrEmpty: true);
                 __instance.simFlow.TryGetPort(OilBurnerFit.PeepHolePortId, out var peepHole, canBeNullOrEmpty: true);
                 oil.AttachPorts(door, atomizer, heater, shopSteam, peepHole);
+                var oilFireman = FiremanRig.AttachOil(trainCar, __instance, oil);
+                if (oilFireman != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {oilFireman}");
             }
 
             if (!FireboxRegistry.TryGet(trainCar, out var firebox) || __instance.simFlow == null)
@@ -80,6 +83,10 @@ namespace RealisticFiring.Patches
                 Visuals.AshpanLever.Attach(trainCar, firebox, ashpanPort);
             }
             Visuals.AshpanGlow.Attach(trainCar, firebox);
+
+            var fireman = FiremanRig.Attach(trainCar, __instance, firebox);
+            if (fireman != null && Main.Settings.LogFireboxCreation)
+                Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {fireman}");
         }
     }
 }

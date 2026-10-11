@@ -62,18 +62,25 @@ namespace RealisticFiring.Multiplayer
             return api != null && api.IsConnected && !api.IsHost;
         }
 
-        /// <summary>The settings that shape a loco's sim and controls, and the shovelful, which a client works out itself.</summary>
+        /// <summary>
+        /// The settings that shape a loco's sim, controls, and fittings, as
+        /// this session was built with them (a change waits for a restart),
+        /// and the cylinders and shovelful, which a client works out itself.
+        /// </summary>
         internal static string Shape()
         {
             var settings = Main.Settings;
+            var session = Main.Session;
             return string.Join(";", new[]
             {
-                $"realistic fireboxes {Main.ReplacementEnabled}",
-                $"realistic injectors {Main.RealisticInjectorsEnabled}",
-                $"S282 stoker {settings.RetrofitS282Stoker}",
-                $"boosters {settings.FitBoosters}",
-                $"feed pumps {settings.FitFeedPumps}",
-                $"oil burners {settings.RealisticOilBurners}",
+                $"realistic fireboxes {session.RealisticFireboxes}",
+                $"realistic injectors {session.RealisticInjectors}",
+                $"fusible plugs {session.FusiblePlugs}",
+                $"S282 stoker {session.RetrofitS282Stoker}",
+                $"stoker jams {session.StokerJams}",
+                $"boosters {session.FitBoosters}",
+                $"feed pumps {session.FitFeedPumps}",
+                $"oil burners {session.RealisticOilBurners}",
                 $"realistic cylinders {settings.RealisticCylinders}",
                 $"shovelful {settings.ShovelfulMass.ToString("F1", CultureInfo.InvariantCulture)} kg",
             });
@@ -214,7 +221,8 @@ namespace RealisticFiring.Multiplayer
             var api = MultiplayerAPI.Instance;
             if (sender == null || api == null || !api.TryGetObjectFromNetId(packet.Car, out TrainCar car) || car == null)
                 return;
-            if (!Near(sender, car))
+            // Letting go of the hand pump is always allowed, from anywhere.
+            if ((FireAction)packet.Action != FireAction.HandPumpOff && !Near(sender, car))
             {
                 mod.Logger.Warning($"{sender.DisplayName} tried to work {car.ID}'s fire from too far away");
                 return;
@@ -228,6 +236,9 @@ namespace RealisticFiring.Multiplayer
                 case FireAction.Shake:
                     firebox?.ShakeGrate();
                     break;
+                case FireAction.Wiggle:
+                    firebox?.ShakeGrate(ShakeStroke.Wiggle);
+                    break;
                 case FireAction.Rake when zone.HasValue:
                     firebox?.Rake(zone.Value);
                     break;
@@ -239,13 +250,18 @@ namespace RealisticFiring.Multiplayer
                     break;
                 case FireAction.HandPumpOn:
                 case FireAction.HandPumpOff:
-                    if (rig == null)
-                        break;
-                    rig.RemoteHandPumping = action == FireAction.HandPumpOn;
-                    if (rig.RemoteHandPumping)
-                        PumpingBy[sender.PlayerId] = rig;
-                    else
+                    // A player pumps one boiler at a time: any other they were
+                    // pumping is let go, and only their own hand comes off.
+                    if (PumpingBy.TryGetValue(sender.PlayerId, out var pumped) && (pumped != rig || action == FireAction.HandPumpOff))
+                    {
+                        pumped.RemotePump(sender.PlayerId, false);
                         PumpingBy.Remove(sender.PlayerId);
+                    }
+                    if (action == FireAction.HandPumpOn && rig != null)
+                    {
+                        rig.RemotePump(sender.PlayerId, true);
+                        PumpingBy[sender.PlayerId] = rig;
+                    }
                     break;
                 case FireAction.Hydrant:
                     if (rig != null)
@@ -257,6 +273,15 @@ namespace RealisticFiring.Multiplayer
                     break;
                 case FireAction.Shovelful:
                     firebox?.DeliverShovelful(Mathf.Clamp(packet.Value, 0f, MostCoal), zone);
+                    break;
+                case FireAction.FiremanMode when FiremanRig.TryGet(car, out var fireman)
+                                                 && Enum.IsDefined(typeof(FiremanMode), (int)packet.Value):
+                    fireman.SetMode((FiremanMode)(int)packet.Value);
+                    Tell(sender, $"Fireman: {(FiremanMode)(int)packet.Value}");
+                    break;
+                case FireAction.FiremanCall when FiremanRig.TryGet(car, out var called)
+                                                 && Enum.IsDefined(typeof(FiremanCall), (int)packet.Value):
+                    called.Fireman.Call = (FiremanCall)(int)packet.Value;
                     break;
                 case FireAction.Sand:
                     if (RealisticOilFirebox.TryGet(car, out var oil))
@@ -304,7 +329,7 @@ namespace RealisticFiring.Multiplayer
         {
             if (player != null && PumpingBy.TryGetValue(player.PlayerId, out var rig))
             {
-                rig.RemoteHandPumping = false;
+                rig.RemotePump(player.PlayerId, false);
                 PumpingBy.Remove(player.PlayerId);
             }
         }

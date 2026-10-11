@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using DV.Damage;
 using DV.JObjectExtstensions;
 using HarmonyLib;
 using LocoSim.Implementations;
@@ -29,7 +30,7 @@ namespace RealisticFiring.Sim
 
         /// <summary>What players near the loco are told when its plug melts.</summary>
         public const string PlugMeltedNotice = "The fusible plug has melted: steam is blowing into the firebox and has put the fire out. " +
-                                               "Take the engine to a pit stop with water and wash out the boiler (hydrant, boiler cold) to renew it.";
+                                               "Take the engine to a pit stop and have it repaired, or wash out the boiler there (hydrant, boiler cold), to renew it.";
 
         private const string SolidsKey = "rfSolids";
         private const string SettledKey = "rfSludgeSettled";
@@ -38,6 +39,13 @@ namespace RealisticFiring.Sim
 
         // A melted plug's jet holds the crown sheet this far below failing.
         private const float PlugHoldsCrownBelow = 0.9f;
+
+        private const float RepairedHealth = 0.95f;
+        private const float RepairRise = 1e-4f;
+        private const int RepairWatchFrom = 50;
+
+        private static readonly System.Reflection.FieldInfo SpawnPressure = AccessTools.Field(typeof(Boiler), "spawnPressure");
+        private static readonly System.Reflection.FieldInfo SpawnWaterMass = AccessTools.Field(typeof(Boiler), "spawnWaterMass");
 
         private static readonly AccessTools.FieldRef<Boiler, WaterPressureVessel> Vessel =
             AccessTools.FieldRefAccess<Boiler, WaterPressureVessel>("vessel");
@@ -70,6 +78,10 @@ namespace RealisticFiring.Sim
         private float blown;
         private float pendingVent;
         private bool wasOn;
+        private DamageController damage;
+        private float bodyHealth = float.NaN;
+        private float engineHealth = float.NaN;
+        private int ticks;
 
         private BoilerWaterRig(TrainCar car, Boiler boiler, ReciprocatingSteamEngine engine, Guard guard)
         {
@@ -113,6 +125,22 @@ namespace RealisticFiring.Sim
         public float BlowdownRate => MaxBlowdownRate(boiler);
 
         /// <summary>
+        /// Water from the crown sheet to the steam outlet, in kg: what the
+        /// glass spans, as the boiler's fireman knows it.
+        /// </summary>
+        public float GlassMass
+        {
+            get
+            {
+                var vessel = Vessel(boiler);
+                if (vessel == null || vessel.waterVolume <= 0f)
+                    return 0f;
+                var span = Mathf.Max(0f, boiler.steamOutletNormalizedWaterLevel - CrownSheetLevel(boiler));
+                return TotalVolume(boiler) * span * vessel.mass / vessel.waterVolume;
+            }
+        }
+
+        /// <summary>
         /// Sets up the water of each boiler on <paramref name="car"/>. Returns a
         /// line for the log, or null when the car has no boiler.
         /// </summary>
@@ -126,7 +154,7 @@ namespace RealisticFiring.Sim
             var guard = livery != null && Guards.TryGetValue(livery, out var fitted) ? fitted : Guard.None;
             // A plug needs a firebox it can drown, and the hydrant hose that
             // washes the boiler out to renew it.
-            if (guard == Guard.FusiblePlug && (!Main.Settings.FusiblePlugs || !FireboxRegistry.TryGet(car, out _) || !InjectorRig.TryGet(car, out _)))
+            if (guard == Guard.FusiblePlug && (!Main.Session.FusiblePlugs || !FireboxRegistry.TryGet(car, out _) || !InjectorRig.TryGet(car, out _)))
                 guard = Guard.None;
 
             PruneDestroyedCars();
@@ -215,6 +243,7 @@ namespace RealisticFiring.Sim
         /// <summary>Start of the boiler's tick: notices a boiler the game reset, and the water before the feed.</summary>
         public void BeginTick()
         {
+            WatchRepairs();
             var vessel = Vessel(boiler);
             if (vessel != knownVessel)
             {
@@ -222,6 +251,49 @@ namespace RealisticFiring.Sim
                 Washout();
             }
             massAtTick = vessel != null ? vessel.mass : 0f;
+        }
+
+        // A pit stop's repair of the body or engine renews a melted plug as
+        // the game renews a burst boiler: a new boiler at its spawn pressure
+        // and water, which the tick then finds and washes out, fresh water
+        // and a new plug.
+        private void WatchRepairs()
+        {
+            if (Plug == null || Car == null)
+                return;
+            if (damage == null && (damage = Car.GetComponent<DamageController>()) == null)
+                return;
+            NoteHealth(damage.bodyDamage != null ? damage.bodyDamage.HealthPercentage : 1f,
+                damage.mechanicalPT != null ? damage.mechanicalPT.HealthPercentage : 1f);
+        }
+
+        /// <summary>The body's and the engine's health this tick, 0 to 1; a repair with the plug melted renews the boiler.</summary>
+        internal void NoteHealth(float body, float engine)
+        {
+            var repaired = ticks >= RepairWatchFrom
+                           && (body > bodyHealth + RepairRise && body > RepairedHealth
+                               || engine > engineHealth + RepairRise && engine > RepairedHealth);
+            ticks++;
+            bodyHealth = body;
+            engineHealth = engine;
+            if (repaired && Plug != null && Plug.Melted)
+                Renew($"repaired at {body:P0} body, {engine:P0} engine");
+        }
+
+        /// <summary>
+        /// Renews the boiler as the game renews a burst one: a new vessel at
+        /// its spawn pressure and water, which the next tick washes out, fresh
+        /// water and a new plug. Returns false where the game's boiler cannot be read.
+        /// </summary>
+        public bool Renew(string why)
+        {
+            if (SpawnPressure == null || SpawnWaterMass == null)
+                return false;
+            var vessel = new WaterPressureVessel(TotalVolume(boiler), (float)SpawnPressure.GetValue(boiler), (float)SpawnWaterMass.GetValue(boiler));
+            Vessel(boiler) = vessel;
+            CrownSheetTemperature(boiler) = vessel.waterTemp;
+            Log($"{why}: the boiler renewed" + (Plug != null ? " with a new fusible plug" : ""));
+            return true;
         }
 
         /// <summary>After the injector step: what the injectors, pump, hose, or hand pump put in.</summary>

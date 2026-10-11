@@ -13,7 +13,7 @@ namespace RealisticFiring.Core.Tests;
     // Fires to hold the coal a steady rate needs, shaking on an interval (0
     // never); returns the hours
     // until the worst zone's clinker chokes it, or null within the limit.
-    private static float? HoursToChoke(float kgPerHour, float shakeEvery, float hours, FireTuning tuning = null)
+    private static float? HoursToChoke(float kgPerHour, float shakeEvery, float hours, FireTuning? tuning = null)
     {
         var fire = Fire(kgPerHour, tuning, out var inputs, out var target);
         var shake = shakeEvery;
@@ -33,7 +33,7 @@ namespace RealisticFiring.Core.Tests;
         return null;
     }
 
-    private static FireModel Fire(float kgPerHour, FireTuning tuning, out FireInputs inputs, out float target)
+    private static FireModel Fire(float kgPerHour, FireTuning? tuning, out FireInputs inputs, out float target)
     {
         var rate = kgPerHour / 3600f;
         target = rate * S282.BurnTime;

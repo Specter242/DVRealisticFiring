@@ -39,6 +39,11 @@ namespace RealisticFiring.Visuals
         // instead of leaving a trough where the stock pile's edges slope down.
         private const float Overlap = 1.3f;
 
+        // A stock pile shallower than this, in m, is flat (a quad, as on the
+        // 844, or the S282's 2.5 cm pile): it gets the nominal depth at an
+        // even share of coal, and a sliding one hides well under the grate.
+        private const float FlatPile = 0.05f;
+
         // A stock pile with no depth (a flat quad, as on the 844) gets this
         // much at an even share of coal, in m.
         private const float NominalDepth = 0.25f;
@@ -127,7 +132,7 @@ namespace RealisticFiring.Visuals
         private float[] lumps;
         private float[] glowJitter;
         private MaterialPropertyBlock properties;
-        private readonly MaterialPropertyBlock emberProperties = new MaterialPropertyBlock();
+        private MaterialPropertyBlock emberProperties;
 
         private RealisticFirebox firebox;
         private Renderer stockCoal;
@@ -149,9 +154,16 @@ namespace RealisticFiring.Visuals
         {
             var scaler = fire.GetComponentsInChildren<IndicatorScaler>(true)
                 .FirstOrDefault(s => s.indicatorToScale != null && s.indicatorToScale.GetComponentInChildren<MeshRenderer>(true) != null);
-            if (scaler == null)
-                return "no scaled coal pile under the fire; keeping the stock coal";
-            var pivot = scaler.indicatorToScale;
+            // The JK3 raises a fixed-size pile with a slider alone. Scaled
+            // piles may also slide; either layout supplies an empty place
+            // and a full-size mesh for the bed.
+            var sliders = fire.GetComponentsInChildren<IndicatorSlider>(true);
+            var slider = scaler != null
+                ? sliders.FirstOrDefault(s => s.pointer == scaler.indicatorToScale)
+                : sliders.FirstOrDefault(s => s.pointer != null && s.pointer.GetComponentInChildren<MeshRenderer>(true) != null);
+            var pivot = scaler != null ? scaler.indicatorToScale : slider?.pointer;
+            if (pivot == null)
+                return "no scaled or sliding coal pile under the fire; keeping the stock coal";
             var coal = pivot.GetComponentInChildren<MeshRenderer>(true);
             var filter = coal.GetComponent<MeshFilter>();
             if (filter == null || filter.sharedMesh == null)
@@ -164,9 +176,9 @@ namespace RealisticFiring.Visuals
             // On some locos (the S060, the S282) the stock pile also slides up
             // as coal goes in; the bed shows the coal itself, so it stands
             // where the pile is when the box is empty.
-            var slider = fire.GetComponentsInChildren<IndicatorSlider>(true).FirstOrDefault(s => s.pointer == pivot);
             var bed = fire.gameObject.AddComponent<ZonedCoalBed>();
-            var kind = bed.Build(firebox, scaler, coal, filter.sharedMesh, slider);
+            var scale = scaler != null ? scaler.endScale : pivot.localScale;
+            var kind = bed.Build(firebox, pivot, scale, coal, filter.sharedMesh, slider);
             // The pile lies on the grate, so its tilt is the grate's slope; a
             // moving loco shakes coal down it.
             var slope = Mathf.Asin(Mathf.Clamp(forward.y, -1f, 1f)) * Mathf.Rad2Deg;
@@ -185,12 +197,12 @@ namespace RealisticFiring.Visuals
                    (bed.floorLift > 0f ? $", raised {bed.floorLift * 100f:F0} cm {bed.liftReason}" : "");
         }
 
-        private string Build(RealisticFirebox owner, IndicatorScaler scaler, Renderer coal, Mesh stockMesh, IndicatorSlider slider)
+        private string Build(RealisticFirebox owner, Transform coalPivot, Vector3 scale, Renderer coal, Mesh stockMesh, IndicatorSlider slider)
         {
             firebox = owner;
             stockCoal = coal;
-            pivot = scaler.indicatorToScale;
-            fullScale = scaler.endScale;
+            pivot = coalPivot;
+            fullScale = scale;
             rest = slider != null ? slider.startPosition : pivot.localPosition;
             zoneShare = owner.Model.Parameters.MaxCoalCapacity / GrateLayout.ZoneCount;
 
@@ -206,14 +218,35 @@ namespace RealisticFiring.Visuals
                 bed.Encapsulate(pivot.InverseTransformPoint(coal.transform.TransformPoint(corner)));
             }
             var depth = bed.size.y * Mathf.Abs(fullScale.y);
-            // The empty pile lies under the grate, its top at the grate: the
-            // bed stands on that, or on a floor laid over it where there is one.
+            var flat = depth < FlatPile;
+            // The bed stands on a floor laid over the empty pile where there
+            // is one (the S060). With none, a sliding pile of real depth lies
+            // empty under the grate with its top at it (the JK3's, 14 cm
+            // deep), so the bed stands on that top; a flat one (the S282's,
+            // 2.5 cm) hides well under the grate when empty, 0.3 m there, so
+            // the bed stands where the full pile stands, as the cab shows a
+            // full firebox.
             var onFloor = FloorLift();
-            var onTop = slider != null ? Mathf.Max(0f, depth - FloorSink) : 0f;
-            floorLift = Mathf.Max(onFloor, onTop);
-            liftReason = onFloor >= onTop ? "onto the floor over it" : "to the empty pile's top";
-            rest += pivot.localRotation * new Vector3(0f, floorLift, 0f);
-            if (depth < 0.05f && Mathf.Abs(fullScale.y) > 1e-4f)
+            var up = pivot.localRotation * Vector3.up;
+            if (onFloor > 0f)
+            {
+                floorLift = onFloor;
+                liftReason = "onto the floor over it";
+                rest += up * onFloor;
+            }
+            else if (slider != null && flat)
+            {
+                floorLift = Vector3.Dot(slider.endPosition - slider.startPosition, up);
+                liftReason = "to where the full flat pile stands";
+                rest = slider.endPosition;
+            }
+            else if (slider != null)
+            {
+                floorLift = Mathf.Max(0f, depth - FloorSink);
+                liftReason = "to the empty pile's top";
+                rest += up * floorLift;
+            }
+            if (flat && Mathf.Abs(fullScale.y) > 1e-4f)
                 bed.max = new Vector3(bed.max.x, bed.min.y + NominalDepth / Mathf.Abs(fullScale.y), bed.max.z);
             owner.SetGrateArea(Mathf.Max(MinGrateArea, Mathf.Abs(bed.size.x * fullScale.x * bed.size.z * fullScale.z)));
 
@@ -334,6 +367,7 @@ namespace RealisticFiring.Visuals
                 emberFilter.sharedMesh = emberMesh;
             }
             properties = new MaterialPropertyBlock();
+            emberProperties = new MaterialPropertyBlock();
             return true;
         }
 

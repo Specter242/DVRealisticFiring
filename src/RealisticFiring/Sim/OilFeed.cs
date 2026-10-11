@@ -61,6 +61,9 @@ namespace RealisticFiring.Sim
         /// <summary>The cab control's port the firing valve is, once the graph is connected; null before.</summary>
         public string ControlPortId => control.IsConnected ? ReferencedPort(control)?.id : null;
 
+        /// <summary>The firing valve's cab port, for the fireman's hand.</summary>
+        internal Port ControlPort => control.IsConnected ? ReferencedPort(control) : null;
+
         /// <summary>The firing valve, 0 shut to 1 wide open.</summary>
         public float FiringValve => Mathf.Clamp01(control.Value);
 

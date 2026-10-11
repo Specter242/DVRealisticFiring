@@ -24,6 +24,7 @@ namespace RealisticFiring.Sim
         private const string BrickSaveKey = "rfBrick";
         private const string OilTemperatureSaveKey = "rfOilTemp";
         private const string FlueSootSaveKey = "rfFlueSoot";
+        private const string VaporSaveKey = "rfVapor";
 
         private const float StartupMultiplierBase = 25f;
 
@@ -334,7 +335,18 @@ namespace RealisticFiring.Sim
             // The firepan holds no fuel bed; oil pooled in it is what lies there.
             coalLevelReadOut.Value = Model.PooledOil;
             coalLevelNormalizedReadOut.Value = Model.PooledOil / Model.Parameters.MaxCoalCapacity;
+            Fireman?.Step(delta);
         }
+
+        /// <summary>The automatic fireman on this loco, once its cab is set up.</summary>
+        internal FiremanRig Fireman { get; set; }
+
+        /// <summary>The fireman's mode in the save, for a fireman not yet set up when it loaded.</summary>
+        internal FiremanMode SavedFiremanMode { get; private set; }
+
+        /// <summary>The atomizer's and oil heater's cab ports, for the fireman's hands.</summary>
+        internal Port AtomizerPort => atomizerPort;
+        internal Port HeaterPort => heaterPort;
 
         /// <summary>Readies the fire as the game's start-up does: lit, the brick hot, the oil warm.</summary>
         public void PrepareFire()
@@ -380,19 +392,31 @@ namespace RealisticFiring.Sim
             data.SetFloat(BrickSaveKey, Model.BrickTemperature);
             data.SetFloat(OilTemperatureSaveKey, Model.OilTemperature);
             data.SetFloat(FlueSootSaveKey, Model.FlueSoot);
+            if (Model.Vapor > 0f)
+                data.SetFloat(VaporSaveKey, Model.Vapor);
+            var mode = Fireman != null ? Fireman.Fireman.Mode : SavedFiremanMode;
+            if (mode != FiremanMode.Off)
+                data[RealisticFirebox.FiremanSaveKey] = (int)mode;
             return data;
         }
 
         public override void SetSaveStateData(JObject savedData)
         {
             var fireOn = savedData.GetBool(RealisticFirebox.FireOnSaveKey) == true;
+            // The stock coal-mass key carries the pooled oil; with the vapor,
+            // it keeps the flareback a reload would otherwise clear.
             Model.Restore(fireOn,
                 savedData.GetFloat(BrickSaveKey) ?? (fireOn ? OilFire.HotBrick : OilFire.ColdBrick),
                 savedData.GetFloat(OilTemperatureSaveKey) ?? OilFire.WarmOil,
-                savedData.GetFloat(FlueSootSaveKey) ?? 0f);
+                savedData.GetFloat(FlueSootSaveKey) ?? 0f,
+                savedData.GetFloat(RealisticFirebox.CoalMassSaveKey) ?? 0f,
+                savedData.GetFloat(VaporSaveKey) ?? 0f);
             var envDamage = savedData.GetFloat(RealisticFirebox.CoalEnvDamageSaveKey);
             if (envDamage.HasValue)
                 coalEnvDamage.Value = envDamage.Value;
+            var saved = savedData[RealisticFirebox.FiremanSaveKey]?.Type == JTokenType.Integer ? (int)savedData[RealisticFirebox.FiremanSaveKey] : 0;
+            SavedFiremanMode = System.Enum.IsDefined(typeof(FiremanMode), saved) ? (FiremanMode)saved : FiremanMode.Off;
+            Fireman?.SetMode(SavedFiremanMode);
             restored = true;
             fireOnReadOut.Value = Model.FireOn ? 1f : 0f;
         }

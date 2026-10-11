@@ -74,6 +74,9 @@ namespace RealisticFiring.Core
 
         public FireboxParameters Parameters => parameters;
 
+        /// <summary>A zone's reference bed, in kg: what its ash, clinker, and coal are weighed against.</summary>
+        public float ReferenceZoneMass => referenceZoneMass;
+
         private GrateCharacter character = GrateCharacter.Typical;
 
         /// <summary>This firebox's own character: its draft pattern, how it burns its smoke, and its road's coal.</summary>

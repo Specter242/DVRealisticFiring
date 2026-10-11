@@ -34,7 +34,7 @@ namespace RealisticFiring.Sim
         /// <summary>Whether <paramref name="car"/> fires its firebox with fuel oil through a CCL stoker.</summary>
         public static bool IsOilBurner(TrainCar car)
         {
-            if (car == null || !Main.Settings.RealisticOilBurners)
+            if (car == null || !Main.Session.RealisticOilBurners)
                 return false;
             if (Known.TryGetValue(car, out var known))
                 return known;

@@ -18,7 +18,8 @@ namespace RealisticFiring.Visuals
     /// plate on the injector lever's side, spilling out and down from under
     /// the cab. A loco with an injector lever on each side (the Hudson's work
     /// the same injector) gets one under each, and the one under the lever
-    /// last moved spills.
+    /// last moved spills. Independent injectors such as JK3's each spill
+    /// according to their own jet, whatever the other lever is doing.
     /// </summary>
     internal sealed class InjectorOverflow : MonoBehaviour
     {
@@ -46,6 +47,7 @@ namespace RealisticFiring.Visuals
         private const string SteamClipName = "SteamRelease_01";
 
         private InjectorRig rig;
+        private InjectorCircuit circuit;
         private Transform leverTransform;
         private ControlImplBase lever;
         private float side;
@@ -70,7 +72,7 @@ namespace RealisticFiring.Visuals
             // Every lever working the injector, one a side; else the one the
             // game's controls reader names.
             var levers = roots.SelectMany(r => r.GetComponentsInChildren<InteractablePortFeeder>(true))
-                .Where(f => f.portId == rig.LeverPortId)
+                .Where(f => rig.CircuitFor(f.portId) != null)
                 .Select(f => f.transform)
                 .ToList();
             if (levers.Count == 0)
@@ -130,6 +132,9 @@ namespace RealisticFiring.Visuals
             }
             overflow.leverTransform = lever;
             overflow.lever = null;
+            overflow.rig = rig;
+            overflow.circuit = rig.CircuitFor(lever != null ? lever.GetComponent<InteractablePortFeeder>()?.portId : null)
+                ?? rig.Circuits[0];
             var outboard = Mathf.Max(Mathf.Abs(leverLocal.x) + OutboardOfLever, MinOutboard);
             var position = new Vector3(side * outboard, deckHeight - BelowDeck, leverLocal.z);
             overflow.transform.localPosition = position;
@@ -242,11 +247,11 @@ namespace RealisticFiring.Visuals
         {
             if (rig == null)
                 return;
-            var flow = rig.Flow;
-            var full = rig.Injector.Spec.MaxDelivery;
+            var flow = circuit.Flow;
+            var full = circuit.Injector.Spec.MaxDelivery;
             var spilling = Spilling();
             if (spilling && !wasSpilling && group.Length > 1 && Main.Settings.LogCoalDeliveries)
-                Main.Mod.Logger.Log($"{rig.Car?.ID}: injector overflow spills on the {(side < 0f ? "left" : "right")} (valve {rig.LeverValue:F2}; " +
+                Main.Mod.Logger.Log($"{rig.Car?.ID}: injector overflow spills on the {(side < 0f ? "left" : "right")} (valve {circuit.Control.Value:F2}; " +
                                     string.Join(", ", group.Where(o => o != null).Select(o => $"{(o.side < 0f ? "left" : "right")} lever " +
                                         (o.Lever() != null ? o.Lever().Value.ToString("F2") : "not spawned"))) + ")");
             wasSpilling = spilling;
@@ -262,7 +267,7 @@ namespace RealisticFiring.Visuals
         // (left) when they agree or the cab is not loaded.
         private bool Spilling()
         {
-            if (group.Length < 2)
+            if (rig.Circuits.Count > 1 || group.Length < 2)
                 return true;
             InjectorOverflow best = null;
             var bestGap = float.MaxValue;

@@ -6,7 +6,7 @@ namespace RealisticFiring
     public class Settings : UnityModManager.ModSettings, IDrawable
     {
         [Header("Fire model")]
-        [Draw("Replace the S282 and S060 fireboxes (restart required)")]
+        [Draw("Replace supported coal fireboxes, including the S282, S060, and JK3 (restart required)")]
         public bool ReplaceStockFireboxes = true;
 
         [Draw("Realistic injectors on every steam loco (restart required)")]
@@ -24,7 +24,7 @@ namespace RealisticFiring
         [Draw("Fusible plugs where the prototypes had them (the Hudson has a low-water alarm): a bared crown sheet melts the plug, which drowns the fire instead of the boiler failing (needs a restart)")]
         public bool FusiblePlugs = true;
 
-        [Draw("Realistic oil burners on oil-fired custom locos (the GS-4 \"Sunset\", Santa Fe 2901): firing valve, atomizer, oil heater, flarebacks, flue sanding (needs a restart)")]
+        [Draw("Realistic oil burner on the Santa Fe 2901: firing valve, atomizer, oil heater, flarebacks, flue sanding (needs a restart)")]
         public bool RealisticOilBurners = true;
 
         [Draw("Realistic cylinders on every steam loco: valve events from the gear (lead, release, compression), clearance and cushion, steam through the opening port, and the blast pipe's back pressure")]
@@ -33,7 +33,7 @@ namespace RealisticFiring
         [Draw("Fit the NYC Hudson with its Franklin trailing-truck booster (needs a restart)")]
         public bool FitBoosters = true;
 
-        [Draw("Fit feedwater heaters and pumps where the prototypes had them: the Hudson, 844, and S484-840 (needs a restart)")]
+        [Draw("Fit feedwater heaters and pumps where the prototypes had them: the Hudson, 844, S484-840, and Santa Fe 2901 (needs a restart)")]
         public bool FitFeedPumps = true;
 
         [Draw("Coal's clinker tendency, × (1 typical coal, about two hours of hard work between cleanings; 0 never; raise it to see clinker sooner)", DrawType.Slider, Min = 0, Max = 20, Precision = 1)]
@@ -45,14 +45,14 @@ namespace RealisticFiring
         [Draw("Oil burner's roar and drumming, volume × (0 off)", DrawType.Slider, Min = 0, Max = 2, Precision = 1)]
         public float OilBurnerVolume = 1f;
 
-        [Draw("Realistic chimney smoke on the S282 and S060 (restart required)")]
+        [Draw("Realistic chimney smoke on locomotives with a realistic firebox (restart required)")]
         public bool RealisticSmoke = true;
 
         [Draw("Use the custom smoke effects when installed (restart required)")]
         public bool CustomSmokeEffects = true;
 
         [Header("Shovel")]
-        [Draw("Coal per standard shovelful on the S282 and S060, kg (0 = stock 36 kg)", Min = 0, Precision = 1)]
+        [Draw("Coal per standard shovelful on supported coal locomotives, kg (0 = the locomotive's stock shovel size)", Min = 0, Precision = 1)]
         public float ShovelfulMass = 3f;
 
         [Draw("Aim shovelfuls by where you point in the firebox door")]
@@ -78,7 +78,7 @@ namespace RealisticFiring
         public float SmokeJetLength = 3.5f;
 
         [Draw("Jet width while fast, share of the spread puff", DrawType.Slider, Min = 0.05, Max = 1, Precision = 2)]
-        public float SmokeJetWidth = 0.25f;
+        public float SmokeJetWidth = 0.5f;
 
         [Draw("Plume buoyancy, × (the stack's heat lifts the spread smoke, slowing with height but never stopping)", DrawType.Slider, Min = 0, Max = 3, Precision = 1)]
         public float SmokeBuoyancy = 1f;
@@ -99,7 +99,7 @@ namespace RealisticFiring
         public float SmokeWind = 1f;
 
         [Draw("Narrow-jet zone above the smoke emitter at most, m (smoke there stays thin and moves with the stack; it ends at the stack's lip where the mod finds it)", DrawType.Slider, Min = 0, Max = 3, Precision = 2)]
-        public float SmokeJetZone = 1.5f;
+        public float SmokeJetZone = 1f;
 
         [Draw("Particles per puff, ×", DrawType.Slider, Min = 0.2, Max = 4, Precision = 1)]
         public float SmokePuffParticles = 1f;
@@ -146,6 +146,12 @@ namespace RealisticFiring
 
         [Draw("Show fire overlay")]
         public bool ShowOverlay;
+
+        [Draw("Fireman's orders: show or hide his window (hold Alt to free the mouse and click it)")]
+        public KeyBinding FiremanKey = Bind(KeyCode.J, ctrl: true);
+
+        [Draw("Show what the fireman is doing at the top of the screen")]
+        public bool ShowFiremanStatus = true;
 
         [Draw("Show each grate zone's coal inside the firebox")]
         public bool ShowZonedCoalBed = true;
@@ -250,6 +256,9 @@ namespace RealisticFiring
 
         [Draw("Melt the fusible plug now, on the loco you're on (testing; unticks itself; a washout renews it)")]
         public bool MeltPlugNow;
+
+        [Draw("Renew the boiler and its fusible plug now, on the loco you're on, as a pit stop's repair does (recovery for an engine stranded with a melted plug; unticks itself)")]
+        public bool RenewBoilerNow;
 
         [Draw("Show the chimney smoke and cinders (untick to see what they cost the frame rate)")]
         public bool ShowChimneySmoke = true;

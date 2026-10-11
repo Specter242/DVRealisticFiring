@@ -78,13 +78,57 @@ public class InjectorTests
         Assert.True(priming.Overflow > 0f);
         Assert.Equal(0f, priming.OverflowSteam);
 
+        // Singing at the crack, below its least, it feeds but wastes at the
+        // overflow: water only, and well under the priming spill, so the
+        // overflow quiets as it picks up, the cue to open it.
         var working = Run(injector, At(12f, Crack), 1.5f);
         Assert.Equal(InjectorState.Working, working.State);
         Assert.True(working.WaterIn > 0f);
-        Assert.Equal(0f, working.Overflow);
+        Assert.True(working.Overflow > 0f);
+        Assert.True(working.Overflow < 0.6f * priming.Overflow, $"spills {working.Overflow:F2} kg/s singing against {priming.Overflow:F2} priming");
+        Assert.Equal(0f, working.OverflowSteam);
         Assert.True(working.SteamUsed > 0f);
 
-        Assert.Equal(InjectorState.Working, Run(injector, At(12f), 1f).State);
+        // Opened, it feeds clean.
+        var open = Run(injector, At(12f), 1f);
+        Assert.Equal(InjectorState.Working, open.State);
+        Assert.Equal(0f, open.Overflow);
+        Assert.Equal(0f, open.OverflowSteam);
+    }
+
+    [Fact]
+    public void ItTurnsDownToAboutTwoFifthsItsDeliveryLessAtHighPressure()
+    {
+        // Sellers' self-acting injectors under test: 37 % from 60 to 120 psi,
+        // 45 % at 200, 49 % at 225 (Kneass 1910; RME 1939).
+        var spec = new InjectorSpec(MaxDelivery, RatedPressure);
+        Assert.InRange(spec.LeastShare(6f), 0.36f, 0.38f);
+        Assert.InRange(spec.LeastShare(14.8f), 0.44f, 0.46f);
+        Assert.InRange(spec.LeastShare(16.5f), 0.48f, 0.50f);
+        Assert.True(spec.LeastShare(14f) > spec.LeastShare(10f));
+        spec.TechniqueAndHeat = false;
+        Assert.Equal(0f, spec.LeastShare(14f));
+    }
+
+    [Fact]
+    public void TurnedDownBelowItsLeastItHoldsTheJetButWastesAtTheOverflow()
+    {
+        var injector = NewInjector();
+        var full = Start(injector, 12f);
+        var least = injector.Spec.LeastShare(12f);
+
+        var atLeast = Run(injector, At(12f, least + 0.01f), 2f);
+        Assert.Equal(InjectorState.Working, atLeast.State);
+        Assert.Equal(0f, atLeast.Overflow);
+
+        var under = Run(injector, At(12f, 0.5f * least), 2f);
+        Assert.Equal(InjectorState.Working, under.State);
+        Assert.True(under.Overflow > 0f, "water wastes at the overflow");
+        Assert.Equal(0f, under.OverflowSteam);
+        // It feeds less than its least, and less than the lever's share of the full jet.
+        Assert.True(under.WaterIn < 0.5f * least * full.WaterIn);
+        // The feed is as warm as ever.
+        Assert.Equal(atLeast.FeedTemperature, under.FeedTemperature, 1);
     }
 
     [Fact]

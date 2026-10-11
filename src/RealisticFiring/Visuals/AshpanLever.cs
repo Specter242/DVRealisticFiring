@@ -52,6 +52,7 @@ namespace RealisticFiring.Visuals
             ["LocoS282A"] = new Vector3(-0.61f, 0.99f, 1.66f),
             ["LocoS060"] = new Vector3(-0.73f, 1.11f, -2.26f),
             ["FEF-3"] = new Vector3(-1.35f, 1.33f, -7.26f),
+            ["Jk3A"] = new Vector3(-0.86f, 1.01f, -0.87f),
         };
 
         private static readonly HashSet<AshpanLever> Levers = new HashSet<AshpanLever>();

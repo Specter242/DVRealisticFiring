@@ -50,7 +50,7 @@ namespace RealisticFiring.Visuals
         /// <summary>Builds the controls in a newly loaded cab. Returns a line for the log, or null.</summary>
         public static string Attach(TrainCar car, Transform interior)
         {
-            if (car == null || interior == null || interior.Find(RootName) != null || !Main.Settings.FitBoosters
+            if (car == null || interior == null || interior.Find(RootName) != null || !Main.Session.FitBoosters
                 || !RealisticBooster.TryGet(car, out var booster))
                 return null;
             var flow = car.SimController != null ? car.SimController.SimulationFlow : null;

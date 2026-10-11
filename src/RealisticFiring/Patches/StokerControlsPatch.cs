@@ -51,7 +51,7 @@ namespace RealisticFiring.Patches
         // just ahead of the firebox. Returns whether it did.
         private static bool Retrofit(SimController controller, TrainCar car, SimConnectionDefinition graph)
         {
-            if (!Main.Settings.RetrofitS282Stoker || car.carLivery.id != RetrofitLivery)
+            if (!Main.Session.RetrofitS282Stoker || car.carLivery.id != RetrofitLivery)
                 return false;
             var firebox = graph.executionOrder.OfType<FireboxDefinition>().FirstOrDefault();
             var boiler = graph.executionOrder.OfType<BoilerDefinition>().FirstOrDefault();

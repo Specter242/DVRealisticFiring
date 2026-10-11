@@ -102,6 +102,8 @@ namespace RealisticFiring.Core
         /// <summary>Share of the water it would lift that spills while it is not feeding.</summary>
         public float SpillShare { get; set; } = 0.6f;
 
+ public float LeastWaste { get; set; } = 0.3f;
+
         /// <summary>
         /// Whether starting technique and heat matter: it must be cracked to
         /// prime before it is opened, and a hot injector will not take hold.
@@ -115,6 +117,41 @@ namespace RealisticFiring.Core
         /// before the jet takes hold, the jet breaks.
         /// </summary>
         public float CrackOpening { get; set; } = 0.2f;
+
+        // The least it delivers steadily, as a share of its most at that
+        // pressure (absolute bar): William Sellers & Co.'s self-acting
+        // injectors under test, 37 % from 60 to 120 psi rising to 45 % at
+        // 200 and 49 % at 225 (Kneass, Practice and Theory of the Injector,
+        // 1910, p.150; Railway Mechanical Engineer, April 1939, p.154). The
+        // range narrows at high pressure (Kneass p.153).
+        private static readonly (float Pressure, float Share)[] LeastShares =
+        {
+            (3.1f, 0.40f), (5.2f, 0.37f), (9.4f, 0.366f), (11.4f, 0.39f),
+            (13.1f, 0.42f), (14.8f, 0.45f), (16.5f, 0.49f),
+        };
+
+        /// <summary>
+        /// The least lever it delivers at steadily once it sings, at
+        /// <paramref name="pressure"/> absolute bar: turned down further, it
+        /// wastes at the overflow. 0 without <see cref="TechniqueAndHeat"/>.
+        /// </summary>
+        public float LeastShare(float pressure)
+        {
+            if (!TechniqueAndHeat)
+                return 0f;
+            if (pressure <= LeastShares[0].Pressure)
+                return LeastShares[0].Share;
+            for (var i = 1; i < LeastShares.Length; i++)
+            {
+                if (pressure <= LeastShares[i].Pressure)
+                {
+                    var (p0, s0) = LeastShares[i - 1];
+                    var (p1, s1) = LeastShares[i];
+                    return s0 + (s1 - s0) * (pressure - p0) / (p1 - p0);
+                }
+            }
+            return LeastShares[LeastShares.Length - 1].Share;
+        }
 
         /// <summary>
         /// The hottest the injector can be and still take hold, in °C, with no
@@ -264,12 +301,15 @@ namespace RealisticFiring.Core
             // The tender limits the water it can lift.
             var lifted = Math.Min(full - steamFlow, Math.Max(0f, inputs.TenderWater) / dt);
 
-            var flow = Flow(dt, inputs, steam, pressure, steamFlow, lifted);
+            var flow = Flow(dt, inputs, steam, pressure, steamFlow, lifted, lever);
             HeatOrCool(inputs.TenderWaterTemperature, steam.SaturationTemperature(pressure), dt);
             flow.InjectorTemperature = Temperature;
             flow.RestartLimit = limit;
             return flow;
         }
+
+        /// <summary>What it feeds with the lever wide open at <paramref name="pressure"/>, in kg/s.</summary>
+        public float FullDelivery(float pressure) => spec.MaxDelivery * Capacity(pressure);
 
         /// <summary>
         /// The hottest it can be and take hold, in °C: a part-open lever
@@ -321,7 +361,7 @@ namespace RealisticFiring.Core
             return InjectorState.Working;
         }
 
-        private InjectorFlow Flow(float dt, InjectorInputs inputs, ISteamProperties steam, float pressure, float steamFlow, float lifted)
+        private InjectorFlow Flow(float dt, InjectorInputs inputs, ISteamProperties steam, float pressure, float steamFlow, float lifted, float lever)
         {
             var spill = spec.SpillShare * lifted;
             switch (State)
@@ -331,11 +371,21 @@ namespace RealisticFiring.Core
                     // Short of tender water, it condenses steam in proportion.
                     var steamShare = 1f / (1f + spec.WaterPerSteam);
                     var condensed = Math.Min(steamFlow, lifted * steamShare / (1f - steamShare));
+                    // Turned down below its least it holds the jet but wastes:
+                    // a restarting injector "can be reduced below the actual
+                    // minimum capacity ... without breaking the jet", with waste
+                    // at the overflow (Kneass p.154, p.145). Part of the jet goes
+                    // out there as warm water, more the further it is turned
+                    // down; steam from the overflow is a broken jet's or a hot
+                    // injector's, not a singing one's.
+                    var least = spec.LeastShare(pressure);
+                    var wasted = least > 0f && lever < least ? spec.LeastWaste * (least - lever) / least : 0f;
                     // What the boiler cannot take goes out of the overflow, warm.
-                    var nominal = lifted + condensed;
+                    var nominal = (lifted + condensed) * (1f - wasted);
                     var delivered = Math.Min(nominal, Math.Max(0f, inputs.BoilerSpace) / dt);
-                    var enthalpy = nominal > 0f
-                        ? (condensed * steam.SteamEnthalpy(pressure) + lifted * steam.WaterEnthalpy(inputs.TenderWaterTemperature)) / nominal
+                    var mixed = lifted + condensed;
+                    var enthalpy = mixed > 0f
+                        ? (condensed * steam.SteamEnthalpy(pressure) + lifted * steam.WaterEnthalpy(inputs.TenderWaterTemperature)) / mixed
                         : steam.WaterEnthalpy(inputs.TenderWaterTemperature);
                     return new InjectorFlow
                     {
@@ -343,7 +393,7 @@ namespace RealisticFiring.Core
                         WaterIn = delivered,
                         SteamUsed = condensed,
                         TenderDraw = lifted,
-                        Overflow = nominal - delivered,
+                        Overflow = nominal - delivered + wasted * mixed,
                         FeedTemperature = steam.WaterTemperature(enthalpy),
                     };
                 }

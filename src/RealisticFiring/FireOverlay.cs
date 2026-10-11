@@ -20,6 +20,7 @@ namespace RealisticFiring
         private float shakeTime = float.NegativeInfinity;
         private float now;
         private GUIStyle cell;
+        private GUIStyle injectorDetails;
 
         public void NoteShake(float time) => shakeTime = time;
 
@@ -73,7 +74,16 @@ namespace RealisticFiring
                                 : "Last shovelful: none yet") +
                             (now - shakeTime < 3f ? "   grate shaken" : ""));
             if (InjectorRig.TryGetTended(shown.Car, out var rig))
-                GUILayout.Label(FireController.Describe(rig));
+            {
+                if (rig.Circuits.Count == 1)
+                    GUILayout.Label(FireController.Describe(rig));
+                else
+                {
+                    injectorDetails = injectorDetails ?? new GUIStyle(GUI.skin.label) { wordWrap = true };
+                    foreach (var line in FireController.Describe(rig).Split(';'))
+                        GUILayout.Label(line.Trim(), injectorDetails, GUILayout.MaxWidth(476f));
+                }
+            }
             if (FireController.DescribeStoker(shown) is string stoker)
                 GUILayout.Label(char.ToUpperInvariant(stoker[0]) + stoker.Substring(1));
             if (FireController.DescribeBooster(shown.Car) is string booster)

@@ -26,6 +26,7 @@ namespace RealisticFiring.Sim
         public const string CoalEnvDamageSaveKey = "coalEnvDmg";
         public const string ZonesSaveKey = "rfZones";
         public const string AshpanSaveKey = "rfAshpan";
+        public const string FiremanSaveKey = "rfFireman";
 
         private const float StartupMultiplierBase = 25f;
 
@@ -250,11 +251,11 @@ namespace RealisticFiring.Sim
         private float dropGrateCoalBefore;
         private float dropGrateAshBefore;
 
-        public void ShakeGrate()
+        public void ShakeGrate(ShakeStroke stroke = ShakeStroke.Shake)
         {
-            if (Net.TrySend(Car, FireAction.Shake))
+            if (Net.TrySend(Car, stroke == ShakeStroke.Shake ? FireAction.Shake : FireAction.Wiggle))
                 return;
-            Model.ShakeGrate();
+            Model.ShakeGrate(stroke);
         }
 
         /// <summary>Records where the player points a shovel in the door.</summary>
@@ -445,8 +446,15 @@ namespace RealisticFiring.Sim
             }
             var start = PerfMeter.Start();
             Step(delta);
+            Fireman?.Step(delta);
             PerfMeter.Stop(PerfSection.Firebox, start);
         }
+
+        /// <summary>The automatic fireman on this loco, once its cab is set up.</summary>
+        internal FiremanRig Fireman { get; set; }
+
+        /// <summary>The fireman's mode in the save, for a fireman not yet set up when it loaded.</summary>
+        internal FiremanMode SavedFiremanMode { get; private set; }
 
         private void Step(float delta)
         {
@@ -686,6 +694,9 @@ namespace RealisticFiring.Sim
             data[ZonesSaveKey] = new JArray(Model.SaveZones());
             if (Model.Ashpan > 0f)
                 data.SetFloat(AshpanSaveKey, Model.Ashpan);
+            var mode = Fireman != null ? Fireman.Fireman.Mode : SavedFiremanMode;
+            if (mode != FiremanMode.Off)
+                data[FiremanSaveKey] = (int)mode;
             return data;
         }
 
@@ -707,6 +718,10 @@ namespace RealisticFiring.Sim
             var envDamage = savedData.GetFloat(CoalEnvDamageSaveKey);
             if (envDamage.HasValue)
                 coalEnvDamage.Value = envDamage.Value;
+
+            var saved = savedData[FiremanSaveKey]?.Type == JTokenType.Integer ? (int)savedData[FiremanSaveKey] : 0;
+            SavedFiremanMode = Enum.IsDefined(typeof(FiremanMode), saved) ? (FiremanMode)saved : FiremanMode.Off;
+            Fireman?.SetMode(SavedFiremanMode);
 
             fireOnReadOut.Value = Model.FireOn ? 1f : 0f;
             UpdateCoalLevel();

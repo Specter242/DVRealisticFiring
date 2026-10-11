@@ -1,7 +1,9 @@
 using System.Linq;
+using DV.JObjectExtstensions;
 using DV.Simulation.Controllers;
 using LocoSim.Definitions;
 using LocoSim.Implementations;
+using Newtonsoft.Json.Linq;
 using RealisticFiring.Core;
 using RealisticFiring.Diagnostics;
 using UnityEngine;
@@ -112,6 +114,35 @@ namespace RealisticFiring.Sim
 
         /// <summary>The stoker model, once the first tick has found the firebox.</summary>
         internal Stoker Model => stoker;
+
+        private static readonly HarmonyLib.AccessTools.FieldRef<PortReference, Port> ReferencedPort =
+            HarmonyLib.AccessTools.FieldRefAccess<PortReference, Port>("port");
+
+        /// <summary>The stoker engine's throttle port, for the fireman's hand.</summary>
+        internal Port ThrottlePort => control.IsConnected ? ReferencedPort(control) : null;
+
+        // A jam is saved, so a reload or a recreated stoker does not clear it
+        // without the reversing that clears it (audit 2026-10-10). The stock
+        // and Custom Car Loader stokers save nothing, and ignore this.
+        public const string JammedSaveKey = "rfJammed";
+        private bool savedJam;
+
+        public override bool HasSaveData => true;
+
+        public override JObject GetSaveStateData()
+        {
+            var data = new JObject();
+            if (stoker != null ? stoker.Jammed : savedJam)
+                data.SetBool(JammedSaveKey, true);
+            return data;
+        }
+
+        public override void SetSaveStateData(JObject savedData)
+        {
+            savedJam = savedData != null && savedData.GetBool(JammedSaveKey) == true;
+            if (stoker != null && savedJam && !stoker.Jammed)
+                stoker.Jam();
+        }
 
         /// <summary>Where its coal goes: the zoned fire, or the coal port of a stock firebox.</summary>
         internal bool FeedsZonedFire => firebox != null;
@@ -287,11 +318,13 @@ namespace RealisticFiring.Sim
                 BackLaneShare = typical.BackLaneShare * (habits != null ? habits.StokerBackLanes : 1f),
                 LumpsLeftBias = habits != null ? habits.StokerLumpsLeft : 0f,
                 // Jams need the operating lever to clear them.
-                MeanCoalBetweenJams = Main.Settings.StokerJams && reversePort != null ? typical.MeanCoalBetweenJams : 0f,
+                MeanCoalBetweenJams = Main.Session.StokerJams && reversePort != null ? typical.MeanCoalBetweenJams : 0f,
                 MinWorkingPressure = MinWorkingPressure,
                 FullSpeedPressure = Mathf.Max(MinWorkingPressure + 0.1f, fullSpeedPressure),
                 EngineSmoothTime = Mathf.Max(0.1f, smoothTime),
             }, parameters);
+            if (savedJam)
+                stoker.Jam();
         }
     }
 }

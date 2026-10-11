@@ -80,8 +80,9 @@ namespace RealisticFiring.AdapterCheck
                 $"holding the dump lever over dumps the fire ({grate.Model.CoalDumped - dumpedBeforeHold:F1} kg dumped)");
 
             var save = mine.GetSaveStateData();
-            Check(save.Value<bool>("fireOn") && save["coalMass"] != null && save["coalEnvDmg"] != null && save["rfZones"] is JArray,
-                "save has the stock keys plus rfZones");
+            Check(save.Value<bool>("fireOn") && save["coalMass"] != null && save["coalEnvDmg"] != null && save["rfZones"] is JArray
+                  && save["rfFireman"] == null,
+                "save has the stock keys plus rfZones (and no fireman's mode while he is off)");
             var stockReader = new Firebox(def);
             stockReader.SetGameParams(gameParams);
             stockReader.SetSaveStateData(save);
@@ -147,6 +148,8 @@ namespace RealisticFiring.AdapterCheck
                 "a stoker's trickle feeds the fire as continuous feed, not as shovelfuls");
 
             CheckInjector(gameParams);
+            CheckJk3Injectors(gameParams);
+            CheckJk3Firebox(gameParams);
             CheckBoilerWater();
             CheckStoker(gameParams, def);
             CheckOilBurner(gameParams);
@@ -156,6 +159,7 @@ namespace RealisticFiring.AdapterCheck
 
             CheckControlSteps();
             CheckShovelLoads();
+            CheckFiremanHand();
             CheckPatchTargets();
             Console.WriteLine(failures == 0 ? "All adapter checks passed" : $"{failures} adapter checks failed");
             return failures == 0 ? 0 : 1;
@@ -165,6 +169,44 @@ namespace RealisticFiring.AdapterCheck
         {
             for (var t = 0f; t < seconds; t += 0.02f)
                 component.Tick(0.02f);
+        }
+
+        private static void CheckJk3Firebox(SimGameParams gameParams)
+        {
+            // Lilla and Cruzer's JK3 1.0.1 release bundle (2026-10-10).
+            // Keep its smaller firebox and tender consumption, rather than
+            // substituting the S060's or S282's figures.
+            var def = new FireboxDefinition
+            {
+                ID = Id,
+                maxCoalCapacity = 70f,
+                burnTime = 200f,
+                efficiencyAtMaxCombustion = 0.5f,
+                coalDumpRate = 4f,
+                combustionRateSmoothTime = 5f,
+                temperatureSmoothTime = 15f,
+                startupMaxPressure = 13f,
+            };
+            var stock = new Firebox(def);
+            var fire = Create(def, gameParams);
+            Check(FireboxRegistry.SupportedLiveries.Contains("Jk3A") && !FireboxRegistry.SupportedLiveries.Contains("Jk3B"),
+                "the JK3 engine gets a realistic firebox; its tender does not");
+            Check(Describe(stock) == Describe(fire), "the JK3 firebox preserves its stock ports and defaults");
+            Check(fire.Model.Parameters.MaxCoalCapacity == 70f && fire.Model.Parameters.BurnTime == 200f,
+                "the JK3 keeps its 70 kg firebox and 200 s burn time");
+
+            fire.SetSaveStateData(new JObject { ["fireOn"] = true, ["coalMass"] = 30f, ["coalEnvDmg"] = 12f });
+            var pileMass = ShovelSize.PileCapacity(3f, ShovelSize.StandardShovelChunks, 1.8f);
+            P(fire, "COAL_CONTROL_EXT_IN").Value += pileMass / 1.8f;
+            Check(Math.Abs(P(fire, "COAL_LEVEL").Value - 33f) < 1e-4f && P(fire, "COAL_CONTROL_EXT_IN").Value == 0f,
+                "a JK3 shovelful takes 5.4 tender kg and lands 3 kg on the grate");
+
+            var saved = fire.GetSaveStateData();
+            stock.SetSaveStateData(saved);
+            Check(stock.GetSaveStateData().Value<float>("coalMass") == 33f
+                  && stock.GetSaveStateData().Value<bool>("fireOn")
+                  && stock.GetSaveStateData().Value<float>("coalEnvDmg") == 12f,
+                "the stock JK3 firebox can load the realistic fire's coal, ignition, and damage state");
         }
 
         // The realistic injector against a stock boiler with the S282's figures.
@@ -274,8 +316,30 @@ namespace RealisticFiring.AdapterCheck
             var hotMass = rig.BoilerVessel.mass;
             lever.Value = 0f;
             Run(rig, 2f);
-            Check(rig.BoilerVessel.mass <= hotMass, "a hose cannot fill a boiler under pressure");
+            // The rig itself takes the hose off, and says why once (audit
+            // 2026-10-10: only the tended loco's controls checked it).
+            var why = rig.TakeHoseStopped();
+            Check(rig.BoilerVessel.mass <= hotMass && !rig.HydrantFilling && why == "the boiler has pressure" && rig.TakeHoseStopped() == null,
+                "a hose cannot fill a boiler under pressure, and the rig takes it off by itself");
             rig.HydrantFilling = false;
+
+            // Two guests on the hand pump: one letting go leaves the other
+            // pumping (audit 2026-10-10: one boolean for every player).
+            var shared = NewBoiler(1f, lever);
+            InjectorRig.TryCreate(null, shared, out _);
+            InjectorRig.TryGet(shared, out var sharedRig);
+            sharedRig.RemotePump(1, true);
+            sharedRig.RemotePump(2, true);
+            sharedRig.RemotePump(1, false);
+            var sharedMass = sharedRig.BoilerVessel.mass;
+            Run(sharedRig, 2f);
+            var stillPumped = sharedRig.BoilerVessel.mass > sharedMass;
+            sharedRig.RemotePump(2, false);
+            sharedRig.RemotePump(2, false);
+            var stoppedMass = sharedRig.BoilerVessel.mass;
+            Run(sharedRig, 2f);
+            Check(stillPumped && !sharedRig.RemoteHandPumping && sharedRig.BoilerVessel.mass <= stoppedMass,
+                "two guests on the hand pump: one letting go leaves the other pumping, and it stops when both have");
 
             // A Worthington SA beside the injector, matched to an engine exhausting 8 kg/s.
             var fed = NewBoiler(12f, lever);
@@ -456,6 +520,35 @@ namespace RealisticFiring.AdapterCheck
             loadedRig.Washout();
             Check(!loadedRig.Plug.Melted && loadedRig.Water.SettledSludge == 0f && loadedRig.PlugVent == 0f,
                 "a washout renews the plug and freshens the water");
+
+            // A pit stop's repair renews a melted plug, as the game renews a
+            // burst boiler; the damage loading, a repair short of 95 %, and a
+            // repair with the plug whole do not.
+            var repairedBoiler = NewBoiler(8000f);
+            var repairRig = BoilerWaterRig.Create(repairedBoiler, null, BoilerWaterRig.Guard.FusiblePlug);
+            repairRig.MeltPlug();
+            blowdown.Value = 1f;
+            Run(repairedBoiler, repairRig, 5f);
+            blowdown.Value = 0f;
+            repairRig.NoteHealth(0.4f, 1f);
+            repairRig.NoteHealth(1f, 1f);
+            var meltedAtLoad = repairRig.Plug.Melted;
+            for (var i = 0; i < 60; i++)
+                repairRig.NoteHealth(0.5f, 0.5f);
+            repairRig.NoteHealth(0.9f, 0.5f);
+            var meltedShort = repairRig.Plug.Melted;
+            var drained = repairRig.MassNow;
+            repairRig.NoteHealth(0.9f, 1f);
+            Run(repairedBoiler, repairRig, 0.02f);
+            Check(meltedAtLoad && meltedShort && !repairRig.Plug.Melted && repairRig.PlugVent == 0f && repairRig.MassNow > drained,
+                $"a repair of the engine renews a melted plug and refills the boiler ({drained:F0} -> {repairRig.MassNow:F0} kg); the damage loading and a repair short of 95 % do not");
+            var whole = NewBoiler(8000f);
+            var wholeRig = BoilerWaterRig.Create(whole, null, BoilerWaterRig.Guard.FusiblePlug);
+            for (var i = 0; i < 60; i++)
+                wholeRig.NoteHealth(0.5f, 1f);
+            var wholeMass = wholeRig.MassNow;
+            wholeRig.NoteHealth(1f, 1f);
+            Check(!wholeRig.Plug.Melted && wholeRig.MassNow == wholeMass, "a repair with the plug whole leaves the boiler as it is");
         }
 
         // An oil burner: the oil firebox has the stock firebox's contract, the
@@ -467,6 +560,22 @@ namespace RealisticFiring.AdapterCheck
             var fireboxDef = new FireboxDefinition { ID = Id, maxCoalCapacity = 200f, burnTime = 100f, efficiencyAtMaxCombustion = 0.6f, startupMaxPressure = 22f };
             var stock = new Firebox(fireboxDef);
             var oil = new RealisticOilFirebox(fireboxDef, null);
+
+            // Oil pooled in the pan and its vapor survive a save, and old
+            // saves keep the pooled oil they wrote under the stock coal key
+            // (audit 2026-10-10: both came back zero).
+            var pooled = new RealisticOilFirebox(fireboxDef, null);
+            var hazard = pooled.Model.Snapshot();
+            hazard.PooledOil = 3f;
+            hazard.Vapor = 1f;
+            pooled.Model.Mirror(hazard);
+            var oilSave = pooled.GetSaveStateData();
+            var reloaded = new RealisticOilFirebox(fireboxDef, null);
+            reloaded.SetSaveStateData(oilSave);
+            var oldSave = new RealisticOilFirebox(fireboxDef, null);
+            oldSave.SetSaveStateData(new JObject { ["coalMass"] = 2f });
+            Check(reloaded.Model.PooledOil == 3f && reloaded.Model.Vapor == 1f && oldSave.Model.PooledOil == 2f && oldSave.Model.Vapor == 0f,
+                $"pooled oil and vapor survive a save ({reloaded.Model.PooledOil:F0} and {reloaded.Model.Vapor:F0} kg), and an old save keeps its pooled oil");
             oil.SetGameParams(gameParams);
             Check(Describe(stock) == Describe(oil) && stock.id == oil.id && oil.HasSaveData,
                 $"the oil firebox keeps the stock firebox's ID, ports, and references ({oil.GetAllPorts().Count} ports, {oil.GetAllPortReferences().Count} references)" +
@@ -531,6 +640,15 @@ namespace RealisticFiring.AdapterCheck
             var data = oil.GetSaveStateData();
             var loaded = new RealisticOilFirebox(fireboxDef, null);
             loaded.SetSaveStateData(data);
+            // The oil fireman's mode is saved as the coal fireman's is, and
+            // waits for his cab to be set up.
+            var firemanSave = (JObject)data.DeepClone();
+            firemanSave[RealisticFirebox.FiremanSaveKey] = (int)FiremanMode.Road;
+            var manned = new RealisticOilFirebox(fireboxDef, null);
+            manned.SetSaveStateData(firemanSave);
+            Check(data[RealisticFirebox.FiremanSaveKey] == null && manned.SavedFiremanMode == FiremanMode.Road
+                  && manned.GetSaveStateData().Value<int>(RealisticFirebox.FiremanSaveKey) == (int)FiremanMode.Road,
+                $"the oil fireman's mode saves and loads ({manned.SavedFiremanMode}), and none is written while he is off");
             Check(loaded.Model.FireOn && Math.Abs(loaded.Model.BrickTemperature - oil.Model.BrickTemperature) < 1f
                   && Math.Abs(loaded.Model.OilTemperature - oil.Model.OilTemperature) < 0.1f,
                 $"the oil fire saves and loads (brick {oil.Model.BrickTemperature:F0} C, oil {oil.Model.OilTemperature:F0} C)");
@@ -601,6 +719,162 @@ namespace RealisticFiring.AdapterCheck
 
         // What a multiplayer host sends clients' views of a loco: captured from
         // the real parts and shown on fresh ones, it reads back the same.
+        private static (Boiler Boiler, ExternalControl Right, ExternalControl Left, SimComponent[] Components, Port Water, Port Consumed)
+            Jk3InjectorSetup(SimGameParams gameParams, float divisorValue = 0.5f, bool negative = false, bool invert = false, bool swap = false)
+        {
+            var right = new ExternalControl(new ExternalControlDefinition { ID = "injector", saveState = true });
+            var left = new ExternalControl(new ExternalControlDefinition { ID = "injector2", saveState = true });
+            var add = new ConfigurableAdd(new ConfigurableAddDefinition
+            {
+                ID = "injectorAdd", negativeA = negative,
+                aReader = new PortReferenceDefinition(PortValueType.GENERIC, "INJECTOR1"),
+                bReader = new PortReferenceDefinition(PortValueType.GENERIC, "INJECTOR2"),
+                addReadOut = new PortDefinition(PortType.READONLY_OUT, PortValueType.GENERIC, "INJECTOR_X2"),
+            });
+            add.aReader.SetPortReference(swap ? left.controlExtIn : right.controlExtIn);
+            add.bReader.SetPortReference(swap ? right.controlExtIn : left.controlExtIn);
+            var divisor = new ConfigurablePorts(new ConfigurablePortsDefinition
+            {
+                ID = "injectorDivisor", ports = new[] { new PortDefinition(PortType.IN, PortValueType.GENERIC, "DIVISOR") },
+                startingValues = new[] { divisorValue },
+            });
+            var normalized = new ConfigurableMultiplier(new ConfigurableMultiplierDefinition
+            {
+                ID = "injectorNormalized", invertB = invert,
+                aReader = new PortReferenceDefinition(PortValueType.GENERIC, "INJECTOR_X2"),
+                bReader = new PortReferenceDefinition(PortValueType.GENERIC, "DIVISOR"),
+                mulReadOut = new PortDefinition(PortType.READONLY_OUT, PortValueType.GENERIC, "INJECTOR_NORMALIZED"),
+            });
+            normalized.aReader.SetPortReference(add.addReadOut);
+            normalized.bReader.SetPortReference(divisor.ports[0]);
+            var particles = new ConfigurablePorts(new ConfigurablePortsDefinition
+            {
+                ID = "injectorParticles", startingValues = new[] { 0f, 0f },
+                ports = new[]
+                {
+                    new PortDefinition(PortType.READONLY_OUT, PortValueType.GENERIC, "INJECTOR_R_PARTICLES_CLAMP"),
+                    new PortDefinition(PortType.READONLY_OUT, PortValueType.GENERIC, "INJECTOR_L_PARTICLES_CLAMP"),
+                },
+            });
+            var boiler = new Boiler(new BoilerDefinition
+            {
+                ID = "boiler", diameter = 1.33f, length = 4.7f, capacityMultiplier = 0.85f,
+                maxInjectorRate = 8f, waterConsumptionMultiplier = 1.5f,
+                safetyValveOpeningPressure = 15f, safetyValveClosingPressure = 14.7f,
+                spawnPressure = 15f, spawnWaterLevel = 4000f,
+            });
+            boiler.SetGameParams(gameParams);
+            boiler.injectorControl.SetPortReference(normalized.mulReadOut);
+            var water = new Port("tender", new PortDefinition(PortType.READONLY_OUT, PortValueType.WATER, "AMOUNT"), 8250f);
+            var consumed = new Port("tender", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.WATER, "CONSUME_EXT_IN"));
+            boiler.water.SetPortReference(water);
+            boiler.waterConsumption.SetPortReference(consumed);
+            return (boiler, right, left, new SimComponent[] { divisor, right, left, add, normalized, particles, boiler }, water, consumed);
+        }
+
+        private static void CheckJk3Injectors(SimGameParams gameParams)
+        {
+            InjectorRig Rig((Boiler Boiler, ExternalControl Right, ExternalControl Left, SimComponent[] Components, Port Water, Port Consumed) setup)
+            {
+                InjectorRig.TryCreate(null, setup.Boiler, "Jk3A", setup.Components, out _);
+                InjectorRig.TryGet(setup.Boiler, out var rig);
+                return rig;
+            }
+            void Tick(InjectorRig rig, float seconds)
+            {
+                for (var i = 0; i < (int)(seconds / 0.02f); i++)
+                    rig.Simulate(0.02f);
+            }
+            var setup = Jk3InjectorSetup(gameParams);
+            Check(!InjectorRig.TryCreate(null, setup.Boiler, out _)
+                  && !InjectorRig.TryCreate(null, setup.Boiler, "OtherLoco", setup.Components, out _),
+                "calculated injector inputs remain stock without the JK3 livery and verified graph");
+            foreach (var invalid in new[]
+            {
+                Jk3InjectorSetup(gameParams, divisorValue: 1f), Jk3InjectorSetup(gameParams, negative: true),
+                Jk3InjectorSetup(gameParams, invert: true), Jk3InjectorSetup(gameParams, swap: true),
+            })
+                Check(!InjectorRig.TryCreate(null, invalid.Boiler, "Jk3A", invalid.Components, out _),
+                    "a changed JK3 injector calculation retains stock behavior");
+            Check(!InjectorRig.TryCreate(null, setup.Boiler, "Jk3A", setup.Components.Where(c => c.id != "injector2"), out _),
+                "a missing JK3 valve retains stock behavior");
+
+            var before = string.Join(";", setup.Components.Select(Describe));
+            var rig = Rig(setup);
+            Check(rig != null && rig.Circuits.Count == 2 && rig.Circuits.All(c => c.Injector.Spec.MaxDelivery == 4f)
+                  && rig.MaxDelivery == 8f && before == string.Join(";", setup.Components.Select(Describe)),
+                "JK3 has two 4 kg/s injectors without changing any stock ports or defaults");
+            setup.Right.controlExtIn.Value = 0.1f;
+            setup.Left.controlExtIn.Value = 1f;
+            Tick(rig, 2f);
+            // Once it sings, opened past its least so it feeds clean.
+            setup.Right.controlExtIn.Value = 0.6f;
+            Tick(rig, 0.5f);
+            Check(rig.Circuits[0].Flow.State == InjectorState.Working && rig.Circuits[1].Flow.State == InjectorState.Broken
+                  && rig.Circuits[0].Flow.OverflowSteam == 0f && rig.Circuits[1].Flow.OverflowSteam > 0f
+                  && rig.Circuits[1].Flow.InjectorTemperature > rig.Circuits[0].Flow.InjectorTemperature + 30f,
+                "priming one JK3 valve does not prime the other; jet failure, heat, and overflow stay independent");
+            setup.Right.controlExtIn.Value = 1f;
+            rig.Simulate(0.02f);
+            Check(Math.Abs(rig.Flow.WaterIn - 4f) < 0.001f && setup.Boiler.injectorFlowNormalizedReadOut.Value == 0.5f,
+                "one working JK3 injector delivers half capacity and only its valve contributes to the boiler readout");
+            var particles = setup.Components.OfType<ConfigurablePorts>().Single(c => c.id == "injectorParticles").ports;
+            Check(particles[0].Value == 1f && particles[1].Value == 0f,
+                "JK3's stock side particle readouts follow each injector's actual feed");
+            setup.Right.controlExtIn.Value = 0f;
+            rig.Simulate(0.02f);
+            Check(rig.Circuits[0].Flow.State == InjectorState.Off && rig.Circuits[1].Flow.State == InjectorState.Broken,
+                "shutting one JK3 injector does not reset the other injector's broken jet");
+            var description = FireController.Describe(rig);
+            Check(description.Contains("right injector off") && description.Contains("left injector BROKEN"),
+                "the overlay describes the JK3 injectors separately");
+            Check(setup.Right.GetSaveStateData().Value<float>("val") == 0f
+                  && setup.Left.GetSaveStateData().Value<float>("val") == 1f,
+                "JK3's two controls keep their independent stock save keys");
+
+            var both = Jk3InjectorSetup(gameParams);
+            var bothRig = Rig(both);
+            both.Right.controlExtIn.Value = both.Left.controlExtIn.Value = 0.1f;
+            Tick(bothRig, 2f);
+            both.Right.controlExtIn.Value = both.Left.controlExtIn.Value = 1f;
+            var mass = bothRig.BoilerVessel.mass;
+            both.Consumed.Value = 0f;
+            bothRig.Simulate(0.5f);
+            Check(Math.Abs(bothRig.Flow.WaterIn - 8f) < 0.001f && both.Boiler.injectorFlowNormalizedReadOut.Value == 1f
+                  && Math.Abs(bothRig.BoilerVessel.mass - mass - (bothRig.Flow.WaterIn - bothRig.Flow.SteamUsed) * 0.5f) < 0.002f
+                  && Math.Abs(both.Consumed.Value - bothRig.Flow.TenderDraw * 0.5f * 1.5f) < 0.001f,
+                "both JK3 injectors deliver 8 kg/s total, with steam deducted and both tender draws reported once");
+            both.Water.Value = 0.03f * 1.5f;
+            both.Consumed.Value = 0f;
+            bothRig.Simulate(0.5f);
+            Check(bothRig.Flow.TenderDraw * 0.5f <= 0.03001f && both.Consumed.Value <= 0.04501f
+                  && bothRig.Circuits[1].Flow.State == InjectorState.NoWater,
+                "the paired JK3 injectors share the remaining tender water without overdrawing it");
+            both.Water.Value = 8250f;
+            var volume = (float)typeof(Boiler).GetField("totalVolume", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(both.Boiler);
+            // These stock vessel readouts are the rig's pressure and space inputs.
+            bothRig.BoilerVessel.waterVolume = volume - 1f;
+            bothRig.Simulate(2f);
+            Check(Math.Abs(bothRig.Flow.WaterIn * 2f - 1f) < 0.001f && bothRig.Circuits[1].Flow.WaterIn == 0f,
+                "the JK3 injectors share the last kilogram of boiler space without overfilling it");
+            bothRig.BoilerVessel.waterVolume = volume;
+            bothRig.Simulate(0.02f);
+            Check(bothRig.Flow.WaterIn == 0f && bothRig.Circuits.All(c => c.Flow.Overflow > 0f),
+                "both JK3 injectors spill when the shared boiler has no room for more water");
+
+            var client = Jk3InjectorSetup(gameParams);
+            var clientRig = Rig(client);
+            var data = ClientMirror.Capture(null, rig, null, null, null);
+            ClientMirror.Apply(data, null, clientRig, null, null, null);
+            Check(clientRig.Circuits.Select(c => c.Flow).SequenceEqual(rig.Circuits.Select(c => c.Flow))
+                  && clientRig.Flow.Equals(rig.Flow),
+                "multiplayer mirrors each JK3 injector's state, heat, and overflow by control port");
+            both.Boiler.isBrokenReadOut.Value = 1f;
+            bothRig.Simulate(0.02f);
+            Check(bothRig.Circuits.All(c => c.Flow.State == InjectorState.Off) && bothRig.Flow.TenderDraw == 0f,
+                "a broken JK3 boiler shuts down both injectors");
+        }
+
         private static void CheckClientMirror(SimGameParams gameParams, FireboxDefinition def)
         {
             var host = Create(def, gameParams);
@@ -653,6 +927,48 @@ namespace RealisticFiring.AdapterCheck
                   && clientWater.Plug.Melted && clientWater.PlugVent == 0.8f,
                 "and the injector's overflow, the hose, and the melted plug's blow");
             Check(clientOil.Model.Snapshot().Equals(hostOil.Model.Snapshot()), "and the oil fire's state");
+
+            // Damaged state from the wire is dropped, section by section,
+            // without throwing or reading one section into the next (audit
+            // 2026-10-10: a one-byte payload threw out of the decoder).
+            bool Survives(byte[] bytes)
+            {
+                try
+                {
+                    ClientMirror.Apply(bytes, client, clientRig, clientWater, null, clientOil);
+                    return true;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            }
+            var injectorAt = 0;
+            while (data[injectorAt] != 2)
+                injectorAt += 3 + (data[injectorAt + 1] | data[injectorAt + 2] << 8);
+            var injectorLength = data[injectorAt + 1] | data[injectorAt + 2] << 8;
+            // The injector section with a NaN for its first float and the rest
+            // of the stream intact: the injector is left alone, the others apply.
+            var poisoned = (byte[])data.Clone();
+            var nan = BitConverter.GetBytes(float.NaN);
+            Array.Copy(nan, 0, poisoned, injectorAt + 3 + 4, 4);
+            clientRig.Flow = new InjectorFlow { State = InjectorState.Off };
+            client.StokerEngineSpeed = 0f;
+            var poisonedOk = Survives(poisoned) && clientRig.Flow.State == InjectorState.Off && client.StokerEngineSpeed == 0.6f;
+            // A section that claims to be shorter than it reads: it fails alone.
+            var shortened = (byte[])data.Clone();
+            shortened[injectorAt + 1] = 8;
+            shortened[injectorAt + 2] = 0;
+            var tail = data.Length - (injectorAt + 3 + injectorLength);
+            var shortStream = new byte[injectorAt + 3 + 8 + tail];
+            Array.Copy(shortened, 0, shortStream, 0, injectorAt + 3 + 8);
+            Array.Copy(data, injectorAt + 3 + injectorLength, shortStream, injectorAt + 3 + 8, tail);
+            clientWater.PlugVent = 0f;
+            var shortOk = Survives(shortStream) && clientWater.PlugVent == 0.8f;
+            Check(Survives(new byte[] { 1 }) && Survives(new byte[] { 1, 200 }) && Survives(new byte[] { 1, 255, 255, 0 })
+                  && Survives(new byte[] { 99, 2, 0, 7, 7 }) && Survives(new byte[0]) && poisonedOk && shortOk,
+                "damaged state from the host is dropped section by section: a broken header, a length past the end, an unknown tag, " +
+                "a NaN, and a section shorter than it reads, the good sections still applied");
         }
 
         // The Hudson's booster in the sim: between the main engine's torque and
@@ -822,6 +1138,30 @@ namespace RealisticFiring.AdapterCheck
             var stockCoal = P(stock, "COAL_LEVEL").Value;
             Check(!fallback.FeedsZonedFire && stockCoal > 1f && Math.Abs(stockConsumed - multiplier * stockCoal) < 0.01f * stockConsumed,
                 $"without the zoned fire it feeds a stock firebox's port at the right multiplier ({stockCoal:F1} kg, {stockConsumed:F1} tender kg)");
+
+            // A jam survives a save, whether the stoker loads before or after
+            // its model is built (audit 2026-10-10: a recreated stoker came
+            // back unjammed).
+            valved.Model.Jam();
+            var jamSave = valved.GetSaveStateData();
+            var early = new RealisticStoker(values, null, multiplier, steamWired: true);
+            early.SetGameParams(gameParams);
+            Connect(early, heel);
+            early.SetSaveStateData(jamSave);
+            early.Attach(heel, boiler);
+            var late = new RealisticStoker(values, null, multiplier, steamWired: true);
+            late.SetGameParams(gameParams);
+            Connect(late, heel);
+            late.Attach(heel, boiler);
+            late.SetSaveStateData(jamSave);
+            var clear = new RealisticStoker(values, null, multiplier, steamWired: true);
+            clear.SetGameParams(gameParams);
+            Connect(clear, heel);
+            clear.Attach(heel, boiler);
+            clear.SetSaveStateData(new JObject());
+            Check(valved.HasSaveData && jamSave.Value<bool>(RealisticStoker.JammedSaveKey) && early.Model.Jammed && late.Model.Jammed
+                  && !clear.Model.Jammed && clear.GetSaveStateData()[RealisticStoker.JammedSaveKey] == null,
+                "a jammed stoker stays jammed through a save and a recreated stoker; a clear one saves nothing");
         }
 
         private static RealisticFirebox Create(FireboxDefinition def, SimGameParams gameParams)
@@ -986,6 +1326,69 @@ namespace RealisticFiring.AdapterCheck
             if (typeof(SteppedJoint).GetProperty("SingleNotchAngle", any)?.GetSetMethod(true) == null)
                 missing.Add("SteppedJoint.SingleNotchAngle (set)");
             Check(missing.Count == 0, "the members ControlSteps resteps a live control by exist" + (missing.Count > 0 ? $" (not: {string.Join(", ", missing)})" : ""));
+        }
+
+        // The fireman's hand on a cab control's port, with a notched lever as
+        // the cab's feeder and stepped joint put it back (to tenths), and the
+        // player taking it.
+        private static void CheckFiremanHand()
+        {
+            var port = new Port("blower", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"));
+            port.ValueUpdatedInternally += v =>
+            {
+                var notch = (float)Math.Round(v * 10f) / 10f;
+                if (notch != v)
+                    port.ExternalValueUpdate(notch);
+            };
+            var moves = 0;
+            port.ValueUpdatedInternally += _ => moves++;
+            var hand = new FiremanHand("blower", port, 0.5f);
+            var t = 0f;
+            void Run(float want, float seconds)
+            {
+                for (var end = t + seconds; t < end; t += 0.02f)
+                    hand.Work(want, t);
+            }
+
+            Run(0.37f, 2f);
+            var travelled = moves;
+            Run(0.37f, 10f);
+            Check(port.Value == 0.4f && !hand.Yielded(t) && travelled >= 3 && moves - travelled <= 4,
+                $"he moves a notched lever at his pace ({travelled} moves on the way) and takes the notch it settles on " +
+                $"without fighting it ({moves - travelled} moves in the next 10 s)");
+            port.ExternalValueUpdate(0.8f);
+            Run(0.37f, 1f);
+            Check(hand.Yielded(t) && port.Value == 0.8f, "a lever the player moves is theirs");
+            Run(0.37f, FiremanHand.YieldTime);
+            Check(!hand.Yielded(t) && port.Value == 0.4f, "after a minute he takes it back");
+
+            var smooth = new Port("injector", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"));
+            var dragged = new FiremanHand("injector", smooth, 1.2f);
+            for (t = 0f; t < 3f; t += 0.02f)
+                dragged.Work(0.5f, t);
+            // The player eases it open a little at a time, slower than he would notice tick by tick.
+            for (var i = 0; i < 100; i++, t += 0.02f)
+            {
+                smooth.ExternalValueUpdate(smooth.Value + 0.002f);
+                dragged.Work(0.5f, t);
+            }
+            Check(dragged.Yielded(t) && smooth.Value > 0.6f, $"a slow drag is the player's too (left at {smooth.Value:F2})");
+            dragged.Release();
+            for (var end = t + 1f; t < end; t += 0.02f)
+                dragged.Work(0.5f, t);
+            Check(!dragged.Yielded(t) && smooth.Value == 0.5f, "a new order gives it back to him at once");
+
+            var doorPort = new Port("fireboxDoor", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"));
+            var door = new FiremanHand("door", doorPort, 3f);
+            var halfway = 0f;
+            for (t = 0f; t < 1f; t += 0.02f)
+            {
+                door.Work(1f, t);
+                if (t <= 0.17f)
+                    halfway = doorPort.Value;
+            }
+            Check(halfway > 0.2f && halfway < 0.8f && doorPort.Value == 1f,
+                $"he swings the door open over a third of a second, not in a jump ({halfway:F2} open at 0.17 s)");
         }
 
         // SandOnShovelPatch dresses the shovel's load lumps as sand.

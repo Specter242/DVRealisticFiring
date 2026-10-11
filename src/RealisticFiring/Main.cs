@@ -11,6 +11,11 @@ namespace RealisticFiring
 
         public static Settings Settings { get; internal set; }
 
+        private static Session session;
+
+        /// <summary>The settings that need a restart, as they stood at load; outside a game load (the checks), the current ones.</summary>
+        internal static Session Session => session ?? Session.From(Settings);
+
         /// <summary>
         /// Whether supported locos get the realistic firebox this session.
         /// Read once at load because sim graphs are built as cars spawn.
@@ -36,9 +41,10 @@ namespace RealisticFiring
             Mod = modEntry;
             Settings = UnityModManager.ModSettings.Load<Settings>(modEntry);
             Core.FireTuning.Default.ClinkerTendency = Settings.ClinkerTendency;
-            ReplacementEnabled = Settings.ReplaceStockFireboxes;
-            RealisticSmokeEnabled = ReplacementEnabled && Settings.RealisticSmoke;
-            RealisticInjectorsEnabled = Settings.RealisticInjectors;
+            session = Session.From(Settings);
+            ReplacementEnabled = session.RealisticFireboxes;
+            RealisticSmokeEnabled = session.RealisticSmoke;
+            RealisticInjectorsEnabled = session.RealisticInjectors;
             modEntry.OnGUI = entry => Settings.Draw(entry);
             modEntry.OnSaveGUI = entry => Settings.Save(entry);
             // Unity Mod Manager opens a mod's settings on its hotkey; sharing
@@ -52,6 +58,7 @@ namespace RealisticFiring
             Object.DontDestroyOnLoad(host);
             host.AddComponent<FireController>();
 
+            Sim.FiremanRig.NoteRivals();
             modEntry.Logger.Log(ReplacementEnabled
                 ? $"Realistic fireboxes enabled for {string.Join(", ", FireboxRegistry.SupportedLiveries)}"
                 : "Realistic fireboxes disabled; every loco keeps the stock firebox");
