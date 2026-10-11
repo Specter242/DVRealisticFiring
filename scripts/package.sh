@@ -33,9 +33,11 @@ trap 'rm -rf "$stage"' EXIT
 mkdir "$stage/RealisticFiring"
 cp "$out/Info.json" "$out/RealisticFiring.dll" "$out/RealisticFiring.Core.dll" \
     "$bundle" "$repo/LICENSE" "$stage/RealisticFiring/"
+# The players' firing guide, one page that opens in any browser.
+python3 -I "$repo/scripts/build-guide.py" "$stage/RealisticFiring/FIRING-GUIDE.html" >/dev/null
 files=(RealisticFiring/Info.json RealisticFiring/RealisticFiring.dll
        RealisticFiring/RealisticFiring.Core.dll RealisticFiring/realisticfiring_fx
-       RealisticFiring/LICENSE)
+       RealisticFiring/LICENSE RealisticFiring/FIRING-GUIDE.html)
 if [[ "$project" == */RealisticFiring.Multiplayer.csproj ]]; then
     cp "$mp/RealisticFiring.Multiplayer.dll" "$stage/RealisticFiring/"
     files+=(RealisticFiring/RealisticFiring.Multiplayer.dll)

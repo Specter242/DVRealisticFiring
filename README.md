@@ -9,6 +9,9 @@ Requires Derail Valley and Unity Mod Manager. Install custom locomotives through
 Custom Car Loader separately. Game and third-party mod assemblies are not included.
 
 Download the installable ZIP from [GitHub Releases](https://github.com/Specter242/DVRealisticFiring/releases/latest).
+Start with the [firing guide](FIRING-GUIDE.md): how to fire well, each engine,
+the stoker, oil, and water, with a quick-reference table. The ZIP carries it as
+`FIRING-GUIDE.html`, which opens in any web browser.
 See the [changelog](CHANGELOG.md) for version history. Release tags contain
 sanitized source snapshots; older tags describe the behavior of that version.
 
@@ -24,7 +27,8 @@ checks game adapter compatibility under Mono; set `DV_INSTALL_DIR` for a custom
 game location.
 
 Build the effects bundle with Unity 2019.4.40f1, an activated Unity license, and
-Python 3 with NumPy and Pillow installed:
+Python 3 with NumPy and Pillow installed; packaging also needs the Python
+Markdown package for the firing guide:
 
 ```sh
 UNITY_EDITOR="/path/to/Unity" scripts/build-fx.sh
