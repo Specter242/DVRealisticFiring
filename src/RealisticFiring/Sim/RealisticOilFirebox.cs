@@ -281,13 +281,15 @@ namespace RealisticFiring.Sim
                 return;
             if (!resolved)
                 Resolve();
-            // The pit stop is looked for once a second, only while a line is wanted.
+            // The service track is looked for once a second, only while the
+            // shed's line is wanted or a dead engine's lighting steps ask for it.
             pitStopCheck -= delta;
             if (pitStopCheck <= 0f)
             {
                 pitStopCheck = 1f;
-                atServiceTrack = ServedByPitStop(Car);
-                atPitStop = (SteamLine || ShopSteamValve > 0f) && atServiceTrack;
+                var wanted = SteamLine || ShopSteamValve > 0f;
+                atServiceTrack = (wanted || !Model.FireOn && BoilerPressure < FiringAdvice.DeadBoiler) && ServedByPitStop(Car);
+                atPitStop = wanted && atServiceTrack;
             }
             if (ignitionExtIn.Value == 1f)
             {

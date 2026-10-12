@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.2 (2026-10-12)
+
+- Find the service stations once a scene, and check them only while shop steam is wanted, instead of searching the scene every second for every oil engine.
+- Redraw only a dial's needle when it moves, not its whole face.
+- Hook the fire iron's shelf tag up on registers that were already on.
+
 ## 1.7.1 (2026-10-12)
 
 - Redesign the fire overlay as a card: fire, draft (with the smoke's color), glass, and boiler dials over Fire, Water, and Engine pages, with the next step in a fireman's words.

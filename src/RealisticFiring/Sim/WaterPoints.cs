@@ -23,8 +23,10 @@ namespace RealisticFiring.Sim
         {
             if (car == null)
                 return false;
-            foreach (var station in Object.FindObjectsOfType<PitStopStation>())
+            foreach (var station in Stations())
             {
+                if (station == null)
+                    continue;
                 var pitStop = station.pitstop;
                 if (pitStop == null || !pitStop.IsCarInPitStop())
                     continue;
@@ -35,6 +37,28 @@ namespace RealisticFiring.Sim
                     return true;
             }
             return false;
+        }
+
+        // The world's service stations, found once a scene: searching the whole
+        // scene each second for every oil engine stuttered a slower PC every
+        // second (a player, 2026-10-12). Looked for again when one is gone (a
+        // new scene) or, while none are found, every half minute.
+        private static PitStopStation[] stations;
+        private static float lookAgainAt;
+        private const float LookAgain = 30f;
+
+        private static PitStopStation[] Stations()
+        {
+            var stale = stations == null || stations.Length == 0 && Time.unscaledTime >= lookAgainAt;
+            if (!stale)
+                foreach (var station in stations)
+                    stale |= station == null;
+            if (stale)
+            {
+                stations = Object.FindObjectsOfType<PitStopStation>();
+                lookAgainAt = Time.unscaledTime + LookAgain;
+            }
+            return stations;
         }
 
         private static bool OnParkingTrack(TrainCar car)

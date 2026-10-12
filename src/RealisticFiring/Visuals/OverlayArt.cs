@@ -197,62 +197,107 @@ namespace RealisticFiring.Visuals
             var height = Mathf.RoundToInt(DialHeight * DialScale);
             var t = cached != null ? cached : new Texture2D(width, height, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, hideFlags = HideFlags.HideAndDontSave };
             t.name = id;
+            // The face drawn once for its band; each move redraws only the
+            // needle's patch, so a moving needle costs next to nothing (a player
+            // on a slower PC saw a stutter every second, 2026-10-12).
+            var face = Face(width, height, band0, band1);
+            if (!Buffers.TryGetValue(key, out var pixels) || pixels.Length != face.Length)
+                Buffers[key] = pixels = new Color32[face.Length];
+            System.Array.Copy(face, pixels, face.Length);
+            Needle(pixels, width, height, (ArcStart + needle) * Mathf.Deg2Rad, level == AdviceLevel.Ok ? Cream : LevelColor(level));
+            t.SetPixels32(pixels);
+            t.Apply(false);
+            Cache[key] = t;
+            return t;
+        }
+
+        private static readonly Dictionary<string, Color32[]> Faces = new Dictionary<string, Color32[]>();
+        private static readonly Dictionary<string, Color32[]> Buffers = new Dictionary<string, Color32[]>();
+
+        // The arc, its good band, and its ticks: once per band.
+        private static Color32[] Face(int width, int height, float? band0, float? band1)
+        {
+            var faceKey = $"{band0}|{band1}";
+            if (Faces.TryGetValue(faceKey, out var done))
+                return done;
             var pixels = new Color32[width * height];
             var track = new Color(1f, 1f, 1f, 0.15f);
             var bandColor = new Color(Brass.r, Brass.g, Brass.b, 0.6f);
             var tick = new Color(1f, 1f, 1f, 0.33f);
-            var needleColor = level == AdviceLevel.Ok ? Cream : LevelColor(level);
-            var needleAngle = (ArcStart + needle) * Mathf.Deg2Rad;
-            var nx = Mathf.Cos(needleAngle);
-            var ny = Mathf.Sin(needleAngle);
             var px1 = 1f / DialScale;
+            var tickSin = new float[5];
+            var tickCos = new float[5];
+            for (var k = 0; k <= 4; k++)
+            {
+                var ta = (ArcStart + ArcSweep * k / 4f) * Mathf.Deg2Rad;
+                tickSin[k] = Mathf.Sin(ta);
+                tickCos[k] = Mathf.Cos(ta);
+            }
             for (var y = 0; y < height; y++)
             {
                 for (var x = 0; x < width; x++)
                 {
                     // In the study's box: x right, y down.
-                    var gx = (x + 0.5f) / DialScale;
-                    var gy = (height - y - 0.5f) / DialScale;
-                    var dx = gx - 50f;
-                    var dy = gy - 52f;
+                    var dx = (x + 0.5f) / DialScale - 50f;
+                    var dy = (height - y - 0.5f) / DialScale - 52f;
                     var r = Mathf.Sqrt(dx * dx + dy * dy);
+                    if (r < 36f || r > 44f)
+                        continue;
                     var angle = Mathf.Atan2(dy, dx) * Mathf.Rad2Deg;
                     if (angle > 90f)
                         angle -= 360f;
                     var t01 = (angle - ArcStart) / ArcSweep;
+                    if (t01 < 0f || t01 > 1f)
+                        continue;
                     var c = Color.clear;
-                    if (t01 >= 0f && t01 <= 1f)
+                    var onArc = Mathf.Clamp01((3.5f - Mathf.Abs(r - 40f)) / px1 / 2f + 0.5f);
+                    if (onArc > 0f)
                     {
-                        var onArc = Mathf.Clamp01((3.5f - Mathf.Abs(r - 40f)) / px1 / 2f + 0.5f);
-                        if (onArc > 0f)
-                        {
-                            var inBand = band0.HasValue && band1.HasValue && t01 >= band0.Value && t01 <= band1.Value;
-                            c = Over(c, inBand ? bandColor : track, onArc);
-                        }
+                        var inBand = band0.HasValue && band1.HasValue && t01 >= band0.Value && t01 <= band1.Value;
+                        c = Over(c, inBand ? bandColor : track, onArc);
+                    }
+                    if (r >= 38f && r <= 43f)
                         for (var k = 0; k <= 4; k++)
-                        {
-                            var ta = (ArcStart + ArcSweep * k / 4f) * Mathf.Deg2Rad;
-                            var across = Mathf.Abs(-dx * Mathf.Sin(ta) + dy * Mathf.Cos(ta));
-                            if (r >= 38f && r <= 43f)
-                                c = Over(c, tick, Mathf.Clamp01((0.75f - across) / px1 + 0.5f));
-                        }
-                    }
-                    // The needle: a 3-unit line from the hub to radius 30, and the hub.
-                    var along = dx * nx + dy * ny;
-                    if (along >= 0f && along <= 30f)
-                    {
-                        var off = Mathf.Abs(-dx * ny + dy * nx);
-                        c = Over(c, needleColor, Mathf.Clamp01((1.5f - off) / px1 + 0.5f));
-                    }
-                    if (r <= 4.5f)
-                        c = Over(c, Brass, Mathf.Clamp01((4f - r) / px1 + 0.5f));
+                            c = Over(c, tick, Mathf.Clamp01((0.75f - Mathf.Abs(-dx * tickSin[k] + dy * tickCos[k])) / px1 + 0.5f));
                     pixels[y * width + x] = c;
                 }
             }
-            t.SetPixels32(pixels);
-            t.Apply();
-            Cache[key] = t;
-            return t;
+            Faces[faceKey] = pixels;
+            return pixels;
+        }
+
+        // The needle, a 3-unit line from the hub to radius 30, and the brass
+        // hub over it: only the pixels around them.
+        private static void Needle(Color32[] pixels, int width, int height, float angle, Color color)
+        {
+            var nx = Mathf.Cos(angle);
+            var ny = Mathf.Sin(angle);
+            var px1 = 1f / DialScale;
+            // The patch, in the study's box, then in pixels.
+            var minX = Mathf.Min(0f, 30f * nx) + 50f - 5f;
+            var maxX = Mathf.Max(0f, 30f * nx) + 50f + 5f;
+            var minY = Mathf.Min(0f, 30f * ny) + 52f - 5f;
+            var maxY = Mathf.Max(0f, 30f * ny) + 52f + 5f;
+            var x0 = Mathf.Clamp(Mathf.FloorToInt(minX * DialScale), 0, width - 1);
+            var x1 = Mathf.Clamp(Mathf.CeilToInt(maxX * DialScale), 0, width - 1);
+            var y0 = Mathf.Clamp(height - 1 - Mathf.CeilToInt(maxY * DialScale), 0, height - 1);
+            var y1 = Mathf.Clamp(height - 1 - Mathf.FloorToInt(minY * DialScale), 0, height - 1);
+            for (var y = y0; y <= y1; y++)
+            {
+                for (var x = x0; x <= x1; x++)
+                {
+                    var dx = (x + 0.5f) / DialScale - 50f;
+                    var dy = (height - y - 0.5f) / DialScale - 52f;
+                    var c = (Color)pixels[y * width + x];
+                    var along = dx * nx + dy * ny;
+                    if (along >= 0f && along <= 30f)
+                        c = Over(c, color, Mathf.Clamp01((1.5f - Mathf.Abs(-dx * ny + dy * nx)) / px1 + 0.5f));
+                    var r2 = dx * dx + dy * dy;
+                    if (r2 <= 4.5f * 4.5f)
+                        c = Over(c, Brass, Mathf.Clamp01((4f - Mathf.Sqrt(r2)) / px1 + 0.5f));
+                    pixels[y * width + x] = c;
+                }
+            }
         }
 
         /// <summary>A zone's glow: dark iron when cold, through red and orange to white heat.</summary>

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using DV.CabControls;
+using DV.CashRegister;
 using DV.Shops;
 using HarmonyLib;
 using RealisticFiring.Visuals;
@@ -75,7 +77,10 @@ namespace RealisticFiring.Items
                               string.Join(", ", shovelTag.GetComponentsInChildren<MeshFilter>(true).Select(f => f.sharedMesh != null ? f.sharedMesh.name : f.name)) + ")";
                     shop.scanItemResourceModules = shop.scanItemResourceModules.Append(tag).ToArray();
                     if (shop.cashRegister != null && shop.cashRegister.registerModules != null)
+                    {
                         shop.cashRegister.registerModules = shop.cashRegister.registerModules.Append(tag).ToArray();
+                        HearTag(shop.cashRegister, tag);
+                    }
                     tag.ItemPurchased += __instance.AddItemToInstantiationQueue;
                     where.Add(NearestStation(shop.transform.position));
                     shops++;
@@ -91,6 +96,21 @@ namespace RealisticFiring.Items
         }
 
         // A shop has no name of its own: say which station it stands at.
+        private static readonly AccessTools.FieldRef<CashRegisterWithModules, ButtonBase> BuyButton =
+            AccessTools.FieldRefAccess<CashRegisterWithModules, ButtonBase>("buyButton");
+
+        // A register hooks up its shelf tags once, when it comes on; one already
+        // on missed the iron's, so scanning it showed $0 and Buy took nothing
+        // (a player, 2026-10-12). One not yet hooked up takes it with the rest.
+        private static void HearTag(CashRegisterWithModules register, CashRegisterModule tag)
+        {
+            if (!register.isActiveAndEnabled || BuyButton(register) == null)
+                return;
+            var heard = AccessTools.MethodDelegate<Action>(AccessTools.Method(typeof(CashRegisterWithModules), "OnUnitsToBuyChanged"), register);
+            tag.OnUnitsToBuyChanged -= heard;
+            tag.OnUnitsToBuyChanged += heard;
+        }
+
         private static string NearestStation(Vector3 position)
         {
             var stations = StationController.allStations;
