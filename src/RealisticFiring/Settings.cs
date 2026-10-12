@@ -150,6 +150,9 @@ namespace RealisticFiring
         [Draw("Show fire overlay")]
         public bool ShowOverlay;
 
+        // The overlay's page: 0 the fire (or burner), 1 the water, 2 the engine.
+        public int OverlayPage;
+
         [Draw("Fireman's orders: show or hide his window (hold Alt to free the mouse and click it)")]
         public KeyBinding FiremanKey = Bind(KeyCode.J, ctrl: true);
 

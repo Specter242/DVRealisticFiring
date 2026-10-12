@@ -38,6 +38,12 @@ python3 -I "$repo/scripts/build-guide.py" "$stage/RealisticFiring/FIRING-GUIDE.h
 files=(RealisticFiring/Info.json RealisticFiring/RealisticFiring.dll
        RealisticFiring/RealisticFiring.Core.dll RealisticFiring/realisticfiring_fx
        RealisticFiring/LICENSE RealisticFiring/FIRING-GUIDE.html)
+# The overlay's typeface rides in the effects bundle; its license goes beside it.
+fonts="$repo/fx/RealisticFiringFX/Assets/RealisticFiring/Fonts"
+if compgen -G "$fonts/*.ttf" >/dev/null; then
+    cp "$fonts/Fira-OFL.txt" "$stage/RealisticFiring/"
+    files+=(RealisticFiring/Fira-OFL.txt)
+fi
 if [[ "$project" == */RealisticFiring.Multiplayer.csproj ]]; then
     cp "$mp/RealisticFiring.Multiplayer.dll" "$stage/RealisticFiring/"
     files+=(RealisticFiring/RealisticFiring.Multiplayer.dll)

@@ -114,6 +114,7 @@ namespace RealisticFiring.Visuals
         private static Material FloorMaterial(TrainCar car, Vector3 floor)
         {
             var up = car.transform.up;
+            Physics.SyncTransforms();
             foreach (var hit in Physics.RaycastAll(floor + up * 0.1f, -up, 0.3f, ~0, QueryTriggerInteraction.Ignore).OrderBy(h => h.distance))
             {
                 if (TrainCar.Resolve(hit.collider.gameObject) != car)

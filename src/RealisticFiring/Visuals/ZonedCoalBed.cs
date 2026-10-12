@@ -65,6 +65,11 @@ namespace RealisticFiring.Visuals
         // The glowing embers lie this far under the dark lumps on top, in m.
         private const float EmberDepth = 0.08f;
 
+        // The embers stay at least this far under the coal layer, in m, and
+        // show only where some zone has more heat than this.
+        private const float EmberUnder = 0.01f;
+        private const float ColdHeat = 0.001f;
+
         // The coal texture's repeats across the bed's width: about 5 cm lumps
         // on a metre-wide grate, with smaller pieces between.
         private const float LumpsAcross = 2f;
@@ -129,6 +134,9 @@ namespace RealisticFiring.Visuals
         private Vector3[] emberVertices;
         private Vector3[] vertices;
         private Color[] colors;
+
+        private readonly float[] empty = new float[GrateLayout.ZoneCount];
+        private System.Collections.Generic.List<Vector2> bare;
         private float[] lumps;
         private float[] glowJitter;
         private MaterialPropertyBlock properties;
@@ -318,6 +326,7 @@ namespace RealisticFiring.Visuals
             var count = (GridAcross + 1) * (GridAlong + 1);
             vertices = new Vector3[count];
             colors = new Color[count];
+            bare = new System.Collections.Generic.List<Vector2>(new Vector2[count]);
             lumps = new float[count];
             glowJitter = new float[count];
             var uvs = new Vector2[count];
@@ -433,6 +442,7 @@ namespace RealisticFiring.Visuals
                 var zone = fire.Zones[i];
                 var coal = zone.Coal;
                 heights[i] = coal < EmptyZoneMass ? 0f : Mathf.Clamp(coal / zoneShare, MinHeightScale, MaxHeightScale);
+                empty[i] = coal < EmptyZoneMass ? 1f : 0f;
 
                 // Lit coal glows even when burning slowly and brighter as it is
                 // forced. The front draws hardest, but a forced fire lights the
@@ -453,6 +463,14 @@ namespace RealisticFiring.Visuals
                 // Grey ash shows only where the fire has burned down to it.
                 ash[i] = dirt * (1f - Mathf.Clamp01(coal / (ThinShare * zoneShare)));
                 clinker[i] = Mathf.Clamp01(1.2f * zone.Clinker / (zone.Clinker + coal + 0.1f));
+            }
+
+            if (emberRenderer != null)
+            {
+                var hottest = 0f;
+                for (var i = 0; i < heat.Length; i++)
+                    hottest = Mathf.Max(hottest, heat[i]);
+                emberRenderer.enabled = hottest > ColdHeat;
             }
 
             if (mesh != null)
@@ -479,18 +497,23 @@ namespace RealisticFiring.Visuals
                         Mathf.Lerp(bed.min.z, bed.max.z, along));
                     var glow = Sample(heat, across, along) * (0.85f + 0.3f * glowJitter[index]);
                     colors[index] = new Color(Mathf.Clamp01(glow), Sample(cover, across, along), Sample(ash, across, along), Sample(clinker, across, along));
+                    bare[index] = new Vector2(Sample(empty, across, along), 0f);
                 }
             }
             mesh.vertices = vertices;
             mesh.colors = colors;
+            mesh.SetUVs(3, bare);
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
 
             if (emberMesh != null)
             {
+                // Always under the coal, even on an empty grate, so the cold coal's
+                // surface covers them where both lie flat.
                 var drop = EmberDepth / Mathf.Max(1e-4f, Mathf.Abs(fullScale.y));
+                var floor = bed.min.y - EmberUnder / Mathf.Max(1e-4f, Mathf.Abs(fullScale.y));
                 for (var v = 0; v < vertices.Length; v++)
-                    emberVertices[v] = new Vector3(vertices[v].x, Mathf.Max(bed.min.y, vertices[v].y - drop), vertices[v].z);
+                    emberVertices[v] = new Vector3(vertices[v].x, Mathf.Max(floor, vertices[v].y - drop), vertices[v].z);
                 emberMesh.vertices = emberVertices;
                 emberMesh.colors = colors;
                 emberMesh.RecalculateBounds();

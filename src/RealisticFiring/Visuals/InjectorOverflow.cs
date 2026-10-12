@@ -172,6 +172,7 @@ namespace RealisticFiring.Visuals
             height = 0f;
             what = null;
             var down = -car.transform.up;
+            Physics.SyncTransforms();
             foreach (var hit in Physics.RaycastAll(from, down, DeckSearch, layers, QueryTriggerInteraction.Ignore).OrderBy(h => h.distance))
             {
                 if (Vector3.Dot(hit.normal, car.transform.up) < 0.7f || TrainCar.Resolve(hit.collider.gameObject) != car)

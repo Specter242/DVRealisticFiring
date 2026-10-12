@@ -295,6 +295,16 @@ namespace RealisticFiring.Core
         /// <summary>Stock-compatible oxygen availability: air over fuel demand, capped at 1.</summary>
         public float OxygenAvailability { get; private set; } = 1f;
 
+        /// <summary>
+        /// The air through the grate against what the burning coal on it wants
+        /// (1 is the design's 20 % excess), not capped: under 1 the bed is
+        /// choked, too much coal for the draft; well over it the air rushes
+        /// through a thin fire. <see cref="MaxAirRatio"/> with air and no fire.
+        /// </summary>
+        public float AirRatio { get; private set; } = 1f;
+
+        public const float MaxAirRatio = 10f;
+
         /// <summary>Combustion rate over the stock maximum, before the startup speedup.</summary>
         public float CombustionRateNormalized { get; private set; }
 
@@ -780,6 +790,7 @@ namespace RealisticFiring.Core
                 targetTotal += target[i];
             }
             OxygenAvailability = fuelTotal > 0f ? Math.Min(1f, airTotal / fuelTotal) : 1f;
+            AirRatio = fuelTotal > 0f ? airTotal / fuelTotal : airTotal > 0f ? MaxAirRatio : 1f;
 
             // The grate as a whole never burns faster than the stock maximum.
             var cap = targetTotal > parameters.MaxCombustionRate ? parameters.MaxCombustionRate / targetTotal : 1f;

@@ -68,7 +68,7 @@ namespace RealisticFiring.Core
         private const float ShakeSpacing = 300f;
 
         // Clinker in any zone over this share of its reference bed needs a clean.
-        private const float CleanClinkerShare = 0.25f;
+        internal const float CleanClinkerShare = 0.25f;
 
         // The stoker: he brings the fire to his mark over about this long, in
         // s; reverses a jam at this throttle; and sets the jets about the

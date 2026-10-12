@@ -1,5 +1,6 @@
 using System.Linq;
 using DV;
+using LocoSim.Implementations;
 using RealisticFiring.Core;
 using RealisticFiring.Diagnostics;
 using RealisticFiring.Sim;
@@ -112,7 +113,7 @@ namespace RealisticFiring
                         : "No boiler on this loco to renew");
             }
             if (settings.ToggleOverlayKey.Down())
-                settings.ShowOverlay = !settings.ShowOverlay;
+                FireOverlay.Step(settings);
 
             var withFireman = FiremanRig.TryGetTended(PlayerManager.Car, out _);
             if (settings.FiremanKey.Down())
@@ -132,7 +133,6 @@ namespace RealisticFiring
                 lastShakeTime = Time.time;
                 var ashBefore = firebox.Model.AshMass;
                 firebox.ShakeGrate();
-                overlay.NoteShake(Time.time);
                 if (settings.LogCoalDeliveries)
                     Main.Mod.Logger.Log($"{firebox.Car.ID}: grate shaken, ash {ashBefore:F2} -> {firebox.Model.AshMass:F2} kg");
             }
@@ -149,6 +149,7 @@ namespace RealisticFiring
         }
 
         private string lastFireUpStep;
+        private static readonly InjectorReading[] NoInjectors = new InjectorReading[0];
         private float fireUpCheckTime;
 
         private void AnnounceFireUp(RealisticOilFirebox oil)
@@ -156,11 +157,12 @@ namespace RealisticFiring
             if (Time.time - fireUpCheckTime < 1f)
                 return;
             fireUpCheckTime = Time.time;
-            var hint = OilLightingHint(oil);
-            // The step, without its live figures, so a changing count does not repeat it.
-            var step = hint == null ? null : hint.Split('(')[0];
+            // The step, not its live figures, so a changing count does not
+            // repeat it; lit with the lighter, the same step says so again.
+            var advice = FiringAdvice.ForOil(ReadOil(oil));
+            var step = advice.LightingStep > 0 ? $"{advice.LightingStep}{advice.Level}" : null;
             if (step != null && step != lastFireUpStep)
-                Notify(hint);
+                Notify(advice.Text);
             lastFireUpStep = step;
         }
 
@@ -378,36 +380,44 @@ namespace RealisticFiring
 
  internal static string OilLightingHint(RealisticOilFirebox oil)
         {
-            var fire = oil.Model;
-            if (fire.FireOn)
-            {
-                // Firing on the shed's line with steam of its own: let it go.
-                return fire.OnSteamLine || oil.SteamLineOpening <= 0f || oil.BoilerPressure < OwnSteam
-                    ? null
-                    : $"The boiler makes its own steam ({oil.BoilerPressure - 1f:F1} bar): shut SHOP STEAM before you leave";
-            }
-            if (fire.Vapor > 0.01f || fire.PooledOil > 0.01f)
-                return "Oil vapor in the firebox: clear it with the blower before lighting, or it flares back";
-            // A dead engine: no steam to atomize or heat the oil but the shed's.
-            if (!fire.OnSteamLine && oil.BoilerPressure < DeadBoiler)
-                return oil.AtServiceTrack
-                    ? "No steam for the burner: open SHOP STEAM (or Ctrl+Shift+L) to put the shed's steam line on the atomizer and heater"
-                    : $"No steam for the burner: stand the engine on {WaterPoints.Where}, towing it there if it cannot move, then open SHOP STEAM (or Ctrl+Shift+L)";
-            if (fire.OilTemperature < OilFire.WarmOil - 5f)
-                return $"Warm the oil first: OIL HEATER open ({fire.OilTemperature:F0} C; it runs from about {OilFire.WarmOil:F0} C, about ten minutes from cold)";
-            if (fire.Torch > 0f)
-                return $"Lit: open the firing valve a little now, the atomizer on ({fire.Torch:F0} s left)";
-            if (fire.BrickTemperature > OilFire.BrickRelights)
-                return "The brick is hot enough to relight it: open the atomizer, then the firing valve a little";
-            return $"To light: blower on, atomizer open a little, then open the fire door, hold your lit lighter in it, " +
-                   $"and open the firing valve a little within {OilFire.TorchTime:F0} s";
+            var advice = FiringAdvice.ForOil(ReadOil(oil));
+            return advice.LightingStep > 0 ? advice.Text : null;
         }
 
-        // Below this the boiler has too little steam to atomize or heat oil;
-        // past this it makes its own and the shed's line can come off, in
-        // absolute bar.
-        private const float DeadBoiler = 2f;
-        private const float OwnSteam = 7.9f;
+        /// <summary>An oil fire and its engine as the next step reads them, for the overlay and the fire-up notices.</summary>
+        internal static OilReading ReadOil(RealisticOilFirebox oil)
+        {
+            var fire = oil.Model;
+            InjectorRig.TryGetTended(oil.Car, out var rig);
+            return new OilReading
+            {
+                FireOn = fire.FireOn,
+                Vapor = fire.Vapor,
+                PooledOil = fire.PooledOil,
+                OnSteamLine = fire.OnSteamLine,
+                SteamLineOpening = oil.SteamLineOpening,
+                BoilerPressure = oil.BoilerPressure,
+                OilTemperature = fire.OilTemperature,
+                Torch = fire.Torch,
+                BrickTemperature = fire.BrickTemperature,
+                StackSmoke = fire.StackSmoke,
+                FlueSoot = fire.FlueSoot,
+                BlowerOn = Blower(oil.Car) > 0.05f,
+                AtomizerOpen = oil.AtomizerValve > 0.01f,
+                OnServiceTrack = oil.AtServiceTrack,
+                ServiceTracks = WaterPoints.Where,
+                GlassLevel = rig != null ? rig.WaterLevel : 1f,
+                Injectors = rig == null ? NoInjectors : rig.Circuits.Select(c => new InjectorReading(c.Flow.State, c.Control.Value, c.Steam != null)).ToArray(),
+            };
+        }
+
+        // The blower valve, 0 to 1, from the engine's exhaust.
+        private static float Blower(TrainCar car)
+        {
+            var flow = car != null && car.SimController != null ? car.SimController.SimulationFlow : null;
+            var exhaust = flow?.OrderedSimComps.OfType<SteamExhaust>().FirstOrDefault();
+            return exhaust != null ? exhaust.blowerControl.Value : 0f;
+        }
 
         internal static string DescribeOil(RealisticOilFirebox oil)
         {

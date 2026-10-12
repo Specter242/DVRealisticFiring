@@ -13,8 +13,10 @@ least coal or oil. For what each control does, see the README.
 - **Keep the door shut.** Crack it briefly after firing to burn off the
   smoke, then close it. Cold air through the door wastes more heat than air
   through the grate.
-- **Read before you act.** Ctrl+F shows each grate zone's coal and air, the
-  smoke, and the draft. The stack and the bed tell you the rest.
+- **Read before you act.** Ctrl+F shows the fire, the draft (choked when
+  overstoked, thin when underfed, the smoke's color under it), the glass,
+  and the boiler on dials, each grate zone's coal, and the next thing to do.
+  The stack and the bed tell you the rest.
 - **Keep the water in the middle of the glass.** Feed steadily, not in
   floods, and never let it get low.
 

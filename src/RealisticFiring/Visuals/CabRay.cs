@@ -25,6 +25,7 @@ namespace RealisticFiring.Visuals
             var start = bodyPosition + bodyRotation * car.transform.InverseTransformPoint(from);
             var way = bodyRotation * car.transform.InverseTransformDirection(direction.normalized);
             var interactable = LayerMask.NameToLayer("Interactable");
+            Physics.SyncTransforms();
             foreach (var hit in Physics.RaycastAll(start, way, reach, ~0, QueryTriggerInteraction.Ignore).OrderBy(h => h.distance))
             {
                 if (hit.collider.gameObject.layer == interactable || TrainCar.Resolve(hit.collider.gameObject) != car)

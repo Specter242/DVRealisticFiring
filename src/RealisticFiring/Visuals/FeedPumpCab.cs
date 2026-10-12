@@ -224,6 +224,7 @@ namespace RealisticFiring.Visuals
         {
             point = from;
             normal = -outward;
+            Physics.SyncTransforms();
             foreach (var hit in Physics.RaycastAll(from, outward, WallSearch, ~0, QueryTriggerInteraction.Ignore).OrderBy(h => h.distance))
             {
                 if (TrainCar.Resolve(hit.collider.gameObject) != car || Vector3.Dot(hit.normal, -outward) < 0.7f)

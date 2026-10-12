@@ -167,6 +167,9 @@ namespace RealisticFiring.Sim
 
         public float BoilerPressure => Vessel(boiler)?.pressure ?? 1f;
 
+        /// <summary>Where the safety valves lift, absolute bar: the boiler's working pressure.</summary>
+        public float WorkingPressure => SafetyValveOpeningPressure(boiler);
+
         /// <summary>Water in the tender, in kg as the boiler takes it.</summary>
         public float TenderWater
         {

@@ -18,6 +18,8 @@ namespace RealisticFiring.Visuals
         public const string OverflowPrefabName = "InjectorOverflowFX";
         public const string FireboxPrefabName = "FireboxFX";
         public const string FireIronMaterialName = "FireIron";
+        public const string OverlayFontName = "FiraSansCondensed-Medium";
+        public const string PlateFontName = "FiraSansCondensed-SemiBold";
 
         private static bool loaded;
         private static GameObject prefab;
@@ -26,6 +28,8 @@ namespace RealisticFiring.Visuals
         private static Material fireIronMaterial;
         private static Texture2D fireIronIcon;
         private static Texture2D fireIronIconDropped;
+        private static Font overlayFont;
+        private static Font plateFont;
 
         /// <summary>The plume prefab, or null when the bundle is missing or unreadable.</summary>
         public static GameObject Prefab
@@ -76,6 +80,25 @@ namespace RealisticFiring.Visuals
             }
         }
 
+        /// <summary>The fire overlay's typeface for its text and its plates; null without the bundle's fonts.</summary>
+        public static Font OverlayFont
+        {
+            get
+            {
+                Ensure();
+                return overlayFont;
+            }
+        }
+
+        public static Font PlateFont
+        {
+            get
+            {
+                Ensure();
+                return plateFont;
+            }
+        }
+
         /// <summary>The firebox's bed, flames, and smoke, or null when the bundle lacks them.</summary>
         public static GameObject FireboxPrefab
         {
@@ -97,7 +120,8 @@ namespace RealisticFiring.Visuals
 
         // An asset loaded once and since destroyed: Unity's null for a dead object.
         private static bool Unloaded() =>
-            Lost(prefab) || Lost(overflowPrefab) || Lost(fireboxPrefab) || Lost(fireIronMaterial) || Lost(fireIronIcon) || Lost(fireIronIconDropped);
+            Lost(prefab) || Lost(overflowPrefab) || Lost(fireboxPrefab) || Lost(fireIronMaterial) || Lost(fireIronIcon) || Lost(fireIronIconDropped)
+            || Lost(overlayFont) || Lost(plateFont);
 
         private static bool Lost(Object asset) => !ReferenceEquals(asset, null) && asset == null;
 
@@ -107,6 +131,7 @@ namespace RealisticFiring.Visuals
             prefab = overflowPrefab = fireboxPrefab = null;
             fireIronMaterial = null;
             fireIronIcon = fireIronIconDropped = null;
+            overlayFont = plateFont = null;
             var path = Path.Combine(Main.Mod.Path, BundleFile);
             if (!File.Exists(path))
             {
@@ -128,6 +153,8 @@ namespace RealisticFiring.Visuals
                 fireIronMaterial = Keep(bundle.LoadAsset<Material>(FireIronMaterialName));
                 fireIronIcon = Keep(bundle.LoadAsset<Texture2D>("fire_iron_icon"));
                 fireIronIconDropped = Keep(bundle.LoadAsset<Texture2D>("fire_iron_icon_dropped"));
+                overlayFont = Keep(bundle.LoadAsset<Font>(OverlayFontName));
+                plateFont = Keep(bundle.LoadAsset<Font>(PlateFontName));
                 Main.Mod.Logger.Log(prefab != null
                     ? "Custom smoke effects loaded"
                     : $"The smoke bundle has no '{PrefabName}'; using the game's smoke systems");

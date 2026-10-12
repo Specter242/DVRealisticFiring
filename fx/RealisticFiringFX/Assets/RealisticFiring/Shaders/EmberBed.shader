@@ -85,6 +85,9 @@ Shader "RealisticFiring/EmberBed"
                 // Brightness climbs steeply as the fire is forced.
                 half forced = heat * heat * heat;
                 c *= _GlowStrength * (0.3 + 1.0 * heat + 3.0 * forced * forced) * (1.0 + 0.5 * _Pulse);
+                // Nothing glows where nothing burns: a dead zone is black, while
+                // a slow fire (heat 0.2 and up) keeps its full glow.
+                c *= saturate(heat * 20.0);
                 fixed4 col = fixed4(c, 1.0);
                 UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;

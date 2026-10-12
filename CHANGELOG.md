@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.7.1 (2026-10-12)
+
+- Redesign the fire overlay as a card: fire, draft (with the smoke's color), glass, and boiler dials over Fire, Water, and Engine pages, with the next step in a fireman's words.
+- Keep a cold, empty grate dark, and draw the bare grate where no coal lies.
+- End the game's wagon pool cleanly when a wagon fails to build, so a save no longer hangs while loading.
+- Sync physics before placing cab fittings, so the injector steam lever no longer lands inside the boiler.
+
 ## 1.7.0 (2026-10-11)
 
 - Split the injector into a water valve and an Off / Prime / Feed steam lever on the S282, S060, JK3, Hudson, 844, S484-840, and 2901.

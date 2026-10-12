@@ -228,6 +228,7 @@ namespace RealisticFiring.Visuals
             side = 0f;
             var frame = car.transform;
             var from = frame.TransformPoint(new Vector3(fromX, y, z));
+            Physics.SyncTransforms();
             foreach (var hit in Physics.RaycastAll(from, frame.right, -fromX, ~0, QueryTriggerInteraction.Ignore).OrderBy(h => h.distance))
             {
                 if (TrainCar.Resolve(hit.collider.gameObject) != car)

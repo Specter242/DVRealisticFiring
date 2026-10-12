@@ -228,7 +228,7 @@ namespace RealisticFiring.Visuals
             var nudge = seatedHere ? Vector3.zero : new Vector3(settings.InjectorSteamNudgeAcross, settings.InjectorSteamNudgeUp, settings.InjectorSteamNudgeForward) / 100f;
             var aim = stock.position + middle * (Across + seat.Move.x + nudge.x) + up * (Up + seat.Move.y + nudge.y);
             var proud = seat.Move.z + nudge.z;
-            var onBoiler = TryFindBackhead(car, aim - forward * LookFrom, forward, out var surface, out var normal);
+            var onBoiler = TryFindBackhead(car, aim - forward * LookFrom, forward, out var surface, out var normal, out var surfaceName);
             if (!onBoiler)
             {
                 surface = aim;
@@ -277,7 +277,7 @@ namespace RealisticFiring.Visuals
             var plates = Plates(interior, stock, root, plateAt, Quaternion.FromToRotation(-forward, normal));
             var at = car.transform.InverseTransformPoint(control.position);
             var handle = car.transform.InverseTransformPoint(stock.position);
-            return $"'{valve.Id}' {(onBoiler ? "on the backhead" : "beside (no backhead found)")} by '{feeder.name}' (its handle at ({handle.x:F2}, {handle.y:F2}, {handle.z:F2}) m) " +
+            return $"'{valve.Id}' {(onBoiler ? $"on the backhead ('{surfaceName}')" : "beside (no backhead found)")} by '{feeder.name}' (its handle at ({handle.x:F2}, {handle.y:F2}, {handle.z:F2}) m) " +
                    $"at ({at.x:F2}, {at.y:F2}, {at.z:F2}) m, " +
                    $"a copy of the S282's sander lever" + plates;
         }
@@ -300,10 +300,15 @@ namespace RealisticFiring.Visuals
 
         // The boiler's backhead in front of a point: the first surface of this
         // car facing back at it, passing over the cab's controls.
-        private static bool TryFindBackhead(TrainCar car, Vector3 from, Vector3 forward, out Vector3 point, out Vector3 normal)
+        private static bool TryFindBackhead(TrainCar car, Vector3 from, Vector3 forward, out Vector3 point, out Vector3 normal) =>
+            TryFindBackhead(car, from, forward, out point, out normal, out _);
+
+        private static bool TryFindBackhead(TrainCar car, Vector3 from, Vector3 forward, out Vector3 point, out Vector3 normal, out string surface)
         {
             point = from;
             normal = -forward;
+            surface = "none";
+            Physics.SyncTransforms();
             foreach (var hit in Physics.RaycastAll(from, forward, BackheadSearch, ~0, QueryTriggerInteraction.Ignore).OrderBy(h => h.distance))
             {
                 if (TrainCar.Resolve(hit.collider.gameObject) != car || Vector3.Dot(hit.normal, -forward) < 0.7f
@@ -312,6 +317,7 @@ namespace RealisticFiring.Visuals
                     continue;
                 point = hit.point;
                 normal = hit.normal;
+                surface = hit.collider.name;
                 return true;
             }
             return false;

@@ -23,6 +23,7 @@ namespace RealisticFiringFX
         private const string Root = "Assets/RealisticFiring";
         private const string TexturesDir = Root + "/Textures";
         private const string MaterialsDir = Root + "/Materials";
+        private const string FontsDir = Root + "/Fonts";
         private const string PrefabPath = Root + "/" + PrefabName + ".prefab";
         private const string OverflowPrefabPath = Root + "/" + OverflowPrefabName + ".prefab";
         private const string FireboxPrefabPath = Root + "/" + FireboxPrefabName + ".prefab";
@@ -103,6 +104,11 @@ namespace RealisticFiringFX
             AssetImporter.GetAtPath($"{MaterialsDir}/{FireIronMaterialName}.mat").SetAssetBundleNameAndVariant(BundleName, "");
             foreach (var icon in new[] { "fire_iron_icon.png", "fire_iron_icon_dropped.png" })
                 ImportIcon(icon).SetAssetBundleNameAndVariant(BundleName, "");
+
+            // The fire overlay's typeface, when its files are here (the public
+            // source leaves them out, and the overlay falls back to the game's font).
+            foreach (var font in Directory.Exists(FontsDir) ? Directory.GetFiles(FontsDir, "*.ttf") : new string[0])
+                AssetImporter.GetAtPath(font.Replace('\\', '/')).SetAssetBundleNameAndVariant(BundleName, "");
 
             AssetImporter.GetAtPath(PrefabPath).SetAssetBundleNameAndVariant(BundleName, "");
             AssetImporter.GetAtPath(OverflowPrefabPath).SetAssetBundleNameAndVariant(BundleName, "");

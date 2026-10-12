@@ -8,7 +8,9 @@
 // hotness), until a white-hot fire glows all over;
 // the glow wavers with a scrolling noise, faster under draft, and jumps with
 // each exhaust beat (_Pulse). UV0 is the bed's own frame (across, along,
-// 0..1), for the shovel's aim.
+// 0..1), for the shovel's aim. UV3.x is where no coal lies (0 to 1): the
+// bare grate shows there, iron bars along the box with dark gaps between
+// them, under any ash left on it, and nothing glows.
 Shader "RealisticFiring/CoalBed"
 {
     Properties
@@ -21,6 +23,8 @@ Shader "RealisticFiring/CoalBed"
         _CoalColor ("Coal", Color) = (0.035, 0.032, 0.03, 1)
         _AshColor ("Ash", Color) = (0.42, 0.40, 0.37, 1)
         _ClinkerColor ("Clinker", Color) = (0.09, 0.06, 0.05, 1)
+        _GrateColor ("Grate bars", Color) = (0.055, 0.052, 0.05, 1)
+        _GrateBars ("Grate bars across the box", Float) = 22.0
         _GlowStrength ("Glow strength", Range(0, 12)) = 1.0
         _Pulse ("Exhaust beat pulse", Range(0, 1)) = 0
         _FlickerSpeed ("Flicker speed", Range(0, 4)) = 0.6
@@ -46,6 +50,8 @@ Shader "RealisticFiring/CoalBed"
         fixed4 _CoalColor;
         fixed4 _AshColor;
         fixed4 _ClinkerColor;
+        fixed4 _GrateColor;
+        float _GrateBars;
         float _GlowStrength;
         float _FlickerSpeed;
         float4 _AimRect;
@@ -55,6 +61,7 @@ Shader "RealisticFiring/CoalBed"
         {
             float2 bed;
             float4 state;
+            float bare;
         };
 
         void vert(inout appdata_full v, out Input o)
@@ -62,6 +69,7 @@ Shader "RealisticFiring/CoalBed"
             UNITY_INITIALIZE_OUTPUT(Input, o);
             o.bed = v.texcoord.xy;
             o.state = v.color;
+            o.bare = v.texcoord3.x;
         }
 
         // Incandescence as a coal fire shows it: black, dull red, red-orange,
@@ -104,6 +112,12 @@ Shader "RealisticFiring/CoalBed"
             half gapLevel = (0.62 + 0.12 * saturate((heat - 0.7) / 0.3)) * opening;
             clip(height - gapLevel);
 
+            // An empty grate: its bars, with the gaps between them open, where
+            // no ash covers them.
+            half bars = saturate(IN.bare * 2.0 - 0.5) * (1.0 - saturate(ash * 1.5));
+            half gap = step(0.6, frac(IN.bed.x * _GrateBars));
+            clip(0.5 - bars * gap);
+
             half3 relief = UnpackNormal(tex2D(_NormalTex, uv));
             o.Normal = normalize(lerp(half3(0, 0, 1), relief, _NormalStrength * (1.0 - 0.6 * ash)));
 
@@ -115,8 +129,10 @@ Shader "RealisticFiring/CoalBed"
             half3 albedo = _CoalColor.rgb * (0.7 + 0.5 * grain);
             albedo = lerp(albedo, _AshColor.rgb * (0.8 + 0.3 * grain), ash);
             albedo = lerp(albedo, _ClinkerColor.rgb, clinker);
+            albedo = lerp(albedo, _GrateColor.rgb * (0.85 + 0.3 * grain), bars);
             o.Albedo = albedo;
-            o.Smoothness = lerp(lerp(0.4, 0.1, ash), 0.75, clinker) * (0.6 + 0.4 * height);
+            o.Normal = normalize(lerp(o.Normal, half3(0, 0, 1), bars));
+            o.Smoothness = lerp(lerp(lerp(0.4, 0.1, ash), 0.75, clinker) * (0.6 + 0.4 * height), 0.3, bars);
             o.Metallic = 0.0;
 
             // The lumps on top stay dark, lit from below at their edges by the
@@ -131,7 +147,7 @@ Shader "RealisticFiring/CoalBed"
             half lit = (1.0 - 0.6 * ash) * (1.0 - 0.85 * clinker);
             half forced = heat * heat * heat;
             half3 glow = FireColor(local * (1.0 - 0.4 * fresh)) * mask * lit * waver * (0.4 + 1.6 * heat + 3.0 * forced * forced);
-            o.Emission = glow * _GlowStrength * (1.0 + 0.6 * _Pulse) * step(0.001, heat);
+            o.Emission = glow * _GlowStrength * (1.0 + 0.6 * _Pulse) * step(0.001, heat) * (1.0 - saturate(IN.bare * 2.0));
 
             // The zone a loaded shovel is aimed at.
             float2 inside = step(_AimRect.xy, IN.bed) * step(IN.bed, _AimRect.zw);

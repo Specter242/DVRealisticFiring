@@ -164,6 +164,7 @@ namespace RealisticFiring.AdapterCheck
             CheckShovelLoads();
             CheckFiremanHand();
             CheckPatchTargets();
+            CheckCarPoolGuard();
             CheckFireIronLoading();
             if (args.Length > 0 && File.Exists(args[0]))
                 CheckMultiplayerCabHooks(args[0]);
@@ -1664,6 +1665,30 @@ namespace RealisticFiring.AdapterCheck
                 .Where(t => t.GetCustomAttributes(typeof(HarmonyLib.HarmonyPatch), true).Length > 0);
             Check(!patches.Any(t => HarmonyLib.HarmonyMethodExtensions.GetFromType(t).Any(info => info.declaringType == typeof(UnityEngine.Resources)))
                   && !targets.Contains(resourceLoad), "no global Unity Resources.Load patch");
+        }
+
+        // The load-hang guard patches the game's pool coroutine and TrainCar.Awake
+        // with finalizers: Harmony must accept both against the installed game.
+        private static void CheckCarPoolGuard()
+        {
+            var harmony = new HarmonyLib.Harmony("RealisticFiring.AdapterCheck.CarPool");
+            try
+            {
+                harmony.CreateClassProcessor(typeof(RealisticFiring.Patches.CarPoolGuard)).Patch();
+                harmony.CreateClassProcessor(typeof(RealisticFiring.Patches.TrainCarAwakeReport)).Patch();
+                var pool = HarmonyLib.AccessTools.EnumeratorMoveNext(HarmonyLib.AccessTools.Method(typeof(CarSpawner), "InitPoolCoro"));
+                var awake = HarmonyLib.AccessTools.Method(typeof(TrainCar), "Awake");
+                Check(HarmonyLib.Harmony.GetPatchInfo(pool)?.Finalizers.Count == 1 && HarmonyLib.Harmony.GetPatchInfo(awake)?.Finalizers.Count == 1,
+                    "the load-hang guard's finalizers install on the car pool's coroutine and TrainCar.Awake");
+            }
+            catch (Exception e)
+            {
+                Check(false, $"the load-hang guard's finalizers install ({e.GetType().Name}: {e.Message})");
+            }
+            finally
+            {
+                harmony.UnpatchAll(harmony.Id);
+            }
         }
 
         private static void Check(bool ok, string what)
