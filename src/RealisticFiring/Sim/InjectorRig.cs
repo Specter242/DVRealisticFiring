@@ -32,6 +32,9 @@ namespace RealisticFiring.Sim
         /// <summary>A shed hydrant hose, from the mains, in kg/s.</summary>
         public const float HydrantRate = 15f;
 
+        /// <summary>Seconds after an engine is set up in which its injectors find their saved levers.</summary>
+        private const float ResumeSeconds = 5f;
+
         /// <summary>A hose only fills a boiler with no pressure in it, absolute bar.</summary>
         public const float HydrantMaxPressure = 1.5f;
 
@@ -275,6 +278,13 @@ namespace RealisticFiring.Sim
         /// Gives <paramref name="boiler"/> a realistic injector if a cab control
         /// works it, and says what was decided.
         /// </summary>
+        /// <summary>As if the engine had stood long past finding its saved levers: a lever opened now is a fresh start.</summary>
+        internal void EndResume()
+        {
+            foreach (var circuit in Circuits)
+                circuit.Injector.Resume(0f);
+        }
+
         internal static bool TryCreate(TrainCar car, Boiler boiler, out string note)
             => TryCreate(car, boiler, car != null ? car.carLivery.id : null, null, out note);
 
@@ -321,6 +331,9 @@ namespace RealisticFiring.Sim
                     steamValves++;
                 }
             }
+            // A loaded engine's injectors pick up as they were saved, feeding or not.
+            foreach (var circuit in circuits)
+                circuit.Injector.Resume(ResumeSeconds);
             var rig = new InjectorRig(car, boiler, circuits);
             PruneDestroyedCars();
             ByBoiler[boiler] = rig;

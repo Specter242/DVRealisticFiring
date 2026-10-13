@@ -366,9 +366,19 @@ namespace RealisticFiring.AdapterCheck
                 $"primed and opened, it feeds the boiler ({rig.BoilerVessel.mass - massBefore:F0} kg in, {rig.Flow.WaterIn:F1} kg/s at {rig.Flow.FeedTemperature:F0} C, " +
                 $"steam {rig.Flow.SteamUsed:F2} kg/s, pressure {pressureBefore:F1} -> {rig.BoilerVessel.pressure:F1} bar)");
 
+            // An engine set up with its injector open to feed, as a save loads: it carries on.
+            var loaded = NewBoiler(12f, lever);
+            InjectorRig.TryCreate(null, loaded, out _);
+            InjectorRig.TryGet(loaded, out var loadedRig);
+            var loadedMass = loadedRig.BoilerVessel.mass;
+            Run(loadedRig, 2f);
+            Check(loadedRig.Flow.State == InjectorState.Working && loadedRig.Flow.OverflowSteam == 0f && loadedRig.BoilerVessel.mass > loadedMass,
+                $"loaded with its injector open, it carries on feeding ({loadedRig.BoilerVessel.mass - loadedMass:F0} kg in 2 s)");
+
             var slammed = NewBoiler(12f, lever);
             InjectorRig.TryCreate(null, slammed, out _);
             InjectorRig.TryGet(slammed, out var slammedRig);
+            slammedRig.EndResume();
             var slammedMass = slammedRig.BoilerVessel.mass;
             var slammedPressure = slammedRig.BoilerVessel.pressure;
             Run(slammedRig, 2f);
@@ -917,6 +927,7 @@ namespace RealisticFiring.AdapterCheck
             {
                 InjectorRig.TryCreate(null, setup.Boiler, "Jk3A", setup.Components, out _);
                 InjectorRig.TryGet(setup.Boiler, out var rig);
+                rig?.EndResume();
                 return rig;
             }
             void Tick(InjectorRig rig, float seconds)

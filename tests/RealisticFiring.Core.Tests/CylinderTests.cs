@@ -10,6 +10,7 @@ namespace RealisticFiring.Core.Tests;
 public class CylinderTests
 {
     private const float Bore = 0.61f;
+    private const float Stroke = 0.711f;
     private const float CylinderVolume = 207.8f;
     private const float ChestVolume = 1000f;
     private const float MaxFlow = 6f;
@@ -153,10 +154,11 @@ public class CylinderTests
         Assert.True(long75.PortWindow > 0.4f * long75.AdmissionTurns);
     }
 
-    private static SteamCylinders S282(float cutoff, float exhaustFlow = 0f)
+    // Superheated well past condensing on the walls, unless asked otherwise.
+    private static SteamCylinders S282(float cutoff, float exhaustFlow = 0f, float superheat = 150f)
     {
-        var cylinders = new SteamCylinders(new CylinderSpec(), Bore, MaxFlow);
-        cylinders.Set(cutoff, exhaustFlow, 14f, SteamCylinders.SaturationTemperature(14f));
+        var cylinders = new SteamCylinders(new CylinderSpec(), Bore, Stroke, MaxFlow);
+        cylinders.Set(cutoff, exhaustFlow, 14f, SteamCylinders.SaturationTemperature(14f) + superheat);
         return cylinders;
     }
 
@@ -210,11 +212,81 @@ public class CylinderTests
     [Fact]
     public void SuperheatStiffensTheExpansion()
     {
-        var cylinders = new SteamCylinders(new CylinderSpec(), Bore, MaxFlow);
+        var cylinders = new SteamCylinders(new CylinderSpec(), Bore, Stroke, MaxFlow);
         cylinders.Set(0.5f, 0f, 14f, SteamCylinders.SaturationTemperature(14f));
         Assert.Equal(1.135f, cylinders.Exponent, 3);
         cylinders.Set(0.5f, 0f, 14f, SteamCylinders.SaturationTemperature(14f) + 150f);
         Assert.Equal(1.3f, cylinders.Exponent, 3);
+    }
+
+    // Goss's Purdue engine, 17 by 24 in., on 10 bar at a quarter cut-off.
+    private static SteamCylinders Goss(float superheat, float cutoff = 0.25f)
+    {
+        var cylinders = new SteamCylinders(new CylinderSpec(), 0.432f, 0.61f, MaxFlow);
+        cylinders.Set(cutoff, 0f, 10f, SteamCylinders.SaturationTemperature(10f) + superheat);
+        return cylinders;
+    }
+
+    [Fact]
+    public void SaturatedSteamCondensesOnTheWallsTillTheSuperheatStopsIt()
+    {
+        // A quarter of the steam admitted: a third more than works.
+        Assert.Equal(1f / 3f, Goss(0f).Condensation(2f, 10f), 3);
+        Assert.Equal(0.13f / 0.87f, Goss(50f).Condensation(2f, 10f), 3);
+        Assert.Equal(0f, Goss(105f).Condensation(2f, 10f));
+    }
+
+    [Fact]
+    public void CylindersLeftAsTheyWereDoNotCondense()
+    {
+        var cylinders = Goss(0f);
+        cylinders.WallCondensation = false;
+
+        Assert.Equal(0f, cylinders.Condensation(2f, 10f));
+    }
+
+    [Fact]
+    public void ShortCutoffsSlowStrokesLowPressureAndSmallCylindersCondenseMore()
+    {
+        var quarter = Goss(0f).Condensation(2f, 10f);
+        Assert.True(Goss(0f, 0.15f).Condensation(2f, 10f) > quarter);
+        Assert.True(Goss(0f, 0.5f).Condensation(2f, 10f) < quarter);
+        Assert.True(Goss(0f).Condensation(0.5f, 10f) > quarter);
+        Assert.True(Goss(0f).Condensation(4f, 10f) < quarter);
+        Assert.True(Goss(0f).Condensation(2f, 5f) > quarter);
+        Assert.True(S282(0.25f, superheat: 0f).Condensation(2f, 10f) < quarter);
+    }
+
+    // Steam an indicated horsepower-hour, lb, at two turns a second.
+    private static float WaterRate(SteamCylinders cylinders)
+    {
+        var admission = Admit(cylinders, 2f);
+        var work = cylinders.Cycle(admission.Pressure).MeanEffectivePressure * 1e5f * CylinderVolume / 1000f;
+        return admission.Mass / work * 3.6e6f * 2.2046f * 0.7457f;
+    }
+
+    [Fact]
+    public void SaturatedSteamCostsAFifthMoreForTheSameWork()
+    {
+        var dry = WaterRate(S282(0.25f));
+        var wet = WaterRate(S282(0.25f, superheat: 0f));
+
+        // Goss's superheated engine 21.6 lb at 200 psi, the saturated 25.5;
+        // PRR's H8sb against the H8b, 26 to 35 % less steam.
+        Assert.InRange(dry, 18f, 22f);
+        Assert.InRange(wet / dry, 1.12f, 1.4f);
+    }
+
+    [Fact]
+    public void TheCondensedSteamIsCountedInWhatTheChestGives()
+    {
+        var wet = Admit(S282(0.25f, superheat: 0f), 2f);
+        var dry = Admit(S282(0.25f), 2f);
+
+        var condensation = S282(0.25f, superheat: 0f).Condensation(2f, 14f);
+        Assert.Equal(wet.Mass * condensation / (1f + condensation), wet.Condensed, 3);
+        Assert.Equal(0f, dry.Condensed);
+        Assert.True(wet.Mass > 1.15f * dry.Mass, $"{wet.Mass} against {dry.Mass}");
     }
 
     [Theory]

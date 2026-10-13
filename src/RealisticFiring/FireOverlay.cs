@@ -371,7 +371,20 @@ namespace RealisticFiring
                 c.Rows.Add(new Row { Label = "Cut-off", Value = P0(cycle.Events.Cutoff) });
                 c.Rows.Add(new Row { Label = "Steam chest", Value = $"{(engine.steamChestPressureReadOut.Value - 1f) * PsiPerBar:F0} psi" });
                 c.Rows.Add(new Row { Label = "Mean pressure", Value = $"{cycle.MeanEffectivePressure * PsiPerBar:F0} psi" });
-                c.Rows.Add(new Row { Label = "Steam used", Value = $"{engine.exhaustFlowReadOut.Value:F2} kg/s" });
+                if (EngineSuperheater.TryGet(engine, out var superheater))
+                    c.Rows.Add(new Row
+                    {
+                        Label = "Superheat",
+                        Value = superheater.Model.Spec.Saturated
+                            ? "none: saturated"
+                            : $"{superheater.Model.Superheat:F0} °C · steam {superheater.SteamTemperature(engine.intakePressure.Value):F0} °C",
+                    });
+                var condensing = cylinders.Admitted > 0f ? cylinders.Condensed / cylinders.Admitted : 0f;
+                c.Rows.Add(new Row
+                {
+                    Label = "Steam used",
+                    Value = condensing >= 0.01f ? $"{engine.exhaustFlowReadOut.Value:F2} kg/s · {P0(condensing)} condensing" : $"{engine.exhaustFlowReadOut.Value:F2} kg/s",
+                });
             }
             else
                 c.Rows.Add(new Row { Label = "Cylinders", Value = "the engine's own" });
@@ -447,7 +460,7 @@ namespace RealisticFiring
                 DrawRows(c.Rows, new Rect(body.x + 222f, body.y, body.width - 222f, body.height), 30f);
             }
             else
-                DrawRows(c.Rows, body, 32f);
+                DrawRows(c.Rows, body, Mathf.Min(32f, body.height / Mathf.Max(1, c.Rows.Count)));
 
             DrawNext(c.Advice, new Rect(Pad, 388f, Width - 2f * Pad, 64f));
 

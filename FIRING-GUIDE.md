@@ -160,6 +160,38 @@ Rake a bank level with the empty shovel; don't stir it.
   fire and full draft. Drifting needs only a light fire: hold it, don't
   build it.
 
+## Booster (NYC Hudson)
+
+A small engine on the trailing truck that adds about 12,100 lb of pull for
+starting and slow running. Its controls are on the wall by the reverser:
+the IDLING VALVE wheel, the BOOSTER LATCH, and the BOOSTER gauge.
+
+**Cutting it in:**
+
+1. **Warm it.** Open the IDLING VALVE. The booster turns over slowly out of
+   gear, its gauge shows about 2.4 bar, and the valve reads "Idling (latch
+   locked out)" with how warm it is. Give it two or three minutes, until it
+   reads 90 % or more. Cut in under half warm and it primes: a third of its
+   pull for the first ten seconds.
+2. **Shut the IDLING VALVE.** It reads "Running". Wait about ten seconds for
+   the booster to stop turning.
+3. **Set the engine up.** Standing or under 12 mph going forward, reverser
+   in the forward corner (66 % cut-off or more), throttle open.
+4. **Raise the BOOSTER LATCH.** The cylinder cocks blow for about 20
+   seconds, then it pulls. The gauge shows its steam.
+
+**Cutting it out:** hook the reverser back short of 66 %, or knock the
+latch down. Cut it out before 21 mph.
+
+**If the latch drops back down:**
+
+- The IDLING VALVE is still open: the latch is locked out while it idles.
+- The booster is still turning: wait after shutting the idling valve.
+- You're over 12 mph, or rolling backward: it never drives backing up.
+- The reverser is short of the forward corner.
+
+A grinding clash means the booster was turning or you were going too fast.
+
 ## Quick reference
 
 | What | Target |
@@ -174,4 +206,5 @@ Rake a bank level with the empty shovel; don't stir it.
 | Oil stack | light grey-brown haze |
 | Injector | at least 2.5 bar; water open, steam Prime, then Feed; water past two fifths |
 | Blowdown | 3 s open, 5–6 s shut; about a sixth of the feed |
+| Booster (Hudson) | idling valve open 2–3 min, shut it, wait 10 s; under 12 mph, reverser forward, throttle open: raise the latch |
 | Water | middle of the glass |

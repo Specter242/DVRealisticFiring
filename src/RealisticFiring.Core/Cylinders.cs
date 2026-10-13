@@ -209,6 +209,9 @@ namespace RealisticFiring.Core
 
         /// <summary>Exhaust steam kept as cushion, in kg.</summary>
         public float Cushion;
+
+        /// <summary>Of <see cref="Mass"/>, steam the walls condensed, in kg: it leaves with the exhaust having done no work.</summary>
+        public float Condensed;
     }
 
  public sealed class CylinderSpec
@@ -224,6 +227,35 @@ namespace RealisticFiring.Core
 
         /// <summary>Superheat that makes steam expand fully as superheated, in °C.</summary>
         public float FullSuperheat { get; set; } = 100f;
+
+        /// <summary>
+        /// Saturated steam's initial condensation: the share of the steam
+        /// admitted that the cylinder walls condense, at a quarter cut-off,
+        /// <see cref="CondensationTurns"/>, and <see cref="CondensationPressure"/>
+        /// in <see cref="CondensationBore"/> by <see cref="CondensationStroke"/>
+        /// cylinders. Purdue's Schenectady No. 1 showed 72 to 80 % of its
+        /// steam on the indicator cards at 25 % cut-off (Goss, 1907, pp.
+        /// 112–114). Heck's formula scales it (The Steam Engine and Turbine,
+        /// 1911, eq. 126): as the root of the walls' surface over the volume
+        /// and of one over the cut-off and clearance, the cube root of one
+        /// over the speed, and about the cube root of one over the pressure.
+        /// </summary>
+        public float QuarterCondensation { get; set; } = 0.25f;
+
+        public float CondensationTurns { get; set; } = 2f;
+
+        /// <summary>Absolute bar: Goss's engine ran at about 130 psi.</summary>
+        public float CondensationPressure { get; set; } = 10f;
+
+        /// <summary>Goss's cylinders, 17 by 24 in., in m.</summary>
+        public float CondensationBore { get; set; } = 0.432f;
+        public float CondensationStroke { get; set; } = 0.61f;
+
+        /// <summary>
+        /// Condensation a °C of superheat prevents, a share of the steam
+        /// admitted: 7.5 °F of superheat for each percent (Ripper).
+        /// </summary>
+        public float CondensationPerSuperheat { get; set; } = 0.0024f;
 
         /// <summary>The blast nozzle's back pressure at the engine's full steam flow, bar over the atmosphere; it goes as the flow squared.</summary>
         public float BackPressureAtFullFlow { get; set; } = 0.7f;
@@ -253,10 +285,16 @@ namespace RealisticFiring.Core
 
         private readonly float maxFlow;
 
-        public SteamCylinders(CylinderSpec spec, float bore, float maxFlow)
+        // These cylinders' walls against Goss's, for the condensation.
+        private readonly float walls;
+
+        public SteamCylinders(CylinderSpec spec, float bore, float stroke, float maxFlow)
         {
             Spec = spec ?? new CylinderSpec();
             this.maxFlow = maxFlow > 0f ? maxFlow : 1f;
+            // Heck's surface over volume, ends and barrel: 2/L + 4/D.
+            float Walls(float d, float l) => 2f / Math.Max(0.1f, l) + 4f / Math.Max(0.1f, d);
+            walls = (float)Math.Sqrt(Walls(bore, stroke) / Walls(Spec.CondensationBore, Spec.CondensationStroke));
             var portArea = (float)Math.PI * Spec.ValveToBore * bore * Spec.PortOpenShare * Spec.PortWidthToBore * bore;
             PortFlowPerBar = Spec.DischargeCoefficient * NapierPerSquareMetreBar * portArea;
             Events = Spec.Gear.Events(0.5f);
@@ -273,12 +311,40 @@ namespace RealisticFiring.Core
         public float Exponent { get; private set; }
         public float BackPressure { get; private set; }
 
+        /// <summary>The steam's superheat at the chest this tick, in °C.</summary>
+        public float Superheat { get; private set; }
+
+        /// <summary>Whether wet steam condenses on these walls; an engine left as it was has none.</summary>
+        public bool WallCondensation { get; set; } = true;
+
+        /// <summary>
+        /// Steam the cylinder walls take on admission at
+        /// <paramref name="turnsPerSecond"/> from a chest at
+        /// <paramref name="chestPressure"/> absolute bar, over the steam that
+        /// works: saturated steam's condensation at this tick's cut-off, less
+        /// what the superheat prevents.
+        /// </summary>
+        public float Condensation(float turnsPerSecond, float chestPressure)
+        {
+            if (!WallCondensation || Spec.QuarterCondensation <= 0f)
+                return 0f;
+            var cutoff = Math.Max(0.05f, Events.Cutoff);
+            var turns = Math.Max(0.25f, Math.Abs(turnsPerSecond));
+            var pressure = Math.Max(1f, chestPressure);
+            var saturated = Spec.QuarterCondensation * walls * (float)(
+                Math.Sqrt((0.25 + Spec.Clearance) / (cutoff + Spec.Clearance))
+                * Math.Pow(Spec.CondensationTurns / turns, 1.0 / 3.0)
+                * Math.Pow(Spec.CondensationPressure / pressure, 1.0 / 3.0));
+            var condensed = Math.Min(0.6f, saturated) - Superheat * Spec.CondensationPerSuperheat;
+            return condensed > 0f ? condensed / (1f - condensed) : 0f;
+        }
+
         /// <summary>Sets this tick's notch, steam, and exhaust.</summary>
         public void Set(float cutoff, float exhaustFlow, float intakePressure, float intakeTemperature)
         {
             Events = Spec.Gear.Events(cutoff);
-            var superheat = intakeTemperature - SaturationTemperature(intakePressure);
-            var share = Math.Min(1f, Math.Max(0f, superheat / Spec.FullSuperheat));
+            Superheat = Math.Max(0f, intakeTemperature - SaturationTemperature(intakePressure));
+            var share = Math.Min(1f, Superheat / Spec.FullSuperheat);
             Exponent = Spec.SaturatedExponent + (Spec.SuperheatedExponent - Spec.SaturatedExponent) * share;
             var flow = Math.Min(1.5f, Math.Max(0f, exhaustFlow) / maxFlow);
             BackPressure = 1f + Spec.BackPressureAtFullFlow * flow * flow;
@@ -295,18 +361,25 @@ namespace RealisticFiring.Core
         /// chest gives as the two fill to one pressure (the cushion already in
         /// the cylinder counted), and what the port passes while it opens and
         /// closes. The throttle refills the chest between strokes, so its limit
-        /// shows as the chest's pressure. Steam volumes are L/kg.
+        /// shows as the chest's pressure. The walls' condensation takes steam
+        /// as a larger cylinder would: drawn from the chest and through the
+        /// port, but doing no work. Steam volumes are L/kg.
         /// </summary>
         public CylinderAdmission Admit(float chestPressure, float chestSteam, float chestVolume, float cylinderVolume,
             float turnsPerSecond, Func<float, float> steamVolume, Func<float, float> steamPressure)
         {
-            var filled = (Events.Cutoff + Spec.Clearance) * cylinderVolume;
+            var condensation = Condensation(turnsPerSecond, chestPressure);
+            var filled = (Events.Cutoff + Spec.Clearance) * cylinderVolume * (1f + condensation);
             var cushion = (Events.Compression + Spec.Clearance) * cylinderVolume / steamVolume(BackPressure);
             var shared = filled / (filled + chestVolume) * (chestSteam + cushion) - cushion;
             var timed = turnsPerSecond > 0f ? PortFlowPerBar * Math.Max(1f, chestPressure) * Events.PortWindow / turnsPerSecond : shared;
             var mass = Math.Max(0f, Math.Min(shared, timed));
             var pressure = mass > 0f ? Math.Min(chestPressure, steamPressure(filled / (mass + cushion))) : 1f;
-            return new CylinderAdmission { Mass = mass, Pressure = Math.Max(1f, pressure), Cushion = cushion };
+            return new CylinderAdmission
+            {
+                Mass = mass, Pressure = Math.Max(1f, pressure), Cushion = cushion,
+                Condensed = mass * condensation / (1f + condensation),
+            };
         }
 
         /// <summary>Saturated steam's temperature at an absolute pressure in bar, in °C (within 3 °C from 1 to 20 bar).</summary>

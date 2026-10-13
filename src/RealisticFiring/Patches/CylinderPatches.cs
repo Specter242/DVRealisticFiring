@@ -23,7 +23,11 @@ namespace RealisticFiring.Patches
                 return true;
             var cylinders = EngineCylinders.Of(__instance);
             var model = cylinders.Model;
-            model.Set(___cutoff, __instance.exhaustFlowReadOut.Value, __instance.intakePressure.Value, __instance.intakeTemperature.Value);
+            var intake = __instance.intakePressure.Value;
+            var temperature = EngineSuperheater.TryGet(__instance, out var superheater)
+                ? superheater.SteamTemperature(intake)
+                : __instance.intakeTemperature.Value;
+            model.Set(___cutoff, __instance.exhaustFlowReadOut.Value, intake, temperature);
             var turns = Mathf.Abs(__instance.crankRpm.Value) / 60f;
             var chest = __instance.steamChestPressureReadOut.Value;
             if (___cutoff == 0f || turns == 0f)
@@ -36,6 +40,7 @@ namespace RealisticFiring.Patches
             ___steamMassPerChuff = admission.Mass;
             ___admissionPressure = admission.Pressure;
             cylinders.Admitted = admission.Mass;
+            cylinders.Condensed = admission.Condensed;
             return false;
         }
     }
@@ -83,6 +88,20 @@ namespace RealisticFiring.Patches
             var net = cycle.Working(s) - cycle.Returning(1f - s);
             __result = Mathf.Sign(___admissionPressure) * Mathf.Max(0f, net) * 100000f * PistonArea(___sim);
             return false;
+        }
+    }
+
+    /// <summary>
+    /// The superheater's elements, a tick at a time, before the engine
+    /// admits steam: they read the fire and last tick's steam.
+    /// </summary>
+    [HarmonyPatch(typeof(ReciprocatingSteamEngine), nameof(ReciprocatingSteamEngine.Tick))]
+    internal static class SuperheaterTickPatch
+    {
+        private static void Prefix(ReciprocatingSteamEngine __instance, float delta)
+        {
+            if (EngineCylinders.Works(__instance) && EngineSuperheater.TryGet(__instance, out var superheater))
+                superheater.Step(__instance, delta);
         }
     }
 

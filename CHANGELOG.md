@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.7.4 (2026-10-13)
+
+- Superheat the steam: each fired engine's prototype superheater (Type A or E), building with the fire and the steam drawn and lagging by minutes; steam short of superheat condenses on the cylinder walls (Goss's tests, Heck's formula). The JK3 stays saturated and the S060 is exempt.
+- Keep an injector feeding when its engine loads from a save.
+- Seat the S282's injector steam lever at a fixed offset from its handle instead of by a ray; cast the other cabs' rays in the car's physics pose.
+- Lay out the Hudson's booster procedure in the firing guide.
+
 ## 1.7.3 (2026-10-13)
 
 - Free every shop register when the game fails to hand over a purchase: deliver what was made, restock and refund the rest, and log the exception.

@@ -56,7 +56,8 @@ h2 { margin: 2.4rem 0 .6rem; padding-top: .9rem; border-top: 1px solid var(--rul
   font-size: 1.45rem; color: var(--accent); }
 h3 { margin: 1.6rem 0 .4rem; font-size: 1.15rem; }
 p { margin: .6rem 0; }
-ul { margin: .5rem 0; padding-left: 1.3rem; }
+ul, main > ol { margin: .5rem 0; padding-left: 1.3rem; }
+main > ol > li::marker { font-weight: 700; }
 li { margin: .35rem 0; }
 li::marker { color: var(--accent); }
 strong { color: var(--text); }

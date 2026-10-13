@@ -15,7 +15,7 @@ namespace RealisticFiring.Sim
 
         private EngineCylinders(ReciprocatingSteamEngine engine)
         {
-            Model = new SteamCylinders(Spec, engine.cylinderBore, engine.throttleMaxFlow);
+            Model = new SteamCylinders(Spec, engine.cylinderBore, engine.pistonStroke, engine.throttleMaxFlow);
         }
 
         public static bool Enabled => Main.Settings != null && Main.Settings.RealisticCylinders;
@@ -30,6 +30,9 @@ namespace RealisticFiring.Sim
 
         /// <summary>Steam admitted a stroke this tick, in kg.</summary>
         public float Admitted { get; internal set; }
+
+        /// <summary>Of that, steam the cylinder walls condensed, in kg.</summary>
+        public float Condensed { get; internal set; }
 
         public static EngineCylinders Of(ReciprocatingSteamEngine engine) =>
             Engines.GetValue(engine, e => new EngineCylinders(e));

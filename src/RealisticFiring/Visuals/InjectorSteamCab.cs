@@ -42,6 +42,11 @@ namespace RealisticFiring.Visuals
             ["FEF-3"] = (new Vector3(-0.14f, -0.48f, -0.03f), new Vector3(-180f, 0f, 2f)), // 2026-10-11
         };
 
+        private static readonly Dictionary<string, Vector3> FixedSeats = new Dictionary<string, Vector3>
+        {
+            ["LocoS282A"] = new Vector3(0.26f, 0.13f, 0.21f),
+        };
+
         /// <summary>Builds the steam levers in a newly loaded cab interior. Returns a line for the log, or null.</summary>
         public static string Attach(TrainCar car, Transform interior)
         {
@@ -228,7 +233,11 @@ namespace RealisticFiring.Visuals
             var nudge = seatedHere ? Vector3.zero : new Vector3(settings.InjectorSteamNudgeAcross, settings.InjectorSteamNudgeUp, settings.InjectorSteamNudgeForward) / 100f;
             var aim = stock.position + middle * (Across + seat.Move.x + nudge.x) + up * (Up + seat.Move.y + nudge.y);
             var proud = seat.Move.z + nudge.z;
-            var onBoiler = TryFindBackhead(car, aim - forward * LookFrom, forward, out var surface, out var normal, out var surfaceName);
+            var fixedSeat = FixedSeats.TryGetValue(car.carLivery.id, out var fromHandle);
+            var surface = aim;
+            var normal = -forward;
+            var surfaceName = "none";
+            var onBoiler = !fixedSeat && TryFindBackhead(car, aim - forward * LookFrom, forward, out surface, out normal, out surfaceName);
             if (!onBoiler)
             {
                 surface = aim;
@@ -244,6 +253,8 @@ namespace RealisticFiring.Visuals
                         * Quaternion.AngleAxis(turns.z, normal);
             holder.rotation = extra * Quaternion.LookRotation(normal, upOnFace) * Quaternion.Inverse(Quaternion.LookRotation(shape.Face, shape.Handle));
             holder.position = surface + normal * (Back(holder, -normal) - proud);
+            if (fixedSeat)
+                holder.position += stock.position + middle * fromHandle.x + up * fromHandle.y + forward * fromHandle.z - control.position;
             var move = holder.position - stock.position;
 
             foreach (var input in control.GetComponents<MonoBehaviour>()
@@ -277,7 +288,7 @@ namespace RealisticFiring.Visuals
             var plates = Plates(interior, stock, root, plateAt, Quaternion.FromToRotation(-forward, normal));
             var at = car.transform.InverseTransformPoint(control.position);
             var handle = car.transform.InverseTransformPoint(stock.position);
-            return $"'{valve.Id}' {(onBoiler ? $"on the backhead ('{surfaceName}')" : "beside (no backhead found)")} by '{feeder.name}' (its handle at ({handle.x:F2}, {handle.y:F2}, {handle.z:F2}) m) " +
+            return $"'{valve.Id}' {(onBoiler ? $"on the backhead ('{surfaceName}')" : fixedSeat ? "on its fixed seat" : "beside (no backhead found)")} by '{feeder.name}' (its handle at ({handle.x:F2}, {handle.y:F2}, {handle.z:F2}) m) " +
                    $"at ({at.x:F2}, {at.y:F2}, {at.z:F2}) m, " +
                    $"a copy of the S282's sander lever" + plates;
         }
@@ -309,17 +320,34 @@ namespace RealisticFiring.Visuals
             normal = -forward;
             surface = "none";
             Physics.SyncTransforms();
-            foreach (var hit in Physics.RaycastAll(from, forward, BackheadSearch, ~0, QueryTriggerInteraction.Ignore).OrderBy(h => h.distance))
+            // Cast where the physics has the car, as CabRay does, and bring the hit
+            // back to where it is drawn: a moving car's two differ along the track.
+            var body = car.rb;
+            var bodyPosition = body != null ? body.position : car.transform.position;
+            var bodyRotation = body != null ? body.rotation : car.transform.rotation;
+            var start = bodyPosition + bodyRotation * car.transform.InverseTransformPoint(from);
+            var way = bodyRotation * car.transform.InverseTransformDirection(forward);
+            foreach (var hit in Physics.RaycastAll(start, way, BackheadSearch, ~0, QueryTriggerInteraction.Ignore).OrderBy(h => h.distance))
             {
-                if (TrainCar.Resolve(hit.collider.gameObject) != car || Vector3.Dot(hit.normal, -forward) < 0.7f
+                if (TrainCar.Resolve(hit.collider.gameObject) != car || Vector3.Dot(hit.normal, -way) < 0.7f
                     || hit.collider.GetComponentInParent<ControlImplBase>() != null || hit.collider.GetComponentInParent<InteractablePortFeeder>() != null
-                    || hit.collider.transform.root.name == RootName || hit.collider.GetComponentInParent<SimControlBinder>() != null)
+                    || Ours(hit.collider.transform) || hit.collider.GetComponentInParent<SimControlBinder>() != null)
                     continue;
-                point = hit.point;
-                normal = hit.normal;
+                point = car.transform.TransformPoint(Quaternion.Inverse(bodyRotation) * (hit.point - bodyPosition));
+                normal = car.transform.TransformDirection(Quaternion.Inverse(bodyRotation) * hit.normal);
                 surface = hit.collider.name;
                 return true;
             }
+            return false;
+        }
+
+        // Part of the steam levers already built: their root sits in the interior,
+        // not at the top of the car.
+        private static bool Ours(Transform t)
+        {
+            for (; t != null; t = t.parent)
+                if (t.name == RootName)
+                    return true;
             return false;
         }
 

@@ -40,6 +40,42 @@ namespace RealisticFiring.Core.Tests;
     }
 
     [Fact]
+    public void AnEngineLoadedWithItsInjectorFeedingCarriesOnFeeding()
+    {
+        var injector = NonLifter();
+        injector.Resume(5f);
+
+        // The cab's controls come back from the save a moment after the injector is made.
+        Run(injector, Off, 0f, 0.2f);
+        var feeding = Run(injector, Feed, 0.6f, 0.2f);
+
+        Assert.Equal(InjectorState.Working, feeding.State);
+        Assert.True(feeding.WaterIn > 0f);
+        Assert.Equal(0f, feeding.OverflowSteam);
+        Assert.Equal(InjectorState.Working, Run(injector, Feed, 0.6f, 30f).State);
+    }
+
+    [Fact]
+    public void LongAfterLoadingOpeningStraightToFeedStillBreaksTheJet()
+    {
+        var injector = NonLifter();
+        injector.Resume(5f);
+        Run(injector, Off, 0f, 6f);
+
+        Assert.Equal(InjectorState.Broken, Run(injector, Feed, 0.6f, 1f).State);
+    }
+
+    [Fact]
+    public void AnEngineLoadedCoolWithItsInjectorOpenPicksUpAsPressureComes()
+    {
+        var injector = NonLifter();
+        injector.Resume(5f);
+
+        Assert.Equal(InjectorState.LowPressure, Run(injector, Feed, 0.6f, 1f, pressure: 2f).State);
+        Assert.Equal(InjectorState.Working, Run(injector, Feed, 0.6f, 5f, pressure: 6f).State);
+    }
+
+    [Fact]
     public void ANonLiftersWaterRunsOutOfTheOverflowUntilItIsStarted()
     {
         var injector = NonLifter();

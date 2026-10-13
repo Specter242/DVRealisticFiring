@@ -61,6 +61,9 @@ namespace RealisticFiring.Patches
 
             if (__instance.simFlow != null)
             {
+                var superheater = EngineSuperheater.Attach(trainCar, __instance);
+                if (superheater != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {superheater}");
                 var water = BoilerWaterRig.Attach(trainCar, __instance.simFlow);
                 if (water != null && Main.Settings.LogFireboxCreation)
                     Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {water}");

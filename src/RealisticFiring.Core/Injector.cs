@@ -284,6 +284,9 @@ namespace RealisticFiring.Core
         // that it restarts by itself.
         private bool taken;
 
+        // Seconds left in which a lever found open to feed was feeding already.
+        private float resuming;
+
         public Injector(InjectorSpec spec)
         {
             this.spec = spec ?? throw new ArgumentNullException(nameof(spec));
@@ -291,6 +294,8 @@ namespace RealisticFiring.Core
         }
 
         public InjectorSpec Spec => spec;
+
+ public void Resume(float seconds) => resuming = Math.Max(0f, seconds);
 
         public InjectorState State { get; private set; }
 
@@ -301,6 +306,8 @@ namespace RealisticFiring.Core
         {
             if (steam == null)
                 throw new ArgumentNullException(nameof(steam));
+            if (dt > 0f && resuming > 0f)
+                resuming = Math.Max(0f, resuming - dt);
             var pressure = inputs.BoilerPressure;
             var hasWater = inputs.TenderWater > 0f;
             // The lever sets the jet (its water); the steam valve's opening
@@ -330,6 +337,14 @@ namespace RealisticFiring.Core
             if (!(dt > 0f))
                 return new InjectorFlow { State = State, FeedTemperature = inputs.TenderWaterTemperature, InjectorTemperature = Temperature, RestartLimit = limit };
 
+            if (resuming > 0f && !taken && !cracked && State != InjectorState.Broken)
+            {
+                // Feeding when saved: it picks up where it was, cool, without priming.
+                taken = true;
+                resuming = 0f;
+                if (hasWater && pressure >= spec.HoldPressure)
+                    State = InjectorState.Working;
+            }
             State = Next(dt, cracked, pressure, hasWater, limit);
 
             // What it lifts with this much jet at this pressure.
