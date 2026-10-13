@@ -165,6 +165,7 @@ namespace RealisticFiring.AdapterCheck
             CheckFiremanHand();
             CheckPatchTargets();
             CheckCarPoolGuard();
+            CheckPurchaseGuard();
             CheckFireIronLoading();
             if (args.Length > 0 && File.Exists(args[0]))
                 CheckMultiplayerCabHooks(args[0]);
@@ -1669,6 +1670,30 @@ namespace RealisticFiring.AdapterCheck
 
         // The load-hang guard patches the game's pool coroutine and TrainCar.Awake
         // with finalizers: Harmony must accept both against the installed game.
+        // A purchase that fails must free the registers: the guard's finalizer
+        // installs beside the fire iron's transpiler on the shops' coroutine,
+        // and the fields it recovers with are there.
+        private static void CheckPurchaseGuard()
+        {
+            var harmony = new HarmonyLib.Harmony("RealisticFiring.AdapterCheck.Purchase");
+            try
+            {
+                harmony.CreateClassProcessor(typeof(Items.FireIronLoading)).Patch();
+                harmony.CreateClassProcessor(typeof(Items.PurchaseGuard)).Patch();
+                var info = HarmonyLib.Harmony.GetPatchInfo(Items.PurchaseGuard.TargetMethod());
+                Check(info?.Finalizers.Count == 1 && info.Transpilers.Count == 1 && Items.PurchaseGuard.Resolves,
+                    "a failed purchase frees the registers: the guard installs beside the iron's lookup and finds the shops' queue");
+            }
+            catch (Exception e)
+            {
+                Check(false, $"the purchase guard installs ({e.GetType().Name}: {e.Message})");
+            }
+            finally
+            {
+                harmony.UnpatchAll(harmony.Id);
+            }
+        }
+
         private static void CheckCarPoolGuard()
         {
             var harmony = new HarmonyLib.Harmony("RealisticFiring.AdapterCheck.CarPool");

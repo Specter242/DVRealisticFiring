@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.3 (2026-10-13)
+
+- Free every shop register when the game fails to hand over a purchase: deliver what was made, restock and refund the rest, and log the exception.
+
 ## 1.7.2 (2026-10-12)
 
 - Find the service stations once a scene, and check them only while shop steam is wanted, instead of searching the scene every second for every oil engine.
