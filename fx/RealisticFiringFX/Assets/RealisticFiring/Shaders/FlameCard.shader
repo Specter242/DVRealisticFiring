@@ -32,10 +32,18 @@ Shader "RealisticFiring/FlameCard"
 
         Pass
         {
-            CGPROGRAM
+            HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_particles
+            // Single-pass stereo on the mod's own keyword: Unity strips its own
+            // from a bundle built without VR, and the mod turns this on for stereo cameras.
+            #pragma multi_compile __ RF_SINGLE_PASS_STEREO
+            #if defined(RF_SINGLE_PASS_STEREO)
+            #define UNITY_SINGLE_PASS_STEREO 1
+            #endif
+            // HLSL, not CG: CG includes these before the define above.
+            #include "HLSLSupport.cginc"
             #include "UnityCG.cginc"
 
             sampler2D _NoiseTex;
@@ -69,7 +77,12 @@ Shader "RealisticFiring/FlameCard"
                 float3 center = mul(unity_ObjectToWorld, float4(v.vertex.xyz, 1.0)).xyz;
                 float3 up = normalize(mul((float3x3)unity_ObjectToWorld, float3(0, 1, 0)));
                 float3 front = normalize(mul((float3x3)unity_ObjectToWorld, float3(0, 0, 1)));
+                // Turned toward the middle of the two eyes in VR, so both see one card.
+                #if defined(USING_STEREO_MATRICES)
+                float3 toCamera = 0.5 * (unity_StereoWorldSpaceCameraPos[0] + unity_StereoWorldSpaceCameraPos[1]) - center;
+                #else
                 float3 toCamera = _WorldSpaceCameraPos - center;
+                #endif
                 float3 right = normalize(cross(up, toCamera));
 
                 // Drawn by the draft: narrower, leaning forward, and shorter, as a
@@ -139,7 +152,7 @@ Shader "RealisticFiring/FlameCard"
                 half alpha = saturate(f * 1.3) * fade;
                 return fixed4(color * _Intensity * (0.6 + 0.6 * burn) * (1.0 + 0.4 * _Pulse), alpha);
             }
-            ENDCG
+            ENDHLSL
         }
     }
 }

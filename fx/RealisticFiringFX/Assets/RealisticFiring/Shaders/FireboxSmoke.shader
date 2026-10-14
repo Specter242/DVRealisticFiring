@@ -20,10 +20,18 @@ Shader "RealisticFiring/FireboxSmoke"
 
         Pass
         {
-            CGPROGRAM
+            HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_particles
+            // Single-pass stereo on the mod's own keyword: Unity strips its own
+            // from a bundle built without VR, and the mod turns this on for stereo cameras.
+            #pragma multi_compile __ RF_SINGLE_PASS_STEREO
+            #if defined(RF_SINGLE_PASS_STEREO)
+            #define UNITY_SINGLE_PASS_STEREO 1
+            #endif
+            // HLSL, not CG: CG includes these before the define above.
+            #include "HLSLSupport.cginc"
             #include "UnityCG.cginc"
 
             sampler2D _MainTex;
@@ -75,7 +83,7 @@ Shader "RealisticFiring/FireboxSmoke"
                 #endif
                 return fixed4(i.color.rgb * lerp(0.7, 1.1, tex.r), tex.a * i.color.a * fade);
             }
-            ENDCG
+            ENDHLSL
         }
     }
 }

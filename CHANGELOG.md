@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.5 (2026-10-13)
+
+- Give every shader a single-pass stereo variant on the mod's own keyword (Unity strips its own from a bundle built without VR), switched on for single-pass stereo cameras; ship the two surface shaders as patched generated code.
+
 ## 1.7.4 (2026-10-13)
 
 - Superheat the steam: each fired engine's prototype superheater (Type A or E), building with the fire and the steam drawn and lagging by minutes; steam short of superheat condenses on the cylinder walls (Goss's tests, Heck's formula). The JK3 stays saturated and the S060 is exempt.

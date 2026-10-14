@@ -53,6 +53,7 @@ namespace RealisticFiring
 
             new Harmony(modEntry.Info.Id).PatchAll(typeof(Main).Assembly);
             Net.TryStartAddOn(modEntry);
+            Visuals.StereoKeyword.Install();
 
             var host = new GameObject("RealisticFiring");
             Object.DontDestroyOnLoad(host);

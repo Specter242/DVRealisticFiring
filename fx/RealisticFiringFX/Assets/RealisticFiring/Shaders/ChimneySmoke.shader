@@ -31,11 +31,19 @@ Shader "RealisticFiring/ChimneySmoke"
         {
             Tags { "LightMode"="ForwardBase" }
 
-            CGPROGRAM
+            HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_particles
             #pragma multi_compile_fog
+            // Single-pass stereo on the mod's own keyword: Unity strips its own
+            // from a bundle built without VR, and the mod turns this on for stereo cameras.
+            #pragma multi_compile __ RF_SINGLE_PASS_STEREO
+            #if defined(RF_SINGLE_PASS_STEREO)
+            #define UNITY_SINGLE_PASS_STEREO 1
+            #endif
+            // HLSL, not CG: CG includes these before the define above.
+            #include "HLSLSupport.cginc"
             #include "UnityCG.cginc"
             #include "Lighting.cginc"
 
@@ -112,7 +120,7 @@ Shader "RealisticFiring/ChimneySmoke"
                 UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;
             }
-            ENDCG
+            ENDHLSL
         }
     }
 
