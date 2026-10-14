@@ -11,6 +11,27 @@ public class FireModelTests
     private static readonly float HalfLoadCoal = 0.5f * Stock.MaxCombustionRate * Stock.BurnTime;
 
     [Fact]
+    public void AReadyFireIsHalfTheBoxBurningThroughAndHeaviestWhereTheDraftIs()
+    {
+        var fire = FireTestKit.BurningFire(Stock, Stock.MaxCoalCapacity);
+        fire.RestoreAshpan(5f);
+
+        fire.LayReadyFire(lit: true);
+
+        Assert.True(fire.FireOn);
+        Assert.Equal(0.5f * Stock.MaxCoalCapacity, fire.CoalMass, 3);
+        Assert.Equal(0f, fire.Ashpan);
+        Assert.All(fire.Zones, z => Assert.Equal(0f, z.Fresh));
+        var most = fire.Zones.Select((z, i) => (z.Burning, Draft: fire.DraftWeight((GrateZone)i))).OrderBy(z => z.Draft).ToList();
+        Assert.True(most.Last().Burning > most.First().Burning, "the high-draft zone carries more than the low");
+
+        fire.LayReadyFire(lit: false);
+        Assert.False(fire.FireOn);
+        Assert.All(fire.Zones, z => Assert.Equal(0f, z.Burning));
+        Assert.Equal(0.5f * Stock.MaxCoalCapacity, fire.CoalMass, 3);
+    }
+
+    [Fact]
     public void AddingCoalClampsToCapacityAndFavorsTheTargetZone()
     {
         var fire = new FireModel(Stock);

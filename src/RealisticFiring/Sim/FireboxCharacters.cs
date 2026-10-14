@@ -21,6 +21,13 @@ namespace RealisticFiring.Sim
             /// <summary>The prototype's grate slope in degrees (negative falling to the front), used when the coal pile measures level.</summary>
             public float? PrototypeSlope { get; set; }
 
+            /// <summary>
+            /// Whether the prototype's slope stands even where the pile is
+            /// tilted: a pile tilted with the sloping front of a grate that
+            /// runs level at the back is steeper than the grate averages.
+            /// </summary>
+            public bool PrototypeSlopeOverPile { get; set; }
+
             /// <summary>The stoker's back lanes against a typical stoker's: under 1, its back corners run short.</summary>
             public float StokerBackLanes { get; set; } = 1f;
 
@@ -33,8 +40,29 @@ namespace RealisticFiring.Sim
 
         private static readonly Firebox Typical = new Firebox("a typical firebox", GrateCharacter.Typical);
 
+        // LMS Stanier 8F: a narrow Belpaire box between the frames, 28.65 sq
+        // ft, with a brick arch and no combustion chamber; its grate slopes
+        // at the front and runs level at the back (the Black Five's, about
+        // 55:45, Rowledge & Reed 1981 pp.53-54), hand-fired, fixed bars. The
+        // firehole's deflector plate turns the secondary air down toward the
+        // arch (BR handbook 1957, pp.32, 46). Fire thin and often; a thick
+        // fire under the door is a fault (pp.27-33). The draft's pull toward
+        // the tubes and the mixing are inferred, and the slope averaged over
+        // the grate. The mod's grate and pile slope about 12° down to the
+        // front their whole length (2026-10-14); the prototype's sloped at the
+        // front alone, so its average stands over the pile's.
+        private static readonly Firebox Lms8F = new Firebox("a narrow Belpaire box: sloping front, level back; brick arch and a deflector plate",
+            new GrateCharacter { BackRowDraft = 0.92f, FrontRowDraft = 1.1f, SideDraft = 1.03f, OverFireMixing = 0.95f })
+        {
+            PrototypeSlope = -5f,
+            PrototypeSlopeOverPile = true,
+        };
+
         private static readonly Dictionary<string, Firebox> ByLivery = new Dictionary<string, Firebox>
         {
+            ["em_lms_8f_loc_black"] = Lms8F,
+            ["em_lms_8f_loc_grey"] = Lms8F,
+
             // No prototype (Altfuture: "all ... locomotives in DV are fictive");
             // taken as a light Mikado's wide firebox over the trailing truck,
             // with a short combustion chamber and a brick arch (USRA Light
@@ -109,8 +137,9 @@ namespace RealisticFiring.Sim
         /// <summary>The grate's slope: as measured from the coal pile, or the prototype's where the pile is modeled level.</summary>
         public static float Slope(TrainCar car, float measured)
         {
-            var prototype = For(car).PrototypeSlope;
-            return prototype.HasValue && System.Math.Abs(measured) < LevelSlope ? prototype.Value : measured;
+            var firebox = For(car);
+            var prototype = firebox.PrototypeSlope;
+            return prototype.HasValue && (firebox.PrototypeSlopeOverPile || System.Math.Abs(measured) < LevelSlope) ? prototype.Value : measured;
         }
     }
 }

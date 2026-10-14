@@ -41,11 +41,12 @@ namespace RealisticFiring.Core
     /// <summary>One injector, as the next step reads it.</summary>
     public readonly struct InjectorReading
     {
-        public InjectorReading(InjectorState state, float waterValve, bool steamValve)
+        public InjectorReading(InjectorState state, float waterValve, bool steamValve, bool tenderValveShut = false)
         {
             State = state;
             WaterValve = waterValve;
             SteamValve = steamValve;
+            TenderValveShut = tenderValveShut;
         }
 
         public InjectorState State { get; }
@@ -55,6 +56,9 @@ namespace RealisticFiring.Core
 
         /// <summary>Whether it has its own steam valve (Off, Prime, Feed).</summary>
         public bool SteamValve { get; }
+
+        /// <summary>Whether the tender's water valve to it is shut.</summary>
+        public bool TenderValveShut { get; }
     }
 
     /// <summary>An oil fire and its engine, as the next step reads them.</summary>
@@ -78,6 +82,8 @@ namespace RealisticFiring.Core
         public bool OnServiceTrack;
         /// <summary>The service tracks, in a few words, for the step that sends the player to one.</summary>
         public string ServiceTracks;
+        /// <summary>The key that hooks up the shed's steam line, as the player has it bound; null for none.</summary>
+        public string SteamLineKey;
         public float GlassLevel;
         public IReadOnlyList<InjectorReading> Injectors;
     }
@@ -231,7 +237,7 @@ namespace RealisticFiring.Core
             {
                 case 1:
                     return new Advice(AdviceLevel.Act, oil.OnServiceTrack
-                        ? $"{of}, no steam for the burner: open SHOP STEAM (or Ctrl+Shift+L)."
+                        ? $"{of}, no steam for the burner: open SHOP STEAM" + (string.IsNullOrEmpty(oil.SteamLineKey) ? "." : $" (or {oil.SteamLineKey}).")
                         : $"{of}, no steam for the burner: get her onto {oil.ServiceTracks ?? "a service track"} and open SHOP STEAM.", step);
                 case 2:
                     return new Advice(AdviceLevel.Watch, $"{of}, warm the oil: OIL HEATER open. It's {oil.OilTemperature:F0} °C and runs from {OilFire.WarmOil:F0} °C.", step);
@@ -262,9 +268,11 @@ namespace RealisticFiring.Core
                             ? "Injector's too hot to take: hold the steam at Prime to cool it."
                             : "Injector's too hot to take: hold it cracked to cool it.");
                     case InjectorState.NoWater:
-                        return new Advice(AdviceLevel.Act, injector.WaterValve <= InjectorSpec.OpenThreshold
-                            ? "No water at the injector: open the water valve."
-                            : "Tender's dry: take water.");
+                        return new Advice(AdviceLevel.Act, injector.TenderValveShut
+                            ? "No water at the injector: open the tender water valve."
+                            : injector.WaterValve <= InjectorSpec.OpenThreshold
+                                ? "No water at the injector: open the water valve."
+                                : "Tender's dry: take water.");
                     case InjectorState.Broken:
                         return new Advice(AdviceLevel.Act, injector.SteamValve
                             ? "Injector's jet broke: steam Off, then Prime till it picks up."

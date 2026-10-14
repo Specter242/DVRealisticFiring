@@ -618,6 +618,26 @@ namespace RealisticFiring.Core
             FireOn = fireOn;
         }
 
+ public void LayReadyFire(bool lit)
+        {
+            Ashpan = 0f;
+            var coalMass = parameters.MaxCoalCapacity * tuning.ReferenceDepthFraction;
+            var weightSum = 0f;
+            foreach (var weight in draftWeights)
+                weightSum += weight * weight;
+            for (var i = 0; i < zones.Length; i++)
+            {
+                var share = weightSum > 0f ? draftWeights[i] * draftWeights[i] / weightSum : zoneArea;
+                var mass = Math.Min(coalMass * share, parameters.MaxCoalCapacity * zoneArea);
+                zones[i].Clear();
+                if (lit)
+                    zones[i].Burning = mass;
+                else
+                    zones[i].Fresh = mass;
+            }
+            FireOn = lit;
+        }
+
         /// <summary>
         /// Brings the coal to <paramref name="coalMass"/> keeping the bed's
         /// shape: each zone's fresh and burning coal scaled alike, or spread

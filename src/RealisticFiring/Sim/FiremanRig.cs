@@ -104,10 +104,10 @@ namespace RealisticFiring.Sim
             // right-hand one on the JK3, whose two valves feed through a sum.
             var rig = InjectorRig.TryGet(boiler, out var found) ? found : null;
             injector = new FiremanHand("injector", rig != null && rig.Circuits.Count > 0
-                ? rig.Circuits[0].Control
+                ? rig.Circuits[0].Feed
                 : Control(boiler.injectorControl), LeverPace);
-            // Its own steam valve, where it has one: the lever is then its water valve.
-            var steamValve = rig != null && rig.Circuits.Count > 0 ? rig.Circuits[0].Steam : null;
+            // Its own steam valve, where it has one: the feed hand then works its water valve.
+            var steamValve = rig != null && rig.Circuits.Count > 0 ? rig.Circuits[0].SteamValve : null;
             injectorSteam = steamValve != null ? new FiremanHand("injector steam", Control(steamValve), DoorPace) : null;
             pump = rig != null && rig.Pump != null ? new FiremanHand("feed pump", Control(rig.PumpValvePort), ValvePace) : null;
             blowdown = new FiremanHand("blowdown", Control(boiler.blowdownControl), LeverPace);
@@ -303,6 +303,9 @@ namespace RealisticFiring.Sim
             }
 
             door.Work(actions.Door, clock);
+            // His injector's tender water valve, open before he works it.
+            if (actions.Injector > 0f && InjectorRig.TryGet(boiler, out var rig))
+                rig.OpenTenderValve(0);
             injector.Work(actions.Injector, clock);
             injectorSteam?.Work(actions.InjectorSteam, clock);
             pump?.Work(actions.Pump, clock);

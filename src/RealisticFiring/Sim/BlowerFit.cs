@@ -25,6 +25,10 @@ namespace RealisticFiring.Sim
             ["FEF-3"] = (0.85f, 0.9f),
             ["S484-840A"] = (0.85f, 0.9f),
             ["A.T.&S.F. 2901-A"] = (0.85f, 1.0f),
+            // LMS 8F: a 28.65 sq ft grate; its blower between the S060's and
+            // the S282's (inferred), natural draft by grate area.
+            ["em_lms_8f_loc_black"] = (0.4f, 0.26f),
+            ["em_lms_8f_loc_grey"] = (0.4f, 0.26f),
         };
 
         private static readonly AccessTools.FieldRef<Boiler, float> SafetyValveOpeningPressure =

@@ -26,6 +26,9 @@ namespace RealisticFiring.Sim
             ["S464-730"] = Guard.LowWaterAlarm,
             ["S484-840A"] = Guard.FusiblePlug,
             ["FEF-3"] = Guard.FusiblePlug,
+            // British practice: lead plugs in the firebox crown.
+            ["em_lms_8f_loc_black"] = Guard.FusiblePlug,
+            ["em_lms_8f_loc_grey"] = Guard.FusiblePlug,
         };
 
         /// <summary>What players near the loco are told when its plug melts.</summary>

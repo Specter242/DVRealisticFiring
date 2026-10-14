@@ -21,8 +21,8 @@ namespace RealisticFiring.Visuals
         private static readonly string[] Notches = { "Closed", "Open" };
 
         // Where the lever stands from the fire-dump lever, in the car frame (x
-        // right, z forward), in m, before the placement settings: a foot aft
-        // of it, unless seated for the loco.
+        // right, z forward), in m: a foot aft of it, unless seated for the
+        // loco.
         private static readonly Vector3 DefaultFromDump = new Vector3(0f, 0f, -0.3f);
         private static readonly Dictionary<string, Vector3> Placements = new Dictionary<string, Vector3>();
 
@@ -30,8 +30,6 @@ namespace RealisticFiring.Visuals
         // lever's pivot, which on the S282 sits just under the deck.
         private const float SearchAbove = 0.6f;
         private const float FallbackRise = 0.07f;
-
-        private static readonly Dictionary<TrainCar, Transform> Interiors = new Dictionary<TrainCar, Transform>();
 
         /// <summary>Builds the lever in a loaded cab. Returns a sentence for the log, or null when not wanted.</summary>
         public static string Attach(TrainCar car, Transform interior)
@@ -65,14 +63,11 @@ namespace RealisticFiring.Visuals
             var sourceControl = sourceValve != null ? sourceValve.Find(StokerCab.SourceControl) : null;
             var sourceLabel = cabPrefab.Find(StokerCab.SourceLabel);
 
-            Interiors[car] = interior;
             var root = new GameObject(RootName);
             root.SetActive(false);
             root.transform.SetParent(interior, false);
 
-            var settings = Main.Settings;
-            var offset = (Placements.TryGetValue(car.carLivery.id, out var seated) ? seated : DefaultFromDump)
-                         + new Vector3(settings.DropGrateNudgeAcross, 0f, settings.DropGrateNudgeAlong) / 100f;
+            var offset = Placements.TryGetValue(car.carLivery.id, out var seated) ? seated : DefaultFromDump;
             var spot = dump.position + car.transform.TransformVector(offset);
             var onFloor = StokerCab.TryFindFloor(car, spot + car.transform.up * SearchAbove, out var floor);
             if (!onFloor)
@@ -94,27 +89,6 @@ namespace RealisticFiring.Visuals
             return $"drop grate lever on the floor at ({local.x:F2}, {local.y:F2}, {local.z:F2}) m, " +
                    $"({offset.x:F2}, {offset.z:F2}) m from the fire-dump lever '{dump.name}'" + (onFloor ? "" : " (no floor found; guessed)") +
                    $"; the drop grate covers {string.Join(", ", firebox.Model.DropGrate)}";
-        }
-
-        /// <summary>Rebuilds the lever in every loaded cab, as the placement settings move.</summary>
-        public static void RebuildLoaded()
-        {
-            foreach (var pair in Interiors.ToList())
-            {
-                var car = pair.Key;
-                var interior = pair.Value;
-                if (car == null || interior == null || car.loadedInterior == null || car.loadedInterior.transform != interior)
-                {
-                    Interiors.Remove(car);
-                    continue;
-                }
-                var old = interior.Find(RootName);
-                if (old != null)
-                    Object.DestroyImmediate(old.gameObject);
-                var result = Attach(car, interior);
-                if (result != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{car.ID}: {result}");
-            }
         }
     }
 }

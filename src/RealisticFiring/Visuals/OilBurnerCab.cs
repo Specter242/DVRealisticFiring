@@ -21,8 +21,8 @@ namespace RealisticFiring.Visuals
         private const float LabelDrop = 0.05f;
 
         // Seated per livery once placed in game: the first valve's offset from
-        // the firing valve, in the frame (across inboard, up, out), m. The
-        // placement sliders move only the liveries not seated.
+        // the firing valve, in the frame (across inboard, up, out), m; others
+        // take the default.
         private static readonly Dictionary<string, Vector3> Seats = new Dictionary<string, Vector3>
         {
             ["A.T.&S.F. 2901-A"] = new Vector3(-0.36f, 0.03f, 0f),
@@ -78,20 +78,6 @@ namespace RealisticFiring.Visuals
             }
         }
 
-        /// <summary>Moves every loaded cab's valves, as the placement settings change.</summary>
-        public static void RebuildLoaded()
-        {
-            foreach (var firebox in RealisticOilFirebox.All)
-            {
-                var interior = firebox.Car != null && firebox.Car.loadedInterior != null ? firebox.Car.loadedInterior.transform : null;
-                var old = interior != null ? interior.Find(RootName) : null;
-                if (old != null)
-                    Object.DestroyImmediate(old.gameObject);
-            }
-            nextCheck = 0f;
-            EnsureBuilt();
-        }
-
         private static string Attach(TrainCar car, RealisticOilFirebox firebox, Transform interior)
         {
             var flow = car.SimController != null ? car.SimController.SimulationFlow : null;
@@ -132,11 +118,9 @@ namespace RealisticFiring.Visuals
             // offsets across are signed toward the middle of the cab.
             frame.SetPositionAndRotation(anchor, Quaternion.LookRotation(frameCar.forward, frameCar.up));
 
-            var settings = Main.Settings;
             var first = Seats.TryGetValue(car.carLivery.id, out var seat)
                 ? new Vector3(inboard * seat.x, seat.y, seat.z)
-                : new Vector3(inboard * (FirstValve + settings.OilValvesNudgeAcross / 100f), settings.OilValvesNudgeUp / 100f,
-                    -settings.OilValvesNudgeOut / 100f);
+                : new Vector3(inboard * FirstValve, 0f, 0f);
             // The valves wear the cab's own handwheels where it has them.
             var look = HandwheelLook.Find(interior, frameCar, anchor);
             var notes = new List<string>();
@@ -220,7 +204,7 @@ namespace RealisticFiring.Visuals
                     : "Shop steam: shut (on a service track, open it to fire a dead engine on the shed's steam)";
             if (!firebox.AtPitStop)
                 return $"Shop steam: {valve:P0}, no steam line here (stand on a service track: a service station with water, a loco parking track, or a roundhouse stall)";
-            return $"Shop steam: {valve:P0}, the shed's steam line at {(firebox.SteamLineOpening * 100f):F0} psi" +
+            return $"Shop steam: {valve:P0}, the shed's steam line at {(RealisticOilFirebox.SteamLinePressure - 1f) * firebox.SteamLineOpening:F1} bar" +
                    (firebox.Model.OnSteamLine ? " to the atomizer and heater" : " (the boiler's own steam is stronger)");
         }
 
@@ -275,10 +259,7 @@ namespace RealisticFiring.Visuals
                 : null;
             var frame = car.transform;
             var near = door != null ? door.transform.position : interior.position + frame.up * 1.5f;
-            var settings = Main.Settings;
-            var offset = SandSeats.TryGetValue(car.carLivery.id, out var seat)
-                ? seat
-                : new Vector2(-SandBoxAside + settings.SandBoxNudgeAcross / 100f, -SandBoxBack + settings.SandBoxNudgeAlong / 100f);
+            var offset = SandSeats.TryGetValue(car.carLivery.id, out var seat) ? seat : new Vector2(-SandBoxAside, -SandBoxBack);
             var above = near + frame.right * offset.x + frame.forward * offset.y;
             if (!StokerCab.TryFindFloor(car, above, out var floor))
                 floor = above - frame.up * 1.2f;

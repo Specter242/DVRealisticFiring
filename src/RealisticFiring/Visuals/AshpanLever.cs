@@ -33,8 +33,7 @@ namespace RealisticFiring.Visuals
 
         // The handle: this far under the grate and this far forward of its
         // back edge, its pull this far out from the side of the loco found by
-        // a ray in from beyond it, in m, before the placement settings. The
-        // rod runs this far from its root to the pull.
+        // a ray in from beyond it, in m, unless seated. The rod runs this far from its root to the pull.
         private const float BelowGrate = 0.3f;
         private const float AlongFromGrateBack = 0.2f;
         private const float PullOut = 0.3f;
@@ -53,9 +52,9 @@ namespace RealisticFiring.Visuals
             ["LocoS060"] = new Vector3(-0.73f, 1.11f, -2.26f),
             ["FEF-3"] = new Vector3(-1.35f, 1.33f, -7.26f),
             ["Jk3A"] = new Vector3(-0.86f, 1.01f, -0.87f),
+            ["em_lms_8f_loc_black"] = new Vector3(-1.00f, 1.42f, -2.39f), // 2026-10-14
+            ["em_lms_8f_loc_grey"] = new Vector3(-1.00f, 1.42f, -2.39f),
         };
-
-        private static readonly HashSet<AshpanLever> Levers = new HashSet<AshpanLever>();
 
         private TrainCar car;
         private RealisticFirebox firebox;
@@ -74,7 +73,6 @@ namespace RealisticFiring.Visuals
 
         private void Start()
         {
-            Levers.Add(this);
             car.ExternalInteractableLoaded += OnLoaded;
             car.ExternalInteractableAboutToBeUnloaded += OnUnloading;
             OnLoaded(car.loadedExternalInteractables);
@@ -82,7 +80,6 @@ namespace RealisticFiring.Visuals
 
         private void OnDestroy()
         {
-            Levers.Remove(this);
             if (car != null)
             {
                 car.ExternalInteractableLoaded -= OnLoaded;
@@ -119,19 +116,6 @@ namespace RealisticFiring.Visuals
                 Destroy(old.gameObject);
         }
 
-        /// <summary>Rebuilds every loaded lever, as the placement settings move.</summary>
-        public static void RebuildLoaded()
-        {
-            foreach (var lever in Levers.ToList())
-            {
-                var root = lever.car != null ? lever.car.loadedExternalInteractables : null;
-                var old = root != null ? root.transform.Find(RootName) : null;
-                if (old != null)
-                    DestroyImmediate(old.gameObject);
-                lever.OnLoaded(root);
-            }
-        }
-
         private string Build(Transform root)
         {
             if (!Globals.G.Types.TryGetLivery(StokerCab.SourceLivery, out var livery) || livery.interiorPrefab == null)
@@ -161,13 +145,12 @@ namespace RealisticFiring.Visuals
             else
             {
                 var grate = firebox.GrateBox.Value;
-                var settings = Main.Settings;
-                y = grate.min.y - BelowGrate + settings.AshpanLeverNudgeUp / 100f;
-                z = grate.min.z + AlongFromGrateBack + settings.AshpanLeverNudgeAlong / 100f;
+                y = grate.min.y - BelowGrate;
+                z = grate.min.z + AlongFromGrateBack;
                 found = TryFindSide(-SideSearch, y, z, out side);
                 if (!found)
                     side = -FallbackHalfWidth;
-                pull = side - PullOut - settings.AshpanLeverNudgeOut / 100f;
+                pull = side - PullOut;
             }
             // The plate goes on the wall beside the handle wherever it was
             // moved: the first surface of the loco in from the pull.

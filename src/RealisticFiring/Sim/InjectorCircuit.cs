@@ -14,11 +14,43 @@ namespace RealisticFiring.Sim
             this.workingReadout = workingReadout;
         }
 
-        /// <summary>The stock lever: the steam valve and feed together, or the water valve where <see cref="Steam"/> is fitted.</summary>
+        /// <summary>
+        /// The stock lever: the steam valve and feed together, or with
+        /// <see cref="Added"/>, the water valve (or the steam valve where
+        /// <see cref="OwnLeverIsSteam"/>).
+        /// </summary>
         public Port Control { get; }
 
-        /// <summary>The three-position steam valve, where fitted (<see cref="InjectorValves"/>); null for the one lever.</summary>
-        public Port Steam { get; internal set; }
+        /// <summary>The valve the mod adds (<see cref="InjectorValves"/>); null for the one lever.</summary>
+        public Port Added { get; internal set; }
+
+        /// <summary>Whether the stock lever is the steam valve and <see cref="Added"/> the water regulator (the LMS 8F).</summary>
+        public bool OwnLeverIsSteam { get; internal set; }
+
+        /// <summary>The steam valve, where the injector has two; null for the one lever.</summary>
+        public Port SteamValve => Added == null ? null : OwnLeverIsSteam ? Control : Added;
+
+        /// <summary>The water valve, where the injector has two; null for the one lever.</summary>
+        public Port WaterValve => Added == null ? null : OwnLeverIsSteam ? Added : Control;
+
+        /// <summary>The valve that sets the feed: the water valve, or the one lever.</summary>
+        public Port Feed => WaterValve ?? Control;
+
+        /// <summary>
+        /// The coupled tender's water valve to this injector, where the tender
+        /// has one (<see cref="InjectorValves.TenderWater"/>); null otherwise.
+        /// </summary>
+        public Port TenderValve { get; internal set; }
+
+        /// <summary>Whether the tender's water valve to this injector is shut.</summary>
+        public bool TenderValveShut => TenderValve != null && TenderValve.Value <= InjectorSpec.OpenThreshold;
+
+        /// <summary>
+        /// The water the injector's own valve lets through, as far as the
+        /// tender's valve lets water to it; null for the one lever.
+        /// </summary>
+        public float? WaterInput => WaterValve == null ? (float?)null
+            : TenderValve == null ? WaterValve.Value : System.Math.Min(WaterValve.Value, TenderValve.Value);
         public Injector Injector { get; }
         public string Name { get; }
         private readonly Port workingReadout;

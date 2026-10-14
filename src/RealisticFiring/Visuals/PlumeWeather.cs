@@ -51,9 +51,6 @@ namespace RealisticFiring.Visuals
             frame = Time.frameCount;
             wind = Vector3.zero;
             speed = 0f;
-            var scale = Main.Settings.SmokeWind;
-            if (!(scale > 0f))
-                return;
             if (driver == null && Time.time >= nextLook)
             {
                 nextLook = Time.time + LookAgain;
@@ -65,7 +62,7 @@ namespace RealisticFiring.Visuals
             degrees = weather.WindDirection.CurrentValue;
             var time = Time.time;
             speed = PlumeWind.Speed(weather.RainValue.CurrentValue, weather.ThunderValue.CurrentValue,
-                Mathf.PerlinNoise(time / SpellTime, 17.3f), Mathf.PerlinNoise(time / GustTime, 51.7f), scale);
+                Mathf.PerlinNoise(time / SpellTime, 17.3f), Mathf.PerlinNoise(time / GustTime, 51.7f), 1f);
             var (x, z) = PlumeWind.Toward(degrees);
             wind = new Vector3(x, 0f, z) * speed;
         }

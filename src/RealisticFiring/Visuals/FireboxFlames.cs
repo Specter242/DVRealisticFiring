@@ -472,7 +472,7 @@ namespace RealisticFiring.Visuals
                 var green = bed.ZoneCover(zone);
                 var cool = 1f - bed.ZoneHeat(zone);
                 var height = burn > 0.01f ? (CardBase + CardCool * cool + CardGreen * green) * (0.75f + 0.5f * cardSeeds[c]) : 0f;
-                var root = bed.Effects.InverseTransformPoint(bed.BedPoint(cardSpots[c].x, cardSpots[c].y, bed.ZoneHeight(zone) * 0.9f));
+                var root = bed.Effects.InverseTransformPoint(bed.BedPoint(cardSpots[c].x, cardSpots[c].y, bed.SurfaceHeight(cardSpots[c].x, cardSpots[c].y) * 0.9f));
                 var color = new Color(burn, green, cardSeeds[c], Mathf.Clamp01(height));
                 for (var k = 0; k < 4; k++)
                 {
@@ -574,7 +574,7 @@ namespace RealisticFiring.Visuals
             var reach = kind == SmokeKind.SmokeOut ? 0.5f : -0.1f;
             var across = Mathf.Clamp01((GrateLayout.Column(zone) + Random.Range(-reach, 1f + reach)) / GrateLayout.Columns);
             var along = Mathf.Clamp01((GrateLayout.Row(zone) + Random.Range(-reach, 1f + reach)) / GrateLayout.Rows);
-            var from = smoke.transform.InverseTransformPoint(bed.BedPoint(across, along, bed.ZoneHeight(zone))) + Vector3.up * 0.06f;
+            var from = smoke.transform.InverseTransformPoint(bed.BedPoint(across, along, bed.SurfaceHeight(across, along))) + Vector3.up * 0.06f;
             // Lit by the whole fire's glow: dim over a dull fire, warm and bright
             // over a hot one. Thick smoke hides the glow under it and stays dark.
             var glow = Mathf.Clamp01(glowLevel * 1.6f);

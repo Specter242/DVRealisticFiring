@@ -198,15 +198,13 @@ namespace RealisticFiring.Visuals
             root.AddComponent<ManifoldTracer>().Car = car;
             // The wheel spins as it turns; its mount doesn't.
             var mount = anchor.parent != null ? anchor.parent : anchor;
-            var settings = Main.Settings;
             var placement = Placements.TryGetValue(car.carLivery.id, out var known) ? known : DefaultPlacement;
-            var offset = placement.OffsetCm + new Vector3(settings.ManifoldNudgeAcross, settings.ManifoldNudgeUp, settings.ManifoldNudgeOut);
-            var facing = mount.rotation * Quaternion.Euler(placement.Tilt + settings.ManifoldNudgeTilt, placement.Turn + settings.ManifoldNudgeTurn, 0f);
+            var offset = placement.OffsetCm;
+            var facing = mount.rotation * Quaternion.Euler(placement.Tilt, placement.Turn, 0f);
             var into = facing * Vector3.forward;
             var up = Vector3.ProjectOnPlane(car.transform.up, into);
             var frame = root.transform;
-            frame.rotation = Quaternion.LookRotation(into, up.sqrMagnitude > 1e-6f ? up : facing * Vector3.up)
-                             * Quaternion.Euler(0f, 0f, settings.ManifoldNudgeRoll);
+            frame.rotation = Quaternion.LookRotation(into, up.sqrMagnitude > 1e-6f ? up : facing * Vector3.up);
             frame.position = mount.TransformPoint(offset / 100f);
 
             var engine = flow.TryGetPort(StokerJetControls.Engine.PortId, out var enginePort);
@@ -251,8 +249,7 @@ namespace RealisticFiring.Visuals
             var local = car.transform.InverseTransformPoint(frame.position);
             return $"stoker jet manifold placed by the fireman's '{anchor.name}' at ({local.x:F2}, {local.y:F2}, {local.z:F2}) m in the car frame " +
                    $"(across {offset.x:F1} cm, up {offset.y:F1} cm, out {offset.z:F1} cm from its mount, " +
-                   $"turn {placement.Turn + settings.ManifoldNudgeTurn:F0}°, tilt {placement.Tilt + settings.ManifoldNudgeTilt:F0}°, " +
-                   $"roll {settings.ManifoldNudgeRoll:F0}°), {Layout.Length + (engine ? 1 : 0)} valves, {labels} labels, {gauges.Count} gauges" +
+                   $"turn {placement.Turn:F0}°, tilt {placement.Tilt:F0}°), {Layout.Length + (engine ? 1 : 0)} valves, {labels} labels, {gauges.Count} gauges" +
                    (lever != null ? $", operating lever {lever}" : "") +
                    (supply != null ? $", {supply}" : "") +
                    (copied != null ? $", {copied}" : "") +
@@ -283,43 +280,6 @@ namespace RealisticFiring.Visuals
                 var result = Attach(car, interior);
                 if (result != null && Main.Settings.LogFireboxCreation)
                     Main.Mod.Logger.Log($"{car.ID}: the cab had lost its stoker manifold; {result}");
-            }
-        }
-
-        /// <summary>True while the manifold is being rebuilt on purpose.</summary>
-        internal static bool Rebuilding { get; private set; }
-
-        /// <summary>Rebuilds the manifold in every loaded cab, as the placement settings move.</summary>
-        public static void RebuildLoaded()
-        {
-            Rebuilding = true;
-            try
-            {
-                RebuildEach();
-            }
-            finally
-            {
-                Rebuilding = false;
-            }
-        }
-
-        private static void RebuildEach()
-        {
-            foreach (var pair in Interiors.ToList())
-            {
-                var car = pair.Key;
-                var interior = pair.Value;
-                if (car == null || interior == null || car.loadedInterior == null || car.loadedInterior.transform != interior)
-                {
-                    Interiors.Remove(car);
-                    continue;
-                }
-                var old = interior.Find(RootName);
-                if (old != null)
-                    Object.DestroyImmediate(old.gameObject);
-                var result = Attach(car, interior);
-                if (result != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{car.ID}: {result}");
             }
         }
 
@@ -645,7 +605,7 @@ namespace RealisticFiring.Visuals
 
         private void OnDestroy()
         {
-            if (StokerCab.Rebuilding || Car == null || Car.loadedInterior == null || !Main.Settings.LogFireboxCreation)
+            if (Car == null || Car.loadedInterior == null || !Main.Settings.LogFireboxCreation)
                 return;
             var ownCab = transform.parent != null && transform.parent.gameObject == Car.loadedInterior;
             Main.Mod.Logger.Log($"{Car.ID}: stoker manifold removed while {(ownCab ? "its" : "another")} cab is loaded; " +

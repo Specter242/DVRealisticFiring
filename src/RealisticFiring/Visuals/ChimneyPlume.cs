@@ -163,16 +163,17 @@ namespace RealisticFiring.Visuals
         private int beatCount;
         private float statusTime;
         private readonly PlumeTuning tuning = new PlumeTuning();
-        private float appliedJetWidth = float.NaN;
-        private float appliedLight = float.NaN;
-        private float appliedFray = float.NaN;
+
+        private const float PlumeLight = 1.6f;
+        private const float PlumeFray = 0.5f;
+        private const float JetWidth = 0.5f;
+        private const float JetZone = 1f;
+        private const float Eddies = 1f;
 
         private const float ShaderSky = 1f;
         private const float ShaderSun = 0.7f;
         private const float ShaderMaxLight = 1.4f;
         private ParticleSystem.Particle[] buffer = new ParticleSystem.Particle[0];
-        private ParticleSystemRenderer[] renderers;
-        private bool shown = true;
         private float? stackLip;
 
         // Each smoke particle's intended size by its random seed (stable for
@@ -480,68 +481,31 @@ namespace RealisticFiring.Visuals
             }
             foreach (var system in embers)
                 PrepareSparks(system);
-            SyncTuning();
+            ApplyLook();
             Active = true;
         }
 
-        // Copies the live settings, and reshapes the smoke systems when the
-        // jet width or the plume's light changed.
-        private void SyncTuning()
+        // The plume's light and fraying on its materials, and the jet's width.
+        private void ApplyLook()
         {
-            var settings = Main.Settings;
-            CopySettings(tuning);
-
-            if (settings.SmokeLight != appliedLight)
+            foreach (var system in new[] { smoke, sootCore, jet }.Where(s => s != null))
             {
-                appliedLight = settings.SmokeLight;
-                foreach (var system in new[] { smoke, sootCore, jet }.Where(s => s != null))
-                {
-                    var renderer = system.GetComponent<ParticleSystemRenderer>();
-                    var material = renderer != null ? renderer.material : null;
-                    if (material == null || !material.HasProperty("_SkyStrength"))
-                        continue;
-                    material.SetFloat("_SkyStrength", ShaderSky * appliedLight);
-                    material.SetFloat("_SunStrength", ShaderSun * appliedLight);
-                    material.SetFloat("_MaxLight", ShaderMaxLight * appliedLight);
-                }
+                var renderer = system.GetComponent<ParticleSystemRenderer>();
+                var material = renderer != null ? renderer.material : null;
+                if (material == null || !material.HasProperty("_SkyStrength"))
+                    continue;
+                material.SetFloat("_SkyStrength", ShaderSky * PlumeLight);
+                material.SetFloat("_SunStrength", ShaderSun * PlumeLight);
+                material.SetFloat("_MaxLight", ShaderMaxLight * PlumeLight);
             }
-
-            if (settings.SmokeFray != appliedFray)
-            {
-                appliedFray = settings.SmokeFray;
-                foreach (var system in new[] { smoke, sootCore }.Where(s => s != null))
-                {
-                    var renderer = system.GetComponent<ParticleSystemRenderer>();
-                    var material = renderer != null ? renderer.material : null;
-                    if (material != null && material.HasProperty("_Fray"))
-                        material.SetFloat("_Fray", appliedFray);
-                }
-            }
-
-            if (settings.SmokeJetWidth == appliedJetWidth)
-                return;
-            appliedJetWidth = settings.SmokeJetWidth;
             foreach (var system in new[] { smoke, sootCore }.Where(s => s != null))
-                ApplyJetWidth(system, appliedJetWidth);
-        }
-
-        /// <summary>Copies the live smoke settings into <paramref name="tuning"/>; an oil burner's stack takes them too.</summary>
-        internal static void CopySettings(PlumeTuning tuning)
-        {
-            var settings = Main.Settings;
-            tuning.MaxBeatPressure = settings.SmokeMaxBeatPressure;
-            tuning.HeavyBeatPressure = settings.SmokeHeavyBeatPressure;
-            tuning.HeavyVolume = settings.SmokeHeavyVolume;
-            tuning.LaunchSpeed = settings.SmokeLaunchSpeed;
-            tuning.PuffParticles = settings.SmokePuffParticles;
-            tuning.PuffSize = settings.SmokePuffSize;
-            tuning.SteamOpacity = settings.SmokeSteamOpacity;
-            tuning.SootDarkness = settings.SmokeSootDarkness;
-            tuning.HazeOpacity = settings.SmokeHazeOpacity;
-            tuning.JetLength = settings.SmokeJetLength;
-            tuning.Buoyancy = settings.SmokeBuoyancy;
-            tuning.SteamLinger = settings.SmokeSteamLinger;
-            tuning.Sparks = settings.SmokeSparks;
+            {
+                var renderer = system.GetComponent<ParticleSystemRenderer>();
+                var material = renderer != null ? renderer.material : null;
+                if (material != null && material.HasProperty("_Fray"))
+                    material.SetFloat("_Fray", PlumeFray);
+                ApplyJetWidth(system, JetWidth);
+            }
         }
 
         // Size by speed keeps a particle narrow while fast and lets it swell as it slows.
@@ -626,7 +590,6 @@ namespace RealisticFiring.Visuals
         {
             if (!Active || smoke == null)
                 return;
-            ShowOrHide();
 
             var dt = Time.deltaTime;
             var position = smoke.transform.position;
@@ -641,7 +604,6 @@ namespace RealisticFiring.Visuals
             if (boilerBroken.Value > 0f || dt <= 0f)
                 return;
 
-            SyncTuning();
             var inputs = firebox != null ? CoalInputs(dt) : OilInputs();
 
             // A beat with no steam behind it (drifting, regulator shut) makes no puff.
@@ -813,8 +775,8 @@ namespace RealisticFiring.Visuals
             var carried = local ? Vector3.zero : stackVelocity;
             var air = local ? space.InverseTransformDirection(past) : wind;
             var zone = stackLip.HasValue
-                ? Mathf.Min(Mathf.Max(0f, stackLip.Value) + LipMargin, Main.Settings.SmokeJetZone)
-                : Main.Settings.SmokeJetZone;
+                ? Mathf.Min(Mathf.Max(0f, stackLip.Value) + LipMargin, JetZone)
+                : JetZone;
             var emitter = SimulationPoint(system, Emitter(system));
             var zoneTop = emitter + axis * zone;
             if (aloft.TryGetValue(system, out var plume))
@@ -828,7 +790,7 @@ namespace RealisticFiring.Visuals
                     Speed = airSpeed,
                     Train = carried,
                     SteamLinger = tuning.SteamLinger,
-                    Eddies = Main.Settings.SmokeEddies,
+                    Eddies = Eddies,
                 }, emitter, axis, zone, zoneTop, carried);
                 return;
             }
@@ -1039,8 +1001,7 @@ namespace RealisticFiring.Visuals
                                 $"{puff.Sparks:F2} sparks, color #{ColorUtility.ToHtmlStringRGBA(ToColor(puff.Color))}; " +
                                 $"plume top {plumeTop:F0} m, buoyancy {StackFlux(stackHeat, exhaustSim, tuning):F0} m⁴/s³, {PlumeWeather.Describe()} " +
                                 $"({string.Join("; ", aloft.Select(a => $"{a.Key.name} {a.Value.Describe()}"))}); " +
-                                $"alive {string.Join(", ", Systems().Select(s => $"{s.name} {s.particleCount}"))}" +
-                                (shown ? "" : " (hidden)"));
+                                $"alive {string.Join(", ", Systems().Select(s => $"{s.name} {s.particleCount}"))}");
             beatCount = 0;
         }
 
@@ -1051,17 +1012,5 @@ namespace RealisticFiring.Visuals
 
         private IEnumerable<ParticleSystem> Systems() =>
             new[] { smoke, sootCore, jet }.Concat(embers ?? new ParticleSystem[0]).Where(s => s != null).Distinct();
-
-        // The settings can hide the plume's rendering at once, to see what it costs the frame.
-        private void ShowOrHide()
-        {
-            var show = Main.Settings.ShowChimneySmoke;
-            if (show == shown)
-                return;
-            renderers = renderers ?? Systems().Select(s => s.GetComponent<ParticleSystemRenderer>()).Where(r => r != null).ToArray();
-            foreach (var renderer in renderers)
-                renderer.enabled = show;
-            shown = show;
-        }
     }
 }

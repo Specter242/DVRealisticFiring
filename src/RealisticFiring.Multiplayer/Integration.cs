@@ -95,6 +95,7 @@ namespace RealisticFiring.Multiplayer
             server.RegisterSerializablePacket<HelloPacket>(OnHello);
             server.RegisterSerializablePacket<FireActionPacket>(OnFireAction);
             snapshotDue = 0u;
+            Leaving.Clear();
             server.OnPlayerDisconnected += OnPlayerLeft;
         }
 
@@ -113,6 +114,44 @@ namespace RealisticFiring.Multiplayer
         {
             SendSnapshots(tick);
             SendHello();
+            WarnAndDisconnect(tick);
+        }
+
+        // A player who joined with another version or other settings: told why
+        // on screen for a while (a notice lasts 4 s, so it is sent again), then
+        // disconnected. Kicked at once, they saw only "You were kicked!", the
+        // whispered reason gone with them (a player, 2026-10-14).
+        private sealed class Leaver
+        {
+            public IPlayer Player;
+            public string Reason;
+            public uint Next;
+            public uint Kick;
+        }
+
+        private static readonly List<Leaver> Leaving = new List<Leaver>();
+        private const float WarningSeconds = 12f;
+        private const float NoticeEvery = 3f;
+
+        private static void WarnAndDisconnect(uint tick)
+        {
+            var api = MultiplayerAPI.Instance;
+            var server = MultiplayerAPI.Server;
+            if (Leaving.Count == 0 || api == null || server == null)
+                return;
+            foreach (var leaver in Leaving.ToList())
+            {
+                if (tick >= leaver.Kick)
+                {
+                    Leaving.Remove(leaver);
+                    server.KickPlayer(leaver.Player);
+                }
+                else if (tick >= leaver.Next)
+                {
+                    leaver.Next = tick + (uint)Math.Max(1f, NoticeEvery * api.TICK_RATE);
+                    server.SendSerializablePacketToPlayer(new NoticePacket { Text = leaver.Reason }, leaver.Player);
+                }
+            }
         }
 
         // On the host: each loco a player is near, a few times a second.
@@ -185,8 +224,14 @@ namespace RealisticFiring.Multiplayer
                 : $"Realistic Firing settings differ from the host's ({Differences(hello.Shape, shape)})";
             mod.Logger.Warning($"{sender.DisplayName}: {reason}; disconnecting them");
             var server = MultiplayerAPI.Server;
-            server?.SendWhisperChatMessage($"{reason}. Match the host's, restart, and rejoin.", sender);
-            server?.KickPlayer(sender);
+            var tell = $"{reason}. Match the host's, restart, and rejoin. Disconnecting in {WarningSeconds:F0} s.";
+            server?.SendWhisperChatMessage(tell, sender);
+            FireController.Announce($"{sender.DisplayName}: {reason}; disconnecting them in {WarningSeconds:F0} s");
+            var api = MultiplayerAPI.Instance;
+            var now = api != null ? api.CurrentTick : 0u;
+            var rate = api != null ? api.TICK_RATE : 1u;
+            Leaving.RemoveAll(l => l.Player == sender);
+            Leaving.Add(new Leaver { Player = sender, Reason = tell, Next = now, Kick = now + (uint)(WarningSeconds * rate) });
         }
 
         private static string Differences(string theirs, string ours)
@@ -329,6 +374,7 @@ namespace RealisticFiring.Multiplayer
         // A player who leaves lets go of the hand pump.
         private static void OnPlayerLeft(IPlayer player)
         {
+            Leaving.RemoveAll(l => l.Player == player);
             if (player != null && PumpingBy.TryGetValue(player.PlayerId, out var rig))
             {
                 rig.RemotePump(player.PlayerId, false);

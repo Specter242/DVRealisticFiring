@@ -42,6 +42,8 @@ namespace RealisticFiring.Visuals
             ["FEF-3"] = (new Vector3(-0.14f, -0.48f, -0.03f), new Vector3(-180f, 0f, 2f)), // 2026-10-11
         };
 
+        private static readonly Vector3 SeatTurns = new Vector3(-180f, 0f, 2f);
+
         private static readonly Dictionary<string, Vector3> FixedSeats = new Dictionary<string, Vector3>
         {
             ["LocoS282A"] = new Vector3(0.26f, 0.13f, 0.21f),
@@ -52,43 +54,89 @@ namespace RealisticFiring.Visuals
         {
             if (car == null || interior == null || interior.Find(RootName) != null || !InjectorRig.TryGet(car, out var rig))
                 return null;
-            if (!rig.Circuits.Any(c => c.Steam != null))
+            if (!rig.Circuits.Any(c => c.Added != null))
                 return null;
             var root = new GameObject(RootName).transform;
             root.SetParent(interior, false);
             var notes = new List<string>();
+            var regulators = rig.Circuits.Any(c => c.OwnLeverIsSteam) ? CabWaterRegulators.Find(car, interior) : null;
             for (var i = 0; i < rig.Circuits.Count; i++)
             {
                 var circuit = rig.Circuits[i];
-                if (circuit.Steam == null)
+                if (circuit.Added == null)
                     continue;
-                var valve = InjectorValves.For(i);
+                var valve = InjectorValves.For(i, car.carLivery.id);
                 var feeders = interior.GetComponentsInChildren<InteractablePortFeeder>(true)
                     .Where(f => f.portId == circuit.Control.id && !f.transform.IsChildOf(root))
                     .ToList();
                 if (feeders.Count == 0)
                     notes.Add($"no cab control works '{circuit.Control.id}'");
+                // The cab's own handle as the steam valve: a notch a wheel click.
+                if (circuit.OwnLeverIsSteam)
+                    foreach (var feeder in feeders.Where(f => f.GetComponent<Patches.NotchScroll>() == null))
+                        feeder.gameObject.AddComponent<Patches.NotchScroll>();
                 foreach (var feeder in feeders)
-                    notes.Add(DummyWheels.TryGetValue(car.carLivery.id, out var dummy)
-                        ? BuildWheel(car, interior, root, feeder, circuit, valve, dummy.Name, dummy.PlateAft)
-                        : Build(car, interior, root, feeder, circuit, valve));
+                    notes.Add(circuit.OwnLeverIsSteam
+                        ? BuildCabRegulator(regulators, car, interior, root, feeder, circuit, valve) ?? BuildWater(car, interior, root, feeder, circuit, valve)
+                        : DummyWheels.TryGetValue(car.carLivery.id, out var dummy)
+                            ? BuildWheel(car, interior, root, feeder, circuit, valve, dummy.Name, dummy.PlateAft)
+                            : Build(car, interior, root, feeder, circuit, valve));
             }
-            return "injector steam levers: " + string.Join("; ", notes);
+            CabWaterRegulators.Finish(regulators);
+            return (rig.Circuits.Any(c => c.OwnLeverIsSteam) ? "injector water regulators: " : "injector steam levers: ") + string.Join("; ", notes);
         }
 
-        /// <summary>Rebuilds every loaded cab's steam levers, as the placement sliders move.</summary>
-        public static void RebuildLoaded()
+        // The cab's own water regulator made to work, where it models one; the
+        // stock handle the steam valve, its plate reading so. Null where the
+        // cab has none on that side.
+        private static string BuildCabRegulator(CabWaterRegulators.Cab cab, TrainCar car, Transform interior, Transform root, InteractablePortFeeder feeder,
+            InjectorCircuit circuit, StokerJetControls.Valve valve)
         {
-            foreach (var rig in InjectorRig.All)
+            var note = CabWaterRegulators.Build(cab, car, interior, root, feeder, circuit, valve);
+            if (note == null)
+                return null;
+            var steamLabel = $"{Side(circuit)}injector steam";
+            steamLabel = char.ToUpperInvariant(steamLabel[0]) + steamLabel.Substring(1);
+            if (feeder.GetComponent<HoverName>() == null)
+                feeder.gameObject.AddComponent<HoverName>().Source = () => SteamHover(circuit, steamLabel);
+            var plate = FeedPumpCab.InjectorPlate(interior, feeder.transform);
+            if (plate != null)
+                FeedPumpCab.Retext(plate, "INJ STEAM");
+            return note + (plate != null ? ", plate INJ STEAM" : "");
+        }
+
+        // Cabs whose own injector handles were set to step, once a session.
+        private static readonly HashSet<GameObject> Notched = new HashSet<GameObject>();
+
+ public static string NotchSteamHandles(TrainCar car, InjectorRig rig)
+        {
+            var prefab = car != null && car.carLivery != null ? car.carLivery.interiorPrefab : null;
+            var steam = rig != null ? rig.Circuits.Where(c => c.OwnLeverIsSteam && c.SteamValve != null).Select(c => c.SteamValve.id).ToList() : null;
+            if (prefab == null || steam == null || steam.Count == 0 || !Notched.Add(prefab))
+                return null;
+            var notched = new List<string>();
+            foreach (var feeder in prefab.GetComponentsInChildren<InteractablePortFeeder>(true).Where(f => steam.Contains(f.portId)))
             {
-                var car = rig.Car;
-                var interior = car != null && car.loadedInterior != null ? car.loadedInterior.transform : null;
-                var old = interior != null ? interior.Find(RootName) : null;
-                if (old == null)
+                var rotary = feeder.GetComponent<DV.CabControls.Spec.Rotary>();
+                var lever = feeder.GetComponent<DV.CabControls.Spec.Lever>();
+                if (rotary != null)
+                {
+                    rotary.useSteppedJoint = true;
+                    rotary.notches = InjectorValves.Notches.Length;
+                    rotary.scrollWheelUseSpringRotation = true;
+                    rotary.scrollWheelHoverScroll = rotary.scrollWheelHoverScroll < 0f ? -1f : 1f;
+                }
+                else if (lever != null)
+                {
+                    lever.useSteppedJoint = true;
+                    lever.steppedValueUpdate = true;
+                    lever.notches = InjectorValves.Notches.Length;
+                }
+                else
                     continue;
-                Object.DestroyImmediate(old.gameObject);
-                Attach(car, interior);
+                notched.Add(feeder.name);
             }
+            return notched.Count == 0 ? "no injector steam handles to step" : $"injector steam handles step {string.Join(", ", InjectorValves.Notches)}: {string.Join(", ", notched)}";
         }
 
         private static readonly Dictionary<string, (string Name, float PlateAft)> DummyWheels = new Dictionary<string, (string, float)>
@@ -149,7 +197,7 @@ namespace RealisticFiring.Visuals
                 return $"the copied wheel beside '{feeder.name}' has no feeder";
             }
             cloneFeeder.portId = valve.PortId;
-            control.gameObject.AddComponent<SimControlBinder>().Bind(cloneFeeder, circuit.Steam);
+            control.gameObject.AddComponent<SimControlBinder>().Bind(cloneFeeder, circuit.Added);
             control.gameObject.AddComponent<HoverName>().Source = () => SteamHover(circuit, valve);
             if (feeder.GetComponent<HoverName>() == null)
                 feeder.gameObject.AddComponent<HoverName>().Source = () => WaterHover(circuit);
@@ -185,7 +233,7 @@ namespace RealisticFiring.Visuals
         // The stock control's holder in the interior's prefab: of holders of
         // the same name and place (the 2901 has two "Right/Injector"), the one
         // set where the live one is.
-        private static Transform PrefabHolder(TrainCar car, Transform interior, Transform stock)
+        internal static Transform PrefabHolder(TrainCar car, Transform interior, Transform stock)
         {
             var prefab = car.carLivery.interiorPrefab != null ? car.carLivery.interiorPrefab.transform : null;
             var live = stock.parent;
@@ -228,11 +276,9 @@ namespace RealisticFiring.Visuals
             var middle = local.x > 0f ? -car.transform.right : car.transform.right;
             var up = car.transform.up;
             var forward = car.transform.forward;
-            var settings = Main.Settings;
             var seatedHere = Seats.TryGetValue(car.carLivery.id, out var seat);
-            var nudge = seatedHere ? Vector3.zero : new Vector3(settings.InjectorSteamNudgeAcross, settings.InjectorSteamNudgeUp, settings.InjectorSteamNudgeForward) / 100f;
-            var aim = stock.position + middle * (Across + seat.Move.x + nudge.x) + up * (Up + seat.Move.y + nudge.y);
-            var proud = seat.Move.z + nudge.z;
+            var aim = stock.position + middle * (Across + seat.Move.x) + up * (Up + seat.Move.y);
+            var proud = seat.Move.z;
             var fixedSeat = FixedSeats.TryGetValue(car.carLivery.id, out var fromHandle);
             var surface = aim;
             var normal = -forward;
@@ -247,7 +293,7 @@ namespace RealisticFiring.Visuals
             var shape = Shape(holder, control);
             var upOnFace = Vector3.ProjectOnPlane(up, normal).normalized;
             var across = Vector3.Cross(upOnFace, normal);
-            var turns = seatedHere ? seat.Turns : new Vector3(settings.InjectorSteamTurn, settings.InjectorSteamTilt, settings.InjectorSteamTwist);
+            var turns = seatedHere ? seat.Turns : SeatTurns;
             var extra = Quaternion.AngleAxis(turns.x, upOnFace)
                         * Quaternion.AngleAxis(turns.y, across)
                         * Quaternion.AngleAxis(turns.z, normal);
@@ -278,7 +324,7 @@ namespace RealisticFiring.Visuals
                 return $"the copied lever beside '{feeder.name}' has no feeder";
             }
             cloneFeeder.portId = valve.PortId;
-            control.gameObject.AddComponent<SimControlBinder>().Bind(cloneFeeder, circuit.Steam);
+            control.gameObject.AddComponent<SimControlBinder>().Bind(cloneFeeder, circuit.Added);
             control.gameObject.AddComponent<HoverName>().Source = () => SteamHover(circuit, valve);
             if (feeder.GetComponent<HoverName>() == null)
                 feeder.gameObject.AddComponent<HoverName>().Source = () => WaterHover(circuit);
@@ -291,6 +337,90 @@ namespace RealisticFiring.Visuals
             return $"'{valve.Id}' {(onBoiler ? $"on the backhead ('{surfaceName}')" : fixedSeat ? "on its fixed seat" : "beside (no backhead found)")} by '{feeder.name}' (its handle at ({handle.x:F2}, {handle.y:F2}, {handle.z:F2}) m) " +
                    $"at ({at.x:F2}, {at.y:F2}, {at.z:F2}) m, " +
                    $"a copy of the S282's sander lever" + plates;
+        }
+
+        private static readonly Dictionary<string, (Vector2 Right, Vector2 Left)> WaterSeats = new Dictionary<string, (Vector2, Vector2)>
+        {
+            ["em_lms_8f_loc_black"] = (new Vector2(0.55f, 0.95f), new Vector2(0.4f, 1.3f)),
+            ["em_lms_8f_loc_grey"] = (new Vector2(0.55f, 0.95f), new Vector2(0.4f, 1.3f)),
+        };
+
+        private const float WallSearchFrom = 0.25f;
+        private const float WallSearch = 1.6f;
+        private const float FallbackWall = 1f;
+
+        private static string BuildWater(TrainCar car, Transform interior, Transform root, InteractablePortFeeder feeder, InjectorCircuit circuit, StokerJetControls.Valve valve)
+        {
+            var source = Source(interior, out _);
+            if (source.Holder == null)
+                return $"no lever to copy beside '{feeder.name}'";
+            // Copied switched off and set in place before it wakes.
+            var frame = new GameObject(valve.Id).transform;
+            frame.gameObject.SetActive(false);
+            frame.SetParent(root, false);
+            var holder = Object.Instantiate(source.Holder.gameObject, frame, false).transform;
+            holder.name = valve.Id;
+            var control = holder.Find(source.Control.name);
+
+            // On the cab side the injector is on, low and behind the steam handle, facing in.
+            var stock = feeder.transform;
+            var local = car.transform.InverseTransformPoint(stock.position);
+            var side = local.x < 0f ? -1f : 1f;
+            var outward = car.transform.right * side;
+            var up = car.transform.up;
+            var seat = WaterSeats.TryGetValue(car.carLivery.id, out var seated)
+                ? side > 0f ? seated.Right : seated.Left
+                : new Vector2(0.5f, 0.9f);
+            var deck = InjectorOverflow.TryFindCabFloor(car, out var floor) ? floor : local.y - 1.6f;
+            var looking = car.transform.TransformPoint(new Vector3(side * WallSearchFrom, deck + seat.x, local.z - seat.y));
+            var onWall = CabRay.TryHit(car, looking, outward, WallSearch, out var toWall, out var wall);
+            if (!onWall)
+                toWall = FallbackWall - WallSearchFrom;
+            var normal = -outward;
+            var surface = looking + outward * toWall;
+
+            var shape = Shape(holder, control);
+            var turns = SeatTurns;
+            var across = Vector3.Cross(up, normal);
+            var extra = Quaternion.AngleAxis(turns.x, up) * Quaternion.AngleAxis(turns.y, across) * Quaternion.AngleAxis(turns.z, normal);
+            holder.rotation = extra * Quaternion.LookRotation(normal, up) * Quaternion.Inverse(Quaternion.LookRotation(shape.Face, shape.Handle));
+            holder.position = surface + normal * Back(holder, -normal);
+
+            foreach (var input in control.GetComponents<MonoBehaviour>()
+                         .Where(c => StokerCab.InputComponents.Contains(c.GetType().Name)
+                                     || c.GetType().Name == "PercentageControlNames" || c.GetType().Name == "NotchedControlCustomNames")
+                         .ToList())
+                Object.DestroyImmediate(input);
+            // A regulator turned to any opening, not notched.
+            var spec = control.GetComponent<DV.CabControls.Spec.Lever>();
+            if (spec != null)
+            {
+                spec.useSteppedJoint = false;
+                spec.steppedValueUpdate = false;
+                spec.scrollWheelHoverScroll = 0.1f;
+            }
+            var cloneFeeder = control.GetComponent<InteractablePortFeeder>();
+            if (cloneFeeder == null)
+            {
+                Object.Destroy(frame.gameObject);
+                return $"the copied lever beside '{feeder.name}' has no feeder";
+            }
+            cloneFeeder.portId = valve.PortId;
+            control.gameObject.AddComponent<SimControlBinder>().Bind(cloneFeeder, circuit.Added);
+            control.gameObject.AddComponent<HoverName>().Source = () => WaterHover(circuit);
+            var steamLabel = $"{Side(circuit)}injector steam";
+            steamLabel = char.ToUpperInvariant(steamLabel[0]) + steamLabel.Substring(1);
+            if (feeder.GetComponent<HoverName>() == null)
+                feeder.gameObject.AddComponent<HoverName>().Source = () => SteamHover(circuit, steamLabel);
+            frame.gameObject.SetActive(true);
+
+            var bottom = Reach(holder, -up);
+            var plateAt = holder.position - up * (bottom + PlateGap) - normal * (Back(holder, -normal) - PlateProud);
+            var plates = Plates(interior, stock, root, plateAt, Quaternion.FromToRotation(-car.transform.forward, normal), "INJ STEAM", "INJ WATER");
+            var at = car.transform.InverseTransformPoint(control.position);
+            return $"'{valve.Id}' on the {(side < 0f ? "left" : "right")} wall ({(onWall ? $"'{wall.name}'" : "not found; guessed")}) " +
+                   $"for '{feeder.name}', the steam valve (its handle at ({local.x:F2}, {local.y:F2}, {local.z:F2}) m), at ({at.x:F2}, {at.y:F2}, {at.z:F2}) m, " +
+                   $"{seat.x:F2} m above the deck at {deck:F2} m, a copy of the S282's sander lever" + plates;
         }
 
         // The lever to copy: the S282's sander lever, facing as it does on the
@@ -418,18 +548,19 @@ namespace RealisticFiring.Visuals
 
         // The stock control's plate reads INJ WATER, and a copy beside the
         // steam lever INJ STEAM. Returns a note for the log.
-        private static string Plates(Transform interior, Transform stock, Transform root, Vector3 at, Quaternion turn)
+        private static string Plates(Transform interior, Transform stock, Transform root, Vector3 at, Quaternion turn,
+            string stockText = "INJ WATER", string addedText = "INJ STEAM")
         {
             var plate = FeedPumpCab.InjectorPlate(interior, stock);
             if (plate == null)
                 return ", no plate found";
-            FeedPumpCab.Retext(plate, "INJ WATER");
+            FeedPumpCab.Retext(plate, stockText);
             var source = PlateWithBacking(plate);
             var copy = Object.Instantiate(source.gameObject, root, true);
-            copy.name = "label INJ STEAM";
+            copy.name = "label " + addedText;
             copy.transform.SetPositionAndRotation(at, turn * source.rotation);
-            FeedPumpCab.Retext(copy.GetComponentInChildren<TextMeshPro>(true), "INJ STEAM");
-            return ", plates INJ WATER and INJ STEAM" + (source == plate.transform ? " (its backing not found)" : "");
+            FeedPumpCab.Retext(copy.GetComponentInChildren<TextMeshPro>(true), addedText);
+            return $", plates {stockText} and {addedText}" + (source == plate.transform ? " (its backing not found)" : "");
         }
 
         private static Transform PlateWithBacking(TextMeshPro text)
@@ -456,31 +587,36 @@ namespace RealisticFiring.Visuals
 
         private static string Side(InjectorCircuit circuit) => string.IsNullOrEmpty(circuit.Name) ? "" : circuit.Name + " ";
 
-        internal static string SteamHover(InjectorCircuit circuit, StokerJetControls.Valve valve)
+        internal static string SteamHover(InjectorCircuit circuit, StokerJetControls.Valve valve) => SteamHover(circuit, valve.Label);
+
+        internal static string SteamHover(InjectorCircuit circuit, string label)
         {
-            var position = InjectorValves.Position(circuit.Steam.Value);
+            var position = InjectorValves.Position(circuit.SteamValve.Value);
             var flow = circuit.Flow;
             var hint = flow.State switch
             {
                 InjectorState.Off when flow.Overflow > 0f => "water running out of the overflow: steam to Prime, or shut the water",
                 InjectorState.Off => "shut",
                 InjectorState.Priming => "priming: it picks up as the overflow quiets",
-                InjectorState.Working when circuit.Steam.Value < InjectorSpec.SteamFeedFrom => "picked up: steam to Feed",
+                InjectorState.Working when circuit.SteamValve.Value < InjectorSpec.SteamFeedFrom => "picked up: steam to Feed",
                 InjectorState.Working => $"feeding {flow.WaterIn:F1} kg/s; the water valve sets it",
                 InjectorState.Hot => "hot: hold it at Prime to cool it",
                 InjectorState.LowPressure => "waiting for pressure",
-                InjectorState.NoWater when circuit.Control.Value <= InjectorSpec.OpenThreshold => "no water: open the water valve first",
+                InjectorState.NoWater when circuit.TenderValveShut => "no water: open the tender water valve",
+                InjectorState.NoWater when circuit.WaterValve.Value <= InjectorSpec.OpenThreshold => "no water: open the water valve first",
                 InjectorState.NoWater => "the tender is dry",
                 _ => "the jet broke: steam Off, then prime it again",
             };
-            return $"{valve.Label}: {position} ({hint})";
+            return $"{label}: {position} ({hint})";
         }
 
         internal static string WaterHover(InjectorCircuit circuit)
         {
             var flow = circuit.Flow;
-            return $"{Side(circuit)}injector water: {circuit.Control.Value:P0} open" +
-                   (flow.State == InjectorState.Working ? $", feeding {flow.WaterIn:F1} kg/s" : flow.Overflow > 0f ? ", running at the overflow" : "");
+            var text = $"{Side(circuit)}injector water: {circuit.WaterValve.Value:P0} open" +
+                       (circuit.TenderValveShut ? ", the tender valve shut"
+                           : flow.State == InjectorState.Working ? $", feeding {flow.WaterIn:F1} kg/s" : flow.Overflow > 0f ? ", running at the overflow" : "");
+            return char.ToUpperInvariant(text[0]) + text.Substring(1);
         }
     }
 }

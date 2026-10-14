@@ -135,9 +135,9 @@ namespace RealisticFiring.AdapterCheck
             started.Tick(0.02f);
             Check(started.Model.FireOn && P(started, "FIRE_ON").Value == 1f
                   && started.Model.Zones.All(z => z.Fresh == 0f && z.Burning > 0f)
-                  && Math.Abs(P(started, "COAL_LEVEL").Value - started.Model.Parameters.MaxCoalCapacity) < 0.5f
+                  && Math.Abs(P(started, "COAL_LEVEL").Value - 0.5f * started.Model.Parameters.MaxCoalCapacity) < 0.5f
                   && started.LastDeliveryMass == 0f,
-                $"start-up lays a full, burning fire ({P(started, "COAL_LEVEL").Value:F1} kg), not green coal");
+                $"start-up lays a medium, burning fire ({P(started, "COAL_LEVEL").Value:F1} kg of {started.Model.Parameters.MaxCoalCapacity:F0}), not a box of green coal");
 
             // A stoker's per-tick trickle is continuous feed, not a shovelful.
             var stoked = Create(def, gameParams);
@@ -151,6 +151,7 @@ namespace RealisticFiring.AdapterCheck
             CheckInjector(gameParams);
             CheckInjectorSteamValve(gameParams);
             CheckJk3Injectors(gameParams);
+            CheckLms8FInjectors(gameParams);
             CheckJk3Firebox(gameParams);
             CheckBoilerWater();
             CheckStoker(gameParams, def);
@@ -872,6 +873,105 @@ namespace RealisticFiring.AdapterCheck
             return (boiler, right, left, new SimComponent[] { divisor, right, left, add, normalized, particles, boiler }, water, consumed);
         }
 
+        // Emerald's LMS 8F 1.2.1, as its bundle wires it: injector1 (left) and
+        // injector2 (right) added, halved by a constant port, into the
+        // boiler's injector, the halved output typed as a cab control.
+        private static (Boiler Boiler, SimComponent[] Components)
+            Lms8FInjectorSetup(SimGameParams gameParams, float factorValue = 0.5f)
+        {
+            var left = new ExternalControl(new ExternalControlDefinition { ID = "injector1", saveState = true });
+            var right = new ExternalControl(new ExternalControlDefinition { ID = "injector2", saveState = true });
+            var add = new ConfigurableAdd(new ConfigurableAddDefinition
+            {
+                ID = "injectoradding",
+                aReader = new PortReferenceDefinition(PortValueType.CONTROL, "injector1"),
+                bReader = new PortReferenceDefinition(PortValueType.CONTROL, "injector2"),
+                addReadOut = new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "injectoradd"),
+            });
+            add.aReader.SetPortReference(left.controlExtIn);
+            add.bReader.SetPortReference(right.controlExtIn);
+            var factor = new ConfigurablePort(new ConfigurablePortDefinition
+            {
+                ID = "injector_multiplier", value = factorValue,
+                port = new PortDefinition(PortType.EXTERNAL_IN, PortValueType.GENERIC, "multiplier"),
+            });
+            var calc = new ConfigurableMultiplier(new ConfigurableMultiplierDefinition
+            {
+                ID = "injector_calc",
+                aReader = new PortReferenceDefinition(PortValueType.GENERIC, "injectoradd"),
+                bReader = new PortReferenceDefinition(PortValueType.GENERIC, "multiplier"),
+                mulReadOut = new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "injectorhalf"),
+            });
+            calc.aReader.SetPortReference(add.addReadOut);
+            calc.bReader.SetPortReference(factor.GetAllPorts().Single());
+            var boiler = new Boiler(new BoilerDefinition
+            {
+                ID = "boiler", diameter = 1.737f, length = 5.467f, capacityMultiplier = 0.85f,
+                maxInjectorRate = 20f, waterConsumptionMultiplier = 2.5f,
+                safetyValveOpeningPressure = 15.5f, safetyValveClosingPressure = 14.5f,
+                spawnPressure = 15f, spawnWaterLevel = 9000f,
+            });
+            boiler.SetGameParams(gameParams);
+            boiler.injectorControl.SetPortReference(calc.mulReadOut);
+            var water = new Port("tenderWater", new PortDefinition(PortType.READONLY_OUT, PortValueType.WATER, "AMOUNT"), 18000f);
+            var consumed = new Port("tenderWater", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.WATER, "CONSUME_EXT_IN"));
+            boiler.water.SetPortReference(water);
+            boiler.waterConsumption.SetPortReference(consumed);
+            return (boiler, new SimComponent[] { left, right, add, factor, calc, boiler });
+        }
+
+        private static void CheckLms8FInjectors(SimGameParams gameParams)
+        {
+            var setup = Lms8FInjectorSetup(gameParams);
+            var made = InjectorRig.TryCreate(null, setup.Boiler, "em_lms_8f_loc_black", setup.Components, out var note);
+            InjectorRig.TryGet(setup.Boiler, out var rig);
+            Check(made && rig != null && rig.Circuits.Count == 2
+                  && rig.Circuits[0].Control.id == "injector2.EXT_IN" && rig.Circuits[1].Control.id == "injector1.EXT_IN",
+                $"the LMS 8F's two injectors are each worked on their own, the fireman's right first ({note})");
+            // With the water regulators added, the cab's own levers are the steam valves.
+            var fitted = Lms8FInjectorSetup(gameParams);
+            var waterRight = new ExternalControl(new ExternalControlDefinition { ID = InjectorValves.Water.Id, saveState = true });
+            var waterLeft = new ExternalControl(new ExternalControlDefinition { ID = InjectorValves.WaterLeft.Id, saveState = true });
+            InjectorRig.TryCreate(null, fitted.Boiler, "em_lms_8f_loc_black", fitted.Components.Concat(new SimComponent[] { waterRight, waterLeft }), out _);
+            InjectorRig.TryGet(fitted.Boiler, out var swapped);
+            var right = swapped?.Circuits[0];
+            var steamLever = fitted.Components.OfType<ExternalControl>().Single(c => c.id == "injector2").controlExtIn;
+            InjectorFlow Step(float seconds)
+            {
+                for (var t = 0f; t < seconds; t += 0.02f)
+                    swapped.Simulate(0.02f);
+                return right.Flow;
+            }
+            var opened = false;
+            if (right != null && right.OwnLeverIsSteam && right.SteamValve == steamLever && right.WaterValve == waterRight.controlExtIn)
+            {
+                swapped.EndResume();
+                waterRight.controlExtIn.Value = 0.6f;
+                var gravity = Step(1f);
+                steamLever.Value = InjectorSpec.SteamPrime;
+                Step(2f);
+                steamLever.Value = 1f;
+                var feeding = Step(3f);
+                opened = gravity.State == InjectorState.Off && gravity.Overflow > 0f && feeding.State == InjectorState.Working && feeding.WaterIn > 0f;
+            }
+            Check(opened, "the LMS 8F's own lever is the steam valve and the added regulator the water: water runs at the overflow, then it primes and feeds");
+            // The tender's water valve to it, shut: no water, whatever the regulator.
+            var starvedThenOpened = false;
+            if (opened)
+            {
+                var tenderValve = new Port(InjectorValves.TenderWater.Id, new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"), 0f);
+                right.TenderValve = tenderValve;
+                var starved = Step(1f);
+                starvedThenOpened = right.TenderValveShut && starved.State == InjectorState.NoWater && starved.WaterIn == 0f
+                                    && swapped.OpenTenderValve(0) && tenderValve.Value >= 1f && !right.TenderValveShut;
+            }
+            Check(starvedThenOpened, "the LMS 8F tender's water valve shut starves its injector, and the fireman opens it");
+            var changed = Lms8FInjectorSetup(gameParams, factorValue: 1f);
+            InjectorRig.TryCreate(null, changed.Boiler, "em_lms_8f_loc_grey", changed.Components, out _);
+            Check(!InjectorRig.TryGet(changed.Boiler, out var single) || single.Circuits.Count == 1,
+                "a changed LMS 8F injector calculation is not taken for its two injectors");
+        }
+
         // An engine fitted with its own injector steam valve: the stock lever
         // is the water valve, the new control shut, primed, or wide open.
         private static void CheckInjectorSteamValve(SimGameParams gameParams)
@@ -906,7 +1006,7 @@ namespace RealisticFiring.AdapterCheck
                 }
                 return rig.Circuits[0].Flow;
             }
-            if (!made || rig == null || rig.Circuits[0].Steam == null)
+            if (!made || rig == null || rig.Circuits[0].Added == null)
             {
                 Check(false, $"the S060 gets its injector steam valve ({note})");
                 return;

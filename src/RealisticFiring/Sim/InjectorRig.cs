@@ -70,6 +70,13 @@ namespace RealisticFiring.Sim
             // Nathan non-lifters beside its feedwater heaters (L-3, RME Jan
             // 1941), about 10,000 gal/h (inferred). The game's is 36.
             ["S464-730"] = 10.5f,
+            // LMS 8F: the WD engines carried two live-steam injectors (Railway
+            // Gazette, 19 Jan 1940, p.83), Gresham & Craven on the LMS, under
+            // the cab footsteps (non-lifting); their size is not given. About
+            // 3.5 kg/s each, above the boiler's most (inferred). The game's
+            // is 20 together.
+            ["em_lms_8f_loc_black"] = 7f,
+            ["em_lms_8f_loc_grey"] = 7f,
             // UP FEF: "one Nathan non-lifting injector ... 10,000 gal. per hr."
             // (FEF-1, RME Feb 1938 p.47); the FEF-3 was built like the FEF-1
             // and FEF-2. The game's are 60 (844) and 50.
@@ -186,6 +193,9 @@ namespace RealisticFiring.Sim
         /// <summary>Boiler water level, 0 to 1, from the stock read-out.</summary>
         public float WaterLevel => boiler.waterLevelReadOut.Value;
 
+        /// <summary>The port the cab's gauge glass reads the water level from.</summary>
+        public string WaterLevelPortId => boiler.waterLevelReadOut.id;
+
         /// <summary>Set by the cab controls while the hand pump is being worked.</summary>
         public bool HandPumping { get; set; }
 
@@ -254,7 +264,7 @@ namespace RealisticFiring.Sim
         /// Sets up a realistic injector on each boiler of <paramref name="car"/>
         /// whose injector is worked by a cab control. A boiler whose injector
         /// port is driven by anything else keeps the stock behavior, except
-        /// JK3's verified two-valve averaging graph. Returns a line for
+        /// verified two-valve averaging graphs (JK3, LMS 8F). Returns a line for
         /// the log, or null when the car has no boiler.
         /// </summary>
         public static string Attach(TrainCar car, SimulationFlow flow)
@@ -291,9 +301,9 @@ namespace RealisticFiring.Sim
         internal static bool TryCreate(TrainCar car, Boiler boiler, string livery, IEnumerable<SimComponent> components, out string note)
         {
             var control = boiler.injectorControl.IsConnected ? ReferencedPort(boiler.injectorControl) : null;
-            var controls = control != null && control.type == PortType.EXTERNAL_IN
-                ? new[] { control }
-                : Jk3Controls(livery, components, control);
+            // A verified two-valve graph first: the 8F's calculated feed is typed as a cab control.
+            var controls = TwoValveControls(livery, components, control)
+                ?? (control != null && control.type == PortType.EXTERNAL_IN ? new[] { control } : null);
             if (controls == null)
             {
                 note = $"boiler '{boiler.id}' keeps the stock injector (driven by {(control != null ? $"'{control.id}'" : "nothing")})";
@@ -324,9 +334,10 @@ namespace RealisticFiring.Sim
                 var all = components.SelectMany(c => c.GetAllPorts()).ToList();
                 for (var i = 0; i < circuits.Count; i++)
                 {
-                    circuits[i].Steam = all.FirstOrDefault(p => p.id == InjectorValves.For(i).PortId);
-                    if (circuits[i].Steam == null)
+                    circuits[i].Added = all.FirstOrDefault(p => p.id == InjectorValves.For(i, livery).PortId);
+                    if (circuits[i].Added == null)
                         continue;
+                    circuits[i].OwnLeverIsSteam = InjectorValves.OwnLeverIsSteam(livery);
                     circuits[i].Injector.Spec.Lifting = InjectorValves.Lifting(livery);
                     steamValves++;
                 }
@@ -348,30 +359,60 @@ namespace RealisticFiring.Sim
             return true;
         }
 
-        // JK3 1.0.1 averages two independent cab valves. Accept that exact
-        // graph, without treating arbitrary calculated or mechanical feeds
-        // as cab injectors, or changing its ports and control save data.
-        private static Port[] Jk3Controls(string livery, IEnumerable<SimComponent> components, Port control)
+        // Cabs with two injector valves feeding the boiler's one injector port
+        // through a calculated average, as CCL cannot wire two: each graph
+        // verified exactly, so no arbitrary calculated or mechanical feed is
+        // taken for cab injectors, and no ports or control save data change.
+        // Right is the first injector, left the second; the adder's inputs
+        // are named as each graph wires them.
+        private sealed class TwoValveGraph
         {
-            if (livery != "Jk3A" || components == null || control == null)
+            public string Add, AddA, AddB, Multiplier, MultiplierOut, Factor, FactorPort, Right, Left;
+        }
+
+        private static readonly TwoValveGraph Lms8F = new TwoValveGraph
+        {
+            Add = "injectoradding", AddA = "injector1", AddB = "injector2", Multiplier = "injector_calc", MultiplierOut = "injector_calc.injectorhalf",
+            Factor = "injector_multiplier", FactorPort = "injector_multiplier.multiplier", Right = "injector2", Left = "injector1",
+        };
+
+        private static readonly Dictionary<string, TwoValveGraph> TwoValveGraphs = new Dictionary<string, TwoValveGraph>
+        {
+            // JK3 1.0.1.
+            ["Jk3A"] = new TwoValveGraph
+            {
+                Add = "injectorAdd", AddA = "injector", AddB = "injector2", Multiplier = "injectorNormalized", MultiplierOut = "injectorNormalized.INJECTOR_NORMALIZED",
+                Factor = "injectorDivisor", FactorPort = "injectorDivisor.DIVISOR", Right = "injector", Left = "injector2",
+            },
+            // Emerald's LMS 8F 1.2.1: the fireman's (right) injector 'injector2', the driver's (left) 'injector1'.
+            ["em_lms_8f_loc_black"] = Lms8F,
+            ["em_lms_8f_loc_grey"] = Lms8F,
+        };
+
+        /// <summary>Whether <paramref name="livery"/>'s cab works two injectors through a verified calculated feed.</summary>
+        internal static bool HasTwoValveGraph(string livery) => livery != null && TwoValveGraphs.ContainsKey(livery);
+
+        private static Port[] TwoValveControls(string livery, IEnumerable<SimComponent> components, Port control)
+        {
+            if (livery == null || !TwoValveGraphs.TryGetValue(livery, out var graph) || components == null || control == null)
                 return null;
             var all = components.ToList();
-            var normalized = all.OfType<ConfigurableMultiplier>().SingleOrDefault(c => c.id == "injectorNormalized");
-            var add = all.OfType<ConfigurableAdd>().SingleOrDefault(c => c.id == "injectorAdd");
-            var divisor = all.OfType<ConfigurablePorts>().SingleOrDefault(c => c.id == "injectorDivisor")
-                ?.ports.SingleOrDefault(p => p.id == "injectorDivisor.DIVISOR");
-            var right = all.OfType<ExternalControl>().SingleOrDefault(c => c.id == "injector")?.controlExtIn;
-            var left = all.OfType<ExternalControl>().SingleOrDefault(c => c.id == "injector2")?.controlExtIn;
+            var multiplier = all.OfType<ConfigurableMultiplier>().SingleOrDefault(c => c.id == graph.Multiplier);
+            var add = all.OfType<ConfigurableAdd>().SingleOrDefault(c => c.id == graph.Add);
+            var factor = all.SingleOrDefault(c => c.id == graph.Factor)?.GetAllPorts().SingleOrDefault(p => p.id == graph.FactorPort);
+            Port Valve(string id) => all.OfType<ExternalControl>().SingleOrDefault(c => c.id == id)?.controlExtIn;
+            var right = Valve(graph.Right);
+            var left = Valve(graph.Left);
             Port Source(PortReference r) => r.IsConnected ? ReferencedPort(r) : null;
-            bool CabValve(Port p, string id) => p != null && p.id == id && p.type == PortType.EXTERNAL_IN
+            bool CabValve(Port p, string id) => p != null && p.id == id + ".EXT_IN" && p.type == PortType.EXTERNAL_IN
                 && p.valueType == PortValueType.CONTROL;
-            if (normalized == null || add == null || divisor == null
-                || normalized.invertA || normalized.invertB || add.negativeA || add.negativeB
-                || normalized.mulReadOut != control || control.id != "injectorNormalized.INJECTOR_NORMALIZED"
-                || Source(normalized.aReader) != add.addReadOut || Source(normalized.bReader) != divisor
-                || divisor.type != PortType.IN || divisor.IsConnectedPort || divisor.Value != 0.5f
-                || !CabValve(right, "injector.EXT_IN") || !CabValve(left, "injector2.EXT_IN")
-                || Source(add.aReader) != right || Source(add.bReader) != left)
+            if (multiplier == null || add == null || factor == null
+                || multiplier.invertA || multiplier.invertB || add.negativeA || add.negativeB
+                || multiplier.mulReadOut != control || control.id != graph.MultiplierOut
+                || Source(multiplier.aReader) != add.addReadOut || Source(multiplier.bReader) != factor
+                || (factor.type != PortType.IN && factor.type != PortType.EXTERNAL_IN) || factor.IsConnectedPort || factor.Value != 0.5f
+                || !CabValve(right, graph.Right) || !CabValve(left, graph.Left)
+                || Source(add.aReader) != Valve(graph.AddA) || Source(add.bReader) != Valve(graph.AddB))
                 return null;
             return new[] { right, left };
         }
@@ -409,6 +450,35 @@ namespace RealisticFiring.Sim
             return false;
         }
 
+        // The tender coupled behind, whose water valves were looked for.
+        private TrainCar valveTender;
+
+        // The coupled tender's water valve to each injector, looked for again
+        // when the tender changes or its sim is not yet built.
+        private void FindTenderValves()
+        {
+            var tender = Car != null && Car.rearCoupler != null && Car.rearCoupler.coupledTo != null ? Car.rearCoupler.coupledTo.train : null;
+            if (tender == valveTender)
+                return;
+            var flow = tender != null && tender.SimController != null ? tender.SimController.simFlow : null;
+            var valved = tender != null && tender.carLivery != null && InjectorValves.HasTenderValves(tender.carLivery.id);
+            if (valved && flow == null)
+                return;
+            valveTender = tender;
+            for (var i = 0; i < Circuits.Count; i++)
+                Circuits[i].TenderValve = valved && flow.TryGetPort(InjectorValves.TenderValve(i).PortId, out var port) ? port : null;
+        }
+
+        /// <summary>Opens the tender's water valve to the injector at <paramref name="index"/>, as the fireman would; whether it was shut.</summary>
+        public bool OpenTenderValve(int index)
+        {
+            FindTenderValves();
+            if (index >= Circuits.Count || !Circuits[index].TenderValveShut)
+                return false;
+            Circuits[index].TenderValve.ExternalValueUpdate(1f);
+            return true;
+        }
+
         /// <summary>Runs in place of the stock injector step.</summary>
         public void Simulate(float delta)
         {
@@ -421,6 +491,7 @@ namespace RealisticFiring.Sim
             var space = Mathf.Max(0f, TotalVolume(boiler) - vessel.waterVolume);
             var broken = boiler.isBrokenReadOut.Value != 0f;
 
+            FindTenderValves();
             var drawn = 0f;
             var workingValve = 0f;
             var total = default(InjectorFlow);
@@ -430,8 +501,8 @@ namespace RealisticFiring.Sim
                 circuit.Injector.Spec.TechniqueAndHeat = Main.Settings.InjectorTechniqueAndHeat;
                 var flow = circuit.Injector.Step(delta, new InjectorInputs
                 {
-                    SteamValve = broken ? 0f : circuit.Steam != null ? circuit.Steam.Value : circuit.Control.Value,
-                    WaterValve = circuit.Steam != null ? circuit.Control.Value : (float?)null,
+                    SteamValve = broken ? 0f : (circuit.SteamValve ?? circuit.Control).Value,
+                    WaterValve = circuit.WaterInput,
                     BoilerPressure = vessel.pressure,
                     TenderWater = Mathf.Max(0f, tender - drawn),
                     BoilerSpace = space,
@@ -447,7 +518,7 @@ namespace RealisticFiring.Sim
                 drawn += flow.TenderDraw * delta;
                 space = Mathf.Max(0f, space - fed);
                 if (flow.WaterIn > 0f)
-                    workingValve += circuit.Control.Value / Circuits.Count;
+                    workingValve += circuit.Feed.Value / Circuits.Count;
                 total.WaterIn += flow.WaterIn;
                 total.SteamUsed += flow.SteamUsed;
                 total.TenderDraw += flow.TenderDraw;

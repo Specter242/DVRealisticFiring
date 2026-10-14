@@ -77,8 +77,10 @@ namespace RealisticFiring.Core.Tests;
     {
         var shut = FiringAdvice.ForCoal(Bed(Even(10f)), 0f, 0.6f, new[] { new InjectorReading(InjectorState.NoWater, 0f, true) });
         var dry = FiringAdvice.ForCoal(Bed(Even(10f)), 0f, 0.6f, new[] { new InjectorReading(InjectorState.NoWater, 0.6f, true) });
+        var tenderShut = FiringAdvice.ForCoal(Bed(Even(10f)), 0f, 0.6f, new[] { new InjectorReading(InjectorState.NoWater, 0.6f, true, tenderValveShut: true) });
         Assert.Contains("open the water valve", shut.Text);
         Assert.Contains("Tender's dry", dry.Text);
+        Assert.Contains("open the tender water valve", tenderShut.Text);
     }
 
     [Fact]
@@ -132,6 +134,9 @@ namespace RealisticFiring.Core.Tests;
         Assert.Contains("get her onto a loco parking track", FiringAdvice.ForOil(oil).Text);
         oil.OnServiceTrack = true;
         Assert.Contains("open SHOP STEAM", FiringAdvice.ForOil(oil).Text);
+        Assert.DoesNotContain("(or", FiringAdvice.ForOil(oil).Text);
+        oil.SteamLineKey = "F11";
+        Assert.Contains("open SHOP STEAM (or F11)", FiringAdvice.ForOil(oil).Text);
     }
 
     [Fact]

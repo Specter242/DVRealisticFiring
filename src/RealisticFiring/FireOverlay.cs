@@ -67,7 +67,7 @@ namespace RealisticFiring
 
         private static int Page => Mathf.Clamp(Main.Settings.OverlayPage, 0, Pages - 1);
 
-        /// <summary>Ctrl+F: shows the card at its first page, steps the pages, then hides it.</summary>
+        /// <summary>F6: shows the card at its first page, steps the pages, then hides it.</summary>
         public static void Step(Settings settings)
         {
             if (!settings.ShowOverlay)
@@ -198,21 +198,22 @@ namespace RealisticFiring
             state == InjectorState.Hot || state == InjectorState.NoWater || state == InjectorState.Broken ? AdviceLevel.Act
             : state == InjectorState.Priming || state == InjectorState.LowPressure ? AdviceLevel.Watch : AdviceLevel.Ok;
 
-        private static string Valves(InjectorCircuit circuit) => circuit.Steam != null
-            ? $"steam {InjectorValves.Position(circuit.Steam.Value)} · water {P0(circuit.Control.Value)}"
+        private static string Valves(InjectorCircuit circuit) => circuit.SteamValve != null
+            ? $"steam {InjectorValves.Position(circuit.SteamValve.Value)} · water {P0(circuit.WaterValve.Value)}" + (circuit.TenderValveShut ? " · tender shut" : "")
             : $"lever {P0(circuit.Control.Value)}";
 
         private static string LocoName(TrainCar car) => car.ID;
 
         private static IReadOnlyList<InjectorReading> Injectors(InjectorRig rig) => rig == null
             ? new InjectorReading[0]
-            : rig.Circuits.Select(c => new InjectorReading(c.Flow.State, c.Control.Value, c.Steam != null)).ToList();
+            : rig.Circuits.Select(c => new InjectorReading(c.Flow.State, c.Feed.Value, c.SteamValve != null, c.TenderValveShut)).ToList();
 
-        // Glass and boiler, the same on every engine: the boiler's gauge
-        // against its working pressure, its good band 85 to 100 %.
+        // Glass and boiler, the same on every engine: the glass as the cab's
+        // shows it, and the boiler's gauge against its working pressure, its
+        // good band 85 to 100 %.
         private static void WaterGauges(Card card, InjectorRig rig)
         {
-            var glass = rig != null ? rig.WaterLevel : 0f;
+            var glass = Visuals.GaugeGlass.Read(rig);
             card.Gauges[2] = new Gauge { Key = "glass", Label = "GLASS", Value = glass, Band0 = 0.4f, Band1 = 0.75f, Text = P0(glass), Level = GlassLevel(glass) };
             var gauge = rig != null ? rig.BoilerPressure - 1f : 0f;
             var working = rig != null ? Mathf.Max(1f, rig.WorkingPressure - 1f) : 1f;
@@ -240,7 +241,7 @@ namespace RealisticFiring
             c.Gauges[1] = Draft(fire.FireOn, fire.AirRatio, "choked", "thin", CoalSmoke(fire.SmokeDensity));
             WaterGauges(c, rig);
             var door = firebox.HasDoorPort ? firebox.DoorOpening : 0f;
-            c.Advice = FiringAdvice.ForCoal(fire, door, rig != null ? rig.WaterLevel : 1f, Injectors(rig));
+            c.Advice = FiringAdvice.ForCoal(fire, door, rig != null ? Visuals.GaugeGlass.Read(rig) : 1f, Injectors(rig));
 
             switch (Page)
             {
@@ -361,16 +362,14 @@ namespace RealisticFiring
             }
         }
 
-        private const float PsiPerBar = 14.5038f;
-
         private static void EngineRows(Card c, TrainCar car, RealisticFirebox firebox)
         {
             if (EngineCylinders.TryGet(car, out var engine, out var cylinders))
             {
                 var cycle = cylinders.Cycle;
                 c.Rows.Add(new Row { Label = "Cut-off", Value = P0(cycle.Events.Cutoff) });
-                c.Rows.Add(new Row { Label = "Steam chest", Value = $"{(engine.steamChestPressureReadOut.Value - 1f) * PsiPerBar:F0} psi" });
-                c.Rows.Add(new Row { Label = "Mean pressure", Value = $"{cycle.MeanEffectivePressure * PsiPerBar:F0} psi" });
+                c.Rows.Add(new Row { Label = "Steam chest", Value = $"{engine.steamChestPressureReadOut.Value - 1f:F1} bar" });
+                c.Rows.Add(new Row { Label = "Mean pressure", Value = $"{cycle.MeanEffectivePressure:F1} bar" });
                 if (EngineSuperheater.TryGet(engine, out var superheater))
                     c.Rows.Add(new Row
                     {
@@ -425,6 +424,8 @@ namespace RealisticFiring
             kg = Text(17, OverlayArt.Cream, TextAnchor.MiddleCenter, plateFont);
             ends = Text(13, OverlayArt.Soft, TextAnchor.MiddleCenter, plateFont);
             nextText = new GUIStyle(Text(19, OverlayArt.Cream, TextAnchor.UpperLeft)) { wordWrap = true };
+            nextFit = new GUIStyle(nextText);
+            nextFitFor = null;
             stepText = Text(17, OverlayArt.Soft, TextAnchor.MiddleLeft);
             stepHow = Text(14, OverlayArt.Dim, TextAnchor.MiddleLeft);
         }
@@ -617,6 +618,25 @@ namespace RealisticFiring
             }
         }
 
+        private const int SmallestNext = 14;
+        private GUIStyle nextFit;
+        private string nextFitFor;
+
+        private GUIStyle FitNext(string text, Rect area)
+        {
+            if (text == nextFitFor)
+                return nextFit;
+            nextFitFor = text;
+            var content = new GUIContent(text);
+            for (var size = nextText.fontSize; size >= SmallestNext; size--)
+            {
+                nextFit.fontSize = size;
+                if (nextFit.CalcHeight(content, area.width) <= area.height)
+                    break;
+            }
+            return nextFit;
+        }
+
         private void DrawNext(Advice advice, Rect rect)
         {
             Fill(rect, advice.Level == AdviceLevel.Act ? new Color(OverlayArt.Alarm.r, OverlayArt.Alarm.g, OverlayArt.Alarm.b, 0.08f) : new Color(1f, 1f, 1f, 0.05f));
@@ -625,7 +645,8 @@ namespace RealisticFiring
             GUI.DrawTexture(new Rect(rect.x, rect.y, 3f, rect.height), OverlayArt.White);
             GUI.color = old;
             Mark(advice.Level, new Rect(rect.x + 12f, rect.y + 12f, 11f, 11f));
-            GUI.Label(new Rect(rect.x + 30f, rect.y + 6f, rect.width - 40f, rect.height - 10f), advice.Text, nextText);
+            var area = new Rect(rect.x + 30f, rect.y + 6f, rect.width - 40f, rect.height - 10f);
+            GUI.Label(area, advice.Text, FitNext(advice.Text, area));
         }
     }
 }

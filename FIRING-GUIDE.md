@@ -13,7 +13,7 @@ least coal or oil. For what each control does, see the README.
 - **Keep the door shut.** Crack it briefly after firing to burn off the
   smoke, then close it. Cold air through the door wastes more heat than air
   through the grate.
-- **Read before you act.** Ctrl+F shows the fire, the draft (choked when
+- **Read before you act.** F6 shows the fire, the draft (choked when
   overstoked, thin when underfed, the smoke's color under it), the glass,
   and the boiler on dials, each grate zone's coal, and the next thing to do.
   The stack and the bed tell you the rest.
@@ -56,6 +56,14 @@ Rake a bank level with the empty shovel; don't stir it.
   covered. Two lifting injectors, each with its own water valve and steam
   lever: the priming steam lifts the water. Each delivers up to 4 kg/s at
   rated pressure, 8 kg/s together.
+- **LMS 8F:** a narrow Belpaire box, sloping at the front and level at the
+  back, with a brick arch. Fire thin and often, a few shovelfuls at a time,
+  and keep the back corners filled; a heap under the door chokes it. Two
+  live-steam injectors, one each side: the handles on the backhead are the
+  steam valves, the water regulators are under the seats (the fireman's a
+  handwheel, the driver's a handle; anticlockwise opens), and the tender
+  water valves on the tender front must be down at OPEN. Water first, then
+  steam to Prime, then Feed.
 - **NYC Hudson:** the back corners thin out at speed, and the stoker runs the
   right back corner short. Its coal leaves a little more ash and clinker.
 - **844:** burns its smoke clean and pulls hard to the front. Its coal hardly
@@ -65,7 +73,7 @@ Rake a bank level with the empty shovel; don't stir it.
 
 ## Keeping the fire clean
 
-- **Wiggle the grate** (a short rock of the fire-dump lever, or Ctrl+G) every
+- **Wiggle the grate** (a short rock of the fire-dump lever, or Z) every
   10–15 minutes of hard work. It takes the ash and almost no fire.
 - **Shake it** (a half stroke) when the fire turns dull and red, ideally
   with the throttle eased. Shaking hard while working throws fire and
@@ -117,7 +125,7 @@ Rake a bank level with the empty shovel; don't stir it.
   stack mean it's scouring.
 - **A dead engine** fires up on the shed's steam line on a service track
   (a service station with water, a loco parking track, or a roundhouse
-  stall by a turntable; tow it there): open SHOP STEAM (or Ctrl+Shift+L),
+  stall by a turntable; tow it there): open SHOP STEAM (or F11),
   warm the oil for about ten minutes, light up, and shut the valve once
   the boiler makes its own steam. The screen says each next step.
 
@@ -144,7 +152,7 @@ Rake a bank level with the empty shovel; don't stir it.
 - **Foaming** (the glass bobs and reads high): ease the throttle, open the
   cylinder cocks, and lower the water. Water in the exhaust means it's
   carrying over and can crack a cylinder.
-- **Wash out** on a service track (boiler cold, Ctrl+Shift+H) when blowdowns no
+- **Wash out** on a service track (boiler cold, F9) when blowdowns no
   longer keep it quiet.
 - **Never run low.** A bared crown sheet melts the fusible plug and kills the
   engine (S282, S060, S484-840, 844) or bursts the boiler (Hudson, which

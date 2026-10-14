@@ -37,6 +37,13 @@ namespace RealisticFiring.Patches
                 }
             }
 
+            if (Main.RealisticInjectorsEnabled && __instance.simFlow != null)
+            {
+                var tenderValves = Visuals.TenderWaterValves.Attach(trainCar, __instance.simFlow);
+                if (tenderValves != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {tenderValves}");
+            }
+
             if (LeftStock.Is(trainCar))
             {
                 LeftStock.Keep(__instance.simFlow);
@@ -57,6 +64,9 @@ namespace RealisticFiring.Patches
                 var injectors = InjectorRig.Attach(trainCar, __instance.simFlow);
                 if (injectors != null && Main.Settings.LogFireboxCreation)
                     Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {injectors}");
+                var steamHandles = InjectorRig.TryGet(trainCar, out var rig) ? Visuals.InjectorSteamCab.NotchSteamHandles(trainCar, rig) : null;
+                if (steamHandles != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {steamHandles}");
             }
 
             if (__instance.simFlow != null)

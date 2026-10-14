@@ -45,8 +45,6 @@ namespace RealisticFiring.Visuals
         private const float BodyRadius = 0.014f;
         private const float PlateOnWall = 0.002f;
 
-        private static readonly Dictionary<TrainCar, Transform> Interiors = new Dictionary<TrainCar, Transform>();
-
         /// <summary>Builds the controls in a newly loaded cab. Returns a line for the log, or null.</summary>
         public static string Attach(TrainCar car, Transform interior)
         {
@@ -75,16 +73,13 @@ namespace RealisticFiring.Visuals
             if (sourceControl == null || sourceLatch == null || sourceLatch.Find(SourceLatchControl) == null)
                 return $"no valve or sander lever in the {StokerCab.SourceLivery} cab to copy";
 
-            Interiors[car] = interior;
             var root = new GameObject(RootName);
             root.SetActive(false);
             root.transform.SetParent(interior, false);
 
             // Upright on the side wall by the reverser, facing into the cab.
             var mount = anchor.parent != null ? anchor.parent : anchor;
-            var settings = Main.Settings;
-            var seat = (Placements.TryGetValue(car.carLivery.id, out var seated) ? seated : DefaultPlacement)
-                       + new Vector2(settings.BoosterNudgeAcross, settings.BoosterNudgeUp);
+            var seat = Placements.TryGetValue(car.carLivery.id, out var seated) ? seated : DefaultPlacement;
             var reverser = car.transform.InverseTransformPoint(mount.position);
             var side = reverser.x < 0f ? -1f : 1f;
             var floor = InjectorOverflow.TryFindCabFloor(car, out var deck) ? deck : reverser.y;
@@ -94,8 +89,8 @@ namespace RealisticFiring.Visuals
             if (!onWall)
                 toWall = WallSearchStart + FallbackWallOutboard;
             var frame = root.transform;
-            frame.rotation = Quaternion.LookRotation(into, car.transform.up) * Quaternion.Euler(0f, settings.BoosterNudgeTurn, 0f);
-            frame.position = looking + into * (toWall - Wall + settings.BoosterNudgeOut / 100f);
+            frame.rotation = Quaternion.LookRotation(into, car.transform.up);
+            frame.position = looking + into * (toWall - Wall);
 
             var latch = PlaceLatch(sourceLatch, frame, latchPort, booster);
             StokerCab.Pipe(frame, "body idling valve", new Vector3(IdleAt.x, IdleAt.y, Wall), new Vector3(IdleAt.x, IdleAt.y, BodyFront), BodyRadius);
@@ -175,27 +170,6 @@ namespace RealisticFiring.Visuals
             (flow.Slipping ? " (trailer wheels slipping: knock it out)" : "") +
             (flow.Priming ? " (priming: water in the cylinders)" : "") +
             (flow.Backing ? " (backing in gear!)" : "");
-
-        /// <summary>Rebuilds the controls in every loaded cab, as the placement settings move.</summary>
-        public static void RebuildLoaded()
-        {
-            foreach (var pair in Interiors.ToList())
-            {
-                var car = pair.Key;
-                var interior = pair.Value;
-                if (car == null || interior == null || car.loadedInterior == null || car.loadedInterior.transform != interior)
-                {
-                    Interiors.Remove(car);
-                    continue;
-                }
-                var old = interior.Find(RootName);
-                if (old != null)
-                    Object.DestroyImmediate(old.gameObject);
-                var result = Attach(car, interior);
-                if (result != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{car.ID}: {result}");
-            }
-        }
     }
 
     /// <summary>

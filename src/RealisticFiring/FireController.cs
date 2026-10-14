@@ -71,39 +71,6 @@ namespace RealisticFiring
                 // In multiplayer only the host makes items; the shops sell the iron.
                 Notify(Net.IsClient ? "In multiplayer, buy the fire iron at a shop, beside the shovel" : Items.FireIron.GiveToPlayer());
             }
-            if (settings.JamStokerNow)
-            {
-                settings.JamStokerNow = false;
-                if (FireboxRegistry.TryGetTended(PlayerManager.Car, out var jammed) && jammed.StokerModel != null)
-                {
-                    jammed.StokerModel.Jam();
-                    Notify("Stoker jammed: the engine stalls; reverse it a few turns to clear it");
-                }
-                else
-                {
-                    Notify("No stoker on this loco to jam");
-                }
-            }
-            if (settings.FoulBoilerWaterNow)
-            {
-                settings.FoulBoilerWaterNow = false;
-                if (BoilerWaterRig.TryGetTended(PlayerManager.Car, out var water))
-                {
-                    water.Foul(BoilerWater.FoamOnsetPpm + 0.75f * (BoilerWater.FoamFullPpm - BoilerWater.FoamOnsetPpm));
-                    Notify("Boiler water fouled: work the engine and watch the glass");
-                }
-                else
-                {
-                    Notify("No boiler on this loco to foul");
-                }
-            }
-            if (settings.MeltPlugNow)
-            {
-                settings.MeltPlugNow = false;
-                Notify(BoilerWaterRig.TryGetTended(PlayerManager.Car, out var plugged) && plugged.MeltPlug()
-                    ? "Fusible plug melted: steam is blowing into the firebox"
-                    : "No fusible plug on this loco");
-            }
             if (settings.RenewBoilerNow)
             {
                 settings.RenewBoilerNow = false;
@@ -203,7 +170,7 @@ namespace RealisticFiring
             if (!WaterPoints.Serves(oil.Car))
                 return $"No steam line here: stand the engine on {WaterPoints.Where}";
             oil.SteamLine = true;
-            return "Steam line on: the shed's steam at 100 psi for the atomizer and oil heater";
+            return $"Steam line on: the shed's steam at {RealisticOilFirebox.SteamLinePressure - 1f:F1} bar for the atomizer and oil heater";
         }
 
         // The hand pump works while its key is held, on the loco being tended:
@@ -337,8 +304,6 @@ namespace RealisticFiring
                     : ""));
         }
 
-        private const float PsiPerBar = 14.5038f;
-
         /// <summary>The stoker's engine, feed, jets, and losses, for the status log and overlay; null without one.</summary>
         internal static string DescribeStoker(RealisticFirebox firebox)
         {
@@ -371,12 +336,13 @@ namespace RealisticFiring
             var cycle = cylinders.Cycle;
             var events = cycle.Events;
             return $"cylinders: cutoff {events.Cutoff:P0} (release {events.Release:P0}, compression {events.Compression:P0}), " +
-                   $"chest {Gauge(engine.steamChestPressureReadOut.Value):F0} psi, admitted {Gauge(cycle.Admission):F0}, " +
-                   $"release {Gauge(cycle.ReleasePressure):F0}, back {Gauge(cycle.Back):F0}, mean {cycle.MeanEffectivePressure * PsiPerBar:F0} psi, " +
+                   $"chest {Gauge(engine.steamChestPressureReadOut.Value):F1} bar, admitted {Gauge(cycle.Admission):F1}, " +
+                   $"release {Gauge(cycle.ReleasePressure):F1}, back {Gauge(cycle.Back):F1}, mean {cycle.MeanEffectivePressure:F1} bar, " +
                    $"steam {engine.exhaustFlowReadOut.Value:F2} kg/s";
         }
 
-        private static float Gauge(float bar) => (bar - 1f) * PsiPerBar;
+        // Gauge pressure, bar over the atmosphere, from absolute.
+        private static float Gauge(float bar) => bar - 1f;
 
  internal static string OilLightingHint(RealisticOilFirebox oil)
         {
@@ -406,8 +372,9 @@ namespace RealisticFiring
                 AtomizerOpen = oil.AtomizerValve > 0.01f,
                 OnServiceTrack = oil.AtServiceTrack,
                 ServiceTracks = WaterPoints.Where,
-                GlassLevel = rig != null ? rig.WaterLevel : 1f,
-                Injectors = rig == null ? NoInjectors : rig.Circuits.Select(c => new InjectorReading(c.Flow.State, c.Control.Value, c.Steam != null)).ToArray(),
+                SteamLineKey = Main.Settings.SteamLineKey.keyCode != KeyCode.None ? Main.Settings.SteamLineKey.ToString() : null,
+                GlassLevel = rig != null ? Visuals.GaugeGlass.Read(rig) : 1f,
+                Injectors = rig == null ? NoInjectors : rig.Circuits.Select(c => new InjectorReading(c.Flow.State, c.Feed.Value, c.SteamValve != null, c.TenderValveShut)).ToArray(),
             };
         }
 
@@ -471,29 +438,32 @@ namespace RealisticFiring
 
         private static string DescribeInjector(InjectorCircuit circuit, float pressure)
         {
-            if (circuit.Steam == null)
+            if (circuit.SteamValve == null)
                 return DescribeLever(circuit, pressure);
             // Its own steam valve: say where both valves sit and what to do next.
             var flow = circuit.Flow;
-            var valves = $"injector steam {InjectorValves.Position(circuit.Steam.Value)}, water {circuit.Control.Value:P0}";
+            var valves = $"injector steam {InjectorValves.Position(circuit.SteamValve.Value)}, water {circuit.WaterValve.Value:P0}"
+                         + (circuit.TenderValveShut ? ", tender valve shut" : "");
             switch (flow.State)
             {
                 case InjectorState.Working:
                 {
                     var working = $"{valves}: working, {flow.WaterIn:F1} kg/s at {flow.FeedTemperature:F0} C, steam {flow.SteamUsed:F2} kg/s";
-                    if (circuit.Steam.Value < InjectorSpec.SteamFeedFrom)
+                    if (circuit.SteamValve.Value < InjectorSpec.SteamFeedFrom)
                         return $"{working}: picked up, steam to Feed";
                     if (flow.Overflow < WorkingSpill)
                         return working;
                     var least = circuit.Injector.Spec.LeastShare(pressure);
-                    return circuit.Control.Value < least
+                    return circuit.WaterValve.Value < least
                         ? $"{working}, spilling {flow.Overflow:F1} kg/s: open the water valve past {least:P0} to feed without waste"
                         : $"{working}, spilling {flow.Overflow:F1} kg/s: the boiler is full";
                 }
                 case InjectorState.Off:
                     return flow.Overflow > 0f ? $"{valves}: off, water running out of the overflow ({flow.Overflow:F1} kg/s): steam to Prime, or shut the water" : $"{valves}: off";
+                case InjectorState.NoWater when circuit.TenderValveShut:
+                    return $"{valves}: NO WATER, steam blowing at the overflow: open the tender water valve";
                 case InjectorState.NoWater:
-                    return circuit.Control.Value <= InjectorSpec.OpenThreshold
+                    return circuit.WaterValve.Value <= InjectorSpec.OpenThreshold
                         ? $"{valves}: NO WATER, steam blowing at the overflow: open the water valve first"
                         : $"{valves}: NO WATER (tender dry)";
                 default:

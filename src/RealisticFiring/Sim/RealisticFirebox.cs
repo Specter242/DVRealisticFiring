@@ -310,7 +310,7 @@ namespace RealisticFiring.Sim
         public void PrepareFire()
         {
             var lit = intakeWaterContent.Value <= 0.5f;
-            Model.Restore(lit, Model.Parameters.MaxCoalCapacity);
+            Model.LayReadyFire(lit);
             fireOnReadOut.Value = Model.FireOn ? 1f : 0f;
             LastDeliveryMass = 0f;
             LastDeliveryAim = null;

@@ -28,6 +28,10 @@ namespace RealisticFiring.Sim
             // Cypress and LittleNiko36's UP FEF-3 No. 844 (Nexus 1590, 1.0.58),
             // read from its bundle and seated in game 2026-10-09.
             "FEF-3",
+            // Emerald's LMS 8F (Nexus 1360, 1.2.1), read from its bundle
+            // 2026-10-14; the WD Photographic scheme is a paint, not a livery.
+            "em_lms_8f_loc_black",
+            "em_lms_8f_loc_grey",
         };
 
         private static readonly Dictionary<TrainCar, RealisticFirebox> Fireboxes = new Dictionary<TrainCar, RealisticFirebox>();

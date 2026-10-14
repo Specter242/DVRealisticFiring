@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.8.0 (2026-10-14)
+
+- Support Emerald's LMS 8F 1.2.1: the zoned fire on its turned coal pile (the bed built in a frame of the pile pivot's axes taken across, up, and along the car; a mesh turned under its pivot measured by its corners), its two-valve injector graph, blower, superheater, and fusible plug. Its cab handles become the injector steam valves, stepping Off, Prime, Feed one notch a wheel click; the cab's under-seat regulators are cut from the cab mesh and turned as the water regulators; the tender-front handles work saved tender water valves.
+- Show every pressure in bar.
+- Move the default keys off every key the game binds (Ctrl crouch, F cab places): F6 overlay, F7 fireman, F8 settings, F9 hydrant, F11 steam line, Z grate shake, C hand pump; move keys still on the old defaults once.
+- Read the overlay's glass over each cab's gauge-glass span.
+- Lay the model's reference bed, burning, at loco start-up.
+- Stand the flame cards on the drawn bed; fit the overlay's next step in its box; trim the settings menu; tell a multiplayer guest on another version why before disconnecting.
+
 ## 1.7.5 (2026-10-13)
 
 - Give every shader a single-pass stereo variant on the mod's own keyword (Unity strips its own from a bundle built without VR), switched on for single-pass stereo cameras; ship the two surface shaders as patched generated code.

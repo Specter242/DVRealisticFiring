@@ -70,9 +70,9 @@ namespace RealisticFiring.Visuals
         // A loco with no stoker manifold (an oil burner) carries the pump's
         // gauge on the cab's side wall by the fireman's handwheel that works
         // the pump: along the wall (toward the front), up from the handwheel,
-        // and its back out from the wall's collider, m; the gauge sliders
-        // move it until it is seated. The collider can lie outside the drawn
-        // wall (the 2901's does, by a few cm), so the back stands off it.
+        // and its back out from the wall's collider, m, unless seated. The
+        // collider can lie outside the drawn wall (the 2901's does, by a few
+        // cm), so the back stands off it.
         private const string LeverGaugeRoot = "[RealisticFiring feed pump gauge]";
         private static readonly Vector3 LeverGaugeDefault = new Vector3(0f, 0.25f, 0.06f);
         private const float WallSearch = 1.5f;
@@ -92,7 +92,6 @@ namespace RealisticFiring.Visuals
                 return (null, null);
 
             var spot = Spots.TryGetValue(car.carLivery.id, out var seated) ? seated : DefaultSpot;
-            var nudge = new Vector2(Main.Settings.FeedNudgeAcross, Main.Settings.FeedNudgeUp) / 100f;
             var valveAt = spot.Valve;
             var gaugeAt = spot.Gauge;
             if (spot.ValveInCar is Vector3 inCar)
@@ -101,8 +100,8 @@ namespace RealisticFiring.Visuals
                 valveAt = new Vector2(local.x, local.y);
                 gaugeAt = valveAt + spot.Gauge;
             }
-            var valvePoint = new Vector3(valveAt.x + nudge.x, valveAt.y + nudge.y, WheelDepth);
-            var gaugePoint = new Vector3(gaugeAt.x + nudge.x, gaugeAt.y + nudge.y, GaugeDepth);
+            var valvePoint = new Vector3(valveAt.x, valveAt.y, WheelDepth);
+            var gaugePoint = new Vector3(gaugeAt.x, gaugeAt.y, GaugeDepth);
 
             var notes = new List<string>();
             if (!fit.OnInjectorLever && sourceValve != null)
@@ -161,23 +160,6 @@ namespace RealisticFiring.Visuals
                    (gauge != null ? $", {gauge}" : "");
         }
 
-        /// <summary>Moves every loaded lever-mounted pump gauge, as the feed pump sliders change.</summary>
-        public static void RebuildLeverGauges()
-        {
-            foreach (var rig in InjectorRig.All)
-            {
-                var car = rig.Car;
-                var interior = car != null && car.loadedInterior != null ? car.loadedInterior.transform : null;
-                var old = interior != null ? interior.Find(LeverGaugeRoot) : null;
-                if (old == null || rig.Pump == null || !FeedwaterFit.TryGet(car.carLivery.id, out var fit))
-                    continue;
-                Object.DestroyImmediate(old.gameObject);
-                var lever = interior.GetComponentsInChildren<InteractablePortFeeder>(true).FirstOrDefault(f => f.portId == FeedwaterFit.Valve.PortId);
-                if (lever != null)
-                    BuildLeverGauge(car, interior, rig, fit, lever.transform);
-            }
-        }
-
         // The pump's gauge, its line to the backhead, and the pump's sounds,
         // above the handwheel that works it. Returns a note for the log, or null.
         private static string BuildLeverGauge(TrainCar car, Transform interior, InjectorRig rig, FeedwaterFit.Fit fit, Transform lever)
@@ -185,8 +167,7 @@ namespace RealisticFiring.Visuals
             if (!DV.Globals.G.Types.TryGetLivery(StokerCab.SourceLivery, out var livery) || livery.interiorPrefab == null)
                 return null;
             var seated = LeverGaugeSeats.TryGetValue(car.carLivery.id, out var seat);
-            var settings = Main.Settings;
-            var spot = seated ? seat : LeverGaugeDefault + new Vector3(settings.FeedGaugeNudgeAlong, settings.FeedGaugeNudgeUp, settings.FeedGaugeNudgeOut) / 100f;
+            var spot = seated ? seat : LeverGaugeDefault;
             var up = car.transform.up;
             var at = lever.position + car.transform.forward * spot.x + up * spot.y;
             // Out to the wall on the handwheel's side of the cab.

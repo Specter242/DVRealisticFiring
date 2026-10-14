@@ -176,7 +176,7 @@ namespace RealisticFiring.Sim
                 flow.TryGetPort(def.PoweredAxlesPortId, out poweredAxles);
             if (Main.Settings.LogFireboxCreation)
                 Main.Mod.Logger.Log($"{car.ID}: booster '{id}' on the trailer axle: {Model.Spec.StartingPull(Model.Spec.MaxInletPressure) / 4.44822f:F0} lb at " +
-                                    $"{Model.Spec.MaxInletPressure * 14.5038f:F0} psi, axle {def.TrailerLoad:F0} kg, " +
+                                    $"{Model.Spec.MaxInletPressure:F1} bar, axle {def.TrailerLoad:F0} kg, " +
                                     $"{(poweredAxles != null ? $"powered axles {def.DrivingAxles} + 1 in gear" : "no powered-axle port")}, " +
                                     $"steam {(boiler != null ? "from the boiler" : "nowhere: no boiler found")}");
         }

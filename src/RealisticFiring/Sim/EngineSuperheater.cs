@@ -27,6 +27,12 @@ namespace RealisticFiring.Sim
             ["S484-840A"] = Superheat("Type A", 158f, 0.75f),
             // AT&SF 2900: 220 Type E flues, 2,366 sq ft on 5,312 (Locobase).
             ["A.T.&S.F. 2901-A"] = Superheat("Type E", 180f, 0.82f),
+            // LMS 8F: 21 elements, 215 sq ft on 1,650 (domed boilers; lner.info,
+            // Haresnape 1970): a small Type A. Jubilees' 14 elements rarely gave
+            // past 500-510 °F at 225 psi (Rowledge & Reed 1981, p.30); 100 °C
+            // at the full rate is inferred.
+            ["em_lms_8f_loc_black"] = Superheat("Type A", 100f, 0.72f),
+            ["em_lms_8f_loc_grey"] = Superheat("Type A", 100f, 0.72f),
             // SP GS-4: Elesco Type E, its valves rated for 750 °F (SP spec, 1940).
             ["S484-841A"] = Superheat("Type E", 180f, 0.82f),
         };
