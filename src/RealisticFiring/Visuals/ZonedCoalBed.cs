@@ -147,6 +147,14 @@ namespace RealisticFiring.Visuals
         private MaterialPropertyBlock properties;
         private MaterialPropertyBlock emberProperties;
 
+        // The beds by their firebox, for the shovel's and the fire iron's aim.
+        private static readonly System.Collections.Generic.Dictionary<RealisticFirebox, ZonedCoalBed> ByFirebox =
+            new System.Collections.Generic.Dictionary<RealisticFirebox, ZonedCoalBed>();
+
+        // A look into the firebox is followed this far a step, and no further, in m.
+        private const float AimStep = 0.02f;
+        private const float AimReach = 6f;
+
         private RealisticFirebox firebox;
         private Renderer stockCoal;
         private Transform pivot;
@@ -287,6 +295,7 @@ namespace RealisticFiring.Visuals
         private string Build(RealisticFirebox owner, Transform coalPivot, Vector3 scale, Renderer coal, Mesh stockMesh, IndicatorSlider slider)
         {
             firebox = owner;
+            ByFirebox[owner] = this;
             stockCoal = coal;
             pivot = coalPivot;
             frame = pivot.localRotation * toPivot;
@@ -711,6 +720,42 @@ namespace RealisticFiring.Visuals
         /// <summary>Whether the bed has been built and placed.</summary>
         public bool Ready => pivot != null;
 
+ public static bool TryGet(RealisticFirebox owner, out ZonedCoalBed bed) =>
+            ByFirebox.TryGetValue(owner, out bed) && bed != null && bed.Ready;
+
+ public bool TryAim(Ray ray, out float across, out float along)
+        {
+            across = along = 0f;
+            if (pivot == null || pivot.parent == null)
+                return false;
+            var parent = pivot.parent;
+            var inverse = Quaternion.Inverse(frame);
+            float Share(float value, float min, float size) => Mathf.Abs(size) > 1e-6f ? (value - min) / size : 0.5f;
+            var over = false;
+            for (var t = 0f; t <= AimReach; t += AimStep)
+            {
+                var local = inverse * (parent.InverseTransformPoint(ray.GetPoint(t)) - rest);
+                var p = new Vector3(
+                    Mathf.Abs(fullScale.x) > 1e-6f ? local.x / fullScale.x : 0f,
+                    Mathf.Abs(fullScale.y) > 1e-6f ? local.y / fullScale.y : 0f,
+                    Mathf.Abs(fullScale.z) > 1e-6f ? local.z / fullScale.z : 0f);
+                var a = Share(p.x, bed.min.x, bed.size.x);
+                var l = Share(p.z, bed.min.z, bed.size.z);
+                if (a < 0f || a > 1f || l < 0f || l > 1f)
+                {
+                    if (over)
+                        break;
+                    continue;
+                }
+                over = true;
+                across = a;
+                along = l;
+                if (Share(p.y, bed.min.y, bed.size.y) <= SurfaceHeight(a, l))
+                    return true;
+            }
+            return over;
+        }
+
         /// <summary>The stock coal pile the bed stands in for (hidden while the bed shows).</summary>
         public Renderer StockCoal => stockCoal;
 
@@ -756,6 +801,8 @@ namespace RealisticFiring.Visuals
 
         private void OnDestroy()
         {
+            if (firebox != null && ByFirebox.TryGetValue(firebox, out var listed) && listed == this)
+                ByFirebox.Remove(firebox);
             foreach (var material in tileMaterials)
             {
                 if (material != null)

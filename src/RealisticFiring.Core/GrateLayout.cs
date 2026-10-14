@@ -81,18 +81,23 @@ namespace RealisticFiring.Core
     }
 
     /// <summary>
-    /// Maps where the fireman points in the firebox door to a grate zone.
-    /// <c>across</c> runs from 0 at the left edge of the door's coal target to
-    /// 1 at the right, as seen from the cab; <c>height</c> from 0 at its bottom
-    /// to 1 at its top. Pointing low drops coal just inside the door; pointing
-    /// high throws it to the front. Points outside the target clamp to the
-    /// nearest zone.
+    /// Maps where the fireman points into the firebox to a grate zone, in
+    /// thirds. <c>across</c> runs from 0 at the left to 1 at the right, as
+    /// seen from the cab; <c>depth</c> from 0 at the back, by the door, to 1
+    /// at the front: on the drawn bed, or up the door's coal target where a
+    /// cab has no bed (pointing low drops coal just inside the door, high
+    /// throws it to the front). Points outside clamp to the nearest zone.
     /// </summary>
     public static class DoorAim
     {
-        public static GrateZone ZoneFor(float across, float height) => GrateLayout.At(Band(height), Band(across));
+        /// <summary>
+        /// The zone at a place across (0 left, 1 right) and deep (0 the back,
+        /// at the door, 1 the front): on the bed, or up the door, where a
+        /// higher throw goes further.
+        /// </summary>
+        public static GrateZone ZoneFor(float across, float depth) => GrateLayout.At(Band(depth), Band(across));
 
-        // Thirds of the door; NaN, from a degenerate target, picks the middle.
+        // Thirds; NaN, from a degenerate target, picks the middle.
         private static int Band(float t) => float.IsNaN(t) ? 1 : t < 1f / 3f ? 0 : t < 2f / 3f ? 1 : 2;
     }
 }

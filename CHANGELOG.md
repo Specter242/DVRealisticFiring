@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.8.1 (2026-10-14)
+
+- Aim the shovel, rake, and fire iron where the look meets the drawn coal (followed into the firebox in the zoned bed's frame), falling back to the door aim without a bed.
+- Say the firebox is full when the shovelful does not fit, at the click and at the throw.
+
 ## 1.8.0 (2026-10-14)
 
 - Support Emerald's LMS 8F 1.2.1: the zoned fire on its turned coal pile (the bed built in a frame of the pile pivot's axes taken across, up, and along the car; a mesh turned under its pivot measured by its corners), its two-valve injector graph, blower, superheater, and fusible plug. Its cab handles become the injector steam valves, stepping Off, Prime, Feed one notch a wheel click; the cab's under-seat regulators are cut from the cab mesh and turned as the water regulators; the tender-front handles work saved tender water valves.

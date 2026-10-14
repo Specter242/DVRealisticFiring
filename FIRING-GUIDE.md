@@ -29,8 +29,8 @@ the coal creeps forward on its own at speed, so there you keep the back full
 instead (see Each engine). A bare patch takes about three times its share of
 air and chills the fire: fill holes before anything else.
 
-**Aim each shovelful** where the overlay shows the coal running short: left
-or right for the side, low for just inside the door, high for the front.
+**Aim each shovelful** where the overlay shows the coal running short:
+point at that spot on the fire through the door.
 Rake a bank level with the empty shovel; don't stir it.
 
 **Read the bed and the stack.**

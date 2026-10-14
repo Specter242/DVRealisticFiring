@@ -167,6 +167,8 @@ namespace RealisticFiring.AdapterCheck
             CheckPatchTargets();
             CheckCarPoolGuard();
             CheckPurchaseGuard();
+            Check(AccessTools.Field(typeof(ShovelNonPhysicalCoal), "_coalMassLoaded")?.FieldType == typeof(float),
+                "the shovel's load is readable, for saying a shovelful does not fit the firebox");
             CheckFireIronLoading();
             if (args.Length > 0 && File.Exists(args[0]))
                 CheckMultiplayerCabHooks(args[0]);

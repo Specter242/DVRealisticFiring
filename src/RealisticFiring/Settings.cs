@@ -58,7 +58,7 @@ namespace RealisticFiring
         [Draw("Coal per standard shovelful on supported coal locomotives, kg (0 = the locomotive's stock shovel size)", Min = 0, Precision = 1)]
         public float ShovelfulMass = 3f;
 
-        [Draw("Aim shovelfuls by where you point in the firebox door")]
+        [Draw("Aim shovelfuls at the spot you point to on the fire")]
         public bool AimShovelThroughDoor = true;
 
         [Draw("Name the aimed zone under the crosshair")]

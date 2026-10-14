@@ -71,10 +71,11 @@ namespace RealisticFiring.Patches
     }
 
     /// <summary>
-    /// Records where the player points a shovel in the door of a realistic
-    /// firebox, along the same cursor ray the game uses to pick the target.
-    /// Clicking ends the hover, so the last sample is the aim: of the throw
-    /// with a loaded shovel, or of the rake with an empty one.
+    /// Records where the player points a shovel into a realistic firebox,
+    /// along the same cursor ray the game uses to pick the target: the spot
+    /// on the drawn bed the look meets (<see cref="FireboxAim"/>). Clicking
+    /// ends the hover, so the last sample is the aim: of the throw with a
+    /// loaded shovel, or of the rake with an empty one.
     /// </summary>
     [HarmonyPatch(typeof(ShovelNonPhysicalCoal), nameof(ShovelNonPhysicalCoal.HandleHover))]
     internal static class ShovelHoverPatch
@@ -90,8 +91,8 @@ namespace RealisticFiring.Patches
             if (grabber == null || grabber.Cursor == null)
                 return;
 
-            if (TryMeasure(grabber.Cursor.GetRay(), target, car.transform, out var across, out var height))
-                firebox.NoteAim(new DoorAimSample(DoorAim.ZoneFor(across, height), across, height, !__instance.IsLoaded, Time.time));
+            if (FireboxAim.TryAim(grabber.Cursor.GetRay(), target, car, firebox, out var across, out var depth))
+                firebox.NoteAim(new DoorAimSample(DoorAim.ZoneFor(across, depth), across, depth, !__instance.IsLoaded, Time.time));
         }
 
         // Places the nearest hit on the target's colliders within that
@@ -125,6 +126,21 @@ namespace RealisticFiring.Patches
             max - min > 1e-4f ? (value - min) / (max - min) : 0.5f;
     }
 
+    /// <summary>
+    /// Where a look into a realistic firebox aims: across and deep on its
+    /// drawn bed, where the look meets the coal, or across and up the door's
+    /// coal target where the cab has no bed.
+    /// </summary>
+    internal static class FireboxAim
+    {
+        public static bool TryAim(Ray ray, ItemUseTarget target, TrainCar car, RealisticFirebox firebox, out float across, out float depth)
+        {
+            if (Visuals.ZonedCoalBed.TryGet(firebox, out var bed) && bed.TryAim(ray, out across, out depth))
+                return true;
+            return ShovelHoverPatch.TryMeasure(ray, target, car.transform, out across, out depth);
+        }
+    }
+
     /// <summary>Finds the realistic firebox behind a shovel's use target.</summary>
     internal static class ShovelTargets
     {
@@ -145,15 +161,51 @@ namespace RealisticFiring.Patches
 
     /// <summary>
     /// Lets a click with an empty shovel on a realistic firebox's open door
-    /// count as a use, so the game plays the shovel's thrust into the firebox.
+    /// count as a use, so the game plays the shovel's thrust into the firebox;
+    /// and says why a loaded one is refused at a full firebox.
     /// </summary>
     [HarmonyPatch(typeof(ShovelNonPhysicalCoal), nameof(ShovelNonPhysicalCoal.IsUseCompatible))]
     internal static class ShovelRakeCompatiblePatch
     {
         private static void Postfix(ShovelNonPhysicalCoal __instance, ItemUseTarget target, ref bool __result)
         {
-            if (!__result && ShovelTargets.TryGetFirebox(target, out _, out var firebox) && ShovelTargets.CanRake(__instance, firebox))
+            if (__result || !ShovelTargets.TryGetFirebox(target, out var car, out var firebox))
+                return;
+            if (ShovelTargets.CanRake(__instance, firebox))
+            {
                 __result = true;
+                return;
+            }
+            // The game asks this as the player clicks (in VR, as the shovel
+            // goes in), and refuses a shovel with no room at all.
+            FullFirebox.SayIfFull(__instance, car);
+        }
+    }
+
+ internal static class FullFirebox
+    {
+        // The shovel's load, in the pile's kg; null should a game update rename it.
+        private static readonly System.Reflection.FieldInfo LoadedField = AccessTools.Field(typeof(ShovelNonPhysicalCoal), "_coalMassLoaded");
+
+        // Said at most this often, in s.
+        private const float SayAgain = 1.5f;
+
+        // The door open enough for a shovel in VR; with the mouse it wants 60 %.
+        private const float OpenEnough = 0.25f;
+
+        // Room this much short of the shovelful, in the pile's kg, still takes it.
+        private const float Slack = 0.01f;
+
+        private static float lastSaid = float.NegativeInfinity;
+
+        public static void SayIfFull(ShovelNonPhysicalCoal shovel, TrainCar car)
+        {
+            var controller = car != null && car.SimController != null ? car.SimController.firebox : null;
+            if (!shovel.IsLoaded || controller == null || LoadedField == null || controller.FireboxDoorOpening < OpenEnough
+                || controller.SpaceForCoal() >= (float)LoadedField.GetValue(shovel) - Slack || Time.unscaledTime - lastSaid < SayAgain)
+                return;
+            lastSaid = Time.unscaledTime;
+            FireController.Announce($"The firebox is full ({controller.FireboxContents:F0} of {controller.FireboxCapacity:F0} kg): let the fire burn down before firing more");
         }
     }
 
@@ -166,8 +218,14 @@ namespace RealisticFiring.Patches
     {
         private static bool Prefix(ShovelNonPhysicalCoal __instance, ItemUseTarget target, ref bool __result)
         {
-            if (!ShovelTargets.TryGetFirebox(target, out _, out var firebox) || !ShovelTargets.CanRake(__instance, firebox))
+            if (!ShovelTargets.TryGetFirebox(target, out var car, out var firebox))
                 return true;
+            if (!ShovelTargets.CanRake(__instance, firebox))
+            {
+                // A throw: the game puts in what fits and keeps the rest.
+                FullFirebox.SayIfFull(__instance, car);
+                return true;
+            }
 
             var aim = firebox.HoverAim;
             firebox.Rake(aim.HasValue && aim.Value.Raking && Time.time - aim.Value.Time <= RealisticFirebox.AimHoldTime ? aim.Value.Zone : GrateZone.Center);
