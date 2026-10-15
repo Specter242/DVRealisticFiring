@@ -18,7 +18,9 @@ namespace RealisticFiring.Visuals
     /// the fire model per particle. A puff leaves as a narrow column; drag
     /// spends its speed within the tuned jet length and, as it slows, it
     /// swells into a cloud carried up by the stack's heat as the plume
-    /// (<see cref="PlumeAloft"/>), without a ceiling. The mod applies the
+    /// (<see cref="PlumeAloft"/>), without a ceiling but a tunnel's roof
+    /// (<see cref="TunnelRoof"/>), which holds it, the jet, and the cinders
+    /// under it. The mod applies the
     /// drag and lift to every smoke particle itself each frame, because Unity's
     /// own drag module did not hold the smoke back in game; the stock systems'
     /// gravity and velocity modules are switched off so nothing else moves it.
@@ -183,6 +185,14 @@ namespace RealisticFiring.Visuals
         // The cloud and the sooty core, carried as the plume once above the stack.
         private readonly Dictionary<ParticleSystem, PlumeAloft> aloft = new Dictionary<ParticleSystem, PlumeAloft>();
         private float plumeTop;
+
+        // The tunnel roof along the engine's path, in the cloud's space.
+        private readonly TunnelRoof roof = new TunnelRoof();
+
+        // A particle this close under the roof is at it, m; a cinder that
+        // strikes it keeps this share of its speed back down.
+        private const float RoofBand = 0.2f;
+        private const float CinderBounce = 0.3f;
 
         // The jet's streaks are drawn along their velocity, 0.06 s of it plus
         // 1.5 times their size, which reached past the stack's lip: a streak
@@ -603,6 +613,7 @@ namespace RealisticFiring.Visuals
             var crossed = beats.Advance(crankRotation.Value);
             if (boilerBroken.Value > 0f || dt <= 0f)
                 return;
+            roof.Follow(car, Emitter(smoke), smoke, PlumeAloft.Lifetime);
 
             var inputs = firebox != null ? CoalInputs(dt) : OilInputs();
 
@@ -725,11 +736,26 @@ namespace RealisticFiring.Visuals
                 return;
             var keep = Mathf.Exp(-PlumeModel.SparkDrag * dt);
             var fall = Vector3.down * (PlumeModel.Gravity * dt);
-            var wind = system.main.simulationSpace == ParticleSystemSimulationSpace.Local
+            var local = system.main.simulationSpace == ParticleSystemSimulationSpace.Local;
+            var wind = local
                 ? system.transform.InverseTransformDirection(PlumeWeather.Wind - stackVelocity)
                 : PlumeWeather.Wind;
+            var up = local ? system.transform.InverseTransformDirection(Vector3.up) : Vector3.up;
+            var hasCap = RoofLevel(system, up, out var cap);
             for (var i = 0; i < count; i++)
-                buffer[i].velocity = wind + (buffer[i].velocity - wind) * keep + fall;
+            {
+                var velocity = wind + (buffer[i].velocity - wind) * keep + fall;
+                // A cinder that strikes a tunnel's roof falls back off it.
+                var level = Vector3.Dot(buffer[i].position, up);
+                var upward = Vector3.Dot(velocity, up);
+                if (hasCap && level > cap)
+                {
+                    buffer[i].position += up * (cap - level);
+                    if (upward > 0f)
+                        velocity -= up * ((1f + CinderBounce) * upward);
+                }
+                buffer[i].velocity = velocity;
+            }
             system.SetParticles(buffer, count);
         }
 
@@ -791,9 +817,13 @@ namespace RealisticFiring.Visuals
                     Train = carried,
                     SteamLinger = tuning.SteamLinger,
                     Eddies = Eddies,
+                    Roof = SameSpace(system, smoke) ? roof : null,
+                    InTunnel = roof.OverStack.HasValue,
+                    Floor = Vector3.Dot(zoneTop, up),
                 }, emitter, axis, zone, zoneTop, carried);
                 return;
             }
+            var hasCap = RoofLevel(system, up, out var cap);
             var growth = system.sizeOverLifetime.enabled ? system.sizeOverLifetime.size : new ParticleSystem.MinMaxCurve(1f);
             if (!intendedSizes.TryGetValue(system, out var sizes))
                 intendedSizes[system] = sizes = new SeedMemory<float>();
@@ -819,6 +849,13 @@ namespace RealisticFiring.Visuals
                     var rise = PlumeRise.RiseSpeed(flux, Vector3.Dot(particle.position - zoneTop, up), airSpeed);
                     var target = air + up * rise;
                     velocity = target + (velocity - target) * keep;
+                    // A tunnel's roof stops it.
+                    var level = Vector3.Dot(particle.position, up);
+                    if (hasCap && level > cap)
+                        particle.position += up * (cap - level);
+                    var upward = Vector3.Dot(velocity, up);
+                    if (hasCap && level >= cap - RoofBand && upward > 0f)
+                        velocity -= up * upward;
                 }
                 particle.startSize = shown > drawn ? intended * drawn / shown : intended;
 
@@ -891,6 +928,42 @@ namespace RealisticFiring.Visuals
             if (exhaust == null)
                 return 0f;
             return Mathf.Max(0f, exhaust.exhaustFlow.Value) + Mathf.Max(0f, BlowerFit.BlowerSteam(exhaust)) + BlowerFit.PumpSteam(exhaust);
+        }
+
+        // The roof over the stack on <paramref name="up"/> in the system's
+        // own space, a little under it; false in the open.
+        private bool RoofLevel(ParticleSystem system, Vector3 up, out float level)
+        {
+            level = 0f;
+            if (!(roof.OverStack is TunnelRoof.Sample over))
+                return false;
+            var world = WorldPoint(smoke, over.Point);
+            level = Vector3.Dot(SimulationPoint(system, world), up) - RoofBand;
+            return true;
+        }
+
+        private static bool SameSpace(ParticleSystem a, ParticleSystem b)
+        {
+            var one = a.main;
+            var other = b.main;
+            return one.simulationSpace == other.simulationSpace
+                   && (one.simulationSpace != ParticleSystemSimulationSpace.Custom || one.customSimulationSpace == other.customSimulationSpace)
+                   && (one.simulationSpace != ParticleSystemSimulationSpace.Local || a.transform == b.transform);
+        }
+
+        // A point in the space the system simulates in, back in the world.
+        internal static Vector3 WorldPoint(ParticleSystem system, Vector3 point)
+        {
+            var main = system.main;
+            switch (main.simulationSpace)
+            {
+                case ParticleSystemSimulationSpace.Local:
+                    return system.transform.TransformPoint(point);
+                case ParticleSystemSimulationSpace.Custom when main.customSimulationSpace != null:
+                    return main.customSimulationSpace.TransformPoint(point);
+                default:
+                    return point;
+            }
         }
 
         // A world point in the space the system simulates in (the game moves
@@ -999,7 +1072,8 @@ namespace RealisticFiring.Visuals
                                 $"flow {inputs.TotalFlowNormalized:P0}, soot {inputs.Soot:P0} (firebox {PlumeModel.FireboxSoot(inputs):P0}); " +
                                 $"last puff {puff.Speed:F1} m/s, {puff.Size:F1} m, {puff.Particles}+{puff.SootParticles} particles, life ×{puff.LifetimeScale:F1}, " +
                                 $"{puff.Sparks:F2} sparks, color #{ColorUtility.ToHtmlStringRGBA(ToColor(puff.Color))}; " +
-                                $"plume top {plumeTop:F0} m, buoyancy {StackFlux(stackHeat, exhaustSim, tuning):F0} m⁴/s³, {PlumeWeather.Describe()} " +
+                                $"plume top {plumeTop:F0} m, buoyancy {StackFlux(stackHeat, exhaustSim, tuning):F0} m⁴/s³, {PlumeWeather.Describe()}, " +
+                                (roof.OverStack is TunnelRoof.Sample over ? $"under a roof {over.Height:F1} m over the rail " : "in the open ") +
                                 $"({string.Join("; ", aloft.Select(a => $"{a.Key.name} {a.Value.Describe()}"))}); " +
                                 $"alive {string.Join(", ", Systems().Select(s => $"{s.name} {s.particleCount}"))}");
             beatCount = 0;

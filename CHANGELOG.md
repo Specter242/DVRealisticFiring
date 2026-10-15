@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.9.1 (2026-10-15)
+
+- Hold the plume under a tunnel's roof: sample the game's per-track ceiling height (`RailTrack.SampleCeilingHeight`) every 2 m of the stack's travel into a grid in the cloud's space; under a roof a particle rises to it, spreads along the bore as a ceiling jet slowing over 20 s, and is held between assumed walls of a 5 m single-track bore, the bore's air moving with the train at 0.3 of its speed; the jet and cinders stop at the roof over the stack.
+- Shorten the plume particles' life from 300 s to 240 s.
+
 ## 1.9.0 (2026-10-14)
 
 - Draw the stoker's spray: procedural coal lumps lit by the fire, burning fines carried in by the draft, and the jets' steam, thrown from under the door into the firebox; stop it with the door shut and open on it in full flow. Add the stoker's operation to the firing guide.

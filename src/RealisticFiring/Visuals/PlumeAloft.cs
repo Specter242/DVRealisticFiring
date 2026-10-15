@@ -5,8 +5,10 @@ namespace RealisticFiring.Visuals
 {
  internal sealed class PlumeAloft
     {
-        /// <summary>Particles live up to this long, in s; a plume thins out long before.</summary>
-        public const float Lifetime = 300f;
+ public const float Lifetime = 240f;
+
+        // A particle this close under its cap is at the roof, m.
+        private const float RoofBand = 0.2f;
 
         private const float FadeIn = 0.4f;
         private const float FadeOut = 0.75f;
@@ -75,6 +77,15 @@ namespace RealisticFiring.Visuals
             /// </summary>
             public Vector3 Carried;
             public float SmokeShare;
+
+            /// <summary>The tunnel roof along the engine's path, in this system's space, or null.</summary>
+            public TunnelRoof Roof;
+
+            /// <summary>Whether the engine is under a roof now, pushing the bore's air along.</summary>
+            public bool InTunnel;
+
+            /// <summary>The stack's mouth's height on <see cref="Up"/>: a roof holds smoke down to no lower.</summary>
+            public float Floor;
         }
 
         // A renderer draws a particle no bigger than this share of the view.
@@ -134,8 +145,8 @@ namespace RealisticFiring.Visuals
             grows.enabled = false;
 
             // The flipbook, played over the particle's life, would stay on its
-            // first frames for a 300 s life: it plays over the system's own
-            // lifetime instead, then holds its last frame.
+            // first frames for a life of minutes: it plays over the system's
+            // own lifetime instead, then holds its last frame.
             var frames = system.textureSheetAnimation;
             var flipbook = "no flipbook";
             if (frames.enabled && frames.timeMode == ParticleSystemAnimationTimeMode.Lifetime)
@@ -255,6 +266,14 @@ namespace RealisticFiring.Visuals
                 var wake = PlumeRise.Wake(height);
                 var airSpeed = air.Speed * (1f - wake);
                 var still = air.Still + (air.Train - air.Still) * wake;
+                // Under a tunnel's roof, a train in the bore pushes its air along.
+                var roof = default(TunnelRoof.Sample);
+                var under = air.Roof != null && air.Roof.TryFind(particle.position, out roof);
+                if (under && air.InTunnel)
+                {
+                    still += (air.Train - still) * TunnelSmoke.PistonShare;
+                    airSpeed *= 1f - TunnelSmoke.PistonShare;
+                }
                 var rise = PlumeRise.RiseSpeed(air.Flux, height, airSpeed);
                 // Out its own way, evenly over the plume's breadth as it widens,
                 // with its rise and the air's turbulence.
@@ -262,10 +281,19 @@ namespace RealisticFiring.Visuals
                 var share = MostSpread * Mathf.Sqrt(Hash(particle.randomSeed ^ 0x27d4eb2du));
                 var widening = PlumeRise.WidthPerHeight * rise + PlumeRise.SpreadRate(air.Speed);
                 var outward = (across * Mathf.Cos(angle) + along * Mathf.Sin(angle)) * (share * widening);
-                var target = still + air.Up * rise + outward + Stir(particle.position, height, rise) * air.Eddies;
-                particle.velocity = target + (particle.velocity - target) * keep;
+                var stir = Stir(particle.position, height, rise) * air.Eddies;
                 var spread = PlumeRise.SpreadWidth(age, air.Speed);
-                particle.startSize = Mathf.Min(Mathf.Max(grown, PlumeRise.PlumeWidth(height, spread) * SizePerWidth), widest);
+                var size = Mathf.Min(Mathf.Max(grown, PlumeRise.PlumeWidth(height, spread) * SizePerWidth), widest);
+                if (under)
+                    size = Mathf.Min(size, TunnelSmoke.WidestParticle);
+                else
+                {
+                    var target = still + air.Up * rise + outward + stir;
+                    particle.velocity = target + (particle.velocity - target) * keep;
+                }
+                particle.startSize = size;
+                if (under)
+                    UnderRoof(ref particle, roof, still, rise, outward + stir, age, keep);
                 // As its white steam evaporates it turns its smoke's color.
                 var steam = PlumeRise.SteamLeft(parcel.Thickness, age, air.SteamLinger);
                 var depth = steam + parcel.Thickness.SmokeDepth;
@@ -305,6 +333,39 @@ namespace RealisticFiring.Visuals
             var fade = Mathf.Clamp01(age / FadeIn);
             particle.startColor = new Color(color.r, color.g, color.b, (inStack ? parcel.Color.a : shown) * fade * leaving);
             return true;
+        }
+
+        // Under a tunnel's roof: up to the roof, then along it its own way as
+        // a ceiling jet that slows, its spread and stirring only along the
+        // bore, and held between the walls.
+        private void UnderRoof(ref ParticleSystem.Particle particle, TunnelRoof.Sample roof, Vector3 still, float rise,
+            Vector3 drift, float age, float keep)
+        {
+            var size = particle.startSize;
+            var cap = TunnelSmoke.Cap(Vector3.Dot(roof.Point, air.Up), size, air.Floor);
+            var level = Vector3.Dot(particle.position, air.Up);
+            var atRoof = level >= cap - RoofBand;
+            var way = Hash(particle.randomSeed ^ 0x165667b1u) < 0.5f ? -1f : 1f;
+            var jet = atRoof ? way * TunnelSmoke.JetSpeed(rise, age) : 0f;
+            var target = still + air.Up * (atRoof ? 0f : rise) + roof.Along * (Vector3.Dot(drift, roof.Along) + jet);
+            particle.velocity = target + (particle.velocity - target) * keep;
+            if (level > cap)
+                particle.position += air.Up * (cap - level);
+            if (atRoof)
+            {
+                var upward = Vector3.Dot(particle.velocity, air.Up);
+                if (upward > 0f)
+                    particle.velocity -= air.Up * upward;
+            }
+            var side = Vector3.Dot(particle.position - roof.Point, roof.Across);
+            var reach = TunnelSmoke.WallReach(size);
+            if (Mathf.Abs(side) <= reach)
+                return;
+            var sign = Mathf.Sign(side);
+            particle.position -= roof.Across * (side - sign * reach);
+            var outwards = sign * Vector3.Dot(particle.velocity, roof.Across);
+            if (outwards > 0f)
+                particle.velocity -= roof.Across * (sign * outwards);
         }
 
         // The plume's eddies at a point: a smooth field drifting through the
