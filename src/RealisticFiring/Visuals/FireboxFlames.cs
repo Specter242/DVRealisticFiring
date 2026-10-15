@@ -135,7 +135,8 @@ namespace RealisticFiring.Visuals
         private Fire fire;
         private ParticleSystem oldFlames;
         private ParticleSystem smoke;
-        private Renderer stockFlames;
+        private Renderer[] stockFlames = new Renderer[0];
+        private int stockFlameChildren = -1;
         private readonly float[] smokeDue = new float[GrateLayout.ZoneCount];
         private readonly float[] smokeOutDue = new float[GrateLayout.ZoneCount];
         private bool dustDrained;
@@ -173,7 +174,6 @@ namespace RealisticFiring.Visuals
             flames.firebox = firebox;
             flames.oldFlames = bed.Effects.Find("Flames")?.GetComponent<ParticleSystem>();
             flames.smoke = bed.Effects.Find("Smoke")?.GetComponent<ParticleSystem>();
-            flames.stockFlames = fire.fireObj != null ? fire.fireObj.GetComponent<Renderer>() : null;
             if (fire.fireLight != null)
                 flames.lightColor = fire.fireLight.color;
             var flow = firebox.Car != null && firebox.Car.SimController != null ? firebox.Car.SimController.SimulationFlow : null;
@@ -348,8 +348,17 @@ namespace RealisticFiring.Visuals
             if (firebox == null || bed == null || !bed.Ready)
                 return;
             var shown = Main.Settings.ShowZonedCoalBed;
-            if (stockFlames != null)
-                stockFlames.enabled = !shown && cards == null;
+            var stockFlame = fire != null ? fire.fireObj : null;
+            if (stockFlame != null && stockFlame.transform.childCount != stockFlameChildren)
+            {
+                stockFlameChildren = stockFlame.transform.childCount;
+                stockFlames = stockFlame.GetComponentsInChildren<Renderer>(true);
+            }
+            foreach (var renderer in stockFlames)
+            {
+                if (renderer != null)
+                    renderer.enabled = !shown && cards == null;
+            }
             if (oldFlames != null && oldFlames.isPlaying)
                 oldFlames.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
             if (cardRenderer != null)
@@ -654,8 +663,11 @@ namespace RealisticFiring.Visuals
 
         private void OnDestroy()
         {
-            if (stockFlames != null)
-                stockFlames.enabled = true;
+            foreach (var renderer in stockFlames)
+            {
+                if (renderer != null)
+                    renderer.enabled = true;
+            }
             if (fire != null && fire.fireLight != null)
                 fire.fireLight.color = lightColor;
             if (cards != null)

@@ -94,6 +94,30 @@ Rake a bank level with the empty shovel; don't stir it.
   valve, and set the feed to hold the coal steady.
 - **Jets:** start at master 1.4 bar, front 1.2, back 0.8, fines 0.7. Turn
   them down as the engine works harder; the draft carries coal forward anyway.
+- **What each jet does** (each gauge reads its own pressure; MASTER feeds
+  them all):
+  - **FRONT** (left and right) throw most of the coal up their side of the
+    grate, farther the harder they blow: about 1.2 bar lays it from the
+    middle to the front, 1.6 reaches the front row, and past about 2.4 it
+    banks against the tubeplate and goes over the arch.
+  - **BACK** blow a small lane sideways into the back corners: about 0.8 bar
+    reaches them. Lower, the coal drops under the door; much higher, it
+    spills into the middle.
+  - **FINES** spread the fine quarter of the coal evenly over the grate at
+    about 0.7 bar. Lower, they fall under the door; higher, they blow over
+    the arch. Working hard, the draft lifts some fines straight out of the
+    stack whatever you set: cinders, and less heat from each kg.
+- **Read the bed and set the jets:**
+  - Coal **piling at the front**, sparks and black smoke from the stack:
+    front jets down, all the more as the engine works harder.
+  - **Front running thin:** front jets up a little.
+  - A **heel under the door:** back jets or fines too low, or shut; their
+    coal drops off the plate. Open them up.
+  - **Back corners thin:** back jets up, or fire them by hand.
+  - **Look through the door:** the coal blows off the plate in lanes, the
+    back jets' sideways into the corners, the front jets' up each side;
+    each jet's steam shows how hard it blows, and the fines catch and burn
+    in the air.
 - **Fire the back corners and under the door by hand.** The stoker runs them
   short.
 - **Don't stoke standing.** With no draft it banks the fire and smokes. Shut
@@ -210,6 +234,7 @@ A grinding clash means the booster was turning or you were going too fast.
 | Clean the fire | when clinker shows, about every 2 h of hard work |
 | Ashpan | empty at half full |
 | Stoker jets | master 1.4, front 1.2, back 0.8, fines 0.7 bar |
+| Stoker coal piling | at the front: front jets down; under the door: back jets and fines up |
 | Oil temperature | 45–80 °C (110–175 °F) |
 | Oil stack | light grey-brown haze |
 | Injector | at least 2.5 bar; water open, steam Prime, then Feed; water past two fifths |

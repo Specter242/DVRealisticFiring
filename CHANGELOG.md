@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.9.0 (2026-10-14)
+
+- Draw the stoker's spray: procedural coal lumps lit by the fire, burning fines carried in by the draft, and the jets' steam, thrown from under the door into the firebox; stop it with the door shut and open on it in full flow. Add the stoker's operation to the firing guide.
+- Draw the fireman's orders on the fire overlay's card (the overlay's type, plates, and boxes shared in `OverlayStyle`): order and call plates, rows read once a second, warnings in the next-step box, and a small card when put away.
+- Fit each fired engine's steam air pump to period steam (0.08 to 0.26 kg/s flat out, not the game's 1 kg/s) and send its exhaust through the blast pipe at the exhaust's entrainment.
+- Hide a CCL engine's stock flame, on a child of the fire object, under the bed's flame cards.
+
 ## 1.8.1 (2026-10-14)
 
 - Aim the shovel, rake, and fire iron where the look meets the drawn coal (followed into the firebox in the zoned bed's frame), falling back to the door aim without a bed.

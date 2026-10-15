@@ -160,6 +160,7 @@ namespace RealisticFiring.AdapterCheck
             CheckBooster();
             CheckCylinders(gameParams);
             CheckBlower(gameParams);
+            CheckAirPump(gameParams);
 
             CheckControlSteps();
             CheckShovelLoads();
@@ -1528,6 +1529,69 @@ namespace RealisticFiring.AdapterCheck
                 Check(Math.Abs(stockAir.Value - 0.59f) < 0.01f && Math.Abs(fittedAir.Value - 2.3f) < 0.01f && Math.Abs(fittedSteam.Value - 0.4f) < 0.01f,
                     $"the S060's period blower wide open draws {fittedAir.Value:F2} kg/s of air for {fittedSteam.Value:F2} kg/s of steam " +
                     $"(the game's {stockAir.Value:F2} for {stockSteam.Value:F2})");
+            }
+            finally
+            {
+                harmony.UnpatchAll(harmony.Id);
+            }
+        }
+
+        // The S282's air pump on period steam, patched as in game: pumping
+        // flat out it takes its fitted steam, not the game's 1 kg/s, and its
+        // exhaust draws the fire through the blast pipe with the blower shut.
+        private static void CheckAirPump(SimGameParams gameParams)
+        {
+            var harmony = new HarmonyLib.Harmony("RealisticFiring.AdapterCheck.AirPump");
+            harmony.CreateClassProcessor(typeof(BlowerPatch)).Patch();
+            harmony.CreateClassProcessor(typeof(AirPumpPatch)).Patch();
+            try
+            {
+                SteamCompressor NewPump(out Port steam)
+                {
+                    var def = new SteamCompressorDefinition { ID = "compressor" };
+                    var pump = (SteamCompressor)def.InstantiateImplementation();
+                    pump.SetGameParams(gameParams);
+                    void Wire(PortReferenceDefinition reference, PortValueType type, float value) =>
+                        pump.GetAllPortReferences().Single(r => r.id == $"{def.ID}.{reference.ID}")
+                            .SetPortReference(new Port(reference.ID.ToLowerInvariant(), new PortDefinition(PortType.READONLY_OUT, type, "OUT"), value));
+                    Wire(def.compressorControl, PortValueType.CONTROL, 1f);
+                    Wire(def.steamPressure, PortValueType.PRESSURE, 14f);
+                    pump.GetAllPorts().Single(p => p.id == $"{def.ID}.{def.activationSignalExtIn.ID}").ExternalValueUpdate(1f);
+                    pump.GetAllPorts().Single(p => p.id == $"{def.ID}.{def.mainResPressureNormalizedExtIn.ID}").ExternalValueUpdate(0.5f);
+                    steam = pump.GetAllPorts().Single(p => p.id == $"{def.ID}.{def.steamConsumptionReadOut.ID}");
+                    return pump;
+                }
+
+                var exhaustDef = new SteamExhaustDefinition { ID = "exhaust", passiveExhaust = 0.6f, entrainmentRatio = 1.95f, maxBlowerFlow = 0.5f, pressureForMaxBlowerFlow = 3f };
+                var exhaust = (SteamExhaust)exhaustDef.InstantiateImplementation();
+                exhaust.SetGameParams(gameParams);
+                void WireExhaust(PortReferenceDefinition reference, PortValueType type, float value) =>
+                    exhaust.GetAllPortReferences().Single(r => r.id == $"{exhaustDef.ID}.{reference.ID}")
+                        .SetPortReference(new Port(reference.ID.ToLowerInvariant(), new PortDefinition(PortType.READONLY_OUT, type, "OUT"), value));
+                WireExhaust(exhaustDef.exhaustFlow, PortValueType.MASS_RATE, 0f);
+                WireExhaust(exhaustDef.engineMaxFlowReader, PortValueType.MASS_RATE, 6f);
+                WireExhaust(exhaustDef.boilerPressure, PortValueType.PRESSURE, 14f);
+                WireExhaust(exhaustDef.blowerControl, PortValueType.CONTROL, 0f);
+                WireExhaust(exhaustDef.whistleControl, PortValueType.CONTROL, 0f);
+                WireExhaust(exhaustDef.damperControl, PortValueType.CONTROL, 1f);
+                var air = exhaust.GetAllPorts().Single(p => p.id == $"{exhaustDef.ID}.{exhaustDef.airFlowReadOut.ID}");
+
+                var stock = NewPump(out var stockSteam);
+                var fitted = NewPump(out var fittedSteam);
+                var draft = new SteamDraft(0.5f, 0.6f, exhaust.entrainmentRatio, 15f);
+                BlowerFit.Fit(exhaust, draft, fitted, 0.13f);
+                exhaust.Tick(0.02f);
+                var idle = air.Value;
+                for (var i = 0; i < 1500; i++)
+                {
+                    stock.Tick(0.02f);
+                    fitted.Tick(0.02f);
+                }
+                exhaust.Tick(0.02f);
+                Check(Math.Abs(fittedSteam.Value - 0.13f) < 0.005f && Math.Abs(stockSteam.Value - 1f) < 0.02f && Math.Abs(idle - 0.6f) < 0.01f
+                      && Math.Abs(air.Value - (0.6f + 1.95f * 0.13f)) < 0.01f,
+                    $"the S282's air pump flat out takes {fittedSteam.Value:F2} kg/s of steam (the game's {stockSteam.Value:F2}) " +
+                    $"and draws {air.Value:F2} kg/s of air through the fire with the blower shut ({idle:F2} with it still)");
             }
             finally
             {

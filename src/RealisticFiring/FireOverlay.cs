@@ -15,8 +15,6 @@ namespace RealisticFiring
         private const float Width = 540f;
         private const float Height = 462f;
         private const float Pad = 16f;
-        private const float MinScale = 0.85f;
-        private const float MaxScale = 1.5f;
         private const float RefreshSeconds = 1f;
 
         public const int Pages = 3;
@@ -131,7 +129,7 @@ namespace RealisticFiring
 
         private void Show()
         {
-            var k = Mathf.Clamp(Screen.height / 1080f, MinScale, MaxScale);
+            var k = OverlayStyle.Scale;
             var matrix = GUI.matrix;
             GUI.matrix = Matrix4x4.Scale(new Vector3(k, k, 1f));
             var rect = GUI.Window(WindowId, new Rect(position, new Vector2(Width, Height)), DrawCard, GUIContent.none, GUIStyle.none);
@@ -405,17 +403,12 @@ namespace RealisticFiring
             fontFor = font;
             // Measured with another font: read again.
             readTime = float.NegativeInfinity;
-            var plateFont = PlumeAssets.PlateFont != null ? PlumeAssets.PlateFont : font;
-            GUIStyle Text(int size, Color color, TextAnchor anchor, Font f = null) => new GUIStyle(GUI.skin.label)
-            {
-                font = f != null ? f : font, fontSize = size, alignment = anchor, wordWrap = false, clipping = TextClipping.Clip,
-                padding = new RectOffset(), margin = new RectOffset(), normal = { textColor = color },
-            };
-            GUIStyle Back(Texture2D texture, int border) => new GUIStyle { normal = { background = texture }, border = new RectOffset(border, border, border, border) };
-            panel = Back(OverlayArt.Panel, 10);
-            fill = Back(OverlayArt.Rounded, 5);
-            plateOff = new GUIStyle(Text(15, OverlayArt.Dim, TextAnchor.MiddleCenter, plateFont)) { normal = { background = OverlayArt.PlateOff, textColor = OverlayArt.Dim }, hover = { background = OverlayArt.PlateOff, textColor = OverlayArt.Soft }, active = { background = OverlayArt.PlateOn, textColor = OverlayArt.Cream }, border = new RectOffset(5, 5, 5, 5) };
-            plateOn = new GUIStyle(plateOff) { normal = { background = OverlayArt.PlateOn, textColor = OverlayArt.Cream }, hover = { background = OverlayArt.PlateOn, textColor = OverlayArt.Cream } };
+            var plateFont = OverlayStyle.PlateFont;
+            GUIStyle Text(int size, Color color, TextAnchor anchor, Font f = null) => OverlayStyle.Text(size, color, anchor, f);
+            panel = OverlayStyle.Back(OverlayArt.Panel, 10);
+            fill = OverlayStyle.Back(OverlayArt.Rounded, 5);
+            plateOff = OverlayStyle.PlateOff(15);
+            plateOn = OverlayStyle.PlateOn(plateOff);
             loco = Text(16, OverlayArt.Soft, TextAnchor.MiddleRight);
             label = Text(16, OverlayArt.Soft, TextAnchor.MiddleLeft);
             value = Text(19, OverlayArt.Cream, TextAnchor.MiddleRight);
@@ -436,8 +429,7 @@ namespace RealisticFiring
             if (c == null)
                 return;
             GUI.Box(new Rect(0f, 0f, Width, Height), GUIContent.none, panel);
-            GUI.DrawTexture(new Rect(7f, 7f, 6f, 6f), OverlayArt.Rivet);
-            GUI.DrawTexture(new Rect(Width - 13f, 7f, 6f, 6f), OverlayArt.Rivet);
+            OverlayStyle.Rivets(Width);
 
             // The page plates; Alt+click one to turn to it.
             for (var i = 0; i < Pages; i++)
@@ -490,13 +482,7 @@ namespace RealisticFiring
             }
         }
 
-        private static void Mark(AdviceLevel level, Rect rect)
-        {
-            var old = GUI.color;
-            GUI.color = OverlayArt.LevelColor(level);
-            GUI.DrawTexture(rect, OverlayArt.Mark(level));
-            GUI.color = old;
-        }
+        private static void Mark(AdviceLevel level, Rect rect) => OverlayStyle.Mark(level, rect);
 
         private void Fill(Rect rect, Color color)
         {
@@ -580,10 +566,7 @@ namespace RealisticFiring
                     GUI.DrawTexture(new Rect(bar.x + bar.width / 2f - 1f, bar.y - 2f, 2f, bar.height + 4f), OverlayArt.White);
                     GUI.color = old;
                 }
-                var line = GUI.color;
-                GUI.color = OverlayArt.Rule;
-                GUI.DrawTexture(new Rect(r.x, r.yMax - 1f, r.width, 1f), OverlayArt.White);
-                GUI.color = line;
+                OverlayStyle.Rule(r);
             }
         }
 
@@ -639,12 +622,7 @@ namespace RealisticFiring
 
         private void DrawNext(Advice advice, Rect rect)
         {
-            Fill(rect, advice.Level == AdviceLevel.Act ? new Color(OverlayArt.Alarm.r, OverlayArt.Alarm.g, OverlayArt.Alarm.b, 0.08f) : new Color(1f, 1f, 1f, 0.05f));
-            var old = GUI.color;
-            GUI.color = OverlayArt.LevelColor(advice.Level);
-            GUI.DrawTexture(new Rect(rect.x, rect.y, 3f, rect.height), OverlayArt.White);
-            GUI.color = old;
-            Mark(advice.Level, new Rect(rect.x + 12f, rect.y + 12f, 11f, 11f));
+            OverlayStyle.LevelBox(rect, advice.Level, fill);
             var area = new Rect(rect.x + 30f, rect.y + 6f, rect.width - 40f, rect.height - 10f);
             GUI.Label(area, advice.Text, FitNext(advice.Text, area));
         }

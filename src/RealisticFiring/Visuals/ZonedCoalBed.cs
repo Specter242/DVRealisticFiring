@@ -703,6 +703,22 @@ namespace RealisticFiring.Visuals
             return pivot.parent.TransformPoint(rest + frame * Vector3.Scale(fullScale, p));
         }
 
+        /// <summary>
+        /// A world point in the bed's box, as <see cref="BedPoint"/> takes it:
+        /// across (0 left, 1 right), along (0 the door, 1 the front), and up
+        /// (0 the grate, 1 the stock pile's top).
+        /// </summary>
+        public Vector3 BoxPoint(Vector3 world)
+        {
+            var local = Quaternion.Inverse(frame) * (pivot.parent.InverseTransformPoint(world) - rest);
+            float Share(float value, float scale, float min, float size) =>
+                Mathf.Abs(scale) > 1e-6f && Mathf.Abs(size) > 1e-6f ? (value / scale - min) / size : 0.5f;
+            return new Vector3(
+                Share(local.x, fullScale.x, bed.min.x, bed.size.x),
+                Share(local.z, fullScale.z, bed.min.z, bed.size.z),
+                Share(local.y, fullScale.y, bed.min.y, bed.size.y));
+        }
+
         /// <summary>Where a zone's coal stands now, as a share of the stock pile's height.</summary>
         public float ZoneHeight(GrateZone zone) => heights[(int)zone];
 

@@ -885,12 +885,12 @@ namespace RealisticFiring.Visuals
         internal static float StackFlux(float fireHeat, SteamExhaust exhaust, PlumeTuning tuning) =>
             PlumeRise.StackFlux(fireHeat, StackSteam(exhaust)) * tuning.Buoyancy;
 
-        /// <summary>The steam going up the stack, kg/s: the engine's exhaust and the blower's, as the game's exhaust works them out.</summary>
+        /// <summary>The steam going up the stack, kg/s: the engine's exhaust, the blower's, and the air pump's, as the exhaust works them out.</summary>
         internal static float StackSteam(SteamExhaust exhaust)
         {
             if (exhaust == null)
                 return 0f;
-            return Mathf.Max(0f, exhaust.exhaustFlow.Value) + Mathf.Max(0f, BlowerFit.BlowerSteam(exhaust));
+            return Mathf.Max(0f, exhaust.exhaustFlow.Value) + Mathf.Max(0f, BlowerFit.BlowerSteam(exhaust)) + BlowerFit.PumpSteam(exhaust);
         }
 
         // A world point in the space the system simulates in (the game moves
