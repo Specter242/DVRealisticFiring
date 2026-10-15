@@ -46,13 +46,15 @@ namespace RealisticFiring.Sim
         // 55:45, Rowledge & Reed 1981 pp.53-54), hand-fired, fixed bars. The
         // firehole's deflector plate turns the secondary air down toward the
         // arch (BR handbook 1957, pp.32, 46). Fire thin and often; a thick
-        // fire under the door is a fault (pp.27-33). The draft's pull toward
-        // the tubes and the mixing are inferred, and the slope averaged over
-        // the grate. The mod's grate and pile slope about 12° down to the
+        // fire under the door is a fault (pp.27-33). Its arch sealed to the
+        // tube plate, the back draws hardest, as British rules fire it ("keep
+        // the fire thickest along the back of the box, that is, under the
+        // door", L&YR Questions for Enginemen, c.1910); how much harder, and
+        // the mixing, are inferred, and the slope averaged over the grate. The mod's grate and pile slope about 12° down to the
         // front their whole length (2026-10-14); the prototype's sloped at the
         // front alone, so its average stands over the pile's.
         private static readonly Firebox Lms8F = new Firebox("a narrow Belpaire box: sloping front, level back; brick arch and a deflector plate",
-            new GrateCharacter { BackRowDraft = 0.92f, FrontRowDraft = 1.1f, SideDraft = 1.03f, OverFireMixing = 0.95f })
+            new GrateCharacter { BackRowDraft = 1.08f, FrontRowDraft = 0.92f, SideDraft = 1.03f, OverFireMixing = 0.95f })
         {
             PrototypeSlope = -5f,
             PrototypeSlopeOverPile = true,
@@ -68,21 +70,25 @@ namespace RealisticFiring.Sim
             // with a short combustion chamber and a brick arch (USRA Light
             // Mikado, RME Aug. 1918). Its grate slopes 6.9° to the front, as
             // measured from its coal pile, so the fire creeps forward off the
-            // back corners at speed.
-            ["LocoS282A"] = new Firebox("a light Mikado's wide box: short chamber and arch; the fire creeps forward off the back corners",
+            // back corners at speed. The typical draft is a Mikado's measured
+            // one: a Frisco 2-8-2 with a sealed arch pulled hardest at the back
+            // (Acker, RME Apr. 1930).
+            ["LocoS282A"] = new Firebox("a light Mikado's wide box: short chamber and arch; draws hardest at the back, and the fire creeps forward off the back corners",
                 new GrateCharacter { OverFireMixing = 0.95f }),
 
             // A small switcher's narrow, level grate between the frames
             // (the USATC S100 the community likens it to: 19 sq ft, hand
-            // fired). No combustion chamber: it draws evenly, end to end,
-            // and smokes readily after firing (inferred).
-            ["LocoS060"] = new Firebox("a switcher's small, narrow box: draws evenly, smokes readily",
-                new GrateCharacter { BackRowDraft = 0.96f, FrontRowDraft = 1.04f, SideDraft = 1.04f, OverFireMixing = 0.8f }),
+            // fired). No combustion chamber; a short arch: it draws nearly
+            // evenly, end to end, a little harder at the back, and smokes
+            // readily after firing (inferred).
+            ["LocoS060"] = new Firebox("a switcher's small, narrow box: draws nearly evenly, smokes readily",
+                new GrateCharacter { BackRowDraft = 1.04f, FrontRowDraft = 0.96f, SideDraft = 1.04f, OverFireMixing = 0.8f }),
 
             // Lilla and Cruzer's fictional 1897-1912 shunter. Its modeled
-            // grate is narrow, long, and level (0.897 by 1.593 m). A modest
-            // pull toward the tubes and limited over-fire mixing give it
-            // a hand-fired small-box character. These are inferred firing
+            // grate is narrow, long, and level (0.897 by 1.593 m). With no arch
+            // asserted, a box burns faster at the front (Acker, RME Apr. 1940):
+            // a modest pull toward the tubes and limited over-fire mixing give
+            // it a hand-fired small-box character. These are inferred firing
             // traits, not documented fittings or a historical prototype.
             ["Jk3A"] = new Firebox("a small, long, level box: modest pull to the front; fresh rounds smoke readily",
                 new GrateCharacter { BackRowDraft = 0.94f, FrontRowDraft = 1.08f, SideDraft = 1.03f, OverFireMixing = 0.85f }),
@@ -103,14 +109,16 @@ namespace RealisticFiring.Sim
 
             // UP FEF class (RME Feb. 1938, Nov. 1939; UP's FEF-3 diagram): a
             // 90-in combustion chamber, arch tubes and circulators, twelve air
-            // tubes through each side sheet, and a strong pull to the throat
-            // (125 % of the gas area above the arch, heavy cinder cutting);
-            // the mud ring 10 in higher at the back, about 4°. Standard BK
+            // tubes through each side sheet, and a generous way over the arch
+            // (125 % of the flue gas area, heavy cinder cutting), which eases
+            // the front's longer path, so it draws more evenly than a typical
+            // sealed arch (inferred: a gap at the tube plate evened it fully,
+            // Acker 1930); the mud ring 10 in higher at the back, about 4°. Standard BK
             // stoker, whose back corners ran short (Lewis). Rock Springs and
             // Superior coal: "produces no clinker", 3 to 5 % ash (USGS
             // Bulletin 341; USBM Bulletin 209).
             ["FEF-3"] = new Firebox("the FEF-3's box: 90-in chamber, circulators, air tubes; slopes about 4°; Rock Springs coal; the BK stoker starves the back corners",
-                new GrateCharacter { BackRowDraft = 0.88f, FrontRowDraft = 1.15f, OverFireMixing = 1.25f, ClinkerFactor = 0.7f, AshFactor = 0.6f })
+                new GrateCharacter { BackRowDraft = 1.08f, FrontRowDraft = 0.92f, OverFireMixing = 1.25f, ClinkerFactor = 0.7f, AshFactor = 0.6f })
             {
                 PrototypeSlope = -4f,
                 StokerBackLanes = 0.7f,
@@ -122,7 +130,7 @@ namespace RealisticFiring.Sim
             // fitted the MB stoker (as UP did on some FEF-2s, by Kratville),
             // which reaches the back corners.
             ["S484-840A"] = new Firebox("an FEF-3's box on another road: typical bituminous, an MB stoker that reaches the back corners",
-                new GrateCharacter { BackRowDraft = 0.88f, FrontRowDraft = 1.15f, OverFireMixing = 1.25f })
+                new GrateCharacter { BackRowDraft = 1.08f, FrontRowDraft = 0.92f, OverFireMixing = 1.25f })
             {
                 PrototypeSlope = -4f,
             },

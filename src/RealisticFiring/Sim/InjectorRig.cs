@@ -479,9 +479,27 @@ namespace RealisticFiring.Sim
             return true;
         }
 
+        // What went into the boiler in the last step, kg, and its heat, kg °C.
+        private float fedMass;
+        private float fedHeat;
+
+        /// <summary>The water fed in the last step, kg: injectors, pump, hose, and hand pump.</summary>
+        public float FedLastStep => fedMass;
+
+        /// <summary>The temperature it went in at, °C.</summary>
+        public float FeedTemperatureLastStep => fedMass > 0f ? fedHeat / fedMass : TenderWaterTemperature;
+
+        private void Feed(WaterPressureVessel vessel, float mass, float temperature)
+        {
+            vessel.AddWater(mass, temperature);
+            fedMass += mass;
+            fedHeat += mass * temperature;
+        }
+
         /// <summary>Runs in place of the stock injector step.</summary>
         public void Simulate(float delta)
         {
+            fedMass = fedHeat = 0f;
             var vessel = Vessel(boiler);
             if (vessel == null || !(delta > 0f))
                 return;
@@ -511,7 +529,7 @@ namespace RealisticFiring.Sim
                 circuit.Flow = flow;
                 var fed = flow.WaterIn * delta;
                 if (fed > 0f)
-                    vessel.AddWater(fed, flow.FeedTemperature);
+                    Feed(vessel, fed, flow.FeedTemperature);
                 var steam = Mathf.Min(flow.SteamUsed * delta, vessel.mass);
                 if (steam > 0f)
                     vessel.RemoveSteam(steam);
@@ -549,7 +567,7 @@ namespace RealisticFiring.Sim
                 PumpFlow = pumpFlow;
                 var pumped = pumpFlow.WaterIn * delta;
                 if (pumped > 0f)
-                    vessel.AddWater(pumped, pumpFlow.FeedTemperature);
+                    Feed(vessel, pumped, pumpFlow.FeedTemperature);
                 space = Mathf.Max(0f, space - pumped);
                 drawn += pumpFlow.TenderDraw * delta;
                 // A boiler's mass is too big for a float to take a few grams a tick.
@@ -568,13 +586,13 @@ namespace RealisticFiring.Sim
             if (HydrantFilling && !broken && CanHydrantFill)
             {
                 var hose = Mathf.Min(HydrantRate * delta, space);
-                vessel.AddWater(hose, TenderWaterTemperature);
+                Feed(vessel, hose, TenderWaterTemperature);
                 FillRate = hose / delta;
             }
             else if ((HandPumping || RemoteHandPumping) && !broken && CanHandPump)
             {
                 var pumped = Mathf.Min(HandPumpRate * delta, space, Mathf.Max(0f, tender - drawn));
-                vessel.AddWater(pumped, TenderWaterTemperature);
+                Feed(vessel, pumped, TenderWaterTemperature);
                 drawn += pumped;
                 FillRate = pumped / delta;
             }

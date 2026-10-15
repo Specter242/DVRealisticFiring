@@ -216,9 +216,13 @@ namespace RealisticFiring
             var gauge = rig != null ? rig.BoilerPressure - 1f : 0f;
             var working = rig != null ? Mathf.Max(1f, rig.WorkingPressure - 1f) : 1f;
             var share = gauge / working;
+            // Heating from cold, the water's temperature until it boils.
+            var water = default(BoilerWaterRig);
+            var heating = rig != null && BoilerWaterRig.TryGet(rig.Car, out water) && water.BelowBoilingNow;
             card.Gauges[3] = new Gauge
             {
-                Key = "boiler", Label = "BOILER", Value = share / 1.1f, Band0 = 0.85f / 1.1f, Band1 = 1f / 1.1f, Text = $"{gauge:F1} bar",
+                Key = "boiler", Label = "BOILER", Value = share / 1.1f, Band0 = 0.85f / 1.1f, Band1 = 1f / 1.1f,
+                Text = heating ? $"water {water.WaterTemperature:F0} °C" : $"{gauge:F1} bar",
                 Level = share < 0.6f || share > 1.02f ? AdviceLevel.Watch : AdviceLevel.Ok,
             };
         }

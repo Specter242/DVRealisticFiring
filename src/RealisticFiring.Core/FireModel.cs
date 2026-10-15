@@ -90,8 +90,9 @@ namespace RealisticFiring.Core
             }
         }
 
-        // The front and sides draw more air than the back, by the firebox's
-        // character; the weights average 1, so an even bed draws the stock total.
+        // Where the grate draws its air, by the firebox's character (under a
+        // sealed arch the back and the sides hardest); the weights average 1,
+        // so an even bed draws the stock total.
         private void WeighDraft()
         {
             var sum = 0f;
@@ -218,7 +219,7 @@ namespace RealisticFiring.Core
         /// Where a fireman following the fire would put the next shovelful:
         /// the zone furthest below its share of the coal. Shares go with the
         /// square of each zone's draft, which is what evens out the air, so
-        /// the high-draft front corners carry more coal than the back.
+        /// the high-draft back corners carry more coal than the front.
         /// </summary>
         public GrateZone NeediestZone()
         {
@@ -782,7 +783,7 @@ namespace RealisticFiring.Core
             // Burning coal: the stock rule per zone, rate = min(fuel, 2 × air).
             // The stock total of what the coal can burn is shared out by draft:
             // high-draft zones burn a larger share, so an evenly fired grate
-            // burns through at the front corners first, while the total stays
+            // burns through at its hardest-drawing corners first, while the total stays
             // the stock figure for any spread of coal.
             var burningTotal = 0f;
             var draftedTotal = 0f;

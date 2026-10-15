@@ -136,8 +136,10 @@ namespace RealisticFiring.Core.Tests;
     }
 
     [Fact]
-    public void TheWorkingSettingFollowsTheFireButLeavesTheBackCornersShort()
+    public void TheWorkingSettingFeedsTheFrontButLeavesTheBackShort()
     {
+        // The back draws hardest under a sealed arch, and the stoker cannot
+        // reach it: the coal it misses there heaps up in the middle.
         var shares = Landing(StokerControls.Working(1f), 0.5f, out var lost);
         var fire = new FireModel(Hudson);
         var need = Enumerable.Range(0, GrateLayout.ZoneCount).Select(i => Square(fire.DraftWeight((GrateZone)i))).ToArray();
@@ -147,10 +149,13 @@ namespace RealisticFiring.Core.Tests;
             var landed = shares[i] / (1f - lost);
             var wanted = need[i] / needSum;
             var zone = (GrateZone)i;
-            if (GrateLayout.Row(zone) == 0)
+            var row = GrateLayout.Row(zone);
+            if (row == 0)
                 Assert.True(landed < wanted, $"{zone}: {landed:P1} should be short of {wanted:P1}");
-            else
+            else if (row == GrateLayout.Rows - 1)
                 Assert.InRange(landed, 0.8f * wanted, 1.3f * wanted);
+            else
+                Assert.True(landed > wanted, $"{zone}: {landed:P1} should be over {wanted:P1}");
         }
     }
 

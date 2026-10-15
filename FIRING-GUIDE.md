@@ -22,12 +22,14 @@ least coal or oil. For what each control does, see the README.
 
 ## Hand firing coal
 
-**Shape the fire to the draft.** The front and sides of the grate draw the
-most air, so an even fire burns through there first. Keep the hardest-drawing
-zones fuller, and the air spreads back toward the door. On a sloping grate
-the coal creeps forward on its own at speed, so there you keep the back full
-instead (see Each engine). A bare patch takes about three times its share of
-air and chills the fire: fill holes before anything else.
+**Shape the fire to the draft.** Under a brick arch the back of the grate
+and the back corners draw the most air, then the sides, and the front under
+the arch the least, so an even fire burns through at the back corners and
+under the door first. Keep those fuller (heaviest at the sides and back
+corners), and the air spreads forward. On a sloping grate the coal also
+creeps forward at speed, so the back wants it all the more. A bare patch
+takes about three times its share of air and chills the fire: fill holes
+before anything else.
 
 **Aim each shovelful** where the overlay shows the coal running short:
 point at that spot on the fire through the door.
@@ -42,15 +44,18 @@ Rake a bank level with the empty shovel; don't stir it.
 - Dull red bed: ash. Shake the grate.
 - Dark patch that won't brighten: clinker (see below).
 
-**Raising steam.** The game's Steam Startup setting speeds up a cold fire
-(×25 at 100 %). Set it to 2500 % for a real-time light-up.
+**Raising steam.** A cold boiler's water must boil before the gauge moves;
+the overlay's boiler dial shows its temperature until then. The game's Steam
+Startup setting speeds up a cold fire (×25 at 100 %). Set it to 2500 % for a
+real-time light-up.
 
 ### Each engine
 
-- **S282:** the grate slopes forward, so at speed the fire creeps off the
-  back corners. Fire the back and back corners heavy, the front light.
-- **S060:** a small box that draws evenly and smokes readily. Keep a thin
-  fire, fired light and often.
+- **S282:** draws hardest at the back, and the grate slopes forward, so at
+  speed the fire creeps off the back corners. Fire the back and back
+  corners heavy, the front light.
+- **S060:** a small box that draws nearly evenly and smokes readily. Keep a
+  thin fire, fired light and often.
 - **JK3:** a small, long, level 70 kg box with a modest pull to the front.
   Fresh rounds smoke readily: fire small amounts often and keep the front
   covered. Two lifting injectors, each with its own water valve and steam
@@ -66,8 +71,9 @@ Rake a bank level with the empty shovel; don't stir it.
   steam to Prime, then Feed.
 - **NYC Hudson:** the back corners thin out at speed, and the stoker runs the
   right back corner short. Its coal leaves a little more ash and clinker.
-- **844:** burns its smoke clean and pulls hard to the front. Its coal hardly
-  clinkers. The stoker starves both back corners.
+- **844:** burns its smoke clean and draws more evenly than most, its arch
+  having a generous way over it. Its coal hardly clinkers. The stoker
+  starves both back corners.
 - **S484-840:** the same firebox as the 844, with ordinary coal. Its stoker
   reaches the back corners.
 
@@ -92,8 +98,10 @@ Rake a bank level with the empty shovel; don't stir it.
 
 - **Start** with steam up: floor lever at Forward, open the stoker engine
   valve, and set the feed to hold the coal steady.
-- **Jets:** start at master 1.4 bar, front 1.2, back 0.8, fines 0.7. Turn
-  them down as the engine works harder; the draft carries coal forward anyway.
+- **Jets:** start at master 1.4 bar, front 0.8, back 0.8, fines 0.7. Turn
+  the front and fines down as the engine works harder; the draft carries
+  coal forward anyway. The back draws hardest and the stoker can't reach it
+  all: keep the back corners up by hand.
 - **What each jet does** (each gauge reads its own pressure; MASTER feeds
   them all):
   - **FRONT** (left and right) throw most of the coal up their side of the
@@ -166,6 +174,11 @@ Rake a bank level with the empty shovel; don't stir it.
   flooding and stopping. Before a hard pull carry the water high; on the
   pull, if steam falls short, let the glass come down a little and fill it
   again over the top.
+- **Swell and shrink:** boiling hard, the water carries steam and the glass
+  stands a little above the water itself. It jumps when you open up and the
+  pressure falls, and drops when you shut off, the pressure rises, or cold
+  feed goes in. Carry it high enough before shutting off that the drop
+  still leaves water over the crown sheet.
 - **Feed pump and heater** (Hudson, 844, S484-840, 2901): start on the
   injector, then switch to the pump once the engine has worked a few
   minutes. It feeds hot water and holds the pressure better. Ease it before
@@ -233,7 +246,7 @@ A grinding clash means the booster was turning or you were going too fast.
 | Wiggle the grate | every 10–15 min of hard work |
 | Clean the fire | when clinker shows, about every 2 h of hard work |
 | Ashpan | empty at half full |
-| Stoker jets | master 1.4, front 1.2, back 0.8, fines 0.7 bar |
+| Stoker jets | master 1.4, front 0.8, back 0.8, fines 0.7 bar |
 | Stoker coal piling | at the front: front jets down; under the door: back jets and fines up |
 | Oil temperature | 45–80 °C (110–175 °F) |
 | Oil stack | light grey-brown haze |

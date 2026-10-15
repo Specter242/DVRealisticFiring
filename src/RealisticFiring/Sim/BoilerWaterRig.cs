@@ -39,6 +39,16 @@ namespace RealisticFiring.Sim
         private const string SettledKey = "rfSludgeSettled";
         private const string SuspendedKey = "rfSludgeSuspended";
         private const string PlugMeltedKey = "rfPlugMelted";
+        private const string WaterTempKey = "rfWaterTemp";
+
+        /// <summary>The air's temperature, °C, toward which the stock boiler cools, and a cold boiler's water.</summary>
+        public const float AmbientWater = 25f;
+
+        // A boiler at no more than this pressure, bar absolute, is at the
+        // atmosphere's: cold, or not yet boiling. Below this temperature, °C,
+        // its water is saved.
+        private const float AtmosphericPressure = 1.01f;
+        private const float BelowBoiling = 99f;
 
         // A melted plug's jet holds the crown sheet this far below failing.
         private const float PlugHoldsCrownBelow = 0.9f;
@@ -100,7 +110,15 @@ namespace RealisticFiring.Sim
             knownVessel = vessel;
             TrueLevel = boiler.waterLevelReadOut.Value;
             wasOn = Main.Settings.BoilerWaterImpurities;
+            var carried = SpawnWaterMass != null ? (float)SpawnWaterMass.GetValue(boiler) : vessel != null ? vessel.mass : 0f;
+            Steel = new BoilerMetal(carried, vessel != null ? vessel.waterTemp : AmbientWater);
         }
+
+        /// <summary>The boiler's steel, holding heat beside the water.</summary>
+        public BoilerMetal Steel { get; }
+
+        /// <summary>The steam in the water, which stands the glass above the water alone.</summary>
+        public BoilerSwell Swell { get; } = new BoilerSwell();
 
         public TrainCar Car { get; }
 
@@ -173,6 +191,8 @@ namespace RealisticFiring.Sim
                     PendingSaves.Remove(boiler);
                     rig.Load(saved);
                 }
+                else
+                    rig.ChillIfCold();
                 var vessel = Vessel(boiler);
                 notes.Add($"boiler water on '{boiler.id}': {(vessel != null ? vessel.mass : 0f):F0} kg in {TotalVolume(boiler):F0} L, " +
                           $"crown sheet at {CrownSheetLevel(boiler):F2}, outlet at {boiler.steamOutletNormalizedWaterLevel:F2}, " +
@@ -243,8 +263,11 @@ namespace RealisticFiring.Sim
             return true;
         }
 
-        /// <summary>Start of the boiler's tick: notices a boiler the game reset, and the water before the feed.</summary>
-        public void BeginTick()
+        /// <summary>
+        /// Start of the boiler's tick: notices a boiler the game reset, trades
+        /// heat between the water and the steel, and notes the water before the feed.
+        /// </summary>
+        public void BeginTick(float delta)
         {
             WatchRepairs();
             var vessel = Vessel(boiler);
@@ -252,8 +275,19 @@ namespace RealisticFiring.Sim
             {
                 knownVessel = vessel;
                 Washout();
+                ChillIfCold();
+                Settle(vessel);
             }
+            if (vessel != null && vessel.mass > 0f)
+                vessel.AddEnergy(Steel.Exchange(delta, vessel.waterTemp));
             massAtTick = vessel != null ? vessel.mass : 0f;
+        }
+
+        // A boiler made or loaded anew: its steel at its water's temperature, no steam in the water yet.
+        private void Settle(WaterPressureVessel vessel)
+        {
+            Steel.Settle(vessel != null && vessel.mass > 0f ? vessel.waterTemp : AmbientWater);
+            Swell.Reset();
         }
 
         // A pit stop's repair of the body or engine renews a melted plug as
@@ -299,6 +333,41 @@ namespace RealisticFiring.Sim
             return true;
         }
 
+        /// <summary>The boiler's water, °C.</summary>
+        public float WaterTemperature => Vessel(boiler)?.waterTemp ?? AmbientWater;
+
+        /// <summary>Whether the water is below boiling at the atmosphere's pressure, the gauge at nothing.</summary>
+        public bool BelowBoilingNow
+        {
+            get
+            {
+                var vessel = Vessel(boiler);
+                return vessel != null && vessel.mass > 0f && vessel.pressure <= AtmosphericPressure && vessel.waterTemp < BelowBoiling;
+            }
+        }
+
+        // The game's cold boiler, at the atmosphere's pressure, is boiling:
+        // its water is put at the air's temperature.
+        private void ChillIfCold()
+        {
+            var vessel = Vessel(boiler);
+            if (vessel == null || vessel.mass <= 0f || vessel.pressure > AtmosphericPressure || vessel.waterTemp <= AmbientWater + 1f)
+                return;
+            SetWaterTemperature(vessel, AmbientWater);
+            Log($"cold boiler: water at {vessel.waterTemp:F0} C, not boiling");
+        }
+
+        // Its water at <paramref name="temperature"/>, below boiling: the
+        // stock vessel then holds the atmosphere's pressure until it boils.
+        private void SetWaterTemperature(WaterPressureVessel vessel, float temperature)
+        {
+            vessel.enthalpy = vessel.mass * SteamTables.WaterSpecificEnthalpyByTemp(temperature);
+            vessel.Update();
+            CrownSheetTemperature(boiler) = vessel.waterTemp;
+            Plug?.Restore(Plug.Melted, vessel.waterTemp);
+            Settle(vessel);
+        }
+
         /// <summary>After the injector step: what the injectors, pump, hose, or hand pump put in.</summary>
         public void AfterFeed()
         {
@@ -312,11 +381,12 @@ namespace RealisticFiring.Sim
         /// <summary>After the blowdown step, with the water before it.</summary>
         public void AfterBlowdown(float massBefore) => blown += Mathf.Max(0f, massBefore - MassNow);
 
-        /// <summary>After the stock level step: steps the water, then shows its foam in the glass and steam.</summary>
+        /// <summary>After the stock level step: steps the water, then shows its foam and swell in the glass, and the foam in the steam.</summary>
         public void AfterWaterLevel(float delta)
         {
             var vessel = Vessel(boiler);
             TrueLevel = boiler.waterLevelReadOut.Value;
+            StepSwell(delta, vessel);
             var on = Main.Settings.BoilerWaterImpurities;
             if (on != wasOn)
             {
@@ -327,6 +397,7 @@ namespace RealisticFiring.Sim
             if (!on || vessel == null || !(delta > 0f))
             {
                 fed = blown = 0f;
+                boiler.waterLevelReadOut.Value = TrueLevel + Swell.Rise;
                 return;
             }
 
@@ -339,12 +410,39 @@ namespace RealisticFiring.Sim
                 Fed = fed,
                 BlownDown = blown,
                 Work = maxFlow > 0f ? Mathf.Clamp01(boiler.steamConsumption.Value / maxFlow) : 0f,
-                Fullness = Mathf.InverseLerp(CrownSheetLevel(boiler), boiler.steamOutletNormalizedWaterLevel, raw),
+                Fullness = Mathf.InverseLerp(CrownSheetLevel(boiler), boiler.steamOutletNormalizedWaterLevel, raw + Swell.Rise),
             });
             fed = blown = 0f;
 
             boiler.outletSteamQualityReadOut.Value *= 1f - Water.Carryover;
-            boiler.waterLevelReadOut.Value = TrueLevel + Water.GlassRise;
+            boiler.waterLevelReadOut.Value = TrueLevel + Water.GlassRise + Swell.Rise;
+        }
+
+        // The steam in the water: what the fire boils in it, less what the
+        // feed condenses, and the pressure's fall or rise.
+        private void StepSwell(float delta, WaterPressureVessel vessel)
+        {
+            if (vessel == null || !(delta > 0f))
+                return;
+            var pressure = vessel.pressure;
+            var boilingWater = SteamTables.WaterSpecificEnthalpy(pressure);
+            var feed = fed;
+            var feedTemperature = boiler.feedwaterTemperature.Value;
+            if (Car != null && InjectorRig.TryGet(Car, out var injectors))
+            {
+                feed = injectors.FedLastStep;
+                feedTemperature = injectors.FeedTemperatureLastStep;
+            }
+            Swell.Step(delta, new BoilerSwellInputs
+            {
+                Heat = boiler.heat.Value,
+                LatentHeat = (SteamTables.SteamSpecificEnthalpy(pressure) - boilingWater) * 1000f,
+                FullSteam = engine != null ? engine.maxFlowReadOut.Value : 0f,
+                Fed = feed,
+                FeedSubcooling = Mathf.Max(0f, boilingWater - SteamTables.WaterSpecificEnthalpyByTemp(feedTemperature)) * 1000f,
+                Pressure = pressure,
+                Boiling = vessel.mass > 0f && !BelowBoilingNow,
+            });
         }
 
         /// <summary>
@@ -413,6 +511,8 @@ namespace RealisticFiring.Sim
             data.SetFloat(SuspendedKey, Water.SuspendedSludge);
             if (Plug != null && Plug.Melted)
                 data.SetBool(PlugMeltedKey, true);
+            if (BelowBoilingNow)
+                data.SetFloat(WaterTempKey, WaterTemperature);
         }
 
         /// <summary>After the stock boiler has loaded its save.</summary>
@@ -428,6 +528,12 @@ namespace RealisticFiring.Sim
                 Water.Washout(mass);
             if (Plug != null)
                 Plug.Restore(data.GetBool(PlugMeltedKey) == true, vessel != null ? vessel.waterTemp : 20f);
+            // The stock load makes water at the atmosphere's pressure boiling;
+            // a save from before the water's temperature was kept stays so.
+            var temperature = data.GetFloat(WaterTempKey);
+            if (temperature.HasValue && vessel != null && vessel.mass > 0f && vessel.pressure <= AtmosphericPressure)
+                SetWaterTemperature(vessel, Mathf.Clamp(temperature.Value, 0f, BelowBoiling));
+            Settle(vessel);
         }
 
         /// <summary>Called on every stock boiler save load: applies ours now, or once the rig is made.</summary>
@@ -448,6 +554,7 @@ namespace RealisticFiring.Sim
         {
             var rig = new BoilerWaterRig(null, boiler, engine, guard);
             ByBoiler[boiler] = rig;
+            rig.ChillIfCold();
             return rig;
         }
 

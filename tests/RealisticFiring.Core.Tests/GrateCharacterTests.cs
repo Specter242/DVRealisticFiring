@@ -3,12 +3,14 @@ using RealisticFiring.Core;
 namespace RealisticFiring.Core.Tests;
 
 /// <summary>
-/// A real grate does not burn evenly. The front, near the tube plate and the
-/// throat under the brick arch, and the sides, where air slips up between the
-/// grate and the firebox walls, draw more air than the back under the door,
-/// so an evenly fired grate burns through at the front corners first; firing
-/// those heavier sends air back toward the door. On a sloping grate a moving
-/// loco shakes coal down toward the front.
+/// A real grate does not burn evenly. Under a brick arch sealed to the tube
+/// plate the gases from the back take the shortest way to the tubes, so the
+/// back under the door draws hardest and the front under the arch least
+/// (Acker, RME Apr. 1930: the front pulled 70 % of the back), and the sides,
+/// where air slips up beside the firebox walls, more than the middle. An
+/// evenly fired grate burns through at the back corners first; firing them
+/// heavier sends air forward. On a sloping grate a moving loco shakes coal
+/// down toward the front.
 /// </summary>
 public class GrateCharacterTests
 {
@@ -18,15 +20,15 @@ public class GrateCharacterTests
     private static float AirShare(FireModel fire, GrateZone zone) => fire.Zones[(int)zone].AirFlow / fire.PrimaryAirFlow;
 
     [Fact]
-    public void TheFrontAndSidesDrawMoreAirThanTheBackOnAnEvenBed()
+    public void TheBackAndSidesDrawMoreAirThanTheFrontOnAnEvenBed()
     {
         var fire = FireTestKit.BurningFire(Stock, 60f);
         fire.Step(FireTestKit.Dt, FireTestKit.Inputs(HalfLoadAir));
 
-        Assert.True(AirShare(fire, GrateZone.FrontLeft) > AirShare(fire, GrateZone.Center));
-        Assert.True(AirShare(fire, GrateZone.Front) > AirShare(fire, GrateZone.UnderDoor));
+        Assert.True(AirShare(fire, GrateZone.BackLeft) > AirShare(fire, GrateZone.Center));
+        Assert.True(AirShare(fire, GrateZone.UnderDoor) > AirShare(fire, GrateZone.Front));
         Assert.True(AirShare(fire, GrateZone.MidLeft) > AirShare(fire, GrateZone.Center));
-        Assert.True(AirShare(fire, GrateZone.FrontRight) > AirShare(fire, GrateZone.BackRight));
+        Assert.True(AirShare(fire, GrateZone.BackRight) > AirShare(fire, GrateZone.FrontRight));
     }
 
     [Fact]
@@ -39,27 +41,27 @@ public class GrateCharacterTests
     }
 
     [Fact]
-    public void AnEvenlyFiredGrateBurnsThroughAtTheFrontCornersFirst()
+    public void AnEvenlyFiredGrateBurnsThroughAtTheBackCornersFirst()
     {
         var fire = FireTestKit.BurningFire(Stock, 40f);
         FireTestKit.Run(fire, FireTestKit.Inputs(HalfLoadAir), 60f);
 
-        var frontCorner = fire.Zones[(int)GrateZone.FrontLeft].Coal;
-        var underDoor = fire.Zones[(int)GrateZone.UnderDoor].Coal;
-        Assert.True(frontCorner < 0.9f * underDoor, $"front corner {frontCorner:F2} kg, under the door {underDoor:F2} kg");
+        var backCorner = fire.Zones[(int)GrateZone.BackLeft].Coal;
+        var front = fire.Zones[(int)GrateZone.Front].Coal;
+        Assert.True(backCorner < 0.9f * front, $"back corner {backCorner:F2} kg, front {front:F2} kg");
     }
 
     [Fact]
-    public void FiringTheFrontHeavierSendsAirToTheBack()
+    public void FiringTheBackHeavierSendsAirToTheFront()
     {
         var even = FireTestKit.BurningFire(Stock, 60f);
-        var frontHeavy = FireTestKit.BurningFire(Stock, 60f);
-        foreach (var zone in new[] { GrateZone.FrontLeft, GrateZone.Front, GrateZone.FrontRight })
-            frontHeavy.Zones[(int)zone].Burning += 4f;
+        var backHeavy = FireTestKit.BurningFire(Stock, 60f);
+        foreach (var zone in new[] { GrateZone.BackLeft, GrateZone.UnderDoor, GrateZone.BackRight })
+            backHeavy.Zones[(int)zone].Burning += 4f;
         even.Step(FireTestKit.Dt, FireTestKit.Inputs(HalfLoadAir));
-        frontHeavy.Step(FireTestKit.Dt, FireTestKit.Inputs(HalfLoadAir));
+        backHeavy.Step(FireTestKit.Dt, FireTestKit.Inputs(HalfLoadAir));
 
-        Assert.True(AirShare(frontHeavy, GrateZone.UnderDoor) > AirShare(even, GrateZone.UnderDoor));
+        Assert.True(AirShare(backHeavy, GrateZone.Front) > AirShare(even, GrateZone.Front));
     }
 
     [Fact]
@@ -75,12 +77,12 @@ public class GrateCharacterTests
     public void AnEvenlyNeedyGrateIsFedMostAtItsHighDraftZones()
     {
         // Fed only where it needs it, an empty grate builds up the high-draft
-        // front corners more than the low-draft back center.
+        // back corners more than the low-draft front center.
         var fire = new FireModel(Stock);
         for (var i = 0; i < 60; i++)
             fire.AddCoal(1f, fire.NeediestZone());
 
-        Assert.True(fire.Zones[(int)GrateZone.FrontLeft].Coal > fire.Zones[(int)GrateZone.UnderDoor].Coal);
+        Assert.True(fire.Zones[(int)GrateZone.BackLeft].Coal > fire.Zones[(int)GrateZone.Front].Coal);
     }
 
     [Fact]

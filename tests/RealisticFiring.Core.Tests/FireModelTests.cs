@@ -203,7 +203,7 @@ public class FireModelTests
         // Clean coal, so the hole is bare grate rather than clinker.
         var even = new TendedFire(Stock, 0.5f, tuning: FireTestKit.CleanCoal);
         var holed = new TendedFire(Stock, 0.5f, tuning: FireTestKit.CleanCoal);
-        var hole = holed.Fire.Zones[(int)GrateZone.FrontLeft];
+        var hole = holed.Fire.Zones[(int)GrateZone.BackLeft];
         var center = holed.Fire.Zones[(int)GrateZone.Center];
         center.Burning += hole.Burning;
         center.Fresh += hole.Fresh;
@@ -212,7 +212,7 @@ public class FireModelTests
         FireTestKit.Run(even.Fire, even.Inputs, 30f);
         FireTestKit.Run(holed.Fire, holed.Inputs, 30f);
 
-        var holeShare = holed.Fire.Zones[(int)GrateZone.FrontLeft].AirFlow / holed.Fire.PrimaryAirFlow;
+        var holeShare = holed.Fire.Zones[(int)GrateZone.BackLeft].AirFlow / holed.Fire.PrimaryAirFlow;
         Assert.True(holeShare > 2f / GrateLayout.ZoneCount, $"hole takes {holeShare:P0} of the air");
         Assert.True(holed.Fire.ExcessAirFlow > even.Fire.ExcessAirFlow + 0.1f);
         Assert.True(holed.Fire.Heat < 0.95f * even.Fire.Heat, $"holed {holed.Fire.Heat} vs even {even.Fire.Heat}");

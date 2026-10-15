@@ -72,17 +72,17 @@ namespace RealisticFiring.Core
 
         // The stoker: he brings the fire to his mark over about this long, in
         // s; reverses a jam at this throttle; and sets the jets about the
-        // working setting (master 1.4 bar, front well open, back and fines part
-        // open), the front and fines turned down as the work rises (the draft
-        // carries the coal forward), and both ends steered toward where the bed
-        // runs short. Shut, the master is left cracked so the table keeps cool.
+        // working setting (master 1.4 bar, front, back, and fines part open),
+        // the front and fines turned down as the work rises (the draft carries
+        // the coal forward), and both ends steered toward where the bed runs
+        // short. Shut, the master is left cracked so the table keeps cool.
         private const float StokerCatchUp = 40f;
         private const float JamThrottle = 0.5f;
         private const float WorkingMaster = 0.35f;
-        private const float WorkingFront = 0.8f;
+        private const float WorkingFront = 0.6f;
         private const float WorkingBack = 0.6f;
         private const float WorkingFines = 0.5f;
-        private const float FrontEasing = 0.3f;
+        private const float FrontEasing = 0.1f;
         private const float FinesEasing = 0.2f;
         private const float JetSteer = 0.4f;
         public const float CrackedMaster = 0.03f;

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.10.0 (2026-10-15)
+
+- Draw hardest at the back of the grate under a sealed arch (typical back 1.12, front 0.88 from 0.9, 1.12; Acker, RME Apr. 1930: the front pulled 70 % of the back); the S060, 8F, and FEF-3s milder, the JK3 unchanged. Lower the stoker's working front jets to 0.6 and the fireman's easing to 0.1.
+- Keep a cold boiler's water at 25 °C when the game makes it (it made it saturated at 1 bar) and save it below boiling (`rfWaterTemp`); show the water's temperature on the overlay's boiler dial until it boils.
+- Give the boiler its steel (`BoilerMetal`): 2.5 kg a kg of water at 490 J/(kg K), following the water over 20 s.
+- Stand the glass above the water by the steam in it (`BoilerSwell`): up to 0.05 of the boiler at full steaming, less what the feed condenses, plus 0.2 per bar/s of falling pressure (at most 0.04 either way); the crown sheet goes by the water alone.
+
 ## 1.9.1 (2026-10-15)
 
 - Hold the plume under a tunnel's roof: sample the game's per-track ceiling height (`RailTrack.SampleCeilingHeight`) every 2 m of the stack's travel into a grid in the cloud's space; under a roof a particle rises to it, spreads along the bore as a ceiling jet slowing over 20 s, and is held between assumed walls of a 5 m single-track bore, the bore's air moving with the train at 0.3 of its speed; the jet and cinders stop at the roof over the stack.

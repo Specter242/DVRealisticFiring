@@ -58,8 +58,10 @@ namespace RealisticFiring.Core
         }
 
         /// <summary>
-        /// A sound setting for steady work: about 21 psi on the manifold,
-        /// front jets well open, back jets and fines part open.
+        /// A sound setting for steady work: about 21 psi on the manifold, the
+        /// front and back jets and the fines part open. The front has its
+        /// share of the coal at light work; the back, drawing hardest under a
+        /// sealed arch, runs short, as stokers left it, for the shovel.
         /// </summary>
         public static StokerControls Working(float throttle) => new StokerControls
         {
@@ -67,8 +69,8 @@ namespace RealisticFiring.Core
             MasterJet = 0.35f,
             LeftBack = 0.6f,
             RightBack = 0.6f,
-            LeftFront = 0.8f,
-            RightFront = 0.8f,
+            LeftFront = 0.6f,
+            RightFront = 0.6f,
             Fines = 0.5f,
         };
     }

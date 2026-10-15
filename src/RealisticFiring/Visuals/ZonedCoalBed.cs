@@ -546,7 +546,7 @@ namespace RealisticFiring.Visuals
                 empty[i] = coal < EmptyZoneMass ? 1f : 0f;
 
                 // Lit coal glows even when burning slowly and brighter as it is
-                // forced. The front draws hardest, but a forced fire lights the
+                // forced. The back draws hardest, but a forced fire lights the
                 // whole bed. Green coal dims a zone only where it smothers it.
                 var own = fire.ZoneForcing((GrateZone)i);
                 forcing[i] = Mathf.Max(own, 0.5f * (own + fireForcing));

@@ -8,10 +8,10 @@ namespace RealisticFiring.Core.Tests;
     private static readonly float HalfLoadAir = 0.5f * Stock.MaxCombustionRate * FireTestKit.StockAirPerCoal;
 
     private static readonly GrateCharacter Switcher = new GrateCharacter
-        { BackRowDraft = 0.96f, FrontRowDraft = 1.04f, SideDraft = 1.04f, OverFireMixing = 0.8f };
+        { BackRowDraft = 1.04f, FrontRowDraft = 0.96f, SideDraft = 1.04f, OverFireMixing = 0.8f };
 
     private static readonly GrateCharacter BigChamber = new GrateCharacter
-        { BackRowDraft = 0.88f, FrontRowDraft = 1.15f, OverFireMixing = 1.25f, ClinkerFactor = 0.7f, AshFactor = 0.6f };
+        { BackRowDraft = 1.08f, FrontRowDraft = 0.92f, OverFireMixing = 1.25f, ClinkerFactor = 0.7f, AshFactor = 0.6f };
 
     private static float FrontToBack(FireModel fire) =>
         fire.DraftWeight(GrateZone.Front) / fire.DraftWeight(GrateZone.UnderDoor);
@@ -23,8 +23,11 @@ namespace RealisticFiring.Core.Tests;
         var switcher = new FireModel(Stock) { Character = Switcher };
         var big = new FireModel(Stock) { Character = BigChamber };
 
-        Assert.True(FrontToBack(switcher) < FrontToBack(typical) - 0.1f);
-        Assert.True(FrontToBack(big) > FrontToBack(typical));
+        // A sealed arch draws hardest at the back; the switcher's and the big
+        // chamber's boxes less unevenly.
+        Assert.True(FrontToBack(typical) < 0.85f);
+        Assert.True(FrontToBack(switcher) > FrontToBack(typical) + 0.1f && FrontToBack(switcher) < 1f);
+        Assert.True(FrontToBack(big) > FrontToBack(typical) && FrontToBack(big) < 1f);
         var mean = Enumerable.Range(0, GrateLayout.ZoneCount).Average(i => switcher.DraftWeight((GrateZone)i));
         Assert.Equal(1.0, mean, 3);
     }

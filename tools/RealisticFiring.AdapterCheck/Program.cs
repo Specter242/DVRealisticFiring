@@ -281,8 +281,10 @@ namespace RealisticFiring.AdapterCheck
             var smallSwitcher = new FireModel(fire.Model.Parameters) { Character = FireboxCharacters.ForLivery("LocoS060").Grate, GrateArea = 1.430f };
             var typical = new FireModel(fire.Model.Parameters) { GrateArea = 1.430f };
             float Pull(FireModel model) => model.DraftWeight(GrateZone.Front) / model.DraftWeight(GrateZone.UnderDoor);
-            Check(Pull(smallSwitcher) < Pull(jk3) && Pull(jk3) < Pull(typical) && !character.PrototypeSlope.HasValue,
-                $"the level JK3 grate draws moderately forward (front/back {Pull(jk3):F2}, S060 {Pull(smallSwitcher):F2}, typical {Pull(typical):F2})");
+            // With no arch asserted the JK3 draws forward; the arched S060 a
+            // little harder at the back, a typical sealed arch more so.
+            Check(Pull(jk3) > 1f && Pull(smallSwitcher) < 1f && Pull(typical) < Pull(smallSwitcher) && !character.PrototypeSlope.HasValue,
+                $"the level JK3 grate draws moderately forward (front/back {Pull(jk3):F2}); the S060's arched box a little to the back ({Pull(smallSwitcher):F2}), a typical sealed arch more ({Pull(typical):F2})");
 
             float FreshRound(FireModel model)
             {
@@ -484,7 +486,7 @@ namespace RealisticFiring.AdapterCheck
             var fireTemperature = new Port("firebox", new PortDefinition(PortType.READONLY_OUT, PortValueType.TEMPERATURE, "TEMPERATURE"), 1000f);
             var steamDraw = new Port("steam", new PortDefinition(PortType.READONLY_OUT, PortValueType.MASS_RATE, "CONSUMPTION"));
 
-            Boiler NewBoiler(float waterVolume)
+            Boiler NewBoiler(float waterVolume, float spawn = 14f)
             {
                 var def = new BoilerDefinition
                 {
@@ -497,7 +499,7 @@ namespace RealisticFiring.AdapterCheck
                     maxBlowdownRate = 100f,
                     safetyValveOpeningPressure = 15f,
                     safetyValveClosingPressure = 14.8f,
-                    spawnPressure = 14f,
+                    spawnPressure = spawn,
                     spawnWaterLevel = waterVolume,
                     crownSheetNormalizedWaterLevel = 0.6f,
                     crownSheetTempSmoothTime = 60f,
@@ -526,7 +528,7 @@ namespace RealisticFiring.AdapterCheck
                 const float dt = 0.02f;
                 for (var t = 0f; t < seconds; t += dt)
                 {
-                    rig.BeginTick();
+                    rig.BeginTick(dt);
                     Call(boiler, "SimulateInjector", dt);
                     rig.AfterFeed();
                     Call(boiler, "SimulateSteamConsumption", dt);
@@ -653,6 +655,84 @@ namespace RealisticFiring.AdapterCheck
             var wholeMass = wholeRig.MassNow;
             wholeRig.NoteHealth(1f, 1f);
             Check(!wholeRig.Plug.Melted && wholeRig.MassNow == wholeMass, "a repair with the plug whole leaves the boiler as it is");
+
+            // A cold boiler's water is at the air's temperature, not boiling:
+            // a fire heats it at the atmosphere's pressure until it boils,
+            // where the game's cold boiler raised pressure at once; and the
+            // water's temperature saves and loads.
+            injector.Value = 0f;
+            blowdown.Value = 0f;
+            steamDraw.Value = 0f;
+            var cold = NewBoiler(8000f, 1f);
+            var coldRig = BoilerWaterRig.Create(cold, null, BoilerWaterRig.Guard.None);
+            var startTemp = coldRig.WaterTemperature;
+            var stock = NewBoiler(8000f, 1f);
+            heat.Value = 20e6f;
+            Run(cold, coldRig, 60f);
+            for (var t = 0f; t < 60f; t += 0.02f)
+                Call(stock, "SimulateEvaporation", 0.02f);
+            var warmTemp = coldRig.WaterTemperature;
+            var warmPressure = coldRig.BoilerPressure;
+            var stockPressure = stock.pressureReadOut.Value;
+            var saved = cold.GetSaveStateData();
+            coldRig.Save(saved);
+            var reloaded = NewBoiler(8000f, 1f);
+            var reloadedRig = BoilerWaterRig.Create(reloaded, null, BoilerWaterRig.Guard.None);
+            reloaded.SetSaveStateData(saved);
+            var stockLoadTemp = reloadedRig.WaterTemperature;
+            BoilerWaterRig.OnLoaded(reloaded, saved);
+            var loadedTemp = reloadedRig.WaterTemperature;
+            var boiledAt = 0f;
+            for (var t = 60f; t < 400f && boiledAt == 0f; t += 1f)
+            {
+                Run(cold, coldRig, 1f);
+                if (coldRig.BoilerPressure > 1.05f)
+                    boiledAt = t + 1f;
+            }
+            heat.Value = 0f;
+            Check(Math.Abs(startTemp - BoilerWaterRig.AmbientWater) < 1f && warmPressure <= 1.01f && warmTemp > 50f && warmTemp < 70f
+                  && stockPressure > 1.5f && boiledAt > 100f && Math.Abs(loadedTemp - warmTemp) < 0.5f && stockLoadTemp > 99f,
+                $"a cold boiler starts at {startTemp:F0} C and after 60 s of a 20 MW fire is {warmTemp:F0} C at {warmPressure - 1f:F2} bar on the gauge " +
+                $"(the game's cold boiler {stockPressure - 1f:F1} bar), boiling after {boiledAt:F0} s; saved and loaded at {loadedTemp:F0} C (the stock load {stockLoadTemp:F0} C)");
+
+            // The steel gives its heat back as the pressure falls: drawing
+            // 5 kg/s for a minute with no fire, the pressure falls less than
+            // in the game's boiler of water alone. And the falling pressure
+            // flashes steam in the water: the glass stands above the water,
+            // and settles back once the pressure rises again.
+            void RunStock(Boiler boiler, float seconds)
+            {
+                const float dt = 0.02f;
+                for (var t = 0f; t < seconds; t += dt)
+                {
+                    Call(boiler, "SimulateSteamConsumption", dt);
+                    Call(boiler, "SimulateSafetyValve", dt);
+                    Call(boiler, "SimulateEvaporation", dt);
+                    Call(boiler, "SimulateWaterLevel", dt);
+                }
+            }
+            var steeled = NewBoiler(8000f);
+            var steeledRig = BoilerWaterRig.Create(steeled, null, BoilerWaterRig.Guard.None);
+            var waterOnly = NewBoiler(8000f);
+            Run(steeled, steeledRig, 1f);
+            RunStock(waterOnly, 1f);
+            var steeledStart = steeledRig.BoilerPressure;
+            var bareStart = waterOnly.pressureReadOut.Value;
+            steamDraw.Value = 5f;
+            Run(steeled, steeledRig, 30f);
+            var flashing = steeled.waterLevelReadOut.Value - steeledRig.TrueLevel;
+            Run(steeled, steeledRig, 30f);
+            RunStock(waterOnly, 60f);
+            steamDraw.Value = 0f;
+            var steeledDrop = steeledStart - steeledRig.BoilerPressure;
+            var bareDrop = bareStart - waterOnly.pressureReadOut.Value;
+            heat.Value = 20e6f;
+            Run(steeled, steeledRig, 30f);
+            heat.Value = 0f;
+            var settled = steeled.waterLevelReadOut.Value - steeledRig.TrueLevel;
+            Check(steeledDrop < 0.95f * bareDrop && flashing > 0.01f && settled < 0.002f,
+                $"drawing 5 kg/s for a minute with no fire the pressure falls {steeledDrop:F2} bar with the steel, {bareDrop:F2} with water alone; " +
+                $"falling, the glass stands {flashing:F3} of the boiler above the water, rising again {settled:F3}");
         }
 
         // An oil burner: the oil firebox has the stock firebox's contract, the

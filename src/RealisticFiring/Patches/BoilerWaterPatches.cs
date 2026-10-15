@@ -7,17 +7,17 @@ namespace RealisticFiring.Patches
 {
     /// <summary>
     /// Hooks a boiler's water rig into the stock boiler's tick: the water at
-    /// the start, what the feed put in, what the blowdown took, the foam after
-    /// the level step, and the crown sheet on the true level. Boilers without
-    /// a rig keep every stock step.
+    /// the start and the steel's heat, what the feed put in, what the blowdown
+    /// took, the foam and swell after the level step, and the crown sheet on
+    /// the true level. Boilers without a rig keep every stock step.
     /// </summary>
     [HarmonyPatch(typeof(Boiler), nameof(Boiler.Tick))]
     internal static class BoilerTickPatch
     {
-        private static void Prefix(Boiler __instance)
+        private static void Prefix(Boiler __instance, float delta)
         {
             if (BoilerWaterRig.TryGet(__instance, out var rig))
-                rig.BeginTick();
+                rig.BeginTick(delta);
         }
     }
 
