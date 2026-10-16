@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.11.1 (2026-10-15)
+
+- Draw the aiming keypad by default (`ShowAimKeypad`), and turn it on once for settings saved before (`DefaultsVersion`).
+
 ## 1.11.0 (2026-10-15)
 
 - Aim the shovel, rake, and fire iron by where the look crosses each cab's fitted firehole (`FireholeOpening`), in thirds as a keypad, held to the hole's edges, while the look is on the game's door target; drop the 1.8.1 bed aim. A setting draws the keypad on the hole (`AimKeypad`).

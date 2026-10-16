@@ -171,6 +171,7 @@ namespace RealisticFiring.AdapterCheck
             Check(AccessTools.Field(typeof(ShovelNonPhysicalCoal), "_coalMassLoaded")?.FieldType == typeof(float),
                 "the shovel's load is readable, for saying a shovelful does not fit the firebox");
             CheckFireIronLoading();
+            CheckNewDefaults();
             Check(AccessTools.Field(typeof(DV.Interaction.AGrabHandler), Visuals.FiringValvePassThrough.PassThroughField)?.FieldType
                   == typeof(DV.Interaction.AGrabHandler.InteractionPassThroughDelegate),
                 "a control's pass-through is wrappable, so the oil burner's valves can be reached past the firing valve");
@@ -1928,6 +1929,19 @@ namespace RealisticFiring.AdapterCheck
                 }
             }
             Check(bad.Count == 0, $"all {patches.Count} Harmony patch targets resolve" + (bad.Count > 0 ? $" (not: {string.Join("; ", bad)})" : ""));
+        }
+
+        // The aiming keypad, off in 1.11.0, is on by default: settings saved
+        // with it off get it on once, and a player's later choice stays.
+        private static void CheckNewDefaults()
+        {
+            var fresh = new Settings();
+            var saved = new Settings { ShowAimKeypad = false };
+            var turnedOn = saved.ApplyNewDefaults() && saved.ShowAimKeypad;
+            saved.ShowAimKeypad = false;
+            var choiceKept = !saved.ApplyNewDefaults() && !saved.ShowAimKeypad;
+            Check(fresh.ShowAimKeypad && turnedOn && choiceKept,
+                "the aiming keypad is on by default, turned on once for settings saved with it off, and a later choice stays");
         }
 
         private static void CheckFireIronLoading()

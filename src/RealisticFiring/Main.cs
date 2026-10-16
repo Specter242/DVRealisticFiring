@@ -40,7 +40,9 @@ namespace RealisticFiring
         {
             Mod = modEntry;
             Settings = UnityModManager.ModSettings.Load<Settings>(modEntry);
-            if (Settings.MoveOldKeys())
+            var changed = Settings.MoveOldKeys();
+            changed |= Settings.ApplyNewDefaults();
+            if (changed)
                 Settings.Save(modEntry);
             Core.FireTuning.Default.ClinkerTendency = Settings.ClinkerTendency;
             session = Session.From(Settings);

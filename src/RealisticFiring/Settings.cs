@@ -68,7 +68,7 @@ namespace RealisticFiring
         public bool ShowAimLabel = true;
 
         [Draw("Draw the fire door's aiming keypad while aiming")]
-        public bool ShowAimKeypad = false;
+        public bool ShowAimKeypad = true;
 
         [Header("Controls")]
         [Draw("Open these settings (Unity Mod Manager's Ctrl+F10 is taken by some desktops)")]
@@ -148,6 +148,21 @@ namespace RealisticFiring
         public int KeysVersion;
 
         private const int CurrentKeys = 1;
+
+        // Which defaults the settings were saved with: 0 before 1.11.1, 1 the
+        // aiming keypad drawn. Not in the menu.
+        public int DefaultsVersion;
+
+        private const int CurrentDefaults = 1;
+
+ public bool ApplyNewDefaults()
+        {
+            if (DefaultsVersion >= CurrentDefaults)
+                return false;
+            DefaultsVersion = CurrentDefaults;
+            ShowAimKeypad = true;
+            return true;
+        }
 
         /// <summary>
         /// Moves each key still on its old Ctrl default to the new one, once;

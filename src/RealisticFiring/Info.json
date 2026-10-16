@@ -2,7 +2,7 @@
   "Id": "RealisticFiring",
   "DisplayName": "Realistic Firing",
   "Author": "Specter242",
-  "Version": "1.11.0",
+  "Version": "1.11.1",
   "ManagerVersion": "0.28.2",
   "AssemblyName": "RealisticFiring.dll",
   "EntryMethod": "RealisticFiring.Main.Load",

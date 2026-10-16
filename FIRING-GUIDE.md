@@ -35,7 +35,8 @@ before anything else.
 where you point in the open firehole, read like a keypad: the top third
 throws to the front (left, middle, right), the middle third to the sides
 and center, the bottom third to the back corners and under the door. The
-zone is named under the crosshair; a setting draws the keypad on the door.
+zone is named under the crosshair, and the keypad is drawn on the door as
+you aim (a setting turns it off).
 
 ![The S282's open firehole with the aiming keypad drawn on it: front left, front, and front right along the top; left side, center, and right side across the middle; back left, under the door, and back right along the bottom.](images/s282-firehole-keypad.jpg)
 Rake a bank level with the empty shovel; don't stir it.
