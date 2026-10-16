@@ -72,8 +72,8 @@ namespace RealisticFiring.Patches
 
     /// <summary>
     /// Records where the player points a shovel into a realistic firebox,
-    /// along the same cursor ray the game uses to pick the target: the spot
-    /// on the drawn bed the look meets (<see cref="FireboxAim"/>). Clicking
+    /// along the same cursor ray the game uses to pick the target, by the
+    /// keypad or the grate (<see cref="FireboxAim"/>). Clicking
     /// ends the hover, so the last sample is the aim: of the throw with a
     /// loaded shovel, or of the rake with an empty one.
     /// </summary>
@@ -136,14 +136,18 @@ namespace RealisticFiring.Patches
         public static bool TryAim(Ray ray, ItemUseTarget target, TrainCar car, RealisticFirebox firebox, out float across, out float depth) =>
             TryAim(ray, target, car, firebox, out across, out depth, out _);
 
-        /// <summary>As <see cref="TryAim(Ray, ItemUseTarget, TrainCar, RealisticFirebox, out float, out float)"/>, with the firehole's rectangle in the car's frame.</summary>
+        /// <summary>As <see cref="TryAim(Ray, ItemUseTarget, TrainCar, RealisticFirebox, out float, out float)"/>, with the firehole's rectangle in the car's frame, or none when aiming at the grate.</summary>
         public static bool TryAim(Ray ray, ItemUseTarget target, TrainCar car, RealisticFirebox firebox, out float across, out float depth, out Bounds hole)
         {
             hole = default;
+            var grate = Main.Settings.Aim == ShovelAim.Grate;
+            if (grate && Visuals.ZonedCoalBed.TryGet(firebox, out var bed) && bed.TryAim(ray, out across, out depth))
+                return true;
             if (!ShovelHoverPatch.TryMeasure(ray, target, car.transform, out across, out depth, out var box))
                 return false;
             var opening = FireholeOpening.For(car, box);
-            hole = opening.Bounds;
+            if (!grate)
+                hole = opening.Bounds;
             if (opening.TryPlace(ray, car.transform, out var holeAcross, out var holeUp))
             {
                 across = holeAcross;

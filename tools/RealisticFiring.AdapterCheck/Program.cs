@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -161,6 +162,7 @@ namespace RealisticFiring.AdapterCheck
             CheckCylinders(gameParams);
             CheckBlower(gameParams);
             CheckAirPump(gameParams);
+            CheckSafetyValveFit(gameParams);
 
             CheckControlSteps();
             CheckShovelLoads();
@@ -1647,9 +1649,55 @@ namespace RealisticFiring.AdapterCheck
             }
         }
 
+        // A fired engine's safety valves fitted from its prototype, worked by
+        // the stock valve: the S060's passing its fitted 3.5 kg/s over its
+        // lift, the 8F's lifting at 225 psi, not its maker's 210, each
+        // reseating 3 psi under. With failures off a boiler never bursts.
+        private static void CheckSafetyValveFit(SimGameParams gameParams)
+        {
+            var vesselField = typeof(Boiler).GetField("vessel", BindingFlags.Instance | BindingFlags.NonPublic);
+            float Field(Boiler boiler, string name) => (float)typeof(Boiler).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(boiler);
+            float Mass(Boiler boiler) => ((WaterPressureVessel)vesselField.GetValue(boiler)).mass;
+
+            // Steam the valve lets go in a second from a boiler at <paramref name="pressure"/>.
+            float Vented(float makerLift, float pressure, float? fitLift, float fitCapacity, out Boiler boiler)
+            {
+                var def = new BoilerDefinition
+                {
+                    ID = "boiler", diameter = 1.7f, length = 5.5f, capacityMultiplier = 0.85f, maxInjectorRate = 5f,
+                    safetyValveOpeningPressure = makerLift, safetyValveClosingPressure = makerLift - 1f, safetyValveSlop = 0.1f,
+                    maxSafetyValveVentRate = 2f, spawnPressure = pressure, spawnWaterLevel = 6000f,
+                };
+                boiler = (Boiler)def.InstantiateImplementation();
+                boiler.SetGameParams(gameParams);
+                if (fitLift.HasValue)
+                    SafetyValveFit.Fit(boiler, fitLift.Value, fitCapacity);
+                var before = Mass(boiler);
+                typeof(Boiler).GetMethod("SimulateSafetyValve", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(boiler, new object[] { 1f });
+                return before - Mass(boiler);
+            }
+
+            var s060Stock = Vented(15.5f, 15.6f, null, 0f, out _);
+            var s060 = Vented(15.5f, 15.6f, 15.5f, 3.5f, out var s060Boiler);
+            var lms8fStock = Vented(15.5f, 16f, null, 0f, out _);
+            var lms8f = Vented(15.5f, 16f, 16.5f, 5.5f, out var lms8fBoiler);
+            Check(Math.Abs(s060 - 3.5f) < 0.01f && Math.Abs(s060Stock - 2f) < 0.01f
+                  && Math.Abs(Field(s060Boiler, "safetyValveClosingPressure") - 15.3f) < 1e-4f
+                  && lms8f == 0f && Math.Abs(lms8fStock - 2f) < 0.01f
+                  && Math.Abs(Field(lms8fBoiler, "safetyValveOpeningPressure") - 16.5f) < 1e-4f
+                  && Math.Abs(Field(lms8fBoiler, "safetyValveClosingPressure") - 16.3f) < 1e-4f
+                  && float.IsPositiveInfinity(SafetyValveFit.BurstPressure(s060Boiler)),
+                $"fitted safety valves: the S060's vents {s060:F2} kg/s over its lift (its maker's {s060Stock:F2}); at 16 bar the 8F's " +
+                $"vents {lms8f:F2} kg/s, lifting at {Field(lms8fBoiler, "safetyValveOpeningPressure"):F1} ({SafetyValveFit.Psi(16.5f):F0} psi; its maker's " +
+                $"lifts at 15.5 and vents {lms8fStock:F2}), reseating at {Field(lms8fBoiler, "safetyValveClosingPressure"):F1}; no bursting with failures off");
+        }
+
         // The S282's air pump on period steam, patched as in game: pumping
         // flat out it takes its fitted steam, not the game's 1 kg/s, and its
         // exhaust draws the fire through the blast pipe with the blower shut.
+        // The S484-840's pump fitted as the UP 4-8-4s' two cross-compounds:
+        // their air from 12.5 bar, not the maker's 180 L/s only at 20, into
+        // the FEF-1's reservoir, not its 8,000 L.
         private static void CheckAirPump(SimGameParams gameParams)
         {
             var harmony = new HarmonyLib.Harmony("RealisticFiring.AdapterCheck.AirPump");
@@ -1657,16 +1705,16 @@ namespace RealisticFiring.AdapterCheck
             harmony.CreateClassProcessor(typeof(AirPumpPatch)).Patch();
             try
             {
-                SteamCompressor NewPump(out Port steam)
+                SteamCompressor NewPump(out Port steam, SteamCompressorDefinition def = null, float boiler = 14f)
                 {
-                    var def = new SteamCompressorDefinition { ID = "compressor" };
+                    def = def ?? new SteamCompressorDefinition { ID = "compressor" };
                     var pump = (SteamCompressor)def.InstantiateImplementation();
                     pump.SetGameParams(gameParams);
                     void Wire(PortReferenceDefinition reference, PortValueType type, float value) =>
                         pump.GetAllPortReferences().Single(r => r.id == $"{def.ID}.{reference.ID}")
                             .SetPortReference(new Port(reference.ID.ToLowerInvariant(), new PortDefinition(PortType.READONLY_OUT, type, "OUT"), value));
                     Wire(def.compressorControl, PortValueType.CONTROL, 1f);
-                    Wire(def.steamPressure, PortValueType.PRESSURE, 14f);
+                    Wire(def.steamPressure, PortValueType.PRESSURE, boiler);
                     pump.GetAllPorts().Single(p => p.id == $"{def.ID}.{def.activationSignalExtIn.ID}").ExternalValueUpdate(1f);
                     pump.GetAllPorts().Single(p => p.id == $"{def.ID}.{def.mainResPressureNormalizedExtIn.ID}").ExternalValueUpdate(0.5f);
                     steam = pump.GetAllPorts().Single(p => p.id == $"{def.ID}.{def.steamConsumptionReadOut.ID}");
@@ -1690,7 +1738,7 @@ namespace RealisticFiring.AdapterCheck
                 var stock = NewPump(out var stockSteam);
                 var fitted = NewPump(out var fittedSteam);
                 var draft = new SteamDraft(0.5f, 0.6f, exhaust.entrainmentRatio, 15f);
-                BlowerFit.Fit(exhaust, draft, fitted, 0.13f);
+                BlowerFit.Fit(exhaust, draft, fitted, AirPump.NineAndHalf.Steam);
                 exhaust.Tick(0.02f);
                 var idle = air.Value;
                 for (var i = 0; i < 1500; i++)
@@ -1699,10 +1747,37 @@ namespace RealisticFiring.AdapterCheck
                     fitted.Tick(0.02f);
                 }
                 exhaust.Tick(0.02f);
-                Check(Math.Abs(fittedSteam.Value - 0.13f) < 0.005f && Math.Abs(stockSteam.Value - 1f) < 0.02f && Math.Abs(idle - 0.6f) < 0.01f
-                      && Math.Abs(air.Value - (0.6f + 1.95f * 0.13f)) < 0.01f,
+                Check(Math.Abs(fittedSteam.Value - 0.18f) < 0.005f && Math.Abs(stockSteam.Value - 1f) < 0.02f && Math.Abs(idle - 0.6f) < 0.01f
+                      && Math.Abs(air.Value - (0.6f + 1.95f * 0.18f)) < 0.01f,
                     $"the S282's air pump flat out takes {fittedSteam.Value:F2} kg/s of steam (the game's {stockSteam.Value:F2}) " +
                     $"and draws {air.Value:F2} kg/s of air through the fire with the blower shut ({idle:F2} with it still)");
+
+                SteamCompressorDefinition Big() => new SteamCompressorDefinition
+                {
+                    ID = "compressor", maxProductionRate = 180f, maxSteamConsumption = 12f, pressureForMaxProduction = 20f,
+                    activationPressureThreshold = 7f, mainReservoirVolume = 8000f, smoothTime = 3f,
+                };
+                var production = new List<string>();
+                var fittedRight = true;
+                foreach (var boiler in new[] { 8f, 14f })
+                {
+                    var maker = NewPump(out _, Big(), boiler);
+                    var ups = NewPump(out var upsSteam, Big(), boiler);
+                    BlowerFit.FitAirPump(ups, AirPump.CrossCompound, 2, 1491f);
+                    BlowerFit.Fit(exhaust, draft, ups, 2f * AirPump.CrossCompound.Steam);
+                    for (var i = 0; i < 1500; i++)
+                    {
+                        maker.Tick(0.02f);
+                        ups.Tick(0.02f);
+                    }
+                    var share = Math.Min(1f, (boiler - 1f) / (AirPump.CrossCompound.FullSpeedPressure - 1f));
+                    var volume = ups.GetAllPorts().Single(p => p.id == "compressor.MAIN_RES_VOLUME").Value;
+                    fittedRight &= Math.Abs(ups.productionRateReadOut.Value - 2f * 61.8f * share) < 0.5f
+                                   && Math.Abs(upsSteam.Value - 0.38f * share) < 0.01f && volume == 1491f;
+                    production.Add($"at {boiler:F0} bar {ups.productionRateReadOut.Value:F0} L/s into {volume:F0} L, {upsSteam.Value:F2} kg/s of steam " +
+                                   $"(the maker's {maker.productionRateReadOut.Value:F0} L/s into 8000 L)");
+                }
+                Check(fittedRight, "the S484-840's two cross-compound pumps pump " + string.Join("; ", production));
             }
             finally
             {

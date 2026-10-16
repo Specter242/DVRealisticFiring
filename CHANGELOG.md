@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.11.2 (2026-10-16)
+
+- Aim by the keypad or the grate (`Settings.Aim`, `ShovelAim`): the grate follows the look to the drawn bed (`ZonedCoalBed.TryAim`, the 1.8.1 walk), taking the keypad's zone without its keypad where the look never passes over the bed.
+- Fit each fired engine's air pumps from its prototype (`AirPump`, `BlowerFit.FitAirPump`): two 8½-in. cross-compounds (124 L/s of free air, 0.38 kg/s of steam, full from 12.5 bar) on the Hudson, FEF-3, S484-840, and 2901, one 9½-in. (18.4 L/s, 0.18 kg/s, full from 10 bar) on the rest; the UP 4-8-4s' main reservoir 1,491 L, set on the brake system too.
+- Fit each fired engine's safety valves from its prototype (`SafetyValveFit`): lifting at its working pressure (the FEF-3 and S484-840 at 300 psi, the 8F at 225), reseating 0.2 bar under, passing 1.25 times the steam of its standing fire.
+- The fireman holds 1.5 bar under a damaged boiler's burst pressure (`FiremanReadings.BurstPressure`, `AutoFiremanBase.BurstMargin`); the overlay warns when it is under the safety valve (`FiringAdvice.Bursting`).
+- The firing guide and the overlay say how to sand the flues: load the shovel at the sand box, throw it through the peep hole.
+
 ## 1.11.1 (2026-10-15)
 
 - Draw the aiming keypad by default (`ShowAimKeypad`), and turn it on once for settings saved before (`DefaultsVersion`).

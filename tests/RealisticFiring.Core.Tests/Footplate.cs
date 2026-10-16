@@ -78,6 +78,9 @@ internal sealed class Footplate
 
     public float Pressure;
     public float SafetyValve = 15f;
+
+    /// <summary>Where the boiler would burst; 0, not known.</summary>
+    public float BurstPressure;
     public float WaterMass;
     public float TenderWater = 20_000f;
     public float TenderCoal = 10_000f;
@@ -142,6 +145,7 @@ internal sealed class Footplate
     {
         Pressure = Pressure,
         SafetyValve = SafetyValve,
+        BurstPressure = BurstPressure,
         Standing = Standing,
         Braking = Braking,
         Throttle = Throttle ?? (EngineSteam > 0.05f ? 0.6f : 0f),

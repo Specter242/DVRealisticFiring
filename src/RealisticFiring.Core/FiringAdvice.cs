@@ -169,6 +169,20 @@ namespace RealisticFiring.Core
             return new Advice(AdviceLevel.Ok, "Steady fire. Keep firing light and often.");
         }
 
+        /// <summary>
+        /// A boiler so damaged it would burst under its safety valve, at
+        /// <paramref name="burst"/> absolute bar: a warning before any other
+        /// advice, urgent within <see cref="AutoFiremanBase.BurstMargin"/> of
+        /// it; else null.
+        /// </summary>
+        public static Advice? Bursting(float pressure, float safetyValve, float burst)
+        {
+            if (!(burst < safetyValve))
+                return null;
+            return new Advice(pressure > burst - AutoFiremanBase.BurstMargin ? AdviceLevel.Act : AdviceLevel.Watch,
+                $"The boiler's damaged: it would burst at {burst - 1f:F1} bar, under the safety valve. Keep the pressure down and get it repaired.");
+        }
+
         /// <summary>The zone burning thinnest against the middle of the bed, or -1 when none is thin.</summary>
         public static int ThinZone(IReadOnlyList<ZoneState> zones)
         {
@@ -203,7 +217,7 @@ namespace RealisticFiring.Core
             if (oil.StackSmoke < HazeStack)
                 return new Advice(AdviceLevel.Watch, "Clear stack: too much air, wasting heat. Ease the damper or blower, or give her more oil.");
             if (oil.FlueSoot > SootedFlues)
-                return new Advice(AdviceLevel.Watch, "Flues are sooting: sand them at speed.");
+                return new Advice(AdviceLevel.Watch, "Flues are sooting: at speed, load the shovel at the sand box and throw it through the peep hole.");
             return new Advice(AdviceLevel.Ok, "Light haze at the stack: she's burning right.");
         }
 

@@ -173,6 +173,12 @@ namespace RealisticFiring.Sim
 
         public float BoilerPressure => Vessel(boiler)?.pressure ?? 1f;
 
+        /// <summary>Where the safety valve lifts, absolute bar.</summary>
+        public float SafetyValve => SafetyValveFit.Lift(boiler);
+
+        /// <summary>Where the boiler would burst now, absolute bar; infinite when it cannot.</summary>
+        public float BurstPressure => SafetyValveFit.BurstPressure(boiler);
+
         public float BlowdownRate => MaxBlowdownRate(boiler);
 
         /// <summary>

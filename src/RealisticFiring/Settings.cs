@@ -64,10 +64,15 @@ namespace RealisticFiring
         [Draw("Aim shovelfuls by where you point in the fire door")]
         public bool AimShovelThroughDoor = true;
 
+        // A player's request (Rhasma2 on Nexus, 2026-10-16): the grate aim
+        // back beside the keypad, which reaches the front of bigger boxes.
+        [Draw("How to aim: Keypad, the firehole in thirds (the top third throws to the front of the grate); Grate, the spot on the fire you look at (on some engines the front is out of sight)", DrawType.ToggleGroup)]
+        public ShovelAim Aim = ShovelAim.Keypad;
+
         [Draw("Name the aimed zone under the crosshair")]
         public bool ShowAimLabel = true;
 
-        [Draw("Draw the fire door's aiming keypad while aiming")]
+        [Draw("Draw the fire door's aiming keypad while aiming with the keypad")]
         public bool ShowAimKeypad = true;
 
         [Header("Controls")]
@@ -203,5 +208,15 @@ namespace RealisticFiring
             binding.Change(key, ctrl, shift, alt);
             return binding;
         }
+    }
+
+    /// <summary>How the shovel, rake, and fire iron aim into a coal firebox.</summary>
+    public enum ShovelAim
+    {
+        /// <summary>The firehole in thirds, as a keypad.</summary>
+        Keypad,
+
+        /// <summary>The spot on the fire the look meets.</summary>
+        Grate,
     }
 }

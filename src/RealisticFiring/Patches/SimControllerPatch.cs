@@ -54,6 +54,10 @@ namespace RealisticFiring.Patches
 
             if (FireboxRegistry.TryGet(trainCar, out _) || RealisticOilFirebox.TryGet(trainCar, out _))
             {
+                // The valves first: the blower and the injectors take the lift as working pressure.
+                var valves = SafetyValveFit.Attach(trainCar, __instance.simFlow);
+                if (valves != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {valves}");
                 var blower = BlowerFit.Attach(trainCar, __instance.simFlow);
                 if (blower != null && Main.Settings.LogFireboxCreation)
                     Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {blower}");

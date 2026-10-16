@@ -15,6 +15,9 @@ namespace RealisticFiring.Core
         /// <summary>Easing off, the pressure may fall this much under the mode's, in bar.</summary>
         public const float EasingPressureDrop = 1f;
 
+        /// <summary>On a damaged boiler he holds at least this far under where it would burst, in bar.</summary>
+        public const float BurstMargin = 1.5f;
+
         // What the fire really gives against what he expects, learned from
         // the gauge: with the work steady a while and the fire at his mark,
         // the pressure he foresees a minute on (from where the needle is and
@@ -309,6 +312,8 @@ namespace RealisticFiring.Core
 
             var easing = call == FiremanCall.EasingOff || StopComing;
             PressureTarget = PressureFor(Mode, r.SafetyValve) - (easing ? EasingPressureDrop : 0f);
+            if (r.BurstPressure > 0f)
+                PressureTarget = Math.Min(PressureTarget, Math.Max(1f, r.BurstPressure - BurstMargin));
             // Building is for the work coming, not for the water he stores:
             // counting that made him build, so carry the glass high, so store
             // and fire for it, on level road until the safety valve lifted

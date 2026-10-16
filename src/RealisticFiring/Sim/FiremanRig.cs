@@ -380,6 +380,7 @@ namespace RealisticFiring.Sim
             {
                 Pressure = pressure,
                 SafetyValve = SafetyValveOpeningPressure(boiler),
+                BurstPressure = SafetyValveFit.BurstPressure(boiler),
                 Work = work,
                 FullWorkSteam = rated,
                 RoadKnown = road.Known,

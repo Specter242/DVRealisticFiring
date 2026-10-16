@@ -116,6 +116,26 @@ namespace RealisticFiring.Core.Tests;
     }
 
     [Fact]
+    public void OnADamagedBoilerHeHoldsUnderWhereItWouldBurst()
+    {
+        // The body so damaged the boiler would burst at 12 bar, under its
+        // 15-bar safety valve: he fires for 10.5, working and standing.
+        var engine = new Footplate(pressure: 9f) { BurstPressure = 12f };
+        var high = 0f;
+        void Watch(Footplate e) => high = Math.Max(high, e.Pressure);
+        engine.EngineSteam = Cruise;
+        engine.Run(400f, Watch);
+        engine.EngineSteam = 0f;
+        engine.Standing = true;
+        engine.Run(300f, Watch);
+
+        output.WriteLine($"highest {high:F2} bar, holding {engine.Fireman.PressureTarget:F2}");
+        Assert.Equal(12f - AutoFireman.BurstMargin, engine.Fireman.PressureTarget, 3);
+        Assert.True(high < 12f - 0.5f, $"pressure reached {high:F2}");
+        Assert.True(engine.Fire.FireOn);
+    }
+
+    [Fact]
     public void NearTheSafetyValveHeRunsTheInjectorRatherThanFlickingIt()
     {
         // The S282 standing just under its safety valve, its injector good

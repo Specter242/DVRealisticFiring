@@ -243,8 +243,9 @@ namespace RealisticFiring
             c.Gauges[1] = Draft(fire.FireOn, fire.AirRatio, "choked", "thin", CoalSmoke(fire.SmokeDensity));
             WaterGauges(c, rig);
             var door = firebox.HasDoorPort ? firebox.DoorOpening : 0f;
-            c.Advice = FiringAdvice.ForCoal(fire, door, rig != null ? Visuals.GaugeGlass.Read(rig) : 1f, Injectors(rig),
-                BoilerWaterRig.TryGet(car, out var waterRig) && waterRig.DriftingHookedUp);
+            BoilerWaterRig.TryGet(car, out var waterRig);
+            c.Advice = Bursting(waterRig) ?? FiringAdvice.ForCoal(fire, door, rig != null ? Visuals.GaugeGlass.Read(rig) : 1f, Injectors(rig),
+                waterRig != null && waterRig.DriftingHookedUp);
 
             switch (Page)
             {
@@ -272,6 +273,10 @@ namespace RealisticFiring
             return c;
         }
 
+        // A boiler damaged past its safety valve, warned of first.
+        private static Advice? Bursting(BoilerWaterRig water) =>
+            water != null ? FiringAdvice.Bursting(water.BoilerPressure, water.SafetyValve, water.BurstPressure) : null;
+
         private Card Read(RealisticOilFirebox oil)
         {
             var fire = oil.Model;
@@ -289,7 +294,7 @@ namespace RealisticFiring
             c.Gauges[1] = Draft(fire.FireOn, fire.ExcessAir / OilFire.BestExcessAir, "rich", "lean", StackSmoke(fire.FireOn, stack, fire.Vapor));
             WaterGauges(c, rig);
             var reading = FireController.ReadOil(oil);
-            c.Advice = FiringAdvice.ForOil(reading);
+            c.Advice = Bursting(BoilerWaterRig.TryGet(car, out var waterRig) ? waterRig : null) ?? FiringAdvice.ForOil(reading);
 
             switch (Page)
             {

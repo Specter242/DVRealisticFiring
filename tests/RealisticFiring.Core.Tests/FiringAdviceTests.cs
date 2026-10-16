@@ -25,6 +25,18 @@ namespace RealisticFiring.Core.Tests;
     private static float[] Even(float kg) => Enumerable.Repeat(kg, GrateLayout.ZoneCount).ToArray();
 
     [Fact]
+    public void ABoilerDamagedPastItsSafetyValveIsWarnedOf()
+    {
+        // Whole, it bursts at three times its lift: nothing to say.
+        Assert.Null(FiringAdvice.Bursting(14f, 15f, 45f));
+        var far = FiringAdvice.Bursting(9f, 15f, 12f);
+        var near = FiringAdvice.Bursting(11f, 15f, 12f);
+        Assert.Equal(AdviceLevel.Watch, far!.Value.Level);
+        Assert.Equal(AdviceLevel.Act, near!.Value.Level);
+        Assert.Contains("burst at 11.0 bar", near.Value.Text);
+    }
+
+    [Fact]
     public void AnEvenBedWithTheWaterInHandIsSteady()
     {
         var advice = FiringAdvice.ForCoal(Bed(Even(10f)), 0.1f, 0.6f, Feeding);

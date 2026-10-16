@@ -36,7 +36,9 @@ where you point in the open firehole, read like a keypad: the top third
 throws to the front (left, middle, right), the middle third to the sides
 and center, the bottom third to the back corners and under the door. The
 zone is named under the crosshair, and the keypad is drawn on the door as
-you aim (a setting turns it off).
+you aim (a setting turns it off). If you'd rather aim at the spot on the
+fire you look at, set "How to aim" to Grate (F8); on some engines the
+front of the box is out of sight through the door.
 
 ![The S282's open firehole with the aiming keypad drawn on it: front left, front, and front right along the top; left side, center, and right side across the middle; back left, under the door, and back right along the bottom.](images/s282-firehole-keypad.jpg)
 Rake a bank level with the empty shovel; don't stir it.
@@ -159,9 +161,10 @@ real-time light-up.
 - **Lead the throttle:** raise the fire just before you open up, cut it just
   after you shut off. A light fire on cold brick blows out if you slip the
   drivers or open the throttle suddenly.
-- **Sand the flues** when steaming falls off after smoking: open the peep
-  hole and throw in a quart of sand while working hard. Black clouds at the
-  stack mean it's scouring.
+- **Sand the flues** when steaming falls off after smoking: click the sand
+  box on the cab floor (by the fire door, fireman's side) with the empty
+  shovel to load a quart of sand, open the peep hole, and throw it in while
+  working hard. Black clouds at the stack mean it's scouring.
 - **A dead engine** fires up on the shed's steam line on a service track
   (a service station with water, a loco parking track, or a roundhouse
   stall by a turntable; tow it there): open SHOP STEAM (or F11),
@@ -211,6 +214,9 @@ real-time light-up.
   engine (S282, S060, S484-840, 844) or bursts the boiler (Hudson, which
   whistles a warning with an inch left). A repair or a washout at a pit
   stop renews the plug. The JK3 keeps the game's own low-water failure.
+- **A damaged engine bursts lower.** Badly damaged, its boiler bursts under
+  the safety valve; the overlay warns at what pressure. Keep under it and
+  get the engine repaired. The automatic fireman holds 1.5 bar under it.
 
 ## Running
 

@@ -71,6 +71,13 @@ namespace RealisticFiring.Core
         public float SafetyValve;
 
         /// <summary>
+        /// Where the boiler would burst, absolute bar: under the safety valve
+        /// when the body is badly damaged. 0 when it is not known, infinite
+        /// when it cannot burst.
+        /// </summary>
+        public float BurstPressure;
+
+        /// <summary>
         /// How hard the engine works, as he hears it in the exhaust's beats:
         /// 0 silent to about 1 at its rated steam. It is all he knows of the
         /// steam it draws; the gauge and the glass tell him how he is doing.

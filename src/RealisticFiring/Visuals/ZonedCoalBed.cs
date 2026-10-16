@@ -736,6 +736,39 @@ namespace RealisticFiring.Visuals
         /// <summary>Whether the bed has been built and placed.</summary>
         public bool Ready => pivot != null;
 
+        /// <summary>
+        /// Where a look along <paramref name="ray"/> meets the coal as drawn:
+        /// across the bed (0 left, 1 right) and along it (0 the door, 1 the
+        /// front), as <see cref="BedPoint"/> takes them. The grate aim, a
+        /// setting (the only aim from 1.8.1 to 1.10; back on a player's
+        /// request, 2026-10-16). A look over the coal to a wall or the
+        /// tubeplate takes the last place over the bed it passed. False where
+        /// it never passes over the bed.
+        /// </summary>
+        public bool TryAim(Ray ray, out float across, out float along)
+        {
+            across = along = 0f;
+            if (!Ready || pivot.parent == null)
+                return false;
+            var over = false;
+            for (var t = 0f; t <= AimReach; t += AimStep)
+            {
+                var p = BoxPoint(ray.GetPoint(t));
+                if (p.x < 0f || p.x > 1f || p.y < 0f || p.y > 1f)
+                {
+                    if (over)
+                        break;
+                    continue;
+                }
+                over = true;
+                across = p.x;
+                along = p.y;
+                if (p.z <= SurfaceHeight(across, along))
+                    return true;
+            }
+            return over;
+        }
+
  public static bool TryGet(RealisticFirebox owner, out ZonedCoalBed bed) =>
             ByFirebox.TryGetValue(owner, out bed) && bed != null && bed.Ready;
 
