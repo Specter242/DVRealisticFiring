@@ -153,10 +153,12 @@ namespace RealisticFiring.Core
         /// <paramref name="pressure"/> absolute bar: turned down further, it
         /// wastes at the overflow. 0 without <see cref="TechniqueAndHeat"/>.
         /// </summary>
-        public float LeastShare(float pressure)
+        public float LeastShare(float pressure) => TechniqueAndHeat ? LeastScale * SellersLeast(pressure) : 0f;
+
+ public float LeastScale { get; set; } = 1f;
+
+        private static float SellersLeast(float pressure)
         {
-            if (!TechniqueAndHeat)
-                return 0f;
             if (pressure <= LeastShares[0].Pressure)
                 return LeastShares[0].Share;
             for (var i = 1; i < LeastShares.Length; i++)

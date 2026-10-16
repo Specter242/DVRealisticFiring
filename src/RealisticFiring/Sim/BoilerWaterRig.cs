@@ -40,6 +40,19 @@ namespace RealisticFiring.Sim
         private const string SuspendedKey = "rfSludgeSuspended";
         private const string PlugMeltedKey = "rfPlugMelted";
         private const string WaterTempKey = "rfWaterTemp";
+        private const string ScaleKey = "rfScale";
+        private const string SootKey = "rfSoot";
+        private const string FoulingWearKey = "rfFoulingWear";
+
+        // The heating surface for each m³ of boiler (inferred: the USRA light
+        // Mikado's some 280 m² in a boiler of the S282's 17 m³).
+        private const float HeatingSurfacePerVolume = 16f;
+
+        // Fouling stands as this much engine wear for each share of heat it
+        // keeps from the water; wear is charged or given back in steps of at
+        // least this share of the engine's health.
+        private const float WearPerLoss = 2f;
+        private const float LeastWear = 1e-4f;
 
         /// <summary>The air's temperature, °C, toward which the stock boiler cools, and a cold boiler's water.</summary>
         public const float AmbientWater = 25f;
@@ -95,6 +108,10 @@ namespace RealisticFiring.Sim
         private float bodyHealth = float.NaN;
         private float engineHealth = float.NaN;
         private int ticks;
+        // The engine's health charged now for the fouling, and the drifting
+        // wear not yet charged.
+        private float foulingWear;
+        private float driftWear;
 
         private BoilerWaterRig(TrainCar car, Boiler boiler, ReciprocatingSteamEngine engine, Guard guard)
         {
@@ -119,6 +136,19 @@ namespace RealisticFiring.Sim
 
         /// <summary>The steam in the water, which stands the glass above the water alone.</summary>
         public BoilerSwell Swell { get; } = new BoilerSwell();
+
+        /// <summary>Soot in the tubes and scale on the water side.</summary>
+        public BoilerFouling Fouling { get; } = new BoilerFouling();
+
+        /// <summary>The boiler's heating surface, m².</summary>
+        public float HeatingSurface => TotalVolume(boiler) / 1000f * HeatingSurfacePerVolume;
+
+        /// <summary>The share of the fire's heat soot and scale keep from the water.</summary>
+        public float FoulingLoss => Fouling.Loss(HeatingSurface);
+
+        /// <summary>Whether the engine drifts with the throttle shut and the reverser hooked up, drawing smokebox gas into its cylinders.</summary>
+        public bool DriftingHookedUp => engine != null && Car != null
+                                        && Drifting.HookedUp(engine.throttleControl.Value, engine.reverserControl.Value, Car.GetForwardSpeed());
 
         public TrainCar Car { get; }
 
@@ -238,6 +268,7 @@ namespace RealisticFiring.Sim
             var vessel = Vessel(boiler);
             knownVessel = vessel;
             Water.Washout(vessel != null ? vessel.mass : 0f);
+            Fouling.Washout();
             Plug?.Renew(vessel != null ? vessel.waterTemp : 20f);
             PlugVent = 0f;
             SetDrowning(0f);
@@ -279,8 +310,40 @@ namespace RealisticFiring.Sim
                 Settle(vessel);
             }
             if (vessel != null && vessel.mass > 0f)
+            {
                 vessel.AddEnergy(Steel.Exchange(delta, vessel.waterTemp));
+                // What soot and scale keep from the water goes up the stack.
+                var lost = FoulingLoss;
+                if (lost > 0f && delta > 0f)
+                    vessel.AddEnergy(-Mathf.Max(0f, boiler.heat.Value) * delta * lost);
+            }
+            ChargeWear(delta);
             massAtTick = vessel != null ? vessel.mass : 0f;
+        }
+
+        // The engine's wear: the fouling's share as it stands, charged or given
+        // back, and drifting hooked up. The host's sim charges it.
+        private void ChargeWear(float delta)
+        {
+            if (engine != null && Car != null && delta > 0f)
+                driftWear += Drifting.Wear(engine.throttleControl.Value, engine.reverserControl.Value, Car.GetForwardSpeed()) * delta;
+            var train = damage != null ? damage.mechanicalPT : null;
+            if (train == null || Net.IsClient)
+                return;
+            var change = WearPerLoss * FoulingLoss - foulingWear;
+            if (change >= LeastWear)
+                train.ApplyDamage(train.fullHitPoints * change);
+            else if (change <= -LeastWear)
+                train.RepairDamage(train.fullHitPoints * -change);
+            if (Mathf.Abs(change) >= LeastWear)
+                foulingWear += change;
+            if (driftWear >= LeastWear)
+            {
+                train.ApplyDamage(train.fullHitPoints * driftWear);
+                driftWear = 0f;
+            }
+            // Its own charges are not a repair.
+            engineHealth = train.HealthPercentage;
         }
 
         // A boiler made or loaded anew: its steel at its water's temperature, no steam in the water yet.
@@ -296,7 +359,7 @@ namespace RealisticFiring.Sim
         // and a new plug.
         private void WatchRepairs()
         {
-            if (Plug == null || Car == null)
+            if (Car == null)
                 return;
             if (damage == null && (damage = Car.GetComponent<DamageController>()) == null)
                 return;
@@ -310,6 +373,17 @@ namespace RealisticFiring.Sim
             var repaired = ticks >= RepairWatchFrom
                            && (body > bodyHealth + RepairRise && body > RepairedHealth
                                || engine > engineHealth + RepairRise && engine > RepairedHealth);
+            // A repair of the engine is the shed's work on the boiler too: the
+            // tubes cleaned and the scale chipped out, for the share of the
+            // engine's wear repaired.
+            if (ticks >= RepairWatchFrom && engine > engineHealth + RepairRise && FoulingLoss > 0f)
+            {
+                var share = Mathf.Clamp01((engine - engineHealth) / Mathf.Max(1e-4f, 1f - engineHealth));
+                Fouling.Clean(share);
+                foulingWear *= 1f - share;
+                if (share > 0.99f)
+                    Log("engine repaired: tubes cleaned and the boiler descaled");
+            }
             ticks++;
             bodyHealth = body;
             engineHealth = engine;
@@ -385,7 +459,13 @@ namespace RealisticFiring.Sim
         public void AfterWaterLevel(float delta)
         {
             var vessel = Vessel(boiler);
-            TrueLevel = boiler.waterLevelReadOut.Value;
+            StepFouling(delta, vessel);
+            // Cold water stands lower than the game's boiler, which takes all
+            // water below boiling at its volume at 100 °C, shows it.
+            var coldDrop = vessel != null && BelowBoilingNow
+                ? vessel.waterVolume / Mathf.Max(1f, TotalVolume(boiler)) * ColdWater.Shrink(vessel.waterTemp)
+                : 0f;
+            TrueLevel = boiler.waterLevelReadOut.Value - coldDrop;
             StepSwell(delta, vessel);
             var on = Main.Settings.BoilerWaterImpurities;
             if (on != wasOn)
@@ -403,7 +483,7 @@ namespace RealisticFiring.Sim
 
             Water.Quality = Main.Settings.BoilerWaterQuality;
             var maxFlow = engine != null ? engine.maxFlowReadOut.Value : 0f;
-            var raw = vessel.waterVolume / Mathf.Max(1f, TotalVolume(boiler));
+            var raw = vessel.waterVolume / Mathf.Max(1f, TotalVolume(boiler)) - coldDrop;
             Water.Step(delta, new BoilerWaterInputs
             {
                 WaterMass = vessel.mass,
@@ -416,6 +496,31 @@ namespace RealisticFiring.Sim
 
             boiler.outletSteamQualityReadOut.Value *= 1f - Water.Carryover;
             boiler.waterLevelReadOut.Value = TrueLevel + Water.GlassRise + Swell.Rise;
+        }
+
+        // Soot from a coal fire's smoke and the gas through the tubes; scale
+        // from the feed's solids as the water boils off.
+        private void StepFouling(float delta, WaterPressureVessel vessel)
+        {
+            if (vessel == null || !(delta > 0f))
+                return;
+            var pressure = vessel.pressure;
+            var latent = (SteamTables.SteamSpecificEnthalpy(pressure) - SteamTables.WaterSpecificEnthalpy(pressure)) * 1000f;
+            var soot = 0f;
+            var flow = 0f;
+            if (Car != null && FireboxRegistry.TryGet(Car, out var coal))
+            {
+                soot = coal.Model.SootDensity;
+                flow = coal.Model.CombustionRateNormalized;
+            }
+            Fouling.Step(delta, new BoilerFoulingInputs
+            {
+                Boiled = BelowBoilingNow || !(latent > 0f) ? 0f : Mathf.Max(0f, boiler.heat.Value) * delta / latent,
+                FeedSolids = Main.Settings.BoilerWaterImpurities ? Water.FeedConcentration : 0f,
+                HeatingSurface = HeatingSurface,
+                Soot = soot,
+                GasFlow = flow,
+            });
         }
 
         // The steam in the water: what the fire boils in it, less what the
@@ -513,6 +618,12 @@ namespace RealisticFiring.Sim
                 data.SetBool(PlugMeltedKey, true);
             if (BelowBoilingNow)
                 data.SetFloat(WaterTempKey, WaterTemperature);
+            if (Fouling.ScaleMass > 0f || Fouling.SootLoss > 0f || foulingWear != 0f)
+            {
+                data.SetFloat(ScaleKey, Fouling.ScaleMass);
+                data.SetFloat(SootKey, Fouling.SootLoss);
+                data.SetFloat(FoulingWearKey, foulingWear);
+            }
         }
 
         /// <summary>After the stock boiler has loaded its save.</summary>
@@ -534,6 +645,9 @@ namespace RealisticFiring.Sim
             if (temperature.HasValue && vessel != null && vessel.mass > 0f && vessel.pressure <= AtmosphericPressure)
                 SetWaterTemperature(vessel, Mathf.Clamp(temperature.Value, 0f, BelowBoiling));
             Settle(vessel);
+            // The engine's saved health already holds the fouling's wear.
+            Fouling.Restore(data.GetFloat(ScaleKey) ?? 0f, data.GetFloat(SootKey) ?? 0f);
+            foulingWear = data.GetFloat(FoulingWearKey) ?? 0f;
         }
 
         /// <summary>Called on every stock boiler save load: applies ours now, or once the rig is made.</summary>

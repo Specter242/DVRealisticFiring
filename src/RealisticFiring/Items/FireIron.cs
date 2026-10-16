@@ -3,6 +3,7 @@ using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
 using DV.CabControls;
+using DV.Shops;
 using DV.Utils;
 using HarmonyLib;
 using RealisticFiring.Visuals;
@@ -35,17 +36,23 @@ namespace RealisticFiring.Items
         private static readonly string[] ShovelChildren = { "scoop pivot", "[spawn anchors]", "[visual coal anchor]", "[ShovelMountAnchor]" };
 
         private static GameObject template;
-        private static bool tried;
+        private static bool noShovel;
 
-        /// <summary>The dormant template, built on first use; null if the shovel could not be found.</summary>
+        /// <summary>
+        /// The dormant template, built on first use and again if something
+        /// destroyed it (a player, 2026-10-15: a bought iron came out null);
+        /// null if the shovel could not be found.
+        /// </summary>
         public static GameObject Template
         {
             get
             {
-                if (template == null && !tried)
+                if (template == null && !noShovel)
                 {
-                    tried = true;
+                    if (!ReferenceEquals(template, null))
+                        Main.Mod.Logger.Warning("The fire iron's template was destroyed; making it again");
                     template = Build();
+                    noShovel = template == null;
                 }
                 return template;
             }
@@ -194,6 +201,37 @@ namespace RealisticFiring.Items
             SingletonBehaviour<StorageController>.Instance.AddItemToWorldStorage(item);
             return "a fire iron is in front of you";
         }
+
+        /// <summary>
+        /// A bought iron put on <paramref name="shop"/>'s counter, as the
+        /// game hands over what it sells, for a purchase the game could not
+        /// make; false without the template or the counter.
+        /// </summary>
+        public static bool HandOver(Shop shop)
+        {
+            var source = Template;
+            if (source == null || shop == null || shop.itemSpawnTransform == null)
+                return false;
+            var iron = Object.Instantiate(source, shop.itemSpawnTransform.position, Quaternion.identity);
+            iron.name = PrefabName;
+            iron.GetComponent<InventoryItemSpec>().BelongsToPlayer = true;
+            var restocker = iron.GetComponent<ShopRestocker>();
+            if (restocker != null)
+                restocker.restockOnItemDestroyed = true;
+            var item = iron.GetComponent<ItemBase>();
+            if (item == null)
+            {
+                Object.Destroy(iron);
+                return false;
+            }
+            SingletonBehaviour<StorageController>.Instance.AddItemToWorldStorage(item);
+            if (item.ItemRigidbody != null)
+            {
+                item.ItemRigidbody.velocity = Vector3.zero;
+                item.ItemRigidbody.angularVelocity = Vector3.zero;
+            }
+            return true;
+        }
     }
 
     /// <summary>
@@ -220,14 +258,26 @@ namespace RealisticFiring.Items
         internal static Object LoadPrefab(string path) =>
             path == FireIron.PrefabName ? FireIron.Template : Resources.Load(path);
 
-        internal static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        internal static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, MethodBase original)
         {
-            var original = ResourceLoad;
+            var load = ResourceLoad;
             var replacement = AccessTools.DeclaredMethod(typeof(FireIronLoading), nameof(LoadPrefab));
+            var redirected = 0;
             foreach (var instruction in instructions)
-                yield return instruction.Calls(original)
-                    ? new CodeInstruction(instruction) { opcode = OpCodes.Call, operand = replacement }
-                    : instruction;
+            {
+                if (!instruction.Calls(load))
+                {
+                    yield return instruction;
+                    continue;
+                }
+                redirected++;
+                yield return new CodeInstruction(instruction) { opcode = OpCodes.Call, operand = replacement };
+            }
+            // Another mod's patch there, or a game update, can take the load
+            // away: the shops then sell the iron but cannot make it.
+            if (redirected == 0)
+                Main.Mod?.Logger.Warning($"The fire iron's lookup found no prefab load in {original?.DeclaringType?.Name}.{original?.Name}: " +
+                                         "a bought iron is handed over by the purchase guard, a saved one is dropped");
         }
     }
 }

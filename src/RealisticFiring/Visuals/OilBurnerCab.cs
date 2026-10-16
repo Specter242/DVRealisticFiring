@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using DV;
+using DV.Interaction;
 using DV.Simulation.Ports;
+using HarmonyLib;
 using LocoSim.Implementations;
 using RealisticFiring.Core;
 using RealisticFiring.Sim;
@@ -133,6 +135,7 @@ namespace RealisticFiring.Visuals
                 valves.Add((OilBurnerFit.ShopSteam, shopSteamPort, "SHOP STEAM", () => ShopSteamHover(firebox)));
             var loose = LooseWheels.TryGetValue(car.carLivery.id, out var assigned) ? assigned : null;
             var inRow = 0;
+            var placed = new List<Transform>();
             foreach (var (valve, port, plate, hover) in valves)
             {
                 Transform control = null;
@@ -151,6 +154,7 @@ namespace RealisticFiring.Visuals
                     notes.Add(plate.ToLowerInvariant());
                 }
                 control.GetComponent<HoverName>().Source = hover;
+                placed.Add(control);
                 // One notch a click of the mouse wheel: the S282 valve they are
                 // copied from spins under a torque per click and coasts across
                 // notches, so it turns to the next notch instead. The atomizer
@@ -163,6 +167,8 @@ namespace RealisticFiring.Visuals
                         rotary.notches = AtomizerNotches;
                 }
             }
+            if (firing != null)
+                FiringValvePassThrough.Attach(root, firing, placed);
             notes.Add(PlaceSandBox(car, root.transform, interior));
             notes.Add(PlaceSandTargets(car, root.transform, interior));
             root.SetActive(true);
@@ -190,6 +196,15 @@ namespace RealisticFiring.Visuals
             spot.SetPositionAndRotation(center, Quaternion.LookRotation(intoBackhead, car.transform.up));
             var control = StokerCab.PlaceWheel(sourceValve, spot, Vector3.zero, valve, port);
             wheelLook.Dress(control, car.transform, lookSize: true);
+            // Its hover and grip spheres are the S282 valve's, 8 and 12 cm
+            // across: as wide as the wheel drawn, so its rim takes a click.
+            foreach (var sphere in control.parent.GetComponentsInChildren<SphereCollider>(true))
+            {
+                var scale = sphere.transform.lossyScale;
+                var world = Mathf.Max(Mathf.Abs(scale.x), Mathf.Max(Mathf.Abs(scale.y), Mathf.Abs(scale.z)));
+                if (world > 0f && sphere.radius * world < wheelLook.Diameter / 2f)
+                    sphere.radius = wheelLook.Diameter / 2f / world;
+            }
             loose.GetComponent<MeshRenderer>().enabled = false;
             StokerCab.PlaceLabel(sourceControl, sourceLabel, control, spot, new Vector3(0f, -LabelDrop - 0.03f, 0f), plate);
             return control;
@@ -289,6 +304,71 @@ namespace RealisticFiring.Visuals
             var oil = firebox.Model.OilTemperature;
             var state = oil < OilFire.WarmOil - 5f ? "cold" : oil > OilFire.HotOil ? "too hot" : "warm";
             return $"Oil heater: {firebox.HeaterValve:P0}, oil {oil:F0} °C ({oil * 9f / 5f + 32f:F0} °F, {state})";
+        }
+    }
+
+    /// <summary>
+    /// Lets the cursor reach the oil burner's valves past the firing valve
+    /// (a player, 2026-10-15: on the 2901 the atomizer took no click from the
+    /// engineer's seat). The 2901's firing valve has a 15 cm hover sphere and
+    /// a lever collider made solid from the floor to its handle, standing
+    /// between the engineer and the valves, and the cursor's ray takes the
+    /// first control it meets. The game asks a control whether to let the ray
+    /// on at each hit on it; the firing valve's answer is wrapped to let it on
+    /// when the ray would go on to one of these valves.
+    /// </summary>
+    internal sealed class FiringValvePassThrough : MonoBehaviour
+    {
+        // The game's hover ray is this long, m (GrabberRaycasterDV).
+        private const float Reach = 4f;
+
+        internal const string PassThroughField = "interactionPassThrough";
+
+        private static readonly AccessTools.FieldRef<AGrabHandler, AGrabHandler.InteractionPassThroughDelegate> PassThrough =
+            AccessTools.FieldRefAccess<AGrabHandler, AGrabHandler.InteractionPassThroughDelegate>(PassThroughField);
+
+        private Component firing;
+        private Collider[] valves;
+        private AGrabHandler handler;
+        private AGrabHandler.InteractionPassThroughDelegate wrapped;
+
+        public static void Attach(GameObject root, Component firing, IEnumerable<Transform> valves)
+        {
+            var pass = root.AddComponent<FiringValvePassThrough>();
+            pass.firing = firing;
+            pass.valves = valves.Where(v => v != null).SelectMany(v => (v.parent != null ? v.parent : v).GetComponentsInChildren<Collider>(true)).ToArray();
+        }
+
+        // The game gives the lever its hover handler and answer a frame or
+        // more after the cab loads: wrapped once they are there.
+        private void Update()
+        {
+            if (firing == null || valves == null || valves.Length == 0)
+                return;
+            if (handler == null)
+                handler = firing.GetComponentInChildren<AGrabHandler>(true);
+            if (handler == null)
+                return;
+            var game = PassThrough(handler);
+            if (game == wrapped && wrapped != null)
+                return;
+            wrapped = point => game != null && game(point) || ValveBeyond(point);
+            PassThrough(handler) = wrapped;
+        }
+
+        private bool ValveBeyond(Vector3 point)
+        {
+            var camera = PlayerManager.ActiveCamera;
+            if (camera == null)
+                return false;
+            var origin = camera.transform.position;
+            var ray = new Ray(origin, point - origin);
+            foreach (var valve in valves)
+            {
+                if (valve != null && valve.enabled && valve.gameObject.activeInHierarchy && valve.Raycast(ray, out _, Reach))
+                    return true;
+            }
+            return false;
         }
     }
 }

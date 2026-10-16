@@ -91,16 +91,20 @@ namespace RealisticFiring.Patches
             if (grabber == null || grabber.Cursor == null)
                 return;
 
-            if (FireboxAim.TryAim(grabber.Cursor.GetRay(), target, car, firebox, out var across, out var depth))
-                firebox.NoteAim(new DoorAimSample(DoorAim.ZoneFor(across, depth), across, depth, !__instance.IsLoaded, Time.time));
+            if (FireboxAim.TryAim(grabber.Cursor.GetRay(), target, car, firebox, out var across, out var depth, out var box))
+                firebox.NoteAim(new DoorAimSample(DoorAim.ZoneFor(across, depth), across, depth, !__instance.IsLoaded, Time.time, car.transform, box));
         }
 
         // Places the nearest hit on the target's colliders within that
         // collider's extent in the car's frame. Facing the firebox means
         // facing the car's front (+Z), so -X is the fireman's left.
-        internal static bool TryMeasure(Ray ray, ItemUseTarget target, Transform car, out float across, out float height)
+        internal static bool TryMeasure(Ray ray, ItemUseTarget target, Transform car, out float across, out float height) =>
+            TryMeasure(ray, target, car, out across, out height, out _);
+
+        internal static bool TryMeasure(Ray ray, ItemUseTarget target, Transform car, out float across, out float height, out Bounds box)
         {
             across = height = 0f;
+            box = default;
             Collider nearest = null;
             var nearestHit = default(RaycastHit);
             foreach (var collider in target.targetColliders)
@@ -116,6 +120,7 @@ namespace RealisticFiring.Patches
                 return false;
 
             var bounds = CarSpace.LocalBounds(car, nearest);
+            box = bounds;
             var point = car.InverseTransformPoint(nearestHit.point);
             across = Fraction(bounds.min.x, bounds.max.x, point.x);
             height = Fraction(bounds.min.y, bounds.max.y, point.y);
@@ -126,18 +131,25 @@ namespace RealisticFiring.Patches
             max - min > 1e-4f ? (value - min) / (max - min) : 0.5f;
     }
 
-    /// <summary>
-    /// Where a look into a realistic firebox aims: across and deep on its
-    /// drawn bed, where the look meets the coal, or across and up the door's
-    /// coal target where the cab has no bed.
-    /// </summary>
-    internal static class FireboxAim
+ internal static class FireboxAim
     {
-        public static bool TryAim(Ray ray, ItemUseTarget target, TrainCar car, RealisticFirebox firebox, out float across, out float depth)
+        public static bool TryAim(Ray ray, ItemUseTarget target, TrainCar car, RealisticFirebox firebox, out float across, out float depth) =>
+            TryAim(ray, target, car, firebox, out across, out depth, out _);
+
+        /// <summary>As <see cref="TryAim(Ray, ItemUseTarget, TrainCar, RealisticFirebox, out float, out float)"/>, with the firehole's rectangle in the car's frame.</summary>
+        public static bool TryAim(Ray ray, ItemUseTarget target, TrainCar car, RealisticFirebox firebox, out float across, out float depth, out Bounds hole)
         {
-            if (Visuals.ZonedCoalBed.TryGet(firebox, out var bed) && bed.TryAim(ray, out across, out depth))
-                return true;
-            return ShovelHoverPatch.TryMeasure(ray, target, car.transform, out across, out depth);
+            hole = default;
+            if (!ShovelHoverPatch.TryMeasure(ray, target, car.transform, out across, out depth, out var box))
+                return false;
+            var opening = FireholeOpening.For(car, box);
+            hole = opening.Bounds;
+            if (opening.TryPlace(ray, car.transform, out var holeAcross, out var holeUp))
+            {
+                across = holeAcross;
+                depth = holeUp;
+            }
+            return true;
         }
     }
 

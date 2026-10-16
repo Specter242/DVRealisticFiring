@@ -171,6 +171,9 @@ namespace RealisticFiring.AdapterCheck
             Check(AccessTools.Field(typeof(ShovelNonPhysicalCoal), "_coalMassLoaded")?.FieldType == typeof(float),
                 "the shovel's load is readable, for saying a shovelful does not fit the firebox");
             CheckFireIronLoading();
+            Check(AccessTools.Field(typeof(DV.Interaction.AGrabHandler), Visuals.FiringValvePassThrough.PassThroughField)?.FieldType
+                  == typeof(DV.Interaction.AGrabHandler.InteractionPassThroughDelegate),
+                "a control's pass-through is wrappable, so the oil burner's valves can be reached past the firing valve");
             if (args.Length > 0 && File.Exists(args[0]))
                 CheckMultiplayerCabHooks(args[0]);
             Console.WriteLine(failures == 0 ? "All adapter checks passed" : $"{failures} adapter checks failed");
@@ -667,6 +670,10 @@ namespace RealisticFiring.AdapterCheck
             var coldRig = BoilerWaterRig.Create(cold, null, BoilerWaterRig.Guard.None);
             var startTemp = coldRig.WaterTemperature;
             var stock = NewBoiler(8000f, 1f);
+            Run(cold, coldRig, 0.02f);
+            Call(stock, "SimulateWaterLevel", 0.02f);
+            var coldLevel = coldRig.TrueLevel;
+            var stockLevel = stock.waterLevelReadOut.Value;
             heat.Value = 20e6f;
             Run(cold, coldRig, 60f);
             for (var t = 0f; t < 60f; t += 0.02f)
@@ -690,6 +697,8 @@ namespace RealisticFiring.AdapterCheck
                     boiledAt = t + 1f;
             }
             heat.Value = 0f;
+            Check(coldLevel < stockLevel - 0.015f,
+                $"cold water stands lower in the glass than boiling: {coldLevel:F3} of the boiler at 25 C, the game's {stockLevel:F3}");
             Check(Math.Abs(startTemp - BoilerWaterRig.AmbientWater) < 1f && warmPressure <= 1.01f && warmTemp > 50f && warmTemp < 70f
                   && stockPressure > 1.5f && boiledAt > 100f && Math.Abs(loadedTemp - warmTemp) < 0.5f && stockLoadTemp > 99f,
                 $"a cold boiler starts at {startTemp:F0} C and after 60 s of a 20 MW fire is {warmTemp:F0} C at {warmPressure - 1f:F2} bar on the gauge " +
@@ -730,6 +739,27 @@ namespace RealisticFiring.AdapterCheck
             Run(steeled, steeledRig, 30f);
             heat.Value = 0f;
             var settled = steeled.waterLevelReadOut.Value - steeledRig.TrueLevel;
+            // Soot and scale keep heat from the water; a repair of the
+            // engine cleans the share of its wear repaired.
+            var clean = NewBoiler(8000f, 1f);
+            var cleanRig = BoilerWaterRig.Create(clean, null, BoilerWaterRig.Guard.None);
+            var fouled = NewBoiler(8000f, 1f);
+            var fouledRig = BoilerWaterRig.Create(fouled, null, BoilerWaterRig.Guard.None);
+            fouledRig.Fouling.Restore(0f, 0.1f);
+            heat.Value = 20e6f;
+            Run(clean, cleanRig, 60f);
+            Run(fouled, fouledRig, 60f);
+            heat.Value = 0f;
+            var cleanRise = cleanRig.WaterTemperature - BoilerWaterRig.AmbientWater;
+            var fouledRise = fouledRig.WaterTemperature - BoilerWaterRig.AmbientWater;
+            for (var i = 0; i < 60; i++)
+                fouledRig.NoteHealth(1f, 0.8f);
+            fouledRig.NoteHealth(1f, 0.9f);
+            var halfRepaired = fouledRig.Fouling.SootLoss;
+            fouledRig.NoteHealth(1f, 1f);
+            Check(fouledRise < 0.93f * cleanRise && Math.Abs(halfRepaired - 0.05f) < 0.005f && fouledRig.Fouling.SootLoss < 1e-4f,
+                $"tubes sooted 10 % warm a cold boiler {fouledRise:F1} K in a minute against {cleanRise:F1} K clean; repairing half the engine's wear " +
+                $"leaves {halfRepaired:P0} soot, the rest none");
             Check(steeledDrop < 0.95f * bareDrop && flashing > 0.01f && settled < 0.002f,
                 $"drawing 5 kg/s for a minute with no fire the pressure falls {steeledDrop:F2} bar with the steel, {bareDrop:F2} with water alone; " +
                 $"falling, the glass stands {flashing:F3} of the boiler above the water, rising again {settled:F3}");
@@ -1134,9 +1164,9 @@ namespace RealisticFiring.AdapterCheck
 
             var before = string.Join(";", setup.Components.Select(Describe));
             var rig = Rig(setup);
-            Check(rig != null && rig.Circuits.Count == 2 && rig.Circuits.All(c => c.Injector.Spec.MaxDelivery == 4f)
-                  && rig.MaxDelivery == 8f && before == string.Join(";", setup.Components.Select(Describe)),
-                "JK3 has two 4 kg/s injectors without changing any stock ports or defaults");
+            Check(rig != null && rig.Circuits.Count == 2 && rig.Circuits.All(c => c.Injector.Spec.MaxDelivery == 2.5f)
+                  && rig.MaxDelivery == 5f && before == string.Join(";", setup.Components.Select(Describe)),
+                "JK3 has two 2.5 kg/s injectors without changing any stock ports or defaults");
             setup.Right.controlExtIn.Value = 0.1f;
             setup.Left.controlExtIn.Value = 1f;
             Tick(rig, 2f);
@@ -1149,7 +1179,7 @@ namespace RealisticFiring.AdapterCheck
                 "priming one JK3 valve does not prime the other; jet failure, heat, and overflow stay independent");
             setup.Right.controlExtIn.Value = 1f;
             rig.Simulate(0.02f);
-            Check(Math.Abs(rig.Flow.WaterIn - 4f) < 0.001f && setup.Boiler.injectorFlowNormalizedReadOut.Value == 0.5f,
+            Check(Math.Abs(rig.Flow.WaterIn - 2.5f) < 0.001f && setup.Boiler.injectorFlowNormalizedReadOut.Value == 0.5f,
                 "one working JK3 injector delivers half capacity and only its valve contributes to the boiler readout");
             var particles = setup.Components.OfType<ConfigurablePorts>().Single(c => c.id == "injectorParticles").ports;
             Check(particles[0].Value == 1f && particles[1].Value == 0f,
@@ -1173,10 +1203,10 @@ namespace RealisticFiring.AdapterCheck
             var mass = bothRig.BoilerVessel.mass;
             both.Consumed.Value = 0f;
             bothRig.Simulate(0.5f);
-            Check(Math.Abs(bothRig.Flow.WaterIn - 8f) < 0.001f && both.Boiler.injectorFlowNormalizedReadOut.Value == 1f
+            Check(Math.Abs(bothRig.Flow.WaterIn - 5f) < 0.001f && both.Boiler.injectorFlowNormalizedReadOut.Value == 1f
                   && Math.Abs(bothRig.BoilerVessel.mass - mass - (bothRig.Flow.WaterIn - bothRig.Flow.SteamUsed) * 0.5f) < 0.002f
                   && Math.Abs(both.Consumed.Value - bothRig.Flow.TenderDraw * 0.5f * 1.5f) < 0.001f,
-                "both JK3 injectors deliver 8 kg/s total, with steam deducted and both tender draws reported once");
+                "both JK3 injectors deliver 5 kg/s total, with steam deducted and both tender draws reported once");
             both.Water.Value = 0.03f * 1.5f;
             both.Consumed.Value = 0f;
             bothRig.Simulate(0.5f);
@@ -1909,7 +1939,7 @@ namespace RealisticFiring.AdapterCheck
             foreach (var target in targets.Where(m => m != null))
             {
                 var original = HarmonyLib.PatchProcessor.GetOriginalInstructions(target);
-                var patched = Items.FireIronLoading.Transpiler(original).ToList();
+                var patched = Items.FireIronLoading.Transpiler(original, target).ToList();
                 var loadIndexes = Enumerable.Range(0, original.Count).Where(i => original[i].Calls(resourceLoad)).ToList();
                 var replacement = HarmonyLib.AccessTools.DeclaredMethod(typeof(Items.FireIronLoading), "LoadPrefab");
                 Check(loadIndexes.Count == 1 && patched.Count == original.Count

@@ -76,12 +76,27 @@ namespace RealisticFiring.Items
                         delivered[MatchSpec(queue, spec)] = delivered.TryGetValue(MatchSpec(queue, spec), out var n) ? n + 1 : 1;
                 }
 
-                // The rest go back in stock, and the player gets the money back.
+                // Fire irons the game could not make are made from the template
+                // (a player, 2026-10-15: "the object you want to instantiate is
+                // null"); the rest go back in stock, and the player gets the
+                // money back.
                 var refund = 0.0;
                 var lost = new List<string>();
+                var handed = 0;
                 foreach (var group in queue.Where(e => e.specs != null).GroupBy(e => e.specs))
                 {
                     var missing = group.Sum(e => e.desiredAmount) - (delivered.TryGetValue(group.Key, out var got) ? got : 0);
+                    if (group.Key.ItemPrefabName == FireIron.PrefabName)
+                    {
+                        foreach (var entry in group)
+                        {
+                            for (var i = 0; i < entry.desiredAmount && missing > 0 && FireIron.HandOver(entry.shop); i++)
+                            {
+                                missing--;
+                                handed++;
+                            }
+                        }
+                    }
                     if (missing <= 0)
                         continue;
                     var data = shops.GetShopItemData(group.Key);
@@ -102,7 +117,8 @@ namespace RealisticFiring.Items
                 Processing.Invoke(shops, new object[] { false });
                 __result = false;
                 Main.Mod.Logger.Warning($"The shops failed to hand over a purchase ({bought}): {__exception.GetType().Name}: {__exception.Message}. " +
-                                        $"Freed the registers; {(lost.Count > 0 ? $"not delivered, restocked and refunded ${refund:N0}: {string.Join(", ", lost)}" : "everything was delivered")}. " +
+                                        $"Freed the registers; {(handed > 0 ? $"handed over {handed} fire iron{(handed > 1 ? "s" : "")} made from the template; " : "")}" +
+                                        $"{(lost.Count > 0 ? $"not delivered, restocked and refunded ${refund:N0}: {string.Join(", ", lost)}" : "everything was delivered")}. " +
                                         FireIronState() + Environment.NewLine + __exception);
                 return null;
             }

@@ -10,9 +10,11 @@ Requires the Python Markdown package (python3 -m pip install markdown).
 Usage: build-guide.py OUTPUT.html
 """
 
+import base64
 import html
 import json
 import pathlib
+import re
 import sys
 
 try:
@@ -69,6 +71,7 @@ th, td { text-align: left; padding: .45rem .7rem; border-bottom: 1px solid var(-
 th { background: var(--accent-soft); }
 tr:nth-child(even) td { background: var(--panel); }
 footer { color: var(--muted); font-size: .85rem; margin-top: 2.5rem; }
+img { display: block; max-width: 100%; height: auto; margin: .8rem 0; border-radius: 8px; }
 @media (max-width: 40rem) { nav ol { columns: 1; } body { font-size: 16px; } }
 @media print {
   body { background: #fff; color: #000; font-size: 11pt; }
@@ -78,6 +81,21 @@ footer { color: var(--muted); font-size: .85rem; margin-top: 2.5rem; }
   tr:nth-child(even) td, th { background: none; }
 }
 """
+
+
+IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+
+
+def inline_images(body):
+    """Embeds each image the guide links beside it, so the page needs nothing else."""
+    def embed(match):
+        path = (SOURCE.parent / html.unescape(match.group(2))).resolve()
+        kind = IMAGE_TYPES.get(path.suffix.lower())
+        if kind is None or not path.is_file():
+            sys.exit(f"build-guide.py: the guide's image {match.group(2)} is missing or not an image")
+        data = base64.b64encode(path.read_bytes()).decode("ascii")
+        return f'{match.group(1)}data:{kind};base64,{data}{match.group(3)}'
+    return re.sub(r'(<img[^>]*\ssrc=")(?!data:|https?:)([^"]+)(")', embed, body)
 
 
 def main():
@@ -94,7 +112,7 @@ def main():
 
     md = markdown.Markdown(extensions=["tables", "sane_lists", "toc"],
                            extension_configs={"toc": {"permalink": False}})
-    body = md.convert(body_md)
+    body = inline_images(md.convert(body_md))
     sections = [t for t in md.toc_tokens if t["level"] == 2] or \
         [c for t in md.toc_tokens for c in t.get("children", []) if c["level"] == 2]
     contents = "\n".join(f'<li><a href="#{t["id"]}">{html.escape(t["name"], quote=False)}</a></li>' for t in sections)

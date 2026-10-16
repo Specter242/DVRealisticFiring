@@ -140,8 +140,8 @@ namespace RealisticFiring.Core
 
         public const int LightingSteps = 5;
 
-        /// <summary>The next step on a coal fire.</summary>
-        public static Advice ForCoal(FireModel fire, float door, float glass, IReadOnlyList<InjectorReading> injectors)
+        /// <summary>The next step on a coal fire; <paramref name="driftingHookedUp"/>, the engine drifts with its throttle shut and reverser hooked up.</summary>
+        public static Advice ForCoal(FireModel fire, float door, float glass, IReadOnlyList<InjectorReading> injectors, bool driftingHookedUp = false)
         {
             if (fire == null)
                 throw new ArgumentNullException(nameof(fire));
@@ -151,6 +151,8 @@ namespace RealisticFiring.Core
                 return new Advice(AdviceLevel.Act, "Water's low in the glass: get the injector on.");
             if (!fire.FireOn)
                 return new Advice(AdviceLevel.Watch, "The fire's out: put some coal in and light it.");
+            if (driftingHookedUp)
+                return new Advice(AdviceLevel.Watch, "Drifting hooked up with the throttle shut: drop the reverser to full gear, or crack the throttle.");
             if (fire.SmokeDensity >= Smoking && door < CrackedDoor)
                 return new Advice(AdviceLevel.Watch, "She's smoking: crack the fire door to burn it off.");
             var thin = ThinZone(fire.Zones);

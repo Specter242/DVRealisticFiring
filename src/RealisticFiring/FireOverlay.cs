@@ -243,7 +243,8 @@ namespace RealisticFiring
             c.Gauges[1] = Draft(fire.FireOn, fire.AirRatio, "choked", "thin", CoalSmoke(fire.SmokeDensity));
             WaterGauges(c, rig);
             var door = firebox.HasDoorPort ? firebox.DoorOpening : 0f;
-            c.Advice = FiringAdvice.ForCoal(fire, door, rig != null ? Visuals.GaugeGlass.Read(rig) : 1f, Injectors(rig));
+            c.Advice = FiringAdvice.ForCoal(fire, door, rig != null ? Visuals.GaugeGlass.Read(rig) : 1f, Injectors(rig),
+                BoilerWaterRig.TryGet(car, out var waterRig) && waterRig.DriftingHookedUp);
 
             switch (Page)
             {
@@ -343,6 +344,13 @@ namespace RealisticFiring
                 c.Rows.Add(Main.Settings.BoilerWaterImpurities
                     ? new Row { Label = "Impurities", Value = $"{waterRig.Water.FoamingConcentration:F0} ppm · foam {P0(waterRig.Water.Foam)}", Level = waterRig.Water.Foam > 0.05f ? AdviceLevel.Watch : (AdviceLevel?)null }
                     : new Row { Label = "Impurities", Value = "off" });
+                var soot = waterRig.Fouling.SootLoss;
+                var scale = BoilerFouling.ScaleLossOf(waterRig.Fouling.ScaleMass, waterRig.HeatingSurface);
+                c.Rows.Add(new Row
+                {
+                    Label = "Tubes, scale", Value = $"soot {P0(soot)} · scale {P0(scale)} of the heat",
+                    Level = soot + scale >= 0.05f ? AdviceLevel.Watch : (AdviceLevel?)null,
+                });
                 c.Rows.Add(waterRig.Plug != null
                     ? new Row { Label = "Fusible plug", Value = waterRig.Plug.Melted ? "MELTED" : $"{waterRig.Plug.CoreTemperature:F0} °C", Level = waterRig.Plug.Melted ? AdviceLevel.Act : (AdviceLevel?)null }
                     : waterRig.Alarm != null

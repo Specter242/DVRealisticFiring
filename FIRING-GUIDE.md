@@ -31,8 +31,13 @@ creeps forward at speed, so the back wants it all the more. A bare patch
 takes about three times its share of air and chills the fire: fill holes
 before anything else.
 
-**Aim each shovelful** where the overlay shows the coal running short:
-point at that spot on the fire through the door.
+**Aim each shovelful** where the overlay shows the coal running short, by
+where you point in the open firehole, read like a keypad: the top third
+throws to the front (left, middle, right), the middle third to the sides
+and center, the bottom third to the back corners and under the door. The
+zone is named under the crosshair; a setting draws the keypad on the door.
+
+![The S282's open firehole with the aiming keypad drawn on it: front left, front, and front right along the top; left side, center, and right side across the middle; back left, under the door, and back right along the bottom.](images/s282-firehole-keypad.jpg)
 Rake a bank level with the empty shovel; don't stir it.
 
 **Read the bed and the stack.**
@@ -45,7 +50,8 @@ Rake a bank level with the empty shovel; don't stir it.
 - Dark patch that won't brighten: clinker (see below).
 
 **Raising steam.** A cold boiler's water must boil before the gauge moves;
-the overlay's boiler dial shows its temperature until then. The game's Steam
+the overlay's boiler dial shows its temperature until then. The water swells
+as it heats, rising about a sixth of the glass: fill a cold boiler low. The game's Steam
 Startup setting speeds up a cold fire (×25 at 100 %). Set it to 2500 % for a
 real-time light-up.
 
@@ -59,8 +65,8 @@ real-time light-up.
 - **JK3:** a small, long, level 70 kg box with a modest pull to the front.
   Fresh rounds smoke readily: fire small amounts often and keep the front
   covered. Two lifting injectors, each with its own water valve and steam
-  lever: the priming steam lifts the water. Each delivers up to 4 kg/s at
-  rated pressure, 8 kg/s together.
+  lever: the priming steam lifts the water. Each delivers up to 2.5 kg/s at
+  rated pressure, enough for the boiler alone; 5 kg/s together.
 - **LMS 8F:** a narrow Belpaire box, sloping at the front and level at the
   back, with a brick arch. Fire thin and often, a few shovelfuls at a time,
   and keep the back corners filled; a heap under the door chokes it. Two
@@ -179,6 +185,15 @@ real-time light-up.
   pressure falls, and drops when you shut off, the pressure rises, or cold
   feed goes in. Carry it high enough before shutting off that the drop
   still leaves water over the crown sheet.
+- **Keep the tubes clean:** a smoky fire soots them and steaming falls off;
+  working hard on a clean fire scours them. Hard water scales the boiler
+  slowly. Both show on the overlay's Water page, count as engine wear, and
+  are cleaned by repairing the engine at a service station.
+- **Drifting:** throttle shut, put the reverser down to full gear (or keep
+  the throttle cracked). Hooked up, the engine sucks smokebox grit into its
+  cylinders and wears.
+- **Don't run the tender dry:** nearly empty, a climb or a hard start runs
+  the water off the outlet and the injectors lose it until it runs back.
 - **Feed pump and heater** (Hudson, 844, S484-840, 2901): start on the
   injector, then switch to the pump once the engine has worked a few
   minutes. It feeds hot water and holds the pressure better. Ease it before

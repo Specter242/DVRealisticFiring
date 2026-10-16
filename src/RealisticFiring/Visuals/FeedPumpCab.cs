@@ -412,9 +412,10 @@ namespace RealisticFiring.Visuals
             var flow = rig.PumpFlow;
             var speed = flow.Speed;
             var shrieking = flow.State == FeedPumpState.LostSuction;
+            var scale = Mathf.Max(0f, Main.Settings.FeedPumpVolume);
             if (type == FeedHeaterType.Open)
-                Set(pump, speed > 0.02f ? Mathf.Lerp(0.04f, 0.2f, Mathf.Clamp01(speed)) : 0f, Mathf.Lerp(0.6f, 1.2f, Mathf.Clamp01(speed / 1.8f)));
-            Set(turbine, speed > 0.02f ? (shrieking ? 0.25f * Mathf.Clamp01(speed / 1.5f) : Mathf.Lerp(0.015f, 0.08f, Mathf.Clamp01(speed))) : 0f,
+                Set(pump, speed > 0.02f ? scale * Mathf.Lerp(0.04f, 0.2f, Mathf.Clamp01(speed)) : 0f, Mathf.Lerp(0.6f, 1.2f, Mathf.Clamp01(speed / 1.8f)));
+            Set(turbine, speed > 0.02f ? scale * (shrieking ? 0.25f * Mathf.Clamp01(speed / 1.5f) : Mathf.Lerp(0.015f, 0.08f, Mathf.Clamp01(speed))) : 0f,
                 shrieking ? Mathf.Lerp(1.2f, 1.9f, Mathf.Clamp01(speed / 2.5f)) : Mathf.Lerp(0.8f, 1.2f, Mathf.Clamp01(speed)));
         }
 

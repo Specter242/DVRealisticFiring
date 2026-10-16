@@ -21,6 +21,8 @@ namespace RealisticFiring.Visuals
         private static readonly Vector3 DefaultPlate = new Vector3(0.5f, 0.02f, 1.3f);
         private const float PlateInside = 0.01f;
 
+        private const float PlateBelowHole = 0.093f;
+
         // A shovel target reaching further along the bed than this share is
         // not a box over the door's opening.
         private const float DoorReach = 0.15f;
@@ -419,8 +421,9 @@ namespace RealisticFiring.Visuals
             fines.SetParticles(sparks, count);
         }
 
-        // The plate under the door's opening: the bottom of the door's shovel
-        // target, its middle across, just inside its face toward the fire.
+        // The plate under the door's opening: under the foot of the cab's
+        // firehole as the aim has it, its middle across, just inside the
+        // door's shovel target's face toward the fire.
         private void FindPlate()
         {
             var target = bed.GetComponent<DV.Interaction.ItemUseTarget>();
@@ -452,6 +455,16 @@ namespace RealisticFiring.Visuals
                 return;
             }
             plateBox = new Vector3(0.5f * (min.x + max.x), Mathf.Max(max.y, 0f) + PlateInside, min.z);
+            var car = firebox.Car;
+            if (car != null)
+            {
+                var reach = CarSpace.LocalBounds(car.transform, colliders[0]);
+                for (var i = 1; i < colliders.Length; i++)
+                    reach.Encapsulate(CarSpace.LocalBounds(car.transform, colliders[i]));
+                var hole = FireholeOpening.For(car, reach);
+                var foot = bed.BoxPoint(car.transform.TransformPoint(new Vector3(0.5f * (hole.Min.x + hole.Max.x), hole.Min.y - PlateBelowHole, hole.Min.z)));
+                plateBox = new Vector3(foot.x, plateBox.y, foot.z);
+            }
             if (Main.Settings.LogFireboxCreation && firebox.Car != null)
                 Main.Mod.Logger.Log($"{firebox.Car.ID}: stoker plate under the door at {firebox.Car.transform.InverseTransformPoint(bed.BedPoint(plateBox.x, plateBox.y, plateBox.z)):F2} m " +
                                     $"(across {plateBox.x:F2}, along {plateBox.y:F2}, up {plateBox.z:F2} of the bed's box)");

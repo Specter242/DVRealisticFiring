@@ -3,6 +3,7 @@ using System.Linq;
 using HarmonyLib;
 using LocoSim.Definitions;
 using LocoSim.Implementations;
+using LocoSim.Resources;
 using RealisticFiring.Core;
 using UnityEngine;
 
@@ -59,13 +60,23 @@ namespace RealisticFiring.Sim
  private static readonly Dictionary<string, float> PeriodDelivery = new Dictionary<string, float>
         {
             // USRA light Mikado: "Nathan non-lifting injectors", size not
-            // given (RME Aug 1918 p.438); the bigger heavy Mikado had "Hancock
-            // No. 11 non-lifting injectors" (RME Sept 1918 p.494). A No. 11,
-            // 4,400 gal/h at 200 psi (Hancock's manual, 1921, p.24). The game's
-            // is 20 kg/s.
-            ["LocoS282A"] = 4.6f,
-            // USRA 0-6-0: "No. 11 non-lifting Nathan injector" (RME Nov 1918). The game's is 5.
-            ["LocoS060"] = 4.6f,
+            // given (RME Aug 1918 p.438); the heavy Mikado had "Hancock No. 11
+            // non-lifting injectors" (RME Sept 1918 p.494). Its 24 in. (0.61 m)
+            // cylinders take a No. 11 by Baldwin's rule, and its big boiler
+            // the next size larger: a No. 12, 5,700 gal/h (inferred). Its boiler
+            // boils about 7.5 kg/s at full rate, its throttle 6. The game's is 20.
+            ["LocoS282A"] = 6f,
+            // A small tank engine's: its 16.5 in. cylinders take a No. 7 by
+            // Baldwin's rule, as the Stanier 2-6-2T's "8-mm. cones" (Railway
+            // Gazette, 8 Mar 1935 p.436); its boiler boils about 2 kg/s. Was
+            // the much bigger USRA 0-6-0's No. 11, whose least was more than
+            // this boiler boils. The game's is 5.
+            ["LocoS060"] = 2.1f,
+            // The JK3's two lifting injectors, 2.5 kg/s each (8 to 9 mm): each
+            // feeds its small boiler (about 2.1 kg/s) alone, as German practice
+            // sized each feed (Röll, 1912, vol. 9 p.98); lifting costs nothing
+            // in delivery (Kneass p.112). Inferred. The game's is 8 together.
+            ["Jk3A"] = 5f,
             // NYC J-3a: no injector given (RME May 1938); the NYC fitted
             // Nathan non-lifters beside its feedwater heaters (L-3, RME Jan
             // 1941), about 10,000 gal/h (inferred). The game's is 36.
@@ -82,12 +93,16 @@ namespace RealisticFiring.Sim
             // and FEF-2. The game's are 60 (844) and 50.
             ["FEF-3"] = 10.5f,
             ["S484-840A"] = 10.5f,
-            // Santa Fe 2900 class: no injector found; the road's 1938 2-10-4s
-            // had "a Chicago non-lifting, having a capacity of 13,500 gal. per
-            // hour" (RME Feb 1939 p.51), so taken as the same (inferred). The
-            // game's is 35.
-            ["A.T.&S.F. 2901-A"] = 14.2f,
+            // Santa Fe 2900 class: no injector found. Its boiler boils about
+            // 12 kg/s in the game; a 12,000 gal/h injector, as the N&W J paired
+            // a 12,000 gal/h Nathan with its Worthington 6-SA (Railway Age,
+            // 2 June 1945 p.974), rather than the road's bigger 2-10-4s' 13,500
+            // (RME Feb 1939 p.51). Inferred, low confidence. The game's is 35.
+            ["A.T.&S.F. 2901-A"] = 12.6f,
         };
+
+        private static readonly HashSet<string> OneLeverForTwo = new HashSet<string> { "LocoS282A" };
+        private const float OneOfTwoLeast = 0.5f;
 
         private static readonly Dictionary<Boiler, InjectorRig> ByBoiler = new Dictionary<Boiler, InjectorRig>();
         private static readonly Dictionary<TrainCar, InjectorRig> ByCar = new Dictionary<TrainCar, InjectorRig>();
@@ -313,7 +328,7 @@ namespace RealisticFiring.Sim
             var rated = SafetyValveOpeningPressure(boiler);
             var stockRate = MaxInjectorRate(boiler);
             var period = 0f;
-            var resized = car != null && car.carLivery != null && PeriodDelivery.TryGetValue(car.carLivery.id, out period);
+            var resized = livery != null && PeriodDelivery.TryGetValue(livery, out period);
             var maxRate = resized ? period : stockRate;
             if (maxRate <= 0f || rated <= InjectorSpec.DefaultStartPressure)
             {
@@ -323,7 +338,10 @@ namespace RealisticFiring.Sim
 
             var ports = controls.Length > 1 ? components.SelectMany(c => c.GetAllPorts()).ToList() : null;
             var circuits = controls.Select((port, i) => new InjectorCircuit(port,
-                new Injector(new InjectorSpec(maxRate / controls.Length, rated)),
+                new Injector(new InjectorSpec(maxRate / controls.Length, rated)
+                {
+                    LeastScale = livery != null && OneLeverForTwo.Contains(livery) ? OneOfTwoLeast : 1f,
+                }),
                 controls.Length == 1 ? "" : i == 0 ? "right" : "left",
                 ports?.SingleOrDefault(p => p.id == $"injectorParticles.INJECTOR_{(i == 0 ? "R" : "L")}_PARTICLES_CLAMP")))
                 .ToList().AsReadOnly();
@@ -496,6 +514,50 @@ namespace RealisticFiring.Sim
             fedHeat += mass * temperature;
         }
 
+        // The tender's tank the injectors draw from, and its water over the
+        // outlet: the pull along the tank, settling as the shallow water runs.
+        private TrainCar tankCar;
+        private ResourceContainer tank;
+        private float outletPull;
+        private bool outletCovered = true;
+        private Vector3 lastTankVelocity;
+        private bool tankVelocityKnown;
+
+        // A sudden jolt is a coupler's, not a pull the water follows, m/s².
+        private const float MostOutletAcceleration = 5f;
+
+        /// <summary>Whether the tender's outlet is under water: a nearly empty tank uncovers it on a grade or pulling away.</summary>
+        public bool TenderOutletCovered => outletCovered;
+
+        private bool StepOutlet(float delta)
+        {
+            var car = Car != null && Car.rearCoupler != null && Car.rearCoupler.coupledTo != null ? Car.rearCoupler.coupledTo.train : null;
+            if (car != tankCar)
+            {
+                tankCar = car;
+                var flow = car != null && car.SimController != null ? car.SimController.simFlow : null;
+                tank = flow?.OrderedSimComps.OfType<ResourceContainer>().FirstOrDefault(c => c.resourceType == ResourceContainerType.WATER);
+                tankVelocityKnown = false;
+                outletPull = 0f;
+                outletCovered = true;
+            }
+            // A tank engine's own tanks, or a tender not yet built: as before.
+            if (tank == null || !(delta > 0f))
+                return outletCovered = true;
+            var toEngine = Car.transform.position - car.transform.position;
+            var along = Vector3.Dot(toEngine, car.transform.forward) >= 0f ? car.transform.forward : -car.transform.forward;
+            var velocity = car.GetVelocity();
+            var acceleration = tankVelocityKnown ? (velocity - lastTankVelocity) / delta : Vector3.zero;
+            lastTankVelocity = velocity;
+            tankVelocityKnown = true;
+            acceleration = Vector3.ClampMagnitude(acceleration, MostOutletAcceleration);
+            var pull = -TenderOutlet.Gravity * Vector3.Dot(Vector3.up, along) - Vector3.Dot(acceleration, along);
+            outletPull += (pull - outletPull) * Mathf.Min(1f, delta / TenderOutlet.SloshTime);
+            var depth = TenderOutlet.OutletDepth(tank.normalizedReadOutPort.Value, outletPull);
+            outletCovered = outletCovered ? depth > 0f : depth > TenderOutlet.CoverAgain;
+            return outletCovered;
+        }
+
         /// <summary>Runs in place of the stock injector step.</summary>
         public void Simulate(float delta)
         {
@@ -505,7 +567,8 @@ namespace RealisticFiring.Sim
                 return;
 
             var multiplier = WaterConsumptionMultiplier(boiler) > 0f ? WaterConsumptionMultiplier(boiler) : 1f;
-            var tender = Mathf.Max(0f, boiler.water.Value / multiplier);
+            // Uncovered, the tender's outlet gives nothing until the water runs back.
+            var tender = StepOutlet(delta) ? Mathf.Max(0f, boiler.water.Value / multiplier) : 0f;
             var space = Mathf.Max(0f, TotalVolume(boiler) - vessel.waterVolume);
             var broken = boiler.isBrokenReadOut.Value != 0f;
 

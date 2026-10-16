@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.11.0 (2026-10-15)
+
+- Aim the shovel, rake, and fire iron by where the look crosses each cab's fitted firehole (`FireholeOpening`), in thirds as a keypad, held to the hole's edges, while the look is on the game's door target; drop the 1.8.1 bed aim. A setting draws the keypad on the hole (`AimKeypad`).
+- Aim VR lumps by their flight: before the fire's trigger counts a lump, follow it against the cab under gravity in the bed's frame to where it lands (`ThrownCoalPatch`).
+- Size each engine's injector to feed its whole boiler (Baldwin's sizing by cylinder bore; Sellers' capacities): S282 No. 12, 6.0 kg/s, its least halved as one lever for two; S060 No. 7, 2.1; JK3 2.5 each; 2901 12.6.
+- Soot the tubes from a coal fire's smoke and scale the boiler from the feed's solids (`BoilerFouling`), keeping their share of the heat from the water, charged as mechanical powertrain wear and cleaned by its repair; a washout loosens half the scale.
+- Wear the engine drifting with the throttle shut and the reverser under three-quarter stroke (`Drifting`), with overlay advice.
+- Lower a cold boiler's level by its water's shrink below 100 °C (`ColdWater`).
+- Cut the injectors' water when a nearly empty tender's water runs off its outlet on a grade or under acceleration (`TenderOutlet`).
+- Throw the stoker's coal from 0.093 m under the foot of each cab's firehole.
+- Hand over a bought fire iron the shops' coroutine could not make, from the template at the shop's counter, rather than refunding it; rebuild the template if destroyed; warn when the purchase lookup finds no load to redirect.
+- Let the cursor's ray pass the 2901's firing valve to the burner's valves behind it (`FiringValvePassThrough`), and size the loose-wheel valves' grip and hover spheres to the wheel drawn.
+- Scale the feed pump's sounds by a volume setting.
+
 ## 1.10.0 (2026-10-15)
 
 - Draw hardest at the back of the grate under a sealed arch (typical back 1.12, front 0.88 from 0.9, 1.12; Acker, RME Apr. 1930: the front pulled 70 % of the back); the S060, 8F, and FEF-3s milder, the JK3 unchanged. Lower the stoker's working front jets to 0.6 and the fireman's easing to 0.1.

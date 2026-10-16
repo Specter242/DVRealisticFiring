@@ -42,6 +42,9 @@ namespace RealisticFiring.Visuals
         /// <summary>The handwheel's object in its cab, for the log.</summary>
         public string Name { get; }
 
+        /// <summary>The wheel's width, m.</summary>
+        public float Diameter => diameter;
+
         /// <summary>The cab's own handwheel nearest <paramref name="near"/>, or null when it has none.</summary>
         public static HandwheelLook Find(Transform interior, Transform car, Vector3 near)
         {

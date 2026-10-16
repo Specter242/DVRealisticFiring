@@ -48,6 +48,9 @@ namespace RealisticFiring
         [Draw("Oil burner's roar and drumming, volume × (0 off)", DrawType.Slider, Min = 0, Max = 2, Precision = 1)]
         public float OilBurnerVolume = 1f;
 
+        [Draw("Feed pump's sound, volume × (0 off)", DrawType.Slider, Min = 0, Max = 2, Precision = 1)]
+        public float FeedPumpVolume = 1f;
+
         [Draw("Realistic chimney smoke on locomotives with a realistic firebox (restart required)")]
         public bool RealisticSmoke = true;
 
@@ -58,11 +61,14 @@ namespace RealisticFiring
         [Draw("Coal per standard shovelful on supported coal locomotives, kg (0 = the locomotive's stock shovel size)", Min = 0, Precision = 1)]
         public float ShovelfulMass = 3f;
 
-        [Draw("Aim shovelfuls at the spot you point to on the fire")]
+        [Draw("Aim shovelfuls by where you point in the fire door")]
         public bool AimShovelThroughDoor = true;
 
         [Draw("Name the aimed zone under the crosshair")]
         public bool ShowAimLabel = true;
+
+        [Draw("Draw the fire door's aiming keypad while aiming")]
+        public bool ShowAimKeypad = false;
 
         [Header("Controls")]
         [Draw("Open these settings (Unity Mod Manager's Ctrl+F10 is taken by some desktops)")]
