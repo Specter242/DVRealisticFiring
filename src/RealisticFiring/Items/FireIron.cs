@@ -258,7 +258,17 @@ namespace RealisticFiring.Items
         internal static Object LoadPrefab(string path) =>
             path == FireIron.PrefabName ? FireIron.Template : Resources.Load(path);
 
-        internal static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, MethodBase original)
+        internal static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, MethodBase original) =>
+            Redirect(instructions, original, SkinManagerFireIronLoading.Found ? "Skin Manager's loader" : null);
+
+        /// <summary>
+        /// Points each prefab load in <paramref name="instructions"/> at
+        /// <see cref="LoadPrefab"/>. Where there is none, says so: as a
+        /// note when <paramref name="coveredBy"/> makes the items there
+        /// instead (and its load is redirected), else as a warning naming the
+        /// other mods patching the method.
+        /// </summary>
+        internal static IEnumerable<CodeInstruction> Redirect(IEnumerable<CodeInstruction> instructions, MethodBase original, string coveredBy)
         {
             var load = ResourceLoad;
             var replacement = AccessTools.DeclaredMethod(typeof(FireIronLoading), nameof(LoadPrefab));
@@ -273,11 +283,73 @@ namespace RealisticFiring.Items
                 redirected++;
                 yield return new CodeInstruction(instruction) { opcode = OpCodes.Call, operand = replacement };
             }
+            if (redirected > 0)
+                yield break;
+            var where = $"{original?.DeclaringType?.Name}.{original?.Name}";
+            if (coveredBy != null)
+            {
+                Main.Mod?.Logger.Log($"The fire iron's lookup is in {coveredBy}, which makes the items in {where}");
+                yield break;
+            }
             // Another mod's patch there, or a game update, can take the load
             // away: the shops then sell the iron but cannot make it.
-            if (redirected == 0)
-                Main.Mod?.Logger.Warning($"The fire iron's lookup found no prefab load in {original?.DeclaringType?.Name}.{original?.Name}: " +
-                                         "a bought iron is handed over by the purchase guard, a saved one is dropped");
+            var others = original == null ? new string[0]
+                : Harmony.GetPatchInfo(original)?.Owners.Where(o => o != Main.Mod?.Info.Id).ToArray() ?? new string[0];
+            var effect = original?.DeclaringType == typeof(StartingItemsController) ? "a saved iron is dropped as the save loads"
+                : original?.DeclaringType?.Assembly == typeof(StartingItemsController).Assembly ? "a bought iron is handed over by the purchase guard"
+                : "the iron is not found there";
+            Main.Mod?.Logger.Warning($"The fire iron's lookup found no prefab load in {where}: {effect}" +
+                                     (others.Length > 0 ? $"; also patched by {string.Join(", ", others)}" : ""));
         }
+    }
+
+    /// <summary>
+    /// Skin Manager (SkinManagerMod; 4.4.1 read 2026-10-17) rewrites both
+    /// game methods <see cref="FireIronLoading"/> patches, making the items
+    /// through its own helpers, which load the prefab by name themselves:
+    /// with it installed, a bought iron fell to the purchase guard and a
+    /// saved one was dropped on every load (found from the lookup's warning
+    /// in DaGriffon's log, 2026-10-17).
+    /// The iron's lookup is redirected in those helpers too. Its own class,
+    /// so that a change in Skin Manager costs only this; loaded after Skin
+    /// Manager (Info.json's LoadAfter), so its assembly is there to find.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class SkinManagerFireIronLoading
+    {
+        internal const string AssemblyName = "SkinManagerMod";
+
+        internal static readonly (string Type, string Method)[] Loaders =
+        {
+            ("SkinManagerMod.Patches.ShopPatches", "InstantiatePaintCan"),
+            ("SkinManagerMod.Patches.InventoryPatches", "CustomInstantiateItem"),
+        };
+
+        /// <summary>Skin Manager's item loaders, those it has; none without it.</summary>
+        internal static List<MethodBase> Targets()
+        {
+            var assembly = System.AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == AssemblyName);
+            if (assembly == null)
+                return new List<MethodBase>();
+            return Loaders.Select(l => assembly.GetType(l.Type, false))
+                .Select((type, i) => type == null ? null : (MethodBase)AccessTools.DeclaredMethod(type, Loaders[i].Method))
+                .Where(m => m != null).ToList();
+        }
+
+        /// <summary>Whether Skin Manager's loaders are all there, so the game methods it rewrites are covered.</summary>
+        internal static bool Found => Targets().Count == Loaders.Length;
+
+        internal static bool Prepare() => Targets().Count > 0;
+
+        internal static IEnumerable<MethodBase> TargetMethods()
+        {
+            var targets = Targets();
+            if (targets.Count < Loaders.Length)
+                Main.Mod?.Logger.Warning("Skin Manager's item loaders have changed: the fire iron may not be found in its shops or saves");
+            return targets;
+        }
+
+        internal static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, MethodBase original) =>
+            FireIronLoading.Redirect(instructions, original, null);
     }
 }

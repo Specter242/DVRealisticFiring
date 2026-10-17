@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.13.2 (2026-10-17)
+
+- The fire iron's lookup is redirected inside Skin Manager's item loaders too (`SkinManagerFireIronLoading`), which make every shop and saved item in its place of the game's own load; Realistic Firing loads after Skin Manager. A game method with no load to redirect is a note where Skin Manager covers it, otherwise a warning naming the other mods patching it. The adapter check patches an installed or given Skin Manager first and reads back the combined code.
+
 ## 1.13.1 (2026-10-17)
 
 - A stoker whose tender port reads no coal takes the tender's coal pile's (`RealisticStoker`, its coal reached, source, and direction exposed).

@@ -18,6 +18,9 @@ if grep -q -E "warning CS" <<<"$build"; then
     grep -E "warning CS" <<<"$build" | sort -u >&2
     exit 1
 fi
-# Optional Multiplayer checks load its installed assembly and dependencies
-# in place, never copying third-party mod binaries into a package.
-mono "$project/bin/Release/net48/RealisticFiring.AdapterCheck.exe" "$dv/Mods/Multiplayer/Multiplayer.dll"
+# Optional Multiplayer and Skin Manager checks load their installed
+# assemblies and dependencies in place, never copying third-party mod
+# binaries into a package; missing ones are skipped. Further assemblies
+# (another copy of Skin Manager, say) can be given as arguments.
+mono "$project/bin/Release/net48/RealisticFiring.AdapterCheck.exe" \
+    "$dv/Mods/Multiplayer/Multiplayer.dll" "$dv/Mods/SkinManagerMod/SkinManagerMod.dll" "$@"

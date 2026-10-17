@@ -191,8 +191,14 @@ namespace RealisticFiring.AdapterCheck
             Check(AccessTools.Field(typeof(DV.Interaction.AGrabHandler), Visuals.FiringValvePassThrough.PassThroughField)?.FieldType
                   == typeof(DV.Interaction.AGrabHandler.InteractionPassThroughDelegate),
                 "a control's pass-through is wrappable, so the oil burner's valves can be reached past the firing valve");
-            if (args.Length > 0 && File.Exists(args[0]))
-                CheckMultiplayerCabHooks(args[0]);
+            // Optional installed mods, by file name: Multiplayer's and Skin Manager's assemblies.
+            foreach (var path in args.Where(File.Exists))
+            {
+                if (Path.GetFileName(path) == "Multiplayer.dll")
+                    CheckMultiplayerCabHooks(path);
+                else if (Path.GetFileName(path) == Items.SkinManagerFireIronLoading.AssemblyName + ".dll")
+                    CheckSkinManagerFireIron(path);
+            }
             Console.WriteLine(failures == 0 ? "All adapter checks passed" : $"{failures} adapter checks failed");
             return failures == 0 ? 0 : 1;
         }
@@ -2308,6 +2314,100 @@ namespace RealisticFiring.AdapterCheck
                   && !targets.Contains(resourceLoad), "no global Unity Resources.Load patch");
         }
 
+        // Skin Manager rewrites the game's saved-item and purchased-item
+        // methods to make items through its own loaders: with its patches in
+        // first, as Info.json's LoadAfter has it, the fire iron's lookup must
+        // be redirected in those loaders, and the game methods keep Skin
+        // Manager's calls.
+        private static void CheckSkinManagerFireIron(string path)
+        {
+            const string skinId = "SkinManagerMod";
+            const string mineId = "RealisticFiring.AdapterCheck.SkinManager";
+            var resolve = ModResolver(path);
+            AppDomain.CurrentDomain.AssemblyResolve += resolve;
+            try
+            {
+                var assembly = Assembly.LoadFrom(path);
+                var loaders = Items.SkinManagerFireIronLoading.Targets();
+                var resourceLoad = Items.FireIronLoading.ResourceLoad;
+                var replacement = HarmonyLib.AccessTools.DeclaredMethod(typeof(Items.FireIronLoading), "LoadPrefab");
+                Check(loaders.Count == 2 && Items.SkinManagerFireIronLoading.Found && Items.SkinManagerFireIronLoading.Prepare(),
+                    $"Skin Manager (assembly {assembly.GetName().Version}): both item loaders found");
+                foreach (var loader in loaders)
+                {
+                    var original = HarmonyLib.PatchProcessor.GetOriginalInstructions(loader);
+                    var patched = Items.SkinManagerFireIronLoading.Transpiler(original, loader).ToList();
+                    var loads = Enumerable.Range(0, original.Count).Where(i => original[i].Calls(resourceLoad)).ToList();
+                    Check(loads.Count == 1 && patched.Count == original.Count && loads.All(i => patched[i].Calls(replacement))
+                          && Enumerable.Range(0, original.Count).Except(loads).All(i => ReferenceEquals(patched[i], original[i])),
+                        $"Skin Manager's {loader.DeclaringType.Name}.{loader.Name}: redirects only its prefab lookup");
+                }
+
+                var skin = new HarmonyLib.Harmony(skinId);
+                foreach (var name in new[] { "SkinManagerMod.Patches.ShopPatches", "SkinManagerMod.Patches.InventoryPatches" })
+                    skin.CreateClassProcessor(assembly.GetType(name, true)).Patch();
+                var mine = new HarmonyLib.Harmony(mineId);
+                mine.CreateClassProcessor(typeof(Items.FireIronLoading)).Patch();
+                mine.CreateClassProcessor(typeof(Items.SkinManagerFireIronLoading)).Patch();
+                mine.CreateClassProcessor(typeof(Items.PurchaseGuard)).Patch();
+                var games = Items.FireIronLoading.TargetMethods().ToList();
+                var gamesKeepSkin = games.All(game =>
+                {
+                    var current = HarmonyLib.PatchProcessor.GetCurrentInstructions(game);
+                    return !current.Any(i => i.Calls(resourceLoad))
+                           && current.Any(i => i.operand is MethodInfo m && loaders.Contains(m));
+                });
+                var loadersRedirected = loaders.All(loader =>
+                {
+                    var current = HarmonyLib.PatchProcessor.GetCurrentInstructions(loader);
+                    return current.Count(i => i.Calls(replacement)) == 1 && !current.Any(i => i.Calls(resourceLoad));
+                });
+                Check(gamesKeepSkin && loadersRedirected,
+                    "with Skin Manager patched first, the game methods make items through its loaders and the fire iron is found there");
+            }
+            catch (Exception e)
+            {
+                Check(false, "Skin Manager fire iron lookup: " + e.GetBaseException().Message);
+            }
+            finally
+            {
+                new HarmonyLib.Harmony(mineId).UnpatchAll(mineId);
+                new HarmonyLib.Harmony(skinId).UnpatchAll(skinId);
+                AppDomain.CurrentDomain.AssemblyResolve -= resolve;
+            }
+        }
+
+        // Resolves an installed mod's dependencies from its folder, the
+        // game's Managed folder and Unity Mod Manager's, and the other mods'
+        // folders, without adding the game's mscorlib to MONO_PATH and
+        // replacing Mono's own core library.
+        private static ResolveEventHandler ModResolver(string path)
+        {
+            var modFolder = Path.GetDirectoryName(path);
+            var game = Environment.GetEnvironmentVariable("DV_INSTALL_DIR")
+                       ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local/share/Steam/steamapps/common/Derail Valley");
+            var managed = Path.Combine(game, "DerailValley_Data", "Managed");
+            var mods = Path.Combine(game, "Mods");
+            var folders = new[] { modFolder, managed, Path.Combine(managed, "UnityModManager") }
+                .Concat(Directory.Exists(mods) ? Directory.GetDirectories(mods) : new string[0]).ToArray();
+            return (_, request) =>
+            {
+                var name = new AssemblyName(request.Name).Name;
+                if (name == "mscorlib" || name == "netstandard" || name.StartsWith("System", StringComparison.Ordinal))
+                    return null;
+                var loaded = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == name);
+                if (loaded != null)
+                    return loaded;
+                foreach (var folder in folders)
+                {
+                    var file = Path.Combine(folder, name + ".dll");
+                    if (File.Exists(file))
+                        return Assembly.LoadFrom(file);
+                }
+                return null;
+            };
+        }
+
         // The load-hang guard patches the game's pool coroutine and TrainCar.Awake
         // with finalizers: Harmony must accept both against the installed game.
         // A purchase that fails must free the registers: the guard's finalizer
@@ -2320,6 +2420,11 @@ namespace RealisticFiring.AdapterCheck
             {
                 harmony.CreateClassProcessor(typeof(Items.FireIronLoading)).Patch();
                 harmony.CreateClassProcessor(typeof(Items.PurchaseGuard)).Patch();
+                // Skin Manager is not loaded yet here: its class skips itself.
+                var skinPatched = harmony.CreateClassProcessor(typeof(Items.SkinManagerFireIronLoading)).Patch();
+                Check(!Items.SkinManagerFireIronLoading.Prepare() && (skinPatched == null || skinPatched.Count == 0)
+                      && !Items.SkinManagerFireIronLoading.Found,
+                    "without Skin Manager its fire iron lookup patches nothing and does not fail");
                 var info = HarmonyLib.Harmony.GetPatchInfo(Items.PurchaseGuard.TargetMethod());
                 Check(info?.Finalizers.Count == 1 && info.Transpilers.Count == 1 && Items.PurchaseGuard.Resolves,
                     "a failed purchase frees the registers: the guard installs beside the iron's lookup and finds the shops' queue");
