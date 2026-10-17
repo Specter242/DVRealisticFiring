@@ -86,6 +86,16 @@ namespace RealisticFiring.Sim
         private float lastSpeed;
         private float lastWork;
 
+        // What he did since his last line in the log while the player was
+        // not aboard: to find why he stops firing with the player in
+        // another loco (whydidimake, Discord, 2026-10-16).
+        private const float AwayLogEvery = 30f;
+        private float awayClock;
+        private int awayThrows;
+        private float awayCoal;
+        private int awayRefused;
+        private int awayWanted;
+
         private FiremanRig(TrainCar car, SimController controller, Boiler boiler, List<ReciprocatingSteamEngine> engines,
             SteamExhaust exhaust, RealisticFirebox coal, RealisticOilFirebox oil)
         {
@@ -276,6 +286,8 @@ namespace RealisticFiring.Sim
             Readings = readings;
             Actions = actions;
 
+            if (actions.Shovelful > 0f)
+                awayWanted++;
             if (CoalFireman != null)
             {
                 // The scoop from the tender as he opens the door for a throw.
@@ -312,6 +324,37 @@ namespace RealisticFiring.Sim
             blower.Work(actions.Blower, clock);
             damper.Work(actions.Damper, clock);
             blowdown.Work(actions.Blowdown, clock);
+            LogAway(dt, readings);
+        }
+
+        // Every half minute with the player not aboard, a line on what he
+        // did and what held him back.
+        private void LogAway(float dt, FiremanReadings readings)
+        {
+            if (PlayerManager.Car == Car || Main.Settings.FireStatusLogInterval <= 0f)
+            {
+                awayClock = 0f;
+                awayThrows = awayRefused = awayWanted = 0;
+                awayCoal = 0f;
+                return;
+            }
+            if ((awayClock += dt) < AwayLogEvery)
+                return;
+            var yielded = string.Join(", ", Hands.Where(h => h.YieldLeft > 0f).Select(h => $"{h.Name} {h.YieldLeft:F0} s"));
+            var player = PlayerManager.Car != null ? PlayerManager.Car.ID : "on foot";
+            Main.Mod.Logger.Log($"{Car.ID} fireman ({Fireman.Mode}) with the player not aboard ({player}): " +
+                                $"{awayWanted} throws wanted, {awayThrows} made ({awayCoal:F1} kg), {awayRefused} refused at the door; " +
+                                $"door {(door.Port != null ? door.Port.Value : -1f):F2}, yielded to the player: {(yielded.Length > 0 ? yielded : "none")}; " +
+                                $"pressure {readings.Pressure:F1} bar, glass {readings.Glass:P0}, work {readings.Work:P0}, tender coal {readings.TenderCoal:F0} kg" +
+                                (Firebox != null ? $", fire {Firebox.Model.CoalMass:F0} kg" : "") +
+                                (readings.HasStoker && Firebox != null
+                                    ? $", stoker engine {Firebox.StokerEngineSpeed:P0} {(stoker != null ? stoker.Direction.ToString().ToLowerInvariant() : "")} feeding {(Firebox.LastStoker is StokerFlow flow ? flow.Fed / Mathf.Max(1e-4f, lastTick) : 0f):F2} kg/s" +
+                                      (stoker != null ? $", {stoker.CoalReached:F0} kg of coal at it from {stoker.CoalFrom}" : "")
+                                    : "") +
+                                $"; cab {(Car.loadedInterior != null ? "loaded" : "not loaded")}");
+            awayClock = 0f;
+            awayThrows = awayRefused = awayWanted = 0;
+            awayCoal = 0f;
         }
 
         // The stoker's engine throttle, operating lever, and jets.
@@ -411,7 +454,7 @@ namespace RealisticFiring.Sim
                 StokerFullFeed = stokerModel != null ? stokerModel.Spec.MaxFeedRate : 0f,
                 Sand = OilFirebox != null ? SandAvailable() : 0f,
                 Solids = water != null ? water.Water.Concentration : 0f,
-                ShovelMass = Mathf.Max(0.5f, Main.Settings.ShovelfulMass),
+                ShovelMass = ShovelfulMass(),
             };
         }
 
@@ -461,6 +504,16 @@ namespace RealisticFiring.Sim
             };
         }
 
+        private float ShovelfulMass()
+        {
+            var setting = Main.Settings.ShovelfulMass;
+            if (setting > 0f)
+                return Mathf.Max(0.5f, setting);
+            var pile = Pile();
+            var stock = pile != null ? ShovelSize.StandardShovelChunks * pile.CoalChunkMass() / Multiplier : 0f;
+            return stock > 0f && !float.IsInfinity(stock) ? stock : 3f;
+        }
+
         // Tender coal as it goes on the fire: the pile's mass over the
         // firebox's consumption multiplier, as the game's shovel moves it.
         private float TenderCoal()
@@ -485,10 +538,15 @@ namespace RealisticFiring.Sim
         {
             var pile = Pile();
             if (pile == null || door.Port != null && door.Yielded(clock) && door.Port.Value < DoorOpenEnough)
+            {
+                awayRefused++;
                 return;
+            }
             var taken = pile.TryRemoveCoal(mass * Multiplier) / Multiplier;
             if (taken <= 0f)
                 return;
+            awayThrows++;
+            awayCoal += taken;
             Firebox.DeliverShovelful(taken, aim);
             FiremanSounds.Throw(Car, Firebox);
         }

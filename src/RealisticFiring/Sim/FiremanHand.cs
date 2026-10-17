@@ -36,6 +36,9 @@ namespace RealisticFiring.Sim
         private float askAgain;
         private float moving = float.NaN;
         private float lastNow = float.NaN;
+        private float refusedSaidAt = float.NegativeInfinity;
+
+        private const float RefusedSayEvery = 60f;
 
         /// <param name="pace">How fast he moves it, in its travel per second.</param>
         public FiremanHand(string name, Port port, float pace)
@@ -80,8 +83,9 @@ namespace RealisticFiring.Sim
                 watching = false;
                 asked = float.NaN;
                 moving = float.NaN;
-                if (Main.Settings != null && Main.Settings.LogCoalDeliveries)
-                    Main.Mod.Logger.Log($"fireman: the player has the {Name} ({seen:F2} -> {value:F2})");
+                // Always said: a control taken from him with no player at it
+                // would stop his firing (whydidimake, 2026-10-16).
+                Main.Mod?.Logger.Log($"fireman: the player has the {Name} ({seen:F2} -> {value:F2})");
             }
             if (Yielded(now))
                 return;
@@ -92,7 +96,15 @@ namespace RealisticFiring.Sim
             moving = Mathf.MoveTowards(moving, want, Pace * dt);
             var arrived = moving == want || moving == 0f || moving == 1f;
             var fresh = float.IsNaN(asked) || (arrived ? asked != moving : Mathf.Abs(moving - asked) > Deadband);
-            var stuck = arrived && Mathf.Abs(value - moving) > RetryBeyond && now >= askAgain;
+            // Stuck: well off where he put it, or shut where he wants it open
+            // (a fine valve's few percent are under the margin a notched
+            // lever settles within).
+            var stuck = arrived && (Mathf.Abs(value - moving) > RetryBeyond || moving > Deadband && value <= 0.001f) && now >= askAgain;
+            if (stuck && now - refusedSaidAt >= RefusedSayEvery)
+            {
+                refusedSaidAt = now;
+                Main.Mod?.Logger.Log($"fireman: the {Name} would not stay where he put it ({moving:F2} asked, {value:F2} now)");
+            }
             if (value != moving && (fresh || stuck))
             {
                 Port.ExternalValueUpdate(moving);

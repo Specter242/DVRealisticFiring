@@ -133,7 +133,7 @@ namespace RealisticFiring.Core
         private const float SmallestFireHotBrick = 0.015f;
 
         // Without this much atomizing the oil does not burn.
-        private const float FlameAtomizing = 0.2f;
+        public const float FlameAtomizing = 0.2f;
 
         /// <summary>The lit waste thrown in to light the fire burns this long, in s.</summary>
         public const float TorchTime = 25f;
@@ -242,6 +242,20 @@ namespace RealisticFiring.Core
 
         /// <summary>Atomizing steam used, in kg/s.</summary>
         public float AtomizerSteam { get; private set; }
+
+        /// <summary>
+        /// The most oil, kg/s, the atomizer's steam now atomizes well enough
+        /// to burn (the least atomizing a flame takes, against a hard exhaust,
+        /// for the oil as warm as it is); none with the atomizer shut.
+        /// </summary>
+        public float AtomizableOil
+        {
+            get
+            {
+                var cold = Smoothing.Clamp01((WarmOil - OilTemperature) / (WarmOil - AmbientTemperature));
+                return AtomizerSteam / (FlameAtomizing * AtomizingSteamPerKg * (1f + ColdOilAtomizing * cold));
+            }
+        }
 
         /// <summary>Heater steam used, in kg/s.</summary>
         public float HeaterSteamUsed { get; private set; }

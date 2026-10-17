@@ -57,8 +57,11 @@ namespace RealisticFiring.Core
 
         // The atomizer cracked at least this far with oil running: more
         // drummed on a small fire (2901 in game, 2026-10-10: 5 % open was 16
-        // times the need on a standing fire).
-        private const float LeastAtomizer = 0.01f;
+        // times the need on a standing fire). One of the cab wheel's 2.5 %
+        // notches: 1 % rounded to shut on it.
+        private const float LeastAtomizer = 0.025f;
+
+        private const float AtomizedShare = 0.67f;
 
         // Blower: a little standing, more raising steam standing, wide to
         // clear the box with the fire out, near shut at the safety valve.
@@ -136,8 +139,11 @@ namespace RealisticFiring.Core
                 oilCap = Math.Max(LeastFire, Math.Min(oilCap, Valve) - BlackCut * dt);
             else if (sinceBlack >= CapHold)
                 oilCap = Math.Min(1f, oilCap + CapRecover * dt);
-            Valve = alight && r.TenderWater > 0f && r.TenderCoal > 0f
-                ? Clamp(Math.Min(want / Math.Max(1e-3f, fire.MaxFeed), oilCap), LeastFire, 1f)
+            // The atomizer first: no more oil than its steam atomizes, and none
+            // where that is under the least he keeps lit.
+            var atomized = AtomizedShare * fire.AtomizableOil / Math.Max(1e-3f, fire.MaxFeed);
+            Valve = alight && r.TenderWater > 0f && r.TenderCoal > 0f && atomized >= LeastFire
+                ? Clamp(Math.Min(Math.Min(want / Math.Max(1e-3f, fire.MaxFeed), oilCap), atomized), LeastFire, 1f)
                 : 0f;
             actions.FiringValve = Valve;
 

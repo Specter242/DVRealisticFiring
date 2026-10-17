@@ -155,6 +155,16 @@ namespace RealisticFiring.Sim
             Build();
         }
 
+        /// <summary>
+        /// The tender coal the stoker reached on its last tick, in firebox kg,
+        /// where it reached it from, and the way its engine was set to run.
+        /// </summary>
+        public float CoalReached { get; private set; }
+        public string CoalFrom { get; private set; } = "none";
+        public StokerDirection Direction { get; private set; }
+
+        private bool saidPortEmpty;
+
         public override void Tick(float delta)
         {
             // On a multiplayer client the host simulates; its ports carry the host's values.
@@ -173,15 +183,22 @@ namespace RealisticFiring.Sim
                 return;
 
             var modifier = gameParams != null ? gameParams.ResourceConsumptionModifier : 1f;
-            // Tender coal through the loco's tender ports (CCL locos), or
-            // straight from the tender's coal pile, as the shovel takes it.
-            var pile = coalAmount.IsConnected ? null : TenderPile();
-            var available = pile != null
-                ? pile.CoalAvailable() / coalMultiplier
-                : Mathf.Max(0f, coalAmount.Value) / (coalMultiplier * (modifier > 0f ? modifier : 1f));
+            var portCoal = coalAmount.IsConnected ? Mathf.Max(0f, coalAmount.Value) / (coalMultiplier * (modifier > 0f ? modifier : 1f)) : 0f;
+            var pile = !coalAmount.IsConnected || portCoal <= 0f ? TenderPile() : null;
+            if (pile != null && coalAmount.IsConnected && pile.CoalAvailable() > 0f && !saidPortEmpty)
+            {
+                saidPortEmpty = true;
+                Main.Mod?.Logger.Log($"{car?.ID}: the stoker's tender port reads no coal; it takes the coal pile's ({pile.CoalAvailable() / coalMultiplier:F0} kg), as the shovel does");
+            }
+            if (pile != null && !(pile.CoalAvailable() > 0f) && coalAmount.IsConnected)
+                pile = null;
+            var available = pile != null ? pile.CoalAvailable() / coalMultiplier : portCoal;
+            CoalReached = available;
+            CoalFrom = pile != null ? "the coal pile" : coalAmount.IsConnected ? "the tender port" : "none";
             var throttle = Mathf.Clamp01(control.Value);
             var pressure = steamPressure.Value;
             var controls = ReadControls(throttle);
+            Direction = controls.Direction;
 
             StokerFlow flow;
             if (firebox != null)

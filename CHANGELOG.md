@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.13.1 (2026-10-17)
+
+- A stoker whose tender port reads no coal takes the tender's coal pile's (`RealisticStoker`, its coal reached, source, and direction exposed).
+- The oil fireman runs no more oil than the atomizer's steam atomizes (`OilFire.AtomizableOil`, `AutoOilFireman`), asks for at least one 2.5 % notch, and a hand counts a control it wants open that sits shut as stuck (`FiremanHand`).
+- The fireman throws the stock shovelful with the setting at 0 (`FiremanRig.ShovelfulMass`).
+- The fireman's state every half minute while the player is away, with the status log on (`FiremanRig.LogAway`); a yielded control is always logged.
+
 ## 1.13.0 (2026-10-17)
 
 - Shed water hoses (`HoseKind.Water`): a water stand beside each shed stand (`ShedStands`, each shed's place in `WaterBySite`, single stands in `WaterByStand`), its 15 m hose's Boss coupling and clamp scaled half as big again (`HoseKind.Scale`); each engine's filling connection seated per livery (`ShedConnections.WaterSeated`, `WaterFittings`, its plug cock turning with the hose). The rig washes a cold boiler out once a plugging and fills it by the valve's opening (`InjectorRig.StepHose`); the F9 key and `WaterPoints` are gone. Water runs from an open hose (`HoseWater`).

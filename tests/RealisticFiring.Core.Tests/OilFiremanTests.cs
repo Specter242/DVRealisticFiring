@@ -58,6 +58,9 @@ namespace RealisticFiring.Core.Tests;
         /// <summary>The damper where the player holds it, or null for the fireman's.</summary>
         public float? HeldDamper;
 
+        /// <summary>The atomizer where the cab holds it whatever he asks, or null for the fireman's.</summary>
+        public float? HeldAtomizer;
+
         public float Glass => WaterMass / GlassMass;
         public SteamDraft Draft => new SteamDraft(BlowerSteam, 1f, 2f, SafetyValve);
         public float BlowerFlow => Draft.BlowerSteam(Pressure, Last.Blower);
@@ -107,7 +110,7 @@ namespace RealisticFiring.Core.Tests;
             Fire.Step(Dt, new OilFireInputs
             {
                 FiringValve = Last.FiringValve,
-                Atomizer = Last.Atomizer,
+                Atomizer = HeldAtomizer ?? Last.Atomizer,
                 Heater = Last.Heater,
                 AirFlow = Air,
                 Exhaust = Math.Min(1f, EngineSteam / FullWorkSteam),
@@ -230,6 +233,28 @@ namespace RealisticFiring.Core.Tests;
         engine.Run(300f, e => drumming = Math.Max(drumming, e.Time > 60f ? e.Fire.Drumming : 0f));
         output.WriteLine($"valve {engine.Last.FiringValve:F2}, atomizer {engine.Last.Atomizer:F3} ({engine.Fire.Atomizing:F1}x), drumming up to {drumming:P0}");
         Assert.True(drumming < 0.05f, $"drummed {drumming:P0}");
+    }
+
+    [Fact]
+    public void WithTheAtomizerHeldShutHeRunsNoOilOntoHotBrick()
+    {
+        var engine = new OilFootplate(lit: false);
+        engine.Fire.Restore(false, 1050f, 60f, 0f);
+        engine.HeldAtomizer = 0f;
+        var flarebacks = 0;
+        engine.Run(20f, e => flarebacks += e.Fire.Flareback > 0f ? 1 : 0);
+        output.WriteLine($"held shut: valve {engine.Last.FiringValve:F2}, vapor {engine.Fire.Vapor:F2} kg, pooled {engine.Fire.PooledOil:F2} kg, brick {engine.Fire.BrickTemperature:F0} C");
+        Assert.Equal(0f, engine.Last.FiringValve);
+        Assert.True(engine.Fire.Vapor < 0.01f && engine.Fire.PooledOil < 0.01f);
+        Assert.Equal(0, flarebacks);
+
+        // Let go, the atomizer first and then the oil: it catches on the hot
+        // brick and stays lit, with nothing gathered to flare back.
+        engine.HeldAtomizer = null;
+        engine.Run(30f, e => flarebacks += e.Fire.Flareback > 0f ? 1 : 0);
+        output.WriteLine($"freed: fire {(engine.Fire.FireOn ? "on" : "out")}, valve {engine.Last.FiringValve:F2}, atomizer {engine.Last.Atomizer:F3}, atomizing {engine.Fire.Atomizing:F1}x");
+        Assert.True(engine.Fire.FireOn);
+        Assert.Equal(0, flarebacks);
     }
 
     [Fact]
