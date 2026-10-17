@@ -33,7 +33,7 @@ namespace RealisticFiring.Sim
 
         /// <summary>What players near the loco are told when its plug melts.</summary>
         public const string PlugMeltedNotice = "The fusible plug has melted: steam is blowing into the firebox and has put the fire out. " +
-                                               "Have the engine repaired at a service station, or wash out the boiler on a service track (hydrant hose, boiler cold), to renew it.";
+                                               "Have the engine repaired at a service station, or wash out the boiler with a shed stand's water hose (boiler cold), to renew it.";
 
         private const string SolidsKey = "rfSolids";
         private const string SettledKey = "rfSludgeSettled";
@@ -209,8 +209,8 @@ namespace RealisticFiring.Sim
             var engine = flow.OrderedSimComps.OfType<ReciprocatingSteamEngine>().FirstOrDefault();
             var livery = car != null && car.carLivery != null ? car.carLivery.id : null;
             var guard = livery != null && Guards.TryGetValue(livery, out var fitted) ? fitted : Guard.None;
-            // A plug needs a firebox it can drown, and the hydrant hose that
-            // washes the boiler out to renew it.
+            // A plug needs a firebox it can drown, and the injector rig whose
+            // water hose washes the boiler out to renew it.
             if (guard == Guard.FusiblePlug && (!Main.Session.FusiblePlugs || !FireboxRegistry.TryGet(car, out _) || !InjectorRig.TryGet(car, out _)))
                 guard = Guard.None;
 
@@ -451,12 +451,16 @@ namespace RealisticFiring.Sim
             Settle(vessel);
         }
 
-        /// <summary>After the injector step: what the injectors, pump, hose, or hand pump put in.</summary>
+        /// <summary>
+        /// After the injector step: what the injectors, pump, hose, or hand
+        /// pump put in; a repair stand's steam is pure water, no feed.
+        /// </summary>
         public void AfterFeed()
         {
             var vessel = Vessel(boiler);
+            var steamed = InjectorRig.TryGet(boiler, out var injectors) ? injectors.SteamedLastStep : 0f;
             if (vessel != null)
-                fed += Mathf.Max(0f, vessel.mass - massAtTick);
+                fed += Mathf.Max(0f, vessel.mass - massAtTick - steamed);
         }
 
         public float MassNow => Vessel(boiler)?.mass ?? 0f;

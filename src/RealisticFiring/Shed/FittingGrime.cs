@@ -10,13 +10,6 @@ namespace RealisticFiring.Shed
         public static Material Material(Metal metal)
         {
             var material = new Material(Shader.Find("Standard")) { name = $"RealisticFiring fitting {metal.ToString().ToLowerInvariant()}" };
-            if (metal == Metal.Hose)
-            {
-                material.color = new Color(0.11f, 0.1f, 0.09f);
-                material.SetFloat("_Metallic", 0f);
-                material.SetFloat("_Glossiness", 0.25f);
-                return material;
-            }
             var albedo = new Texture2D(Size, Size, TextureFormat.RGBA32, true, false) { name = material.name + " albedo", wrapMode = TextureWrapMode.Repeat };
             var gloss = new Texture2D(Size, Size, TextureFormat.RGBA32, true, true) { name = material.name + " metallic", wrapMode = TextureWrapMode.Repeat };
             albedo.filterMode = gloss.filterMode = FilterMode.Trilinear;

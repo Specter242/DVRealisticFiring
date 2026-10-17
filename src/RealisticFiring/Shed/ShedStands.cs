@@ -20,13 +20,14 @@ namespace RealisticFiring.Shed
         /// </summary>
         private readonly struct Roundhouse
         {
-            public Roundhouse(string turntable, string stallPrefix, float along, float aside, float turn = 0f)
+            public Roundhouse(string turntable, string stallPrefix, float along, float aside, float turn = 0f, string repairStall = null)
             {
                 Turntable = turntable;
                 StallPrefix = stallPrefix;
                 Along = along;
                 Aside = aside;
                 Turn = turn;
+                RepairStall = repairStall;
             }
 
             public string Turntable { get; }
@@ -36,6 +37,8 @@ namespace RealisticFiring.Shed
 
             /// <summary>How far the stand is turned from facing out along its stall, degrees.</summary>
             public float Turn { get; }
+
+ public string RepairStall { get; }
 
         }
 
@@ -55,7 +58,10 @@ namespace RealisticFiring.Shed
             public float Turn { get; }
 
             /// <summary>Its stands' key among the sites.</summary>
-            public string Key => FormattableString.Invariant($"shop {Track} at {Along:F1}");
+            public string Key => "shop " + Id;
+
+            /// <summary>Its stand's name, and its key in a session: the same on every machine, whatever its language.</summary>
+            public string Id => FormattableString.Invariant($"{Track} at {Along:F1}");
 
 
         }
@@ -104,14 +110,14 @@ namespace RealisticFiring.Shed
 
         private static readonly Roundhouse[] Roundhouses =
         {
-            new Roundhouse("T_HB_1", "HB-T1-", 22f, 2.47f),
+            new Roundhouse("T_HB_1", "HB-T1-", 22f, 2.47f, repairStall: "HB-T1-03-P"),
             // Machine Factory's: the same roundhouse, seven 50 m stalls fanned
             // as Harbor's, so Harbor's place (2026-10-17).
-            new Roundhouse("T_MF_1", "MF-T1-", 22f, 2.47f),
+            new Roundhouse("T_MF_1", "MF-T1-", 22f, 2.47f, repairStall: "MF-T1-05-P"),
             // City South's big roundhouse: 25 stalls of 44 m off a 40 m deck,
             // fanned about as far apart as Harbor's; Harbor's 22 m out on
             // its 50 m stalls made 20 m (2026-10-17, to be checked in game).
-            new Roundhouse("T-CS-1", "CS-M-", 20f, 2.47f),
+            new Roundhouse("T-CS-1", "CS-M-", 20f, 2.47f, repairStall: "CS-M-24-P"),
             // The small engine houses, each stand 45 % out along its stall as
             // Harbor's and City South's are, near a spawned engine's middle
             // (the game spawns them centred on the track), 2.47 m to the
@@ -147,6 +153,57 @@ namespace RealisticFiring.Shed
 
         private static readonly List<GameObject> Built = new List<GameObject>();
 
+        // Each stand's kind of hose.
+        private static readonly Dictionary<GameObject, HoseKind> KindOf = new Dictionary<GameObject, HoseKind>();
+
+
+        /// <summary>
+        /// A water stand's place beside its steam stand, in the steam stand's
+        /// frame: this far along the way its branch points and this far aside,
+        /// away from the track, m, and turned, degrees.
+        /// </summary>
+        private readonly struct WaterPlace
+        {
+            public WaterPlace(float along, float aside, float turn)
+            {
+                Along = along;
+                Aside = aside;
+                Turn = turn;
+            }
+
+            public float Along { get; }
+            public float Aside { get; }
+            public float Turn { get; }
+
+            public override string ToString() => FormattableString.Invariant($"{Along:F1} m along, {Aside:F2} m aside, turned {Turn:F0} degrees");
+        }
+
+        private static readonly WaterPlace WaterUsual = new WaterPlace(7.6f, 1.09f, 0f);
+
+        private static readonly Dictionary<string, WaterPlace> WaterBySite = new Dictionary<string, WaterPlace>
+        {
+            ["T_IMW_1"] = new WaterPlace(3.2f, 0.15f, 0f),
+            ["shop OR-A-04-S at 26.8"] = new WaterPlace(3.2f, -0.11f, 0f),
+            ["shop OWN-A-02-D at 130.8"] = new WaterPlace(3.2f, -0.03f, 0f),
+            ["shop GF-A-01-D at 105.0"] = new WaterPlace(-1.6f, 0.05f, 0f),
+            ["shop FF-A-04-D at 24.2"] = new WaterPlace(-1.6f, 0.01f, 0f),
+        };
+        private static readonly Dictionary<string, WaterPlace> WaterByStand = new Dictionary<string, WaterPlace>
+        {
+            ["HB-T1-07-P"] = new WaterPlace(7.6f, 0.72f, 0f),
+            ["CS-M-21-P"] = new WaterPlace(1.9f, 0.72f, 0f),
+            ["CS-M-22-P"] = new WaterPlace(-1.6f, 0.72f, 0f),
+            ["SW-T1-01-P"] = new WaterPlace(-5.0f, 0.27f, 0f),
+            ["CW-A-02-D at 94.8"] = new WaterPlace(-5.0f, 0.01f, 0f),
+            ["SM-A-02-P at 26.3"] = new WaterPlace(-5.0f, 0.05f, 0f),
+            ["SM-T1-01-P"] = new WaterPlace(-5.1f, 0.05f, 0f),
+            ["MF-T1-04-P"] = new WaterPlace(12.0f, 1.09f, 0f),
+            ["MF-T1-07-P"] = new WaterPlace(8.1f, 0.71f, 0f),
+        };
+
+        private static WaterPlace WaterFor(string site, string id) =>
+            WaterByStand.TryGetValue(id, out var place) ? place : WaterBySite.TryGetValue(site, out place) ? place : WaterUsual;
+
         // Each roundhouse's stands, by its turntable, built once its turntable
         // and a hose to copy are found.
         private static readonly Dictionary<string, List<GameObject>> ByRoundhouse = new Dictionary<string, List<GameObject>>();
@@ -157,12 +214,12 @@ namespace RealisticFiring.Shed
         private static readonly Dictionary<PluggableObject, Transform> Valves = new Dictionary<PluggableObject, Transform>();
         private static float lookAt;
 
-        /// <summary>Whether a stand's hose reaches <paramref name="point"/>: its gooseneck within <paramref name="reach"/> m.</summary>
-        public static bool Reaches(Vector3 point, float reach)
+        /// <summary>Whether a stand's hose of <paramref name="kind"/> reaches <paramref name="point"/>: its gooseneck within <paramref name="reach"/> m.</summary>
+        public static bool Reaches(Vector3 point, float reach, HoseKind kind)
         {
             foreach (var stand in Built)
             {
-                if (stand == null)
+                if (stand == null || !KindOf.TryGetValue(stand, out var its) || its != kind)
                     continue;
                 var hose = stand.GetComponentInChildren<PropHose>(true);
                 var from = hose != null ? hose.transform.position : stand.transform.position;
@@ -270,10 +327,13 @@ namespace RealisticFiring.Shed
         {
             SleepFar();
             FloorStands();
+            ShedNet.Update();
             if (Time.unscaledTime < lookAt || WorldMover.OriginShiftParent == null)
                 return;
             lookAt = Time.unscaledTime + 2f;
             Built.RemoveAll(go => go == null);
+            foreach (var gone in KindOf.Keys.Where(k => k == null).ToList())
+                KindOf.Remove(gone);
             if (ByRoundhouse.Count >= Roundhouses.Length + Shops.Length || ShedHoses.Template() == null)
                 return;
             foreach (var gone in Valves.Keys.Where(k => k == null).ToList())
@@ -293,13 +353,14 @@ namespace RealisticFiring.Shed
                 var lines = new List<string>();
                 foreach (var stall in stalls)
                 {
-                    var stand = BuildStand(stall, DeckCentre(controller), roundhouse, out var line);
-                    if (stand != null)
+                    foreach (var kind in HoseKind.All)
                     {
-                        Built.Add(stand);
-                        built.Add(stand);
+                        var stand = BuildStand(kind, roundhouse.Turntable, stall, DeckCentre(controller), roundhouse, out var line);
+                        if (stand != null && kind == HoseKind.Water && (stall.LogicTrack()?.ID?.FullID ?? stall.name) == roundhouse.RepairStall)
+                            line += MakeRepairStand(stand, stall.LogicTrack()?.ID?.FullID ?? stall.name);
+                        Keep(stand, kind, built);
+                        lines.Add(line);
                     }
-                    lines.Add(line);
                 }
                 if (Main.Settings.LogFireboxCreation)
                     Main.Mod.Logger.Log($"Shed stands at turntable '{roundhouse.Turntable}': {string.Join("; ", lines)}");
@@ -311,13 +372,74 @@ namespace RealisticFiring.Shed
                 var track = TrackNamed(shop.Track);
                 if (track == null || !AlongTrack(track, shop.Along, out var rail, out var forward))
                     continue;
-                var stand = BuildStandAt($"{shop.Track} at {shop.Along:F1}", rail, forward, shop.Aside, shop.Turn, $"{shop.Along:F1} m along", out var line);
-                ByRoundhouse[shop.Key] = stand != null ? new List<GameObject> { stand } : new List<GameObject>();
-                if (stand != null)
-                    Built.Add(stand);
+                var built = ByRoundhouse[shop.Key] = new List<GameObject>();
+                var lines = new List<string>();
+                foreach (var kind in HoseKind.All)
+                {
+                    var stand = BuildStandAt(kind, shop.Key, shop.Id, rail, forward, shop.Aside, shop.Turn, $"{shop.Along:F1} m along", out var line);
+                    Keep(stand, kind, built);
+                    lines.Add(line);
+                }
                 if (Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"Shed stand at a shop on '{shop.Track}': {line}");
+                    Main.Mod.Logger.Log($"Shed stands at a shop on '{shop.Track}': {string.Join("; ", lines)}");
             }
+        }
+
+        private static void Keep(GameObject stand, HoseKind kind, List<GameObject> built)
+        {
+            if (stand == null)
+                return;
+            Built.Add(stand);
+            KindOf[stand] = kind;
+            built.Add(stand);
+        }
+
+        // ---- Repair stands (direct steaming) ----
+
+        // Each repair stand's water plug and its direct steam handwheel.
+        private static readonly Dictionary<PluggableObject, Transform> SteamValves = new Dictionary<PluggableObject, Transform>();
+
+        private static readonly Vector3 SteamWheelAt = new Vector3(0.08f, 1.35f, -0.905f);
+
+        /// <summary>Whether <paramref name="plug"/> is a repair stand's water hose: its water is the plant's hot water.</summary>
+        public static bool IsHot(PluggableObject plug) => plug != null && SteamValves.ContainsKey(plug);
+
+        /// <summary>How far a repair stand's direct steam valve on <paramref name="plug"/>'s hose is open, 0 to 1; 0 for any other.</summary>
+        public static float DirectSteam(PluggableObject plug)
+        {
+            if (plug == null || !SteamValves.TryGetValue(plug, out var wheel) || wheel == null)
+                return 0f;
+            var control = wheel.GetComponent<ControlImplBase>();
+            return control != null ? Mathf.Clamp01(control.Value) : 0f;
+        }
+
+        /// <summary>The steam let into <paramref name="plug"/>'s hose, 0 to 1: a blower line's valve, a repair stand's direct steam.</summary>
+        public static float SteamOpening(PluggableObject plug) =>
+            plug != null && plug.connectionTag == HoseKind.BlowerLine.Tag ? Opening(plug) : DirectSteam(plug);
+
+        // Makes a stall's water stand its roundhouse's repair stand: the
+        // direct steam handwheel on its riser, and steam from its hose's open
+        // end. Returns more for the log.
+        private static string MakeRepairStand(GameObject stand, string id)
+        {
+            var hose = stand.GetComponentInChildren<PropHose>(true);
+            if (hose == null || hose.plug == null)
+                return ", no repair stand (no hose)";
+            var at = SteamWheelAt;
+            var wheel = PlaceWheel(stand.transform, at, "Direct steam", Vector3.left, Vector3.up);
+            if (wheel == null)
+                return ", no direct steam handwheel (no S282 cab to copy it from)";
+            var standMesh = stand.GetComponentsInChildren<MeshRenderer>(true).FirstOrDefault(r => r.name == "DieselFuelStation");
+            var stem = stand.AddComponent<SteamValveStem>();
+            stem.Wheel = wheel;
+            stem.Layer = standMesh != null ? standMesh.gameObject.layer : 0;
+            SteamValves[hose.plug] = wheel;
+            var name = Valves.TryGetValue(hose.plug, out var water) && water != null ? water.GetComponent<HoverName>() : null;
+            if (name != null)
+                name.Text = "Hot water";
+            HoseSteam.Fit(hose);
+            ShedNet.RegisterValve(id + HoseKind.Water.Key + " steam", wheel);
+            return FormattableString.Invariant($", the repair stand: hot water and direct steam, its handwheel at ({at.x:F2}, {at.y:F2}, {at.z:F2}) m in the stand's frame");
         }
 
         // The turntable's deck's middle: its controller's object can stand
@@ -328,7 +450,7 @@ namespace RealisticFiring.Shed
             return deck != null && deck.curve != null ? deck.curve.GetPointAt(0.5f) : controller.transform.position;
         }
 
-        private static GameObject BuildStand(RailTrack stall, Vector3 turntable, Roundhouse roundhouse, out string line)
+        private static GameObject BuildStand(HoseKind kind, string site, RailTrack stall, Vector3 turntable, Roundhouse roundhouse, out string line)
         {
             var id = stall.LogicTrack()?.ID?.FullID ?? stall.name;
             var curve = stall.curve;
@@ -338,14 +460,15 @@ namespace RealisticFiring.Shed
             var t = fromStart ? share : 1f - share;
             var rail = curve.GetPointAt(t);
             var outward = curve.GetPointAt(Mathf.Clamp01(fromStart ? t + 0.02f : t - 0.02f)) - rail;
-            return BuildStandAt(id, rail, outward, roundhouse.Aside, roundhouse.Turn, $"{roundhouse.Along:F1} m out", out line);
+            return BuildStandAt(kind, site, id, rail, outward, roundhouse.Aside, roundhouse.Turn, $"{roundhouse.Along:F1} m out", out line);
         }
 
-        // A stand beside a track at the rail point rail, facing along it
-        // (toward outward), aside m to its right (to its left when
-        // negative, the stand turned about so its spare hose lies away from
-        // the track), turned turn degrees more.
-        private static GameObject BuildStandAt(string id, Vector3 rail, Vector3 outward, float aside, float turn, string along, out string line)
+        // A stand for a hose of kind beside a track at the rail point rail,
+        // facing along it (toward outward), aside m to its right (to its left
+        // when negative, the stand turned about so its spare hose lies away
+        // from the track), turned turn degrees more; a water stand beside
+        // where the steam stand is.
+        private static GameObject BuildStandAt(HoseKind kind, string site, string id, Vector3 rail, Vector3 outward, float aside, float turn, string along, out string line)
         {
             outward = Vector3.ProjectOnPlane(outward, Vector3.up).normalized;
             if (outward.sqrMagnitude < 1e-6f)
@@ -355,42 +478,55 @@ namespace RealisticFiring.Shed
             }
             var right = Vector3.Cross(Vector3.up, outward).normalized;
             var footAt = rail + right * aside;
-            var floor = Floor(footAt);
-            var basePoint = new Vector3(footAt.x, (floor ?? rail.y - FloorUnderRail) + OverFloor, footAt.z);
             // The stand's branch runs out along the track, its plug side to
             // it, its coil away from it.
             var facing = Quaternion.AngleAxis(turn, Vector3.up) * Quaternion.LookRotation(aside >= 0f ? outward : -outward, Vector3.up);
+            if (kind == HoseKind.Water)
+            {
+                var place = WaterFor(site, id);
+                footAt += facing * new Vector3(place.Aside, 0f, place.Along);
+                facing = Quaternion.AngleAxis(place.Turn, Vector3.up) * facing;
+            }
+            var floor = Floor(footAt);
+            var basePoint = new Vector3(footAt.x, (floor ?? rail.y - FloorUnderRail) + OverFloor, footAt.z);
 
-            var stand = new GameObject(StandName + id);
+            var stand = new GameObject(StandName + id + kind.Key);
             stand.transform.SetParent(WorldMover.OriginShiftParent, false);
             // The stand's frame: its riser's foot at the base point.
             stand.transform.SetPositionAndRotation(basePoint - facing * RiserFoot, facing);
             var frame = stand.transform;
 
-            var kind = HoseKind.BlowerLine;
             var length = kind.Length;
             var ropeFloor = RopeFloor(frame, basePoint.y - OverFloor);
             var hose = ShedHoses.Build(kind, frame, new Pose(frame.position, frame.rotation), ropeFloor, length);
             var valveAt = ValveStem;
-            var wheel = hose != null ? PlaceWheel(frame, valveAt) : null;
+            var wheel = hose != null ? PlaceWheel(frame, valveAt, kind.Valve) : null;
             var blows = false;
             if (hose != null && wheel != null)
             {
                 Valves[hose.plug] = wheel;
-                blows = HoseSteam.Fit(hose);
+                // Steam from a blower line's open end, water from a water hose's.
+                blows = kind == HoseKind.BlowerLine ? HoseSteam.Fit(hose) : HoseWater.Fit(hose);
             }
+            if (hose != null)
+                ShedNet.Register(id + kind.Key, hose, wheel);
             var world = basePoint - WorldMover.currentMove;
             line = $"'{id}' at ({world.x:F1}, {world.y:F1}, {world.z:F1}), {along}, {aside:F2} m aside" +
                    (hose != null ? $", its {kind.Name} {length:F0} m" : ", no hose (none to copy)") +
                    (wheel != null ? ", its valve" : ", no valve wheel (no S282 cab to copy it from)") +
-                   (wheel != null && !blows ? ", no steam from its open end (no effects bundle)" : "");
+                   (wheel != null && !blows ? $", nothing from its open end (no effects bundle)" : "");
             return stand;
         }
 
         // The valve's handwheel on top of it, facing up: a copy of the S282's
         // blower valve, its keys and its cab port left behind, read for the
         // shed steam it lets through. Null without the S282's cab.
-        private static Transform PlaceWheel(Transform frame, Vector3 at)
+        private static Transform PlaceWheel(Transform frame, Vector3 at, string name) =>
+            PlaceWheel(frame, at, name, Vector3.down, Vector3.forward);
+
+        // A handwheel at at, facing out against into (both in the stand's
+        // frame), its spokes' up toward up.
+        private static Transform PlaceWheel(Transform frame, Vector3 at, string name, Vector3 into, Vector3 up)
         {
             if (!Globals.G.Types.TryGetLivery(WheelLivery, out var livery) || livery.interiorPrefab == null)
                 return null;
@@ -410,7 +546,7 @@ namespace RealisticFiring.Shed
                          .Where(c => c != null && (StokerCab.InputComponents.Contains(c.GetType().Name) || c is InteractablePortFeeder)).ToList())
                 Object.DestroyImmediate(input);
             // The wheel faces up, turning about the stem: its z down into the valve.
-            var turned = Quaternion.LookRotation(-frame.up, frame.forward);
+            var turned = Quaternion.LookRotation(frame.TransformDirection(into), frame.TransformDirection(up));
             valve.rotation = turned * Quaternion.Inverse(control.localRotation);
             valve.position += frame.TransformPoint(at) - control.position;
             valve.SetParent(frame, true);
@@ -420,7 +556,7 @@ namespace RealisticFiring.Shed
             valve.gameObject.AddComponent<WorldLayer>();
             valve.position += frame.TransformPoint(at) - control.position;
             Object.Destroy(holder);
-            control.gameObject.AddComponent<HoverName>().Text = "Shed steam";
+            control.gameObject.AddComponent<HoverName>().Text = name;
             return control;
         }
     }

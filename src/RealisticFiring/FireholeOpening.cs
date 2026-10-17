@@ -47,6 +47,22 @@ namespace RealisticFiring
             }
         }
 
+        /// <summary>
+        /// Where <paramref name="car"/>'s backhead is, from its fitted firehole:
+        /// the door's plane along the car and the hole's foot, m in the car's
+        /// frame. False for a cab not fitted.
+        /// </summary>
+        public static bool Backhead(TrainCar car, out float plane, out float foot)
+        {
+            plane = foot = 0f;
+            var livery = car != null && car.carLivery != null ? car.carLivery.id : null;
+            if (livery == null || !Holes.TryGetValue(livery, out var fitted))
+                return false;
+            plane = fitted.Plane;
+            foot = fitted.Foot;
+            return true;
+        }
+
         /// <summary>The hole of <paramref name="car"/>'s cab, where <paramref name="target"/> is its shovel target, moved and sized by the calibration settings.</summary>
         public static FireholeOpening For(TrainCar car, Bounds target)
         {

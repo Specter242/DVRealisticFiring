@@ -15,9 +15,6 @@ namespace RealisticFiring.Shed
 
         /// <summary>Plain steel: clamps, bolts.</summary>
         Steel,
-
-        /// <summary>The hose's own rubber, where a fitting carries a piece of it.</summary>
-        Hose,
     }
 
     /// <summary>
@@ -46,13 +43,6 @@ namespace RealisticFiring.Shed
         }
 
         private readonly Dictionary<Metal, Part> parts = new Dictionary<Metal, Part>();
-
-        /// <summary>
-        /// The hose's texture along it a metre, as the rope maps it (once
-        /// round, this many times along): a piece of hose on a fitting is
-        /// mapped so, to match it.
-        /// </summary>
-        public float HoseTexturePerMetre { get; set; } = 1f;
 
         private Part For(Metal metal)
         {
@@ -85,9 +75,8 @@ namespace RealisticFiring.Shed
             }
             var grime = GrimeStart(at);
             var run = 0f;
-            Vector2 Uv(Vector2 p, float degrees, float down) => metal == Metal.Hose
-                ? new Vector2(degrees / 360f, down * HoseTexturePerMetre)
-                : grime + new Vector2(degrees * Mathf.Deg2Rad * Mathf.Max(p.x, 0.004f), down) / GrimeRepeat;
+            Vector2 Uv(Vector2 p, float degrees, float down) =>
+                grime + new Vector2(degrees * Mathf.Deg2Rad * Mathf.Max(p.x, 0.004f), down) / GrimeRepeat;
             for (var k = 0; k + 1 < profile.Count; k++)
             {
                 var p0 = profile[k];
@@ -168,7 +157,7 @@ namespace RealisticFiring.Shed
         /// <paramref name="name"/>, one renderer a metal on
         /// <paramref name="layer"/>. Returns the child.
         /// </summary>
-        public Transform Build(Transform parent, string name, int layer, Material hose = null)
+        public Transform Build(Transform parent, string name, int layer)
         {
             var root = new GameObject(name).transform;
             root.SetParent(parent, false);
@@ -187,7 +176,7 @@ namespace RealisticFiring.Shed
                 go.layer = layer;
                 go.transform.SetParent(root, false);
                 go.AddComponent<MeshFilter>().sharedMesh = mesh;
-                go.AddComponent<MeshRenderer>().sharedMaterial = pair.Key == Metal.Hose && hose != null ? hose : Material(pair.Key);
+                go.AddComponent<MeshRenderer>().sharedMaterial = Material(pair.Key);
             }
             return root;
         }

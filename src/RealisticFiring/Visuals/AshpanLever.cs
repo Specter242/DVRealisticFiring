@@ -44,6 +44,15 @@ namespace RealisticFiring.Visuals
         // The plate on the side above the rod, in m.
         private const float PlateUp = 0.14f;
 
+        private static readonly HashSet<string> NoHanger = new HashSet<string> { "Jk3A" };
+        private const float RodRadius = 0.0085f;
+        private const float CollarRadius = 0.019f;
+        private const float CollarFrom = 0.84f;
+        private const float CollarTo = 0.86f;
+        private const float BossRadius = 0.013f;
+        private const float BossTo = 0.875f;
+        private const float RodIntoSide = 0.03f;
+
         private static readonly Dictionary<string, Vector3> Placements = new Dictionary<string, Vector3>
         {
             ["S484-840A"] = new Vector3(-1.08f, 1.27f, -6.83f),
@@ -168,6 +177,9 @@ namespace RealisticFiring.Visuals
             handle.SetPositionAndRotation(frame.TransformPoint(new Vector3(pull + RodLength, y, z)),
                 Quaternion.LookRotation(-frame.right, frame.up));
 
+            if (NoHanger.Contains(car.carLivery.id))
+                DropHanger(handle, pull + RodLength - (found ? side : wall) - RodIntoSide);
+
             var button = handle.Find(SourceButton);
             foreach (var brake in button.GetComponents<MonoBehaviour>().Where(c => c != null && c.GetType().Name == "BrakeCylinderReleaseButtonFeeder").ToList())
                 Object.DestroyImmediate(brake);
@@ -202,6 +214,37 @@ namespace RealisticFiring.Visuals
             return $"ashpan handle out on the left side, its pull at ({pull:F2}, {y:F2}, {z:F2}) m in the car frame" +
                    (seatedFor ? " (seated for the livery)" : found ? $", the side at x {side:F2}" : " (no side of the loco found there; guessed)") +
                    $", its plate on the wall at x {wall:F2}";
+        }
+
+        // Hides the handle's rod and hanger and draws the rod alone from
+        // from m along it (its root's end, inside the loco, unseen) to the pull.
+        private static void DropHanger(Transform handle, float from)
+        {
+            var staticPart = handle.Find("StaticPart");
+            if (staticPart == null)
+                return;
+            var layer = handle.gameObject.layer;
+            var model = staticPart.Find("model");
+            if (model != null)
+            {
+                foreach (var renderer in model.GetComponentsInChildren<Renderer>(true))
+                {
+                    layer = renderer.gameObject.layer;
+                    renderer.enabled = false;
+                }
+            }
+            var colliders = staticPart.Find("Colliders");
+            if (colliders != null)
+            {
+                foreach (var box in colliders.GetComponentsInChildren<BoxCollider>(true))
+                    DestroyImmediate(box);
+            }
+            from = Mathf.Clamp(from, 0f, CollarFrom - 0.05f);
+            var rod = new Shed.FittingMesh();
+            rod.Rod(Shed.Metal.Iron, RodRadius, from, CollarFrom + 0.002f, Vector3.zero, Vector3.forward);
+            rod.Rod(Shed.Metal.Iron, CollarRadius, CollarFrom, CollarTo, Vector3.zero, Vector3.forward);
+            rod.Rod(Shed.Metal.Iron, BossRadius, CollarTo - 0.001f, BossTo, Vector3.zero, Vector3.forward);
+            rod.Build(staticPart, "RealisticFiring ashpan rod", layer);
         }
 
         // The first surface of this car in toward its middle from a point on

@@ -46,9 +46,14 @@ namespace RealisticFiring.Multiplayer
             Net.ClientCheck = IsClient;
             Net.Sender = Send;
             Net.Broadcaster = Broadcast;
+            StandSync.Start();
             MultiplayerAPI.ServerStarted += OnServerStarted;
             MultiplayerAPI.ClientStarted += OnClientStarted;
-            MultiplayerAPI.ClientStopped += () => helloDue = false;
+            MultiplayerAPI.ClientStopped += () =>
+            {
+                helloDue = false;
+                Shed.ShedNet.Reset();
+            };
             api.OnTick += OnTick;
             if (MultiplayerAPI.Server != null)
                 OnServerStarted(MultiplayerAPI.Server);
@@ -94,6 +99,7 @@ namespace RealisticFiring.Multiplayer
             PumpingBy.Clear();
             server.RegisterSerializablePacket<HelloPacket>(OnHello);
             server.RegisterSerializablePacket<FireActionPacket>(OnFireAction);
+            StandSync.OnServerStarted(server);
             snapshotDue = 0u;
             Leaving.Clear();
             server.OnPlayerDisconnected += OnPlayerLeft;
@@ -105,6 +111,7 @@ namespace RealisticFiring.Multiplayer
             client.RegisterSerializablePacket<NoticePacket>(notice => FireController.Announce(notice.Text));
             client.RegisterSerializablePacket<SnapshotPacket>(OnSnapshot);
             client.RegisterSerializablePacket<FireEventPacket>(OnFireEvent);
+            StandSync.OnClientStarted(client);
             helloDue = true;
         }
 
@@ -217,6 +224,7 @@ namespace RealisticFiring.Multiplayer
             if (hello.Version == version && hello.Shape == shape)
             {
                 mod.Logger.Log($"{sender.DisplayName} joined with Realistic Firing {hello.Version}, settings matching");
+                StandSync.SendStands(sender);
                 return;
             }
             var reason = hello.Version != version
@@ -311,8 +319,8 @@ namespace RealisticFiring.Multiplayer
                     }
                     break;
                 case FireAction.Hydrant:
-                    if (rig != null)
-                        Tell(sender, FireController.ToggleHydrant(rig));
+                    // An old client's key: the stand's water hose does it now.
+                    Tell(sender, FireController.HydrantHint);
                     break;
                 case FireAction.SteamLine:
                     if (RealisticOilFirebox.TryGet(car, out var lined))
@@ -375,6 +383,7 @@ namespace RealisticFiring.Multiplayer
         private static void OnPlayerLeft(IPlayer player)
         {
             Leaving.RemoveAll(l => l.Player == player);
+            StandSync.PlayerLeft(player);
             if (player != null && PumpingBy.TryGetValue(player.PlayerId, out var rig))
             {
                 rig.RemotePump(player.PlayerId, false);

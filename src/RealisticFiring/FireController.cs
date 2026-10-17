@@ -9,8 +9,8 @@ using UnityEngine;
 namespace RealisticFiring
 {
     /// <summary>
-    /// Unity-side controls for the loco the player is in: the grate-shake,
-    /// hand-pump, and hydrant keybinds, the status log, the aim label and
+    /// Unity-side controls for the loco the player is in: the grate-shake
+    /// and hand-pump keybinds, the shed water hose's notices, the status log, the aim label and
     /// notices under the crosshair, and the debug overlay.
     /// </summary>
     internal sealed class FireController : MonoBehaviour
@@ -21,9 +21,6 @@ namespace RealisticFiring
         // Notices sit a line below the aim label.
         private const float NoticeOffset = 66f;
         private const float NoticeTime = 4f;
-
-        // How often a running hose checks that the train is still at the water point.
-        private const float HydrantCheckInterval = 1f;
 
         // The rocking lever takes a moment to work back and forth.
         private const float ShakeCooldown = 1.5f;
@@ -51,10 +48,19 @@ namespace RealisticFiring
 
         private void FixedUpdate() => PerfMeter.PhysicsStep();
 
+        private bool toldFailedPatches;
+
         private void Update()
         {
             PerfMeter.Frame();
             var start = PerfMeter.Start();
+            // Once in a game: some of the mod's patches failed to apply.
+            if (!toldFailedPatches && Main.FailedPatches.Count > 0 && PlayerManager.PlayerTransform != null)
+            {
+                toldFailedPatches = true;
+                Notify($"Realistic Firing: {Main.FailedPatches.Count} of its patches failed to load (another mod or a game update?); " +
+                       "some of it may misbehave. Please send the Unity Mod Manager log with a bug report");
+            }
             HandleKeys();
             Visuals.StokerCab.EnsureBuilt();
             Diagnostics.ShedSurvey.TryRun();
@@ -111,6 +117,12 @@ namespace RealisticFiring
                 UpdateFilling(rig, settings);
             else
                 LetGoOfPump(null);
+            // The water hose is worked from the ground, at its stand's valve:
+            // the engine tended, or else the nearest with a hose in.
+            var hoseCar = rig == null && PlayerManager.PlayerTransform != null
+                ? Shed.ShedConnections.WaterLineNear(PlayerManager.PlayerTransform.position, HoseNoticesWithin)
+                : null;
+            WatchHose(rig ?? (InjectorRig.TryGet(hoseCar, out var near) ? near : null));
             if (RealisticOilFirebox.TryGetTended(PlayerManager.Car, out var oil))
             {
                 AnnounceFireUp(oil);
@@ -140,16 +152,14 @@ namespace RealisticFiring
 
         // The hand pump works while its key is held, on the loco being tended:
         // leaving it, or turning to another, lets go (audit 2026-10-10). The
-        // hydrant hose toggles; the rig itself stops it once the glass is
-        // full, the boiler has pressure, or the train has left the water point.
+        // shed's water hose fills by its stand's valve; its notices follow
+        // the rig's reading, the host's on a client.
         private void UpdateFilling(InjectorRig rig, Settings settings)
         {
             var pumping = settings.HandPumpKey.Pressed() && TimeUtil.IsFlowing;
             if (Net.IsClient)
             {
                 PumpRemotely(pumping ? rig.Car : null);
-                if (settings.HydrantKey.Down())
-                    Net.TrySend(rig.Car, FireAction.Hydrant);
                 return;
             }
             LetGoOfPump(rig);
@@ -157,11 +167,64 @@ namespace RealisticFiring
                 Notify($"The hand pump cannot force water in above {InjectorRig.HandPumpMaxPressure:F0} bar");
             rig.HandPumping = pumping;
             pumpedRig = pumping ? rig : null;
+        }
 
-            if (settings.HydrantKey.Down())
-                Notify(ToggleHydrant(rig));
-            if (rig.TakeHoseStopped() is string reason)
-                Notify("Hydrant hose off: " + reason);
+        private InjectorRig hoseRig;
+        private bool hoseWasFilling;
+        private bool wasSteaming;
+        private bool wasFull;
+
+        // A player this near an engine's water connection, m, is told of its hose.
+        private const float HoseNoticesWithin = 20f;
+
+        // Says when the watched engine's water hose starts and stops filling.
+        private void WatchHose(InjectorRig rig)
+        {
+            if (rig != hoseRig)
+            {
+                hoseRig = rig;
+                hoseWasFilling = rig != null && rig.HoseFilling;
+                wasSteaming = rig != null && rig.Steaming;
+                wasFull = rig != null && rig.SteamFull;
+                rig?.TakeWashedOut();
+                return;
+            }
+            if (rig == null)
+                return;
+            WatchDirectSteam(rig);
+            var washed = rig.TakeWashedOut();
+            if (rig.HoseFilling == hoseWasFilling)
+            {
+                if (washed)
+                    Notify("Water hose: boiler washed out and filled with fresh water; it is full to the top of the glass");
+                return;
+            }
+            hoseWasFilling = rig.HoseFilling;
+            if (rig.HoseFilling)
+                Notify(washed ? "Water hose: boiler washed out, filling it with fresh water" : "Water hose filling the boiler");
+            else if (rig.HoseIn && rig.HoseOpening > 0f)
+                Notify(rig.BoilerPressure > InjectorRig.HoseMaxPressure
+                    ? $"Water hose stopped: the boiler has pressure; a hose fills only a cold boiler, under about {InjectorRig.HoseMaxGauge:F0} psi"
+                    : "Water hose stopped: the boiler is full to the top of the glass; shut the stand's valve");
+        }
+
+        // Says when a repair stand's steam starts into the boiler, and when
+        // the boiler stands at the plant's pressure.
+        private void WatchDirectSteam(InjectorRig rig)
+        {
+            if (rig.SteamFull != wasFull)
+            {
+                wasFull = rig.SteamFull;
+                if (rig.SteamFull)
+                    Notify("Direct steam held off: the steam's water has filled the boiler; blow it down to let more steam in");
+            }
+            if (rig.Steaming == wasSteaming)
+                return;
+            wasSteaming = rig.Steaming;
+            if (rig.Steaming)
+                Notify($"Direct steam: the plant's steam into the boiler, up to its {InjectorRig.PlantGauge:F0} psi; its water raises the glass");
+            else if (!rig.SteamFull && rig.HoseIn && rig.HoseSteam > 0f && rig.BoilerPressure >= InjectorRig.PlantPressure - 0.2f)
+                Notify($"Direct steam: the boiler stands at the plant's {InjectorRig.PlantGauge:F0} psi; light the fire, shut the valve, and take the hose off");
         }
 
         private InjectorRig pumpedRig;
@@ -197,32 +260,8 @@ namespace RealisticFiring
             remotePumpCar = car;
         }
 
-        /// <summary>
-        /// Turns the hydrant hose off, or on where it can fill the boiler,
-        /// washing a cold boiler out first. Returns the notice for whoever asked.
-        /// </summary>
-        internal static string ToggleHydrant(InjectorRig rig)
-        {
-            if (rig.HydrantFilling)
-            {
-                rig.HydrantFilling = false;
-                return "Hydrant hose off";
-            }
-            if (rig.BoilerPressure > InjectorRig.HydrantMaxPressure)
-                return "The boiler is under pressure: a hose can only fill a cold boiler";
-            if (!WaterPoints.Serves(rig.Car))
-                return $"No hydrant here: stand the engine on {WaterPoints.Where}";
-            // With the boiler cold at the shed, the hose washes it out first.
-            var washed = BoilerWaterRig.TryGet(rig.Car, out var water) && (Main.Settings.BoilerWaterImpurities || water.Plug != null);
-            if (washed)
-                water.Washout();
-            if (rig.CanHydrantFill)
-            {
-                rig.HydrantFilling = true;
-                return washed ? "Hydrant hose on: boiler washed out, filling it with fresh water" : "Hydrant hose on: filling the boiler";
-            }
-            return washed ? "Boiler washed out and filled with fresh water" : "The boiler is already full to the top of the glass";
-        }
+ internal const string HydrantHint =
+            "The shed's water comes by a stand's water hose: plug it into the connection low on the firebox and open the stand's valve";
 
         private void Notify(string text)
         {
@@ -391,7 +430,9 @@ namespace RealisticFiring
                        ? (fire.OnSteamLine ? $", on the shed's steam line ({oil.SteamLineOpening:P0})" : ", shed's steam line open (the boiler's own steam is stronger)")
                        : "") + "; " +
                    $"flues {fire.FlueSoot:P0} sooted" + (fire.FlueSoot > 0.3f ? " (sand them)" : "") +
-                   (fire.Vapor > 0.01f || fire.PooledOil > 0.01f ? $"; vapor {fire.Vapor:F2} kg, pooled oil {fire.PooledOil:F2} kg: clear it with the blower before lighting" : "") +
+                   (fire.Vapor > 0.01f || fire.PooledOil > 0.01f
+                       ? $"; vapor {fire.Vapor:F2} kg, pooled oil {fire.PooledOil:F2} kg" + (fire.Vapor + fire.PooledOil > OilFire.SafeToLight ? " (too much to light: the blower clears vapor, pooled oil drains)" : " (lights safely)")
+                       : "") +
                    $"; flue sand on the shovel {Visuals.FlueSandBox.Loaded:F1} kg";
         }
 
@@ -400,7 +441,13 @@ namespace RealisticFiring
         {
             var injector = string.Join("; ", rig.Circuits.Select(c =>
                 (string.IsNullOrEmpty(c.Name) ? "" : c.Name + " ") + DescribeInjector(c, rig.BoilerPressure)));
-            var filling = rig.HydrantFilling ? $", hydrant {rig.FillRate:F1} kg/s" : rig.HandPumping ? $", hand pump {rig.FillRate:F1} kg/s" : "";
+            var filling = rig.HoseFilling ? $", {(rig.HoseHot ? "hot " : "")}water hose {rig.FillRate:F1} kg/s (valve {rig.HoseOpening:P0})"
+                : rig.HoseIn ? $", {(rig.HoseHot ? "hot " : "")}water hose in (valve {rig.HoseOpening:P0})"
+                : rig.HandPumping ? $", hand pump {rig.FillRate:F1} kg/s" : "";
+            if (rig.HoseIn && rig.HoseSteam > 0f)
+                filling += $", direct steam {rig.SteamRate:F2} kg/s (valve {rig.HoseSteam:P0})";
+            if (rig.HoseIn && (rig.PlantWaterBilled > 0f || rig.PlantFuelBilled > 0f))
+                filling += $", on the loco's fees {rig.PlantWaterBilled:F0} kg of the plant's water and {rig.PlantFuelBilled:F0} kg of its {rig.PlantFuelName}";
             var pump = rig.Pump != null ? $"; {Visuals.FeedPumpCab.Hover(rig)}" : "";
             var water = BoilerWaterRig.TryGet(rig.Car, out var waterRig) ? $"; {DescribeWater(waterRig)}" : "";
             return $"boiler {rig.BoilerPressure:F1} bar, water {rig.WaterLevel:P0}, {injector}{filling}{pump}{water}";

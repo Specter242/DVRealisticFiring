@@ -92,9 +92,6 @@ namespace RealisticFiring
         [Draw("Work the boiler hand pump (hold)")]
         public KeyBinding HandPumpKey = Bind(KeyCode.C);
 
-        [Draw("Wash out the boiler and fill it from a hydrant (on a service track: a service station with water, a loco parking track, or a roundhouse stall; boiler cold)")]
-        public KeyBinding HydrantKey = Bind(KeyCode.F9);
-
         [Draw("Shake grate")]
         public KeyBinding ShakeGrateKey = Bind(KeyCode.Z);
 
@@ -192,7 +189,6 @@ namespace RealisticFiring
             var fresh = new Settings();
             Move(OpenSettingsKey, KeyCode.F, ctrlShift, fresh.OpenSettingsKey);
             Move(HandPumpKey, KeyCode.P, ctrlShift, fresh.HandPumpKey);
-            Move(HydrantKey, KeyCode.H, ctrlShift, fresh.HydrantKey);
             Move(ShakeGrateKey, KeyCode.G, ctrl, fresh.ShakeGrateKey);
             Move(ToggleOverlayKey, KeyCode.F, ctrl, fresh.ToggleOverlayKey);
             Move(FiremanKey, KeyCode.J, ctrl, fresh.FiremanKey);
@@ -204,6 +200,7 @@ namespace RealisticFiring
             if (binding != null && binding.keyCode == oldKey && binding.modifiers == oldModifiers)
                 binding.Change(fresh.keyCode, fresh.modifiers);
         }
+
 
         public void OnChange()
         {

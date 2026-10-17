@@ -169,6 +169,7 @@ namespace RealisticFiring.AdapterCheck
             CheckShovelLoads();
             CheckFiremanHand();
             CheckPatchTargets();
+            CheckPatchEachClass();
             CheckCarPoolGuard();
             var after = false;
             var contained = true;
@@ -200,6 +201,90 @@ namespace RealisticFiring.AdapterCheck
         {
             for (var t = 0f; t < seconds; t += 0.02f)
                 component.Tick(0.02f);
+        }
+
+        private static void CheckStandSync(Assembly multiplayer)
+        {
+            const string harmonyId = "RealisticFiring.AdapterCheck.StandHoses";
+            // Written and read back as the Multiplayer mod carries them.
+            void RoundTrip(string name, Action<BinaryWriter> write, Action<BinaryReader> read)
+            {
+                using (var stream = new MemoryStream())
+                {
+                    using (var writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, leaveOpen: true))
+                        write(writer);
+                    stream.Position = 0;
+                    using (var reader = new BinaryReader(stream, System.Text.Encoding.UTF8, leaveOpen: true))
+                        read(reader);
+                    Check(stream.Position == stream.Length, $"a {name} reads back to its last byte");
+                }
+            }
+            var sent = new Multiplayer.StandPlugPacket
+            {
+                Stand = "SM-A-02-P at 26.3", Place = (byte)Shed.PlugPlace.Held, Holder = 3, Car = 4711,
+                Position = new UnityEngine.Vector3(1.5f, -2f, 12800.25f), Rotation = new UnityEngine.Quaternion(0f, 0.6f, 0f, 0.8f),
+                Settled = true, PoseOnly = true, Seq = 65535,
+            };
+            var got = new Multiplayer.StandPlugPacket();
+            RoundTrip(nameof(Multiplayer.StandPlugPacket), sent.Serialize, got.Deserialize);
+            Check(got.Stand == sent.Stand && got.Place == sent.Place && got.Holder == 3 && got.Car == 4711
+                  && got.Position == sent.Position && got.Rotation.y == 0.6f && got.Rotation.w == 0.8f && got.Settled && got.PoseOnly && got.Seq == 65535,
+                "a stand's plug packet carries its stand, count, place, holder, engine, pose, and flags");
+            var valve = new Multiplayer.StandValvePacket();
+            RoundTrip(nameof(Multiplayer.StandValvePacket), new Multiplayer.StandValvePacket { Stand = "HB-T1-03", Value = 0.37f, Seq = 12 }.Serialize, valve.Deserialize);
+            Check(valve.Stand == "HB-T1-03" && valve.Value == 0.37f && valve.Seq == 12, "a stand's valve packet carries its stand, count, and opening");
+            Check(Shed.ShedNet.Newer(1, 0) && Shed.ShedNet.Newer(0, 65535) && Shed.ShedNet.Newer(10, 65000) && !Shed.ShedNet.Newer(5, 5)
+                  && !Shed.ShedNet.Newer(65535, 0) && !Shed.ShedNet.Newer(4, 9),
+                "a later word on a stand counts higher, wrapping past 65535, so one delivered late is dropped");
+
+            var report = Multiplayer.StandSync.Report(sent);
+            var notANumber = Multiplayer.StandSync.Report(new Multiplayer.StandPlugPacket { Stand = "x", Position = new UnityEngine.Vector3(float.NaN, 0f, 0f) });
+            var noTurn = Multiplayer.StandSync.Report(new Multiplayer.StandPlugPacket { Stand = "x", Rotation = new UnityEngine.Quaternion(0f, 0f, 0f, 0f) });
+            var noPlace = Multiplayer.StandSync.Report(new Multiplayer.StandPlugPacket { Stand = "x", Place = 9 });
+            var noStand = Multiplayer.StandSync.Report(new Multiplayer.StandPlugPacket { Stand = new string('x', 200) });
+            Check(report.HasValue && report.Value.Place == Shed.PlugPlace.Held && report.Value.Car == 4711 && report.Value.Seq == 65535
+                  && !notANumber.HasValue && !noTurn.HasValue && !noPlace.HasValue && !noStand.HasValue,
+                "a stand's plug packet is read into a report, and one not a number, unturned, of no place, or of no stand is dropped");
+
+            Shed.PlugReport At(Shed.PlugPlace place, byte holder = 0, ushort car = 0, bool settled = false, float x = 0f) =>
+                new Shed.PlugReport { Place = place, Holder = holder, Car = car, Settled = settled, Position = new UnityEngine.Vector3(x, 0f, 0f) };
+            Check(At(Shed.PlugPlace.Held, 1).SamePlace(At(Shed.PlugPlace.Held, 1, x: 5f))
+                  && !At(Shed.PlugPlace.Held, 1).SamePlace(At(Shed.PlugPlace.Held, 2))
+                  && !At(Shed.PlugPlace.InEngine, car: 7).SamePlace(At(Shed.PlugPlace.InEngine, car: 8))
+                  && At(Shed.PlugPlace.Loose, settled: true).SamePlace(At(Shed.PlugPlace.Loose, x: 3f))
+                  && At(Shed.PlugPlace.OnStand, holder: 4).SamePlace(At(Shed.PlugPlace.OnStand)),
+                "a plug's place is its holder for a held one and its engine for one plugged in, its pose aside");
+
+            Check(Shed.ShedNet.HostPlug("no such stand", At(Shed.PlugPlace.Held, 2), false, 2, UnityEngine.Vector3.zero, out _) == Shed.Relay.None
+                  && Shed.ShedNet.HostValve("no such stand", 1f, 1, 2, UnityEngine.Vector3.zero, out _, out _) == Shed.Relay.None,
+                "the host passes on nothing for a stand it has not built");
+            Shed.ShedNet.ClientValve("not built yet", 0.5f, 3);
+            Shed.ShedNet.ClientPlug("not built yet", At(Shed.PlugPlace.Loose, settled: true), false);
+            Shed.ShedNet.Reset();
+            Check(true, "a client keeps the host's word for a stand not built yet, and forgets it as a session ends");
+
+            // Our reach check goes before the game's PropHose.Update, which
+            // the Multiplayer mod rewrites for the hoses it networks; its
+            // other hose patches are why a client's stands start loose.
+            var update = AccessTools.Method(typeof(PropHose), "Update");
+            var patches = new[] { "Multiplayer.Patches.World.PropHosePatch:OnEnable", "Multiplayer.Patches.World.PropHosePatch:Update",
+                "Multiplayer.Patches.World.PluggableObjectPatch:Awake" };
+            Check(patches.All(p => multiplayer.GetType(p.Split(':')[0])?.GetMethod(p.Split(':')[1], BindingFlags.Public | BindingFlags.Static) != null),
+                "the installed Multiplayer mod still skips a hose's own snap home on clients and rewrites its reach check");
+            try
+            {
+                new HarmonyLib.Harmony(harmonyId).Patch(update, prefix: new HarmonyLib.HarmonyMethod(typeof(Shed.StandHoseReachPatch), "Prefix"));
+                Check(HarmonyLib.Harmony.GetPatchInfo(update)?.Prefixes.Any(p => p.owner == harmonyId) == true,
+                    "a stand hose's reach check patches the game's PropHose.Update");
+            }
+            catch (Exception e)
+            {
+                Check(false, "a stand hose's reach check: " + e.GetBaseException().Message);
+            }
+            finally
+            {
+                new HarmonyLib.Harmony(harmonyId).UnpatchAll(harmonyId);
+            }
         }
 
         private static void CheckMultiplayerCabHooks(string path)
@@ -246,6 +331,7 @@ namespace RealisticFiring.AdapterCheck
                 // component; invoking the patched original proves that path.
                 load.Invoke(System.Runtime.Serialization.FormatterServices.GetUninitializedObject(type), new object[] { null });
                 Check(true, "a null interior notification skips Multiplayer's load coroutine");
+                CheckStandSync(assembly);
             }
             catch (Exception e)
             {
@@ -430,23 +516,101 @@ namespace RealisticFiring.AdapterCheck
             var pumpedFromTender = Run(emptyRig, 10f);
             emptyRig.HandPumping = false;
             var afterPump = emptyRig.BoilerVessel.mass;
-            emptyRig.HydrantFilling = true;
+            emptyRig.HoseIn = true;
+            emptyRig.HoseOpening = 1f;
             var hoseFromTender = Run(emptyRig, 10f);
-            emptyRig.HydrantFilling = false;
-            Check(afterPump - emptyMass > 10f && pumpedFromTender > 0f && emptyRig.BoilerVessel.mass - afterPump > 100f && hoseFromTender == 0f,
+            var afterHose = emptyRig.BoilerVessel.mass;
+            var wideOpen = afterHose - afterPump;
+            emptyRig.HoseOpening = 0.5f;
+            Run(emptyRig, 10f);
+            var halfOpen = emptyRig.BoilerVessel.mass - afterHose;
+            emptyRig.HoseOpening = 0f;
+            var shutMass = emptyRig.BoilerVessel.mass;
+            Run(emptyRig, 2f);
+            var shutFilling = emptyRig.HoseFilling;
+            emptyRig.HoseIn = false;
+            Check(afterPump - emptyMass > 10f && pumpedFromTender > 0f && wideOpen > 100f && hoseFromTender == 0f
+                  && halfOpen > 0.4f * wideOpen && halfOpen < 0.6f * wideOpen && emptyRig.BoilerVessel.mass == shutMass && !shutFilling,
                 $"with no steam the hand pump lifts from the tender ({afterPump - emptyMass:F0} kg in 10 s) " +
-                $"and the hydrant hose fills from the mains ({emptyRig.BoilerVessel.mass - afterPump:F0} kg in 10 s)");
+                $"and the water hose fills from the mains ({wideOpen:F0} kg in 10 s, {halfOpen:F0} with its stand's valve half open, none shut)");
 
-            rig.HydrantFilling = true;
+            rig.HoseIn = true;
+            rig.HoseOpening = 1f;
             var hotMass = rig.BoilerVessel.mass;
             lever.Value = 0f;
             Run(rig, 2f);
-            // The rig itself takes the hose off, and says why once (audit
-            // 2026-10-10: only the tended loco's controls checked it).
-            var why = rig.TakeHoseStopped();
-            Check(rig.BoilerVessel.mass <= hotMass && !rig.HydrantFilling && why == "the boiler has pressure" && rig.TakeHoseStopped() == null,
-                "a hose cannot fill a boiler under pressure, and the rig takes it off by itself");
-            rig.HydrantFilling = false;
+            Check(rig.BoilerVessel.mass <= hotMass && !rig.HoseFilling, "a hose cannot fill a boiler under pressure");
+            rig.HoseIn = false;
+            rig.HoseOpening = 0f;
+
+            // Its first water a plugging washes a cold boiler out (as the
+            // hydrant key did), once until it is taken out and put back.
+            var washed = NewBoiler(1f, lever);
+            InjectorRig.TryCreate(null, washed, out _);
+            InjectorRig.TryGet(washed, out var washedRig);
+            var washedWater = BoilerWaterRig.Create(washed, null, BoilerWaterRig.Guard.FusiblePlug);
+            washedWater.MeltPlug();
+            washedRig.HoseIn = true;
+            washedRig.HoseOpening = 1f;
+            Run(washedRig, 0.1f);
+            var renewedOnce = !washedWater.Plug.Melted && washedRig.TakeWashedOut() && !washedRig.TakeWashedOut();
+            washedWater.MeltPlug();
+            Run(washedRig, 0.1f);
+            var keptWhileIn = washedWater.Plug.Melted;
+            washedRig.HoseIn = false;
+            washedRig.HoseOpening = 0f;
+            Run(washedRig, 0.1f);
+            washedRig.HoseIn = true;
+            washedRig.HoseOpening = 1f;
+            Run(washedRig, 0.1f);
+            Check(renewedOnce && keptWhileIn && !washedWater.Plug.Melted && washedRig.TakeWashedOut(),
+                "the hose's first water washes a cold boiler out (a melted plug renewed), once until the hose is taken out and put back");
+
+            var plant = InjectorRig.PlantPressure;
+            Check(InjectorRig.DirectSteamFlow(1f, 1f) == InjectorRig.DirectSteamMost && InjectorRig.DirectSteamFlow(0.5f, 1f) == 0.5f * InjectorRig.DirectSteamMost
+                  && InjectorRig.DirectSteamFlow(1f, 0.8f * plant) < InjectorRig.DirectSteamMost && InjectorRig.DirectSteamFlow(1f, 0.8f * plant) > 0f
+                  && InjectorRig.DirectSteamFlow(1f, plant) == 0f && InjectorRig.DirectSteamFlow(0f, 1f) == 0f,
+                $"direct steam is choked at {InjectorRig.DirectSteamMost:F1} kg/s wide open below half the plant's pressure, " +
+                $"{InjectorRig.DirectSteamFlow(1f, 0.8f * plant):F2} kg/s at 80 % of it, none at the plant's {InjectorRig.PlantGauge:F0} psi");
+
+            var repaired = NewBoiler(1f, lever);
+            InjectorRig.TryCreate(null, repaired, out _);
+            InjectorRig.TryGet(repaired, out var hotRig);
+            hotRig.HoseIn = true;
+            hotRig.HoseHot = true;
+            hotRig.HoseOpening = 1f;
+            Run(hotRig, 1f);
+            var hotFeed = hotRig.FeedTemperatureLastStep;
+            hotRig.HoseOpening = 0f;
+            hotRig.HoseSteam = 1f;
+            var steamedFrom = hotRig.BoilerVessel.mass;
+            var steamedFromPressure = hotRig.BoilerVessel.pressure;
+            Run(hotRig, 300f);
+            var steamedMass = hotRig.BoilerVessel.mass - steamedFrom;
+            var steamedPressure = hotRig.BoilerVessel.pressure;
+            Run(hotRig, 4000f);
+            var settled = hotRig.BoilerVessel.pressure;
+            Check(Math.Abs(hotFeed - InjectorRig.HotWaterTemperature) < 0.01f && steamedMass > 100f && steamedPressure > steamedFromPressure + 1f
+                  && settled <= plant + 0.05f && settled > plant - 1f && hotRig.SteamRate < 0.3f,
+                $"a repair stand fills at {hotFeed:F0} C, and its steam raises the boiler ({steamedFromPressure:F1} -> {steamedPressure:F1} bar and {steamedMass:F0} kg of water in 5 min, " +
+                $"{settled:F2} bar of the plant's {plant:F2} after 72 min, then {hotRig.SteamRate:F2} kg/s)");
+
+            var flooded = NewBoiler(1f, lever);
+            InjectorRig.TryCreate(null, flooded, out _);
+            InjectorRig.TryGet(flooded, out var floodedRig);
+            floodedRig.HoseIn = true;
+            floodedRig.HoseSteam = 1f;
+            flooded.waterLevelReadOut.Value = 0.96f;
+            var floodedMass = floodedRig.BoilerVessel.mass;
+            Run(floodedRig, 2f);
+            var heldOff = floodedRig.SteamFull && !floodedRig.Steaming && floodedRig.BoilerVessel.mass == floodedMass;
+            flooded.waterLevelReadOut.Value = 0.93f;
+            Run(floodedRig, 2f);
+            var stillHeld = floodedRig.SteamFull;
+            flooded.waterLevelReadOut.Value = 0.90f;
+            Run(floodedRig, 2f);
+            Check(heldOff && stillHeld && !floodedRig.SteamFull && floodedRig.Steaming && floodedRig.BoilerVessel.mass > floodedMass,
+                $"the plant's steam is held off with the glass at {InjectorRig.SteamFullLevel:P0} and let in again once blown down below it");
 
             // Two guests on the hand pump: one letting go leaves the other
             // pumping (audit 2026-10-10: one boolean for every player).
@@ -1292,7 +1456,9 @@ namespace RealisticFiring.AdapterCheck
             InjectorRig.TryCreate(null, hostBoiler, out _);
             InjectorRig.TryGet(hostBoiler, out var hostRig);
             hostRig.Flow = new InjectorFlow { State = InjectorState.Priming, Overflow = 1.3f, OverflowSteam = 0.2f, WaterIn = 0f };
-            hostRig.HydrantFilling = true;
+            hostRig.HoseIn = true;
+            hostRig.HoseOpening = 0.7f;
+            hostRig.HoseFilling = true;
             var hostWater = BoilerWaterRig.Create(hostBoiler, null, BoilerWaterRig.Guard.FusiblePlug);
             hostWater.MeltPlug();
             hostWater.PlugVent = 0.8f;
@@ -1314,7 +1480,8 @@ namespace RealisticFiring.AdapterCheck
                   && client.LastStoker is StokerFlow flow && flow.Jammed && flow.Fed == 0.4f && client.StokerEngineSpeed == 0.6f,
                 $"a client's view gets the host's bed zone by zone and its stoker's reading ({data.Length} bytes; " +
                 $"front zone {client.Model.Zones[(int)GrateZone.Front].Coal:F1} kg)");
-            Check(clientRig.Flow.State == InjectorState.Priming && clientRig.Flow.Overflow == 1.3f && clientRig.HydrantFilling
+            Check(clientRig.Flow.State == InjectorState.Priming && clientRig.Flow.Overflow == 1.3f
+                  && clientRig.HoseFilling && clientRig.HoseIn && clientRig.HoseOpening == 0.7f
                   && clientWater.Plug.Melted && clientWater.PlugVent == 0.8f,
                 "and the injector's overflow, the hose, and the melted plug's blow");
             Check(clientOil.Model.Snapshot().Equals(hostOil.Model.Snapshot()), "and the oil fire's state");
@@ -2031,6 +2198,22 @@ namespace RealisticFiring.AdapterCheck
                 "the shovel keeps its load lumps in 'loadedCoalVisuals', which a load of flue sand dresses as sand");
         }
 
+        // The mod applies its patches a class at a time: one that fails (here
+        // a target that is not there) is named, and the next still applies
+        // (a player's report with Remote Dispatch, 2026-10-17: PatchAll had
+        // stopped at a failure, leaving the shovel's fixes unpatched).
+        private static void CheckPatchEachClass()
+        {
+            const string id = "RealisticFiring.AdapterCheck.PatchEach";
+            var harmony = new HarmonyLib.Harmony(id);
+            var errors = new System.Collections.Generic.List<string>();
+            var failed = RealisticFiring.Main.PatchEachClass(harmony, new[] { typeof(BrokenProbePatch), typeof(GoodProbePatch) }, errors.Add);
+            var patched = PatchProbe.Target() == 2;
+            harmony.UnpatchAll(id);
+            Check(failed.Count == 1 && failed[0] == typeof(BrokenProbePatch).FullName && errors.Count == 1 && patched,
+                "patches apply a class at a time: one that fails is named in the log and the next still applies");
+        }
+
         private static void CheckPatchTargets()
         {
             var patches = typeof(RealisticFiring.Main).Assembly.GetTypes()
@@ -2179,5 +2362,25 @@ namespace RealisticFiring.AdapterCheck
             if (!ok)
                 failures++;
         }
+    }
+
+    internal static class PatchProbe
+    {
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        public static int Target() => 1;
+    }
+
+    [HarmonyLib.HarmonyPatch(typeof(PatchProbe), "NoSuchMethod")]
+    internal static class BrokenProbePatch
+    {
+        private static void Postfix()
+        {
+        }
+    }
+
+    [HarmonyLib.HarmonyPatch(typeof(PatchProbe), nameof(PatchProbe.Target))]
+    internal static class GoodProbePatch
+    {
+        private static void Postfix(ref int __result) => __result = 2;
     }
 }

@@ -225,8 +225,8 @@ and use the cab's blower (the 8F has no fitting).
 - **Foaming** (the glass bobs and reads high): ease the throttle, open the
   cylinder cocks, and lower the water. Water in the exhaust means it's
   carrying over and can crack a cylinder.
-- **Wash out** on a service track (boiler cold, F9) when blowdowns no
-  longer keep it quiet.
+- **Wash out** with a shed stand's water hose (boiler cold) when blowdowns
+  no longer keep it quiet.
 - **Never run low.** A bared crown sheet melts the fusible plug and kills the
   engine (S282, S060, S484-840, 844) or bursts the boiler (Hudson, which
   whistles a warning with an inch left). A repair or a washout at a pit

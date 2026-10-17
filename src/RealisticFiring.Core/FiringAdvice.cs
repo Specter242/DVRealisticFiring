@@ -224,7 +224,7 @@ namespace RealisticFiring.Core
             {
                 oil.OnSteamLine || oil.BoilerPressure >= DeadBoiler,
                 oil.OilTemperature >= RunningOil,
-                oil.Vapor <= 0.01f && oil.PooledOil <= 0.01f,
+                oil.Vapor + oil.PooledOil <= OilFire.SafeToLight,
                 oil.BlowerOn && oil.AtomizerOpen,
                 false,
             };
@@ -232,7 +232,7 @@ namespace RealisticFiring.Core
             {
                 ("Shed's steam on", "a roundhouse or engine shed stand's blower line in the smokebox's fitting, its valve open"),
                 ("Oil warm", $"OIL HEATER open; runs from {OilFire.WarmOil:F0} °C (now {oil.OilTemperature:F0} °C)"),
-                ("Box clear", "no vapor or pooled oil; blow it out if there is"),
+                ("Box clear", $"under {OilFire.SafeToLight:F2} kg of vapor and pooled oil (now {oil.Vapor + oil.PooledOil:F2}); the blower clears vapor, pooled oil drains from the pan"),
                 ("Blower on, atomizer cracked", "air through the box, steam at the burner"),
                 ("Light it", $"lighter in the open door, crack the firing valve within {OilFire.TorchTime:F0} s"),
             };
@@ -254,7 +254,9 @@ namespace RealisticFiring.Core
                 case 2:
                     return new Advice(AdviceLevel.Watch, $"{of}, warm the oil: OIL HEATER open. It's {oil.OilTemperature:F0} °C and runs from {OilFire.WarmOil:F0} °C.", step);
                 case 3:
-                    return new Advice(AdviceLevel.Act, $"{of}, vapor in the box: blow it out with the blower before you light.", step);
+                    return new Advice(AdviceLevel.Act, oil.Vapor >= oil.PooledOil
+                        ? $"{of}, vapor in the box: blow it out with the blower before you light."
+                        : $"{of}, oil pooled in the pan: let it drain out a minute or two, damper open, before you light.", step);
                 case 4:
                     return new Advice(AdviceLevel.Watch, $"{of}: blower on and the atomizer cracked.", step);
                 default:

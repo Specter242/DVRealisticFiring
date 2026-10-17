@@ -14,8 +14,7 @@ namespace RealisticFiring.Shed
         // spud's mouth, where the hose's coupling seats.
         public const float Proud = 0.12f;
 
- private const float RopeOriginAt = 0.035f;
-        private const float RopeLeadAt = RopeOriginAt + ShedHoses.PointSpacing;
+ private const float RopeOriginAt = 0.044f;
 
         private static readonly Vector3 Up = Vector3.up;
         private static readonly Vector3 Along = Vector3.forward;
@@ -115,9 +114,10 @@ namespace RealisticFiring.Shed
         /// Makes the station plug <paramref name="plug"/> the hose's Boss
         /// coupling: the diesel plug's model hidden, the coupling built along
         /// its +y from its mouth, its grip colliders and the rope's ends set
-        /// to it.
+        /// to it; <paramref name="scale"/> times the blower line's, for a
+        /// bigger hose.
         /// </summary>
-        public static void HoseEnd(PluggableObject plug, Material hose, float hoseTexturePerMetre)
+        public static void HoseEnd(PluggableObject plug, float scale = 1f)
         {
             var root = plug.transform;
             var model = root.Find("model");
@@ -128,7 +128,8 @@ namespace RealisticFiring.Shed
                     renderer.enabled = false;
             }
 
-            var mesh = new FittingMesh { HoseTexturePerMetre = hoseTexturePerMetre };
+            // Built at the blower line's size and scaled.
+            var mesh = new FittingMesh();
             // The winged nut, over the spud's thread when coupled.
             mesh.Turned(Metal.Brass, new[]
             {
@@ -137,16 +138,10 @@ namespace RealisticFiring.Shed
             }, Vector3.zero, Up);
             foreach (var side in new[] { -1f, 1f })
                 mesh.Box(Metal.Brass, new Vector3(side * 0.0315f, -0.0075f, 0f), new Vector3(0.016f, 0.018f, 0.007f), Quaternion.identity);
-            // The stem: its collar, its bore, and its shank into the hose.
             mesh.Turned(Metal.Steel, new[]
             {
                 P(0f, 0.03f), P(0.009f, 0.03f), P(0.009f, 0f), P(0.0175f, 0f), P(0.0175f, 0.012f),
-                P(0.0135f, 0.014f), P(0.0135f, 0.065f), P(0f, 0.065f),
-            }, Vector3.zero, Up);
-            mesh.Turned(Metal.Hose, new[]
-            {
-                P(HoseRadius, 0.046f), P(0.0205f, 0.049f), P(0.0205f, 0.12f), P(0.0192f, 0.14f),
-                P(0.0165f, 0.165f), P(0f, 0.165f),
+                P(0.0135f, 0.014f), P(0.0135f, 0.04f), P(0f, 0.04f),
             }, Vector3.zero, Up);
             // The clamp: its band round the hose, its fingers hooking the
             // stem's collar, and its two bolted ears.
@@ -168,7 +163,9 @@ namespace RealisticFiring.Shed
                 mesh.Hex(Metal.Steel, 0.01f, 0.006f, 0.011f, ear, Across);
                 mesh.Hex(Metal.Steel, 0.01f, -0.011f, -0.006f, ear, Across);
             }
-            Outline(root, mesh.Build(root, "RealisticFiring Boss coupling", layer, hose));
+            var coupling = mesh.Build(root, "RealisticFiring Boss coupling", layer);
+            coupling.localScale = Vector3.one * scale;
+            Outline(root, coupling);
 
             var colliders = root.Find("Colliders");
             if (colliders != null)
@@ -184,30 +181,31 @@ namespace RealisticFiring.Shed
                     if (collider is CapsuleCollider capsule && capsules++ == 0)
                     {
                         capsule.direction = 1;
-                        capsule.center = new Vector3(0f, 0.03f, 0f);
-                        capsule.radius = 0.026f;
-                        capsule.height = 0.15f;
+                        capsule.center = new Vector3(0f, 0.03f, 0f) * scale;
+                        capsule.radius = 0.026f * scale;
+                        capsule.height = 0.15f * scale;
                     }
                     else if (collider is CapsuleCollider ears)
                     {
                         ears.direction = 2;
-                        ears.center = new Vector3(0f, 0.034f, 0f);
-                        ears.radius = 0.012f;
-                        ears.height = 0.075f;
+                        ears.center = new Vector3(0f, 0.034f, 0f) * scale;
+                        ears.radius = 0.012f * scale;
+                        ears.height = 0.075f * scale;
                     }
                     else if (collider is BoxCollider box)
                     {
-                        box.center = new Vector3(0f, -0.0075f, 0f);
-                        box.size = new Vector3(0.078f, 0.018f, 0.012f);
+                        box.center = new Vector3(0f, -0.0075f, 0f) * scale;
+                        box.size = new Vector3(0.078f, 0.018f, 0.012f) * scale;
                     }
                 }
             }
 
-            // The hose leaves straight out of the coupling.
-            SetLocal(root.Find("RopeOrigin"), Up * RopeOriginAt);
-            SetLocal(root.Find("RopeLead"), Up * RopeLeadAt);
-            SetLocal(root.Find("[left anchor]"), new Vector3(-0.03f, 0.05f, 0f));
-            SetLocal(root.Find("[right anchor]"), new Vector3(0.03f, 0.05f, 0f));
+            // The hose leaves straight out of the coupling, its last two
+            // points a rope's spacing apart whatever its size.
+            SetLocal(root.Find("RopeOrigin"), Up * RopeOriginAt * scale);
+            SetLocal(root.Find("RopeLead"), Up * (RopeOriginAt * scale + ShedHoses.PointSpacing));
+            SetLocal(root.Find("[left anchor]"), new Vector3(-0.03f, 0.05f, 0f) * scale);
+            SetLocal(root.Find("[right anchor]"), new Vector3(0.03f, 0.05f, 0f) * scale);
         }
 
  public static void Outline(Transform root, Transform model)
@@ -234,9 +232,10 @@ namespace RealisticFiring.Shed
         /// <summary>
         /// Puts a reducing ring and a band clamp where the hose leaves the
         /// gooseneck at <paramref name="source"/> (the rope's start; the hose
-        /// leaves it toward <paramref name="lead"/>).
+        /// leaves it toward <paramref name="lead"/>), <paramref name="scale"/>
+        /// times the blower line's.
         /// </summary>
-        public static void GooseneckEnd(Transform source, Transform lead, int layer)
+        public static void GooseneckEnd(Transform source, Transform lead, int layer, float scale = 1f)
         {
             if (source == null)
                 return;
@@ -259,7 +258,7 @@ namespace RealisticFiring.Shed
                 mesh.Hex(Metal.Steel, 0.01f, 0.006f, 0.011f, ear, bolt);
                 mesh.Hex(Metal.Steel, 0.01f, -0.011f, -0.006f, ear, bolt);
             }
-            mesh.Build(source, "RealisticFiring gooseneck clamp", layer);
+            mesh.Build(source, "RealisticFiring gooseneck clamp", layer).localScale = Vector3.one * scale;
         }
     }
 }

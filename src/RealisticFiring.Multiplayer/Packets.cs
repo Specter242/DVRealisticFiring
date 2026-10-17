@@ -1,5 +1,7 @@
 using System.IO;
 using MPAPI.Interfaces.Packets;
+using MPAPI.Util;
+using UnityEngine;
 
 namespace RealisticFiring.Multiplayer
 {
@@ -106,6 +108,74 @@ namespace RealisticFiring.Multiplayer
         {
             Car = reader.ReadUInt16();
             Event = reader.ReadByte();
+            Value = reader.ReadSingle();
+        }
+    }
+
+ public sealed class StandPlugPacket : ISerializablePacket
+    {
+        /// <summary>The longest stand key read, in characters; a stand's is under 40.</summary>
+        public const int MaxStand = 128;
+
+        public string Stand = "";
+        public byte Place;
+        public byte Holder;
+        public ushort Car;
+        public Vector3 Position;
+        public Quaternion Rotation = Quaternion.identity;
+        public bool Settled;
+        public bool PoseOnly;
+
+        /// <summary>The sender's count of its word on this stand's plug (<c>PlugReport.Seq</c>).</summary>
+        public ushort Seq;
+
+        public void Serialize(BinaryWriter writer)
+        {
+            writer.Write(Stand ?? "");
+            writer.Write(Seq);
+            writer.Write(Place);
+            writer.Write(Holder);
+            writer.Write(Car);
+            writer.WriteVector3(Position);
+            writer.WriteQuaternion(Rotation);
+            writer.Write((byte)((Settled ? 1 : 0) | (PoseOnly ? 2 : 0)));
+        }
+
+        public void Deserialize(BinaryReader reader)
+        {
+            Stand = reader.ReadString();
+            Seq = reader.ReadUInt16();
+            Place = reader.ReadByte();
+            Holder = reader.ReadByte();
+            Car = reader.ReadUInt16();
+            Position = reader.ReadVector3();
+            Rotation = reader.ReadQuaternion();
+            var flags = reader.ReadByte();
+            Settled = (flags & 1) != 0;
+            PoseOnly = (flags & 2) != 0;
+        }
+    }
+
+    /// <summary>How far a shed stand's valve is open, 0 shut to 1, from a client to the host or from the host to clients.</summary>
+    public sealed class StandValvePacket : ISerializablePacket
+    {
+        public string Stand = "";
+        public float Value;
+
+        /// <summary>The sender's count of its word on this stand's valve, as a plug's.</summary>
+        public ushort Seq;
+
+        public void Serialize(BinaryWriter writer)
+        {
+            writer.Write(Stand ?? "");
+            writer.Write(Seq);
+            writer.Write(Value);
+        }
+
+        public void Deserialize(BinaryReader reader)
+        {
+            Stand = reader.ReadString();
+            Seq = reader.ReadUInt16();
             Value = reader.ReadSingle();
         }
     }

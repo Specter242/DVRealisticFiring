@@ -150,6 +150,11 @@ namespace RealisticFiring.Core
         // Pooled oil vaporizes off brick hotter than vaporizing with this time constant, in s.
         private const float PoolVaporizeTime = 30f;
 
+        private const float PoolDrainTime = 120f;
+
+        /// <summary>Vapor and pooled oil under this, in firebox kg, light without a flareback, with a margin.</summary>
+        public const float SafeToLight = 0.5f * FlarebackFuel;
+
         // Flue soot from smoke: a fire smoking black fouls the flues fully in
         // this long at full feed (sand every 10 to 12 miles smoking hard, K02
         // p. 46); even a clean fire gums them in this long.
@@ -463,13 +468,16 @@ namespace RealisticFiring.Core
                     PooledOil += oil * dt;
             }
 
-            // Pooled oil vaporizes off hot brick; the draft clears the vapor.
+            // Pooled oil vaporizes off hot brick, or drains from the pan; the
+            // draft clears the vapor.
             if (PooledOil > 0f && BrickTemperature > BrickVaporizes && !FireOn)
             {
                 var vaporized = PooledOil * Math.Min(1f, dt / PoolVaporizeTime);
                 PooledOil -= vaporized;
                 Vapor += vaporized;
             }
+            if (PooledOil > 0f && !FireOn)
+                PooledOil -= PooledOil * Math.Min(1f, dt / PoolDrainTime);
             if (Vapor > 0f)
                 Vapor -= Vapor * Math.Min(1f, air * dt / BoxAir);
 

@@ -357,6 +357,9 @@ namespace RealisticFiring.Sim
             fireOnReadOut.Value = Model.FireOn ? 1f : 0f;
         }
 
+        /// <summary>The game's steam-raising speedup now, as the coal fire takes it.</summary>
+        public float StartupBoost => StartupMultiplier();
+
         // The stock steam-raising speedup, as the coal fire takes it.
         private float StartupMultiplier()
         {

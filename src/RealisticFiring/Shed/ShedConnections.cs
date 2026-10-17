@@ -20,9 +20,18 @@ namespace RealisticFiring.Shed
         private const float FittingProud = BlowerFittings.Proud;
         private const float FallbackSide = 1.35f;
 
+        // The water connection's guess: this far ahead of the backhead and
+        // under the firehole's foot, near the mud ring, m; on an engine whose
+        // cab is not fitted, this far behind the blower line's guess.
+        private const float AheadOfBackhead = 1.0f;
+        private const float UnderFirehole = 0.5f;
+        private const float BehindSmokebox = 6f;
+        private const float FallbackFirebox = 1.3f;
+
         private static readonly string[] CapLiveries = { "LocoDE2", "LocoDH4", "LocoDM3" };
         private const string CapName = "FuelTankCap";
         private const string FittingName = "RealisticFiring Barco fitting";
+        private const string FillingName = "RealisticFiring filling connection";
 
  private static readonly Dictionary<string, (Vector3 At, float Swing, float Down, float Spin, float Out)> Seated =
             new Dictionary<string, (Vector3, float, float, float, float)>
@@ -36,6 +45,23 @@ namespace RealisticFiring.Shed
             ["Jk3A"] = (new Vector3(-0.90f, 1.35f, 3.25f), 0f, -13f, 0f, 0f),
         };
 
+ private static readonly Dictionary<string, (Vector3 At, float Swing, float Down, float Spin, float Out)> WaterSeated =
+            new Dictionary<string, (Vector3, float, float, float, float)>
+        {
+            ["LocoS060"] = (new Vector3(-0.65f, 1.47f, -1.00f), 0f, 0f, 0f, 0f),
+            ["Jk3A"] = (new Vector3(-0.54f, 1.31f, -1.35f), 0f, 0f, 0f, 0f),
+            ["LocoS282A"] = (new Vector3(-0.22f, 1.15f, 2.28f), 0f, 0f, 0f, 0f),
+            // The 8F: set on the grey livery; the black is the same engine.
+            ["em_lms_8f_loc_grey"] = (new Vector3(-0.66f, 1.55f, -2.15f), 0f, 0f, 0f, 0f),
+            ["em_lms_8f_loc_black"] = (new Vector3(-0.66f, 1.55f, -2.15f), 0f, 0f, 0f, 0f),
+            // The Dreyfuss Hudson.
+            ["S464-730"] = (new Vector3(-0.93f, 1.49f, 0.72f), 0f, 0f, 0f, 0f),
+            ["FEF-3"] = (new Vector3(-1.42f, 1.77f, -7.27f), 0f, 0f, 0f, 0f),
+            ["S484-840A"] = (new Vector3(-0.72f, 1.41f, -7.23f), 0f, 0f, 0f, 0f),
+            // The Santa Fe 2901: far back on its long boiler.
+            ["A.T.&S.F. 2901-A"] = (new Vector3(-1.22f, 2.03f, -7.98f), 0f, 0f, 0f, 0f),
+        };
+
  private static readonly HashSet<string> RightSide = new HashSet<string> { "LocoS060" };
 
  private static readonly HashSet<string> NoConnection = new HashSet<string> { "em_lms_8f_loc_black", "em_lms_8f_loc_grey" };
@@ -43,12 +69,30 @@ namespace RealisticFiring.Shed
         private sealed class Connection
         {
             public TrainCar Car;
+            public HoseKind Kind;
             public PlugSocket Socket;
             public Transform Fitting;
             public Vector3 Guessed;
         }
 
         private static readonly Dictionary<SteamExhaust, Connection> BlowerSockets = new Dictionary<SteamExhaust, Connection>();
+        private static readonly Dictionary<TrainCar, Connection> WaterSockets = new Dictionary<TrainCar, Connection>();
+
+        private static IEnumerable<Connection> Connections => BlowerSockets.Values.Concat(WaterSockets.Values);
+
+        /// <summary>
+        /// Whether the shed's water hose is in this engine's connection, how
+        /// far its stand's valve is open, 0 to 1 (0 with none in), whether its
+        /// water is the plant's hot water, and how far its direct steam valve
+        /// is open (a repair stand's).
+        /// </summary>
+        public static (bool In, float Opening, bool Hot, float Steam) WaterLine(TrainCar car)
+        {
+            if (car == null || !WaterSockets.TryGetValue(car, out var connection) || connection.Socket == null || !connection.Socket.IsPluggedIn)
+                return (false, 0f, false, 0f);
+            var plug = connection.Socket.Plug;
+            return (true, ShedStands.Opening(plug), ShedStands.IsHot(plug), ShedStands.DirectSteam(plug));
+        }
 
         /// <summary>
         /// How far the house blower line in this engine's connection is open,
@@ -64,7 +108,7 @@ namespace RealisticFiring.Shed
             foreach (var connection in BlowerSockets.Values)
             {
                 if (connection.Car == car && connection.Socket != null)
-                    return ShedStands.Reaches(connection.Socket.transform.position, HoseKind.BlowerLine.Length * PullsTo);
+                    return ShedStands.Reaches(connection.Socket.transform.position, HoseKind.BlowerLine.Length * PullsTo, HoseKind.BlowerLine);
             }
             return false;
         }
@@ -72,22 +116,68 @@ namespace RealisticFiring.Shed
         // A station hose comes out of the hand pulled past this share of its length (PropHose).
         private const float PullsTo = 1.25f;
 
+        /// <summary>The engine whose water connection, with a hose in, is nearest <paramref name="point"/> within <paramref name="within"/> m, or null.</summary>
+        public static TrainCar WaterLineNear(Vector3 point, float within)
+        {
+            TrainCar nearest = null;
+            var best = within * within;
+            foreach (var connection in WaterSockets.Values)
+            {
+                if (connection.Car == null || connection.Socket == null || !connection.Socket.IsPluggedIn)
+                    continue;
+                var distance = (connection.Socket.transform.position - point).sqrMagnitude;
+                if (distance < best)
+                {
+                    best = distance;
+                    nearest = connection.Car;
+                }
+            }
+            return nearest;
+        }
+
+        /// <summary>The connection on <paramref name="car"/> for the hose whose plug carries <paramref name="tag"/>, or null where it has none (or none yet).</summary>
+        public static PlugSocket SocketOf(TrainCar car, string tag)
+        {
+            if (car == null)
+                return null;
+            foreach (var connection in Connections)
+            {
+                if (connection.Car == car && connection.Socket != null && connection.Kind.Tag == tag)
+                    return connection.Socket;
+            }
+            return null;
+        }
+
+        /// <summary>The engine whose connection <paramref name="socket"/> is, or null.</summary>
+        public static TrainCar CarAt(PlugSocket socket)
+        {
+            if (socket == null)
+                return null;
+            foreach (var connection in Connections)
+            {
+                if (connection.Socket == socket)
+                    return connection.Car;
+            }
+            return null;
+        }
+
         /// <summary>Whether a house blower line is in this engine's connection, its valve open or shut.</summary>
         public static bool LineIn(SteamExhaust exhaust) =>
             exhaust != null && BlowerSockets.TryGetValue(exhaust, out var connection) && connection.Socket != null && connection.Socket.IsPluggedIn;
 
-        // The connection where its engine is seated, or the guess moved by
-        // the sliders. Returns a line for the log.
+        // The connection where its engine is seated, or its guess. Returns a
+        // line for the log.
         private static string Place(Connection connection)
         {
             var livery = connection.Car.carLivery != null ? connection.Car.carLivery.id : "";
+            var water = connection.Kind == HoseKind.Water;
             var swing = 0f;
             var down = 0f;
             var spin = 0f;
             var further = 0f;
             Vector3 at;
             string how;
-            if (Seated.TryGetValue(livery, out var seat))
+            if ((water ? WaterSeated : Seated).TryGetValue(livery, out var seat))
             {
                 at = seat.At;
                 swing = seat.Swing;
@@ -99,7 +189,7 @@ namespace RealisticFiring.Shed
             else
             {
                 at = connection.Guessed;
-                how = "guessed under the stack";
+                how = water ? "guessed low on the firebox" : "guessed under the stack";
             }
             var side = at.x > 0f ? 1f : -1f;
             // Facing out of its side; turned down about the car's length and
@@ -109,19 +199,88 @@ namespace RealisticFiring.Shed
             var turned = Quaternion.AngleAxis(-side * swing, Vector3.up) * Quaternion.AngleAxis(-side * down, Vector3.forward) * facing;
             var go = connection.Socket.transform;
             go.localRotation = turned * Quaternion.AngleAxis(spin, Vector3.up);
-            go.localPosition = at + go.localRotation * Vector3.up * (FittingProud + further);
-            BlowerFittings.Orient(connection.Fitting, connection.Car.transform);
-            return $"blower line connection with its flange at ({at.x:F2}, {at.y:F2}, {at.z:F2}) m in the car frame on its {(side > 0f ? "right" : "left")}" +
+            go.localPosition = at + go.localRotation * Vector3.up * ((water ? WaterFittings.Proud : FittingProud) + further);
+            if (!water)
+                BlowerFittings.Orient(connection.Fitting, connection.Car.transform);
+            return $"{connection.Kind.Name} connection with its flange at ({at.x:F2}, {at.y:F2}, {at.z:F2}) m in the car frame on its {(side > 0f ? "right" : "left")}" +
                    (further != 0f ? $" and {further * 100f:F0} cm further out" : "") +
                    $", swung {swing:F0} toward the front, turned {down:F0} down, and spun {spin:F0} degrees, {how}";
         }
 
-        /// <summary>Gives a fired engine its blower line connection. Returns a line for the log, or null.</summary>
+        /// <summary>Gives a fired engine its blower line and water connections. Returns a line for the log, or null.</summary>
         public static string Attach(TrainCar car, SimulationFlow flow)
         {
+            foreach (var stale in WaterSockets.Keys.Where(k => k == null || WaterSockets[k].Socket == null).ToList())
+                WaterSockets.Remove(stale);
+            var blower = AttachBlower(car, flow, out var stackGuess);
+            var water = AttachWater(car, flow, stackGuess);
+            return blower != null && water != null ? blower + "; " + water : blower ?? water;
+        }
+
+        private static string AttachWater(TrainCar car, SimulationFlow flow, Vector3? stackGuess)
+        {
+            if (car == null || flow == null || !flow.OrderedSimComps.OfType<Boiler>().Any())
+                return null;
+            Vector3 local;
+            if (FireholeOpening.Backhead(car, out var plane, out var foot))
+            {
+                var height = foot - UnderFirehole;
+                var z = plane + AheadOfBackhead;
+                local = new Vector3(-Side(car, new Vector3(0f, height, z), false), height, z);
+            }
+            else
+            {
+                var z = stackGuess.HasValue ? stackGuess.Value.z - BehindSmokebox : 0f;
+                local = new Vector3(-Side(car, new Vector3(0f, FallbackFirebox, z), false), FallbackFirebox, z);
+            }
+            var socket = Fitting(car, HoseKind.Water);
+            if (socket == null)
+                return "no diesel fuel cap to copy for the water connection";
+            var fitting = socket.transform.Find(FillingName);
+            // Its cock open with the hose on, shut without.
+            socket.PluggedIn += (plug, at) =>
+            {
+                WaterFittings.Cock(fitting, true);
+                HoseGrip.Reach(plug, car);
+                Said(car, socket, WaterIn(car, ShedStands.IsHot(plug)));
+            };
+            socket.Unplugged += (plug, at) =>
+            {
+                WaterFittings.Cock(fitting, false);
+                HoseGrip.Let(plug);
+                var billed = Sim.InjectorRig.TryGet(car, out var rig) && (rig.PlantWaterBilled >= 1f || rig.PlantFuelBilled >= 1f);
+                Said(car, socket, $"{HoseKind.Water.Name} off" + (billed
+                    ? $": {rig.PlantWaterBilled:F0} kg of the plant's water and {rig.PlantFuelBilled:F0} kg of its {rig.PlantFuelName} are on the loco's fees at the Career Manager"
+                    : ""));
+            };
+            WaterFittings.Cock(fitting, socket.IsPluggedIn);
+            var connection = new Connection { Car = car, Kind = HoseKind.Water, Socket = socket, Fitting = fitting, Guessed = local };
+            WaterSockets[car] = connection;
+            return Place(connection);
+        }
+
+        // What plugging the water hose in says: it fills only a cold boiler;
+        // a repair stand's fills it hot and steams it.
+        private static string WaterIn(TrainCar car, bool repair)
+        {
+            var pressure = Sim.InjectorRig.TryGet(car, out var rig) && rig.BoilerPressure > Sim.InjectorRig.HoseMaxPressure;
+            if (repair)
+                return pressure
+                    ? $"{HoseKind.Water.Name} in at the repair stand: open its Direct steam handwheel and the plant's steam ({Sim.InjectorRig.PlantGauge:F0} psi) raises the boiler's; the water fills only a cold boiler"
+                    : $"{HoseKind.Water.Name} in at the repair stand: open Hot water to wash out and fill the boiler at 180 F, only to the bottom of the glass (the steam's water fills it, a fifth of the boiler again), then Direct steam to raise it to the plant's {Sim.InjectorRig.PlantGauge:F0} psi";
+            return pressure
+                ? $"{HoseKind.Water.Name} in, but the boiler has pressure: the hose fills only a cold boiler, under about {Sim.InjectorRig.HoseMaxGauge:F0} psi"
+                : $"{HoseKind.Water.Name} in: open the stand's valve and the shed's water washes the boiler out and fills it; shut it at the top of the glass";
+        }
+
+        // The blower line's, on the smokebox, from the stack's place (also
+        // given out as the water connection's last resort).
+        private static string AttachBlower(TrainCar car, SimulationFlow flow, out Vector3? stackGuess)
+        {
+            stackGuess = null;
             var exhaust = flow?.OrderedSimComps.OfType<SteamExhaust>().FirstOrDefault();
             var reader = car != null ? car.GetComponentInChildren<SteamSmokeParticlePortReader>(true) : null;
-            if (exhaust == null || reader == null || car.carLivery != null && NoConnection.Contains(car.carLivery.id))
+            if (exhaust == null || reader == null)
                 return null;
             foreach (var stale in BlowerSockets.Keys.Where(k => k == null || BlowerSockets[k].Socket == null).ToList())
                 BlowerSockets.Remove(stale);
@@ -136,29 +295,40 @@ namespace RealisticFiring.Shed
             var stackAt = smoke != null ? ChimneyPlume.Emitter(smoke)
                 : reader.smokeParticlesParent != null ? reader.smokeParticlesParent.transform.position : reader.transform.position;
             var stack = car.transform.InverseTransformPoint(stackAt);
+            stackGuess = stack;
+            if (car.carLivery != null && NoConnection.Contains(car.carLivery.id))
+                return null;
             var height = stack.y - UnderStack;
             var onRight = car.carLivery != null && RightSide.Contains(car.carLivery.id);
             var side = Side(car, new Vector3(0f, height, stack.z), onRight);
             var local = new Vector3(onRight ? side : -side, height, stack.z);
 
-            var socket = Fitting(car);
+            var socket = Fitting(car, HoseKind.BlowerLine);
             if (socket == null)
                 return "no diesel fuel cap to copy for the blower line connection";
-            var go = socket.gameObject;
             // An oil burner's line feeds its atomizer and heater too, and
             // its own steam takes over sooner (McShane 1921: at 20 lb).
-            socket.PluggedIn += (plug, at) => Said(car, Sim.RealisticOilFirebox.TryGet(car, out _)
-                ? $"{HoseKind.BlowerLine.Name} in: open the stand's valve and the shed's steam (100 psi) works the blower, atomizer, and oil heater; take it off once the engine makes about 20 psi of its own"
-                : $"{HoseKind.BlowerLine.Name} in: open the stand's valve and the shed's steam (100 psi) works the blower; take it off once the engine makes about 50 psi of its own");
-            socket.Unplugged += (plug, at) => Said(car, $"{HoseKind.BlowerLine.Name} off");
-            var connection = new Connection { Car = car, Socket = socket, Fitting = socket.transform.Find(FittingName), Guessed = local };
+            socket.PluggedIn += (plug, at) =>
+            {
+                HoseGrip.Reach(plug, car);
+                Said(car, socket, Sim.RealisticOilFirebox.TryGet(car, out _)
+                    ? $"{HoseKind.BlowerLine.Name} in: open the stand's valve and the shed's steam (100 psi) works the blower, atomizer, and oil heater; take it off once the engine makes about 20 psi of its own"
+                    : $"{HoseKind.BlowerLine.Name} in: open the stand's valve and the shed's steam (100 psi) works the blower; take it off once the engine makes about 50 psi of its own");
+            };
+            socket.Unplugged += (plug, at) =>
+            {
+                HoseGrip.Let(plug);
+                Said(car, socket, $"{HoseKind.BlowerLine.Name} off");
+            };
+            var connection = new Connection { Car = car, Kind = HoseKind.BlowerLine, Socket = socket, Fitting = socket.transform.Find(FittingName), Guessed = local };
             BlowerSockets[exhaust] = connection;
             return Place(connection) + " (prototype)";
         }
 
         // A copy of a diesel's fuel cap and its socket on the engine, retagged
-        // for the blower line, on a pipe back to the smokebox with a flange.
-        private static PlugSocket Fitting(TrainCar car)
+        // for the hose of kind, drawn as its fitting: the Barco fitting on the
+        // smokebox for the blower line, the filling connection for water.
+        private static PlugSocket Fitting(TrainCar car, HoseKind kind)
         {
             Transform cap = null;
             foreach (var id in CapLiveries)
@@ -173,12 +343,12 @@ namespace RealisticFiring.Shed
             var holder = new GameObject("RealisticFiring fitting (being built)");
             holder.SetActive(false);
             var copy = Object.Instantiate(cap.gameObject, holder.transform, false);
-            copy.name = "RealisticFiring blower line connection";
+            copy.name = $"RealisticFiring {kind.Name} connection";
             var socket = copy.GetComponent<PlugSocket>();
-            socket.connectionTag = HoseKind.BlowerLine.Tag;
+            socket.connectionTag = kind.Tag;
             socket.socketTag = "loco";
-            // Smaller, as the blower line's plug is: its cap, not its transform.
-            var scale = HoseKind.BlowerLine.Fittings;
+            // Sized as its hose's plug is: its cap, not its transform.
+            var scale = kind.Fittings;
             foreach (Transform part in copy.transform)
             {
                 part.localPosition *= scale;
@@ -193,8 +363,8 @@ namespace RealisticFiring.Shed
             var layer = copy.GetComponentsInChildren<Renderer>(true).Select(r => r.gameObject.layer).DefaultIfEmpty(copy.layer).First();
             foreach (var renderer in copy.GetComponentsInChildren<Renderer>(true))
                 renderer.enabled = false;
-            var fitting = BlowerFittings.Barco(copy.transform, layer);
-            fitting.name = FittingName;
+            var fitting = kind == HoseKind.Water ? WaterFittings.Filling(copy.transform, layer, kind.Scale) : BlowerFittings.Barco(copy.transform, layer);
+            fitting.name = kind == HoseKind.Water ? FillingName : FittingName;
             BlowerFittings.Outline(copy.transform, fitting);
             copy.transform.SetParent(car.transform, false);
             Object.Destroy(holder);
@@ -217,7 +387,11 @@ namespace RealisticFiring.Shed
             return best < float.MaxValue ? SideSearch - best : FallbackSide;
         }
 
-        private static void Said(TrainCar car, string text)
+        // Said to a player on the engine or near its connection: a hose is
+        // put in from the ground.
+        private const float SaidWithin = 15f;
+
+        private static void Said(TrainCar car, PlugSocket socket, string text)
         {
             // Not as the game unloads its cars, which unplugs their hoses
             // (and logs an error for an ID read then).
@@ -225,7 +399,9 @@ namespace RealisticFiring.Shed
                 return;
             if (Main.Settings.LogFireboxCreation)
                 Main.Mod.Logger.Log($"{car?.ID}: {text}");
-            if (car != null && PlayerManager.Car == car)
+            var near = PlayerManager.PlayerTransform != null && socket != null
+                       && Vector3.Distance(PlayerManager.PlayerTransform.position, socket.transform.position) < SaidWithin;
+            if (PlayerManager.Car == car || near)
                 FireController.Announce(char.ToUpper(text[0]) + text.Substring(1));
         }
     }

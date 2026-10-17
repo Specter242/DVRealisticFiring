@@ -407,6 +407,17 @@ namespace RealisticFiring.Core.Tests;
     }
 
     [Fact]
+    public void PooledOilDrainsFromAColdBoxUntilItLightsSafely()
+    {
+        var fire = new OilFire(Gs4);
+        fire.Restore(false, OilFire.ColdBrick, OilFire.WarmOil, 0f, pooledOil: 1f);
+        Run(fire, Inputs(0f), 300f);
+
+        Assert.True(fire.PooledOil < OilFire.SafeToLight && fire.PooledOil > 0f, $"pooled {fire.PooledOil:F2} kg after 5 min");
+        Assert.True(OilFire.SafeToLight < OilFire.FlarebackFuel);
+    }
+
+    [Fact]
     public void PooledOilAndVaporSurviveARestoreAndStillFlareBack()
     {
         var fire = new OilFire(Gs4);

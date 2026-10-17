@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.13.0 (2026-10-17)
+
+- Shed water hoses (`HoseKind.Water`): a water stand beside each shed stand (`ShedStands`, each shed's place in `WaterBySite`, single stands in `WaterByStand`), its 15 m hose's Boss coupling and clamp scaled half as big again (`HoseKind.Scale`); each engine's filling connection seated per livery (`ShedConnections.WaterSeated`, `WaterFittings`, its plug cock turning with the hose). The rig washes a cold boiler out once a plugging and fills it by the valve's opening (`InjectorRig.StepHose`); the F9 key and `WaterPoints` are gone. Water runs from an open hose (`HoseWater`).
+- Direct steaming at the three big roundhouses' repair stands (`Roundhouse.RepairStall`): hot water at 180 °F and the plant's 150 psi steam through a second handwheel (`ShedStands.MakeRepairStand`, `SteamValveStem`), its flow choked by Napier's rule and falling to none at the plant's pressure, as fast as the start-up boost (`InjectorRig.StepDirectSteam`), held off with the glass at 95 %, its water no feed for the boiler's solids (`BoilerWaterRig.AfterFeed`); the plant's water and coal added to the loco's debt tracker (`PlantFee`).
+- A shed hose in an engine's connection gets a trigger grip out past the engine's colliders (`HoseGrip`); the coupling's hose sleeve is gone.
+- Valve-only stands in the multiplayer sync (`ShedNet.RegisterValve`); the hose's state in the client mirror.
+- Patches applied a class at a time, failures named (`Main.PatchEachClass`).
+- Oil: pooled oil drains from a cold pan and the box counts clear under half a flareback's fuel (`OilFire.SafeToLight`).
+- The JK3's ashpan rod drawn without its hanger (`AshpanLever.DropHanger`).
+
 ## 1.12.0 (2026-10-17)
 
 - Shed blower lines (`Shed/`): a stand at each of seven roundhouses' 48 stalls and at six engine sheds (`ShedStands`, set on the floor under it as the shed loads), each a copy of a service station's diesel hose (`ShedHoses`: its own rope mesh, 81 points over 12 m, the station's runtime parts stripped, its texture scaled with its length) with a handwheel valve; each fired engine's Barco fitting seated per livery (`ShedConnections`; the S060's on the right, none on the 8F); the fittings built as turned meshes with seamless grime (`FittingMesh`, `FittingGrime`, `BlowerFittings`: Barco body, Dixon Boss coupling, gooseneck clamp); points held on raised ground between the rope's job and its mesh's (`HoseGround`, a prefix on `RopeMeshGenerator.Schedule`); steam from an open line (`HoseSteam`); a plug fallen under a floor put back (`StandPlugWatch`); far hoses' solvers paused. House steam drives the blower (`BlowerFit.NozzleSteam`) and an oil burner's atomizer and heater (`RealisticOilFirebox.HouseLine`); the service track's steam line and its key are gone.

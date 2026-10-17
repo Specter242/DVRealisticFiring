@@ -79,9 +79,16 @@ namespace RealisticFiring.Sim
                     {
                         Codec<InjectorFlow>.Write(w, rig.Flow);
                         Codec<FeedPumpFlow>.Write(w, rig.PumpFlow);
-                        w.Write(rig.HydrantFilling);
+                        w.Write(rig.HoseFilling);
                         w.Write(rig.HandPumping || rig.RemoteHandPumping);
                         w.Write(rig.FillRate);
+                        w.Write(rig.HoseIn);
+                        w.Write(rig.HoseOpening);
+                        w.Write(rig.HoseHot);
+                        w.Write(rig.HoseSteam);
+                        w.Write(rig.SteamRate);
+                        w.Write(rig.Steaming);
+                        w.Write(rig.SteamFull);
                     });
                     if (rig.Circuits.Count > 1)
                         Section(writer, InjectorCircuits, w =>
@@ -180,14 +187,28 @@ namespace RealisticFiring.Sim
                 {
                     var flow = Codec<InjectorFlow>.Read(r);
                     var pump = Codec<FeedPumpFlow>.Read(r);
-                    var hydrant = r.ReadBoolean();
+                    var hose = r.ReadBoolean();
                     var pumping = r.ReadBoolean();
                     var fill = Finite(r);
+                    var hoseIn = r.ReadBoolean();
+                    var opening = Math.Max(0f, Math.Min(1f, Finite(r)));
+                    var hot = r.ReadBoolean();
+                    var steam = Math.Max(0f, Math.Min(1f, Finite(r)));
+                    var steamRate = Math.Max(0f, Finite(r));
+                    var steaming = r.ReadBoolean();
+                    var steamFull = r.ReadBoolean();
                     rig.Flow = flow;
                     rig.PumpFlow = pump;
-                    rig.HydrantFilling = hydrant;
+                    rig.HoseFilling = hose;
                     rig.HandPumping = pumping;
                     rig.FillRate = fill;
+                    rig.HoseIn = hoseIn;
+                    rig.HoseOpening = opening;
+                    rig.HoseHot = hot;
+                    rig.HoseSteam = steam;
+                    rig.SteamRate = steamRate;
+                    rig.Steaming = steaming;
+                    rig.SteamFull = steamFull;
                     break;
                 }
                 case InjectorCircuits when rig != null:

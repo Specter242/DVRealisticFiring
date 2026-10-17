@@ -11,16 +11,24 @@ namespace RealisticFiring.Shed
 {
  internal sealed class HoseKind
     {
-        private HoseKind(string name, string tag, float length, float diameter, float fittings)
+        private HoseKind(string name, string tag, float length, float diameter, string valve, string key)
         {
             Name = name;
             Tag = tag;
             Length = length;
             Diameter = diameter;
-            Fittings = fittings;
+            Valve = valve;
+            Key = key;
         }
 
- public static readonly HoseKind BlowerLine = new HoseKind("blower line", "rf-blower-line", 12f, BlowerFittings.HoseDiameter, 0.6f);
+ public static readonly HoseKind BlowerLine = new HoseKind("blower line", "rf-blower-line", 12f, BlowerFittings.HoseDiameter, "Shed steam", "");
+
+ public static readonly HoseKind Water = new HoseKind("water hose", "rf-boiler-water", 15f, BlowerFittings.HoseDiameter * WaterScale, "Shed water", " water");
+
+        /// <summary>The water hose's coupling and fittings against the blower line's.</summary>
+        private const float WaterScale = 1.5f;
+
+        public static readonly HoseKind[] All = { BlowerLine, Water };
 
         public string Name { get; }
 
@@ -32,8 +40,20 @@ namespace RealisticFiring.Shed
         /// <summary>The hose's outside diameter, m.</summary>
         public float Diameter { get; }
 
-        /// <summary>How near its plug and the engines' sockets find each other, against the station's diesel ones.</summary>
-        public float Fittings { get; }
+        /// <summary>Its coupling and fittings against the blower line's.</summary>
+        public float Scale => Diameter / BlowerFittings.HoseDiameter;
+
+        /// <summary>How near its plug and the engines' sockets find each other, against the station's diesel ones: the blower line's are 0.6 of them.</summary>
+        public float Fittings => 0.6f * Scale;
+
+        /// <summary>Its stand's valve wheel, as the hover names it.</summary>
+        public string Valve { get; }
+
+        /// <summary>Added to its site's name for its stand's key in a session: the blower line's stands keep the site's own.</summary>
+        public string Key { get; }
+
+        /// <summary>The kind whose plugs and sockets carry <paramref name="tag"/>, or null.</summary>
+        public static HoseKind ByTag(string tag) => System.Array.Find(All, k => k.Tag == tag);
     }
 
     /// <summary>
@@ -135,9 +155,8 @@ namespace RealisticFiring.Shed
             }
 
             ScaleSenses(hose.plug.transform, kind.Fittings);
-            BlowerFittings.HoseEnd(hose.plug, hose.GetComponent<MeshRenderer>()?.sharedMaterial,
-                mesh != null ? mesh.uvScale / hoseLength : 1f);
-            BlowerFittings.GooseneckEnd(hose.transform, hose.transform.Find("HoseLead"), hose.gameObject.layer);
+            BlowerFittings.HoseEnd(hose.plug, kind.Scale);
+            BlowerFittings.GooseneckEnd(hose.transform, hose.transform.Find("HoseLead"), hose.gameObject.layer, kind.Scale);
             copy.transform.SetParent(parent, true);
             Object.Destroy(holder);
             if (rope != null)

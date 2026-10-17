@@ -54,7 +54,10 @@ namespace RealisticFiring.Shed
 
         private void RecoverIfBuried()
         {
-            if (plug == null || stand == null || held || plug.IsHeldInHand || plug.State != PluggableObject.PluggableState.Free)
+            // In a session the host's plug decides, and one following
+            // another machine's hand is where that player has it.
+            if (plug == null || stand == null || held || plug.IsHeldInHand || plug.State != PluggableObject.PluggableState.Free
+                || Net.IsClient || ShedNet.IsFollowing(plug))
                 return;
             var at = plug.transform.position;
             var buried = false;
@@ -69,7 +72,7 @@ namespace RealisticFiring.Shed
             if (!buried)
                 return;
             Restore();
-            var back = plug.InstantSnapTo(stand);
+            var back = ShedNet.Snap(plug, stand);
             Say(back ? "found under the floor, put back on its stand" : "found under the floor, but its stand would not take it back");
         }
 

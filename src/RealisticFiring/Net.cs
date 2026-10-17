@@ -19,6 +19,7 @@ namespace RealisticFiring
         Push,
         HandPumpOn,
         HandPumpOff,
+        // An old client's hydrant key, answered with where the water hose is.
         Hydrant,
         Sand,
         Shovelful,

@@ -86,7 +86,7 @@ namespace RealisticFiring.Shed
             if (plug == null)
                 return;
             var inEngine = plug.State == PluggableObject.PluggableState.PluggedIn && plug.Socket != null && plug.Socket != rest;
-            var share = inEngine ? 0f : ShedStands.Opening(plug);
+            var share = inEngine ? 0f : ShedStands.SteamOpening(plug);
             if (jet != null)
             {
                 var emission = jet.emission;
