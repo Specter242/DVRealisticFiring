@@ -111,6 +111,72 @@ namespace RealisticFiring.Core.Tests;
     }
 
     [Fact]
+    public void RunningLightWithSteamOnHeKeepsThePump()
+    {
+        // Light engine with the throttle cracked: far under the work he
+        // counted as working, which shut a warm pump (a player, 2026-10-16).
+        var engine = new Footplate(injectorDelivery: 4.6f, pumpFeed: 4.2f) { Throttle = 0.15f };
+        engine.EngineSteam = 0.3f;
+        var dropped = false;
+        engine.Run(AutoFireman.PumpAfter + 60f);
+        Assert.True(engine.Fireman.OnPump);
+        engine.Run(600f, e => dropped |= !e.Fireman.OnPump);
+        Assert.False(dropped, "he shut the pump running light with steam on");
+
+        // Drifting, steam shut: a moment's easing keeps it, a while goes to the injector.
+        engine.Throttle = 0f;
+        engine.EngineSteam = 0f;
+        engine.Run(AutoFireman.PumpDrop / 2f);
+        Assert.True(engine.Fireman.OnPump);
+        engine.Run(AutoFireman.PumpDrop);
+        Assert.False(engine.Fireman.OnPump);
+    }
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(1.56f)]
+    public void UnderTheStartUpBoostHeKeepsTheFireUp(float stokerFeed)
+    {
+        var engine = new Footplate(coal: 30f, pressure: 5f, stokerFeed: stokerFeed) { Standing = true, StartupMultiplier = 10f };
+        engine.SafetyValve = 25f;
+        engine.Run(30f);
+        var low = float.MaxValue;
+        var counted = 0;
+        engine.Run(150f, e =>
+        {
+            if (e.Pressure >= e.SafetyValve - 2f || !(e.Fireman.CoalTarget > 0f))
+                return;
+            counted++;
+            low = Math.Min(low, e.Fire.CoalMass / e.Fireman.CoalTarget);
+        });
+        output.WriteLine($"stoker {stokerFeed}: the fire at least {low:P0} of his mark over {counted} steps, {engine.Pressure:F1} bar at the end, {engine.Throws.Count} throws");
+        Assert.True(counted > 300, "the boiler reached the safety valve too soon to tell");
+        Assert.True(engine.Fire.FireOn);
+        Assert.True(low > 0.5f, $"the fire fell to {low:P0} of his mark");
+    }
+
+    [Fact]
+    public void TurnedDownThePumpStillTurns()
+    {
+        var engine = new Footplate(injectorDelivery: 4.6f, pumpFeed: 4.2f) { Throttle = 0.15f };
+        engine.EngineSteam = 0.1f;
+        engine.Run(AutoFireman.PumpAfter + 60f);
+        Assert.True(engine.Fireman.OnPump);
+        var stalled = 0;
+        var least = 1f;
+        engine.Run(900f, e =>
+        {
+            if (e.PumpValve > 0f)
+                least = Math.Min(least, e.PumpValve);
+            if (e.PumpValve > 0f && e.PumpValve <= e.Pump!.Spec.OpenThreshold)
+                stalled++;
+        });
+        output.WriteLine($"least opening {least:P0}; steps with the pump stopped under his hand {stalled}");
+        Assert.True(least < 0.2f, $"he never turned the pump down (least {least:P0})");
+        Assert.Equal(0, stalled);
+    }
+
+    [Fact]
     public void APumpThatLosesItsSuctionIsShutAndTheInjectorFeedsUntilItIsTriedAgain()
     {
         var engine = new Footplate(injectorDelivery: 4.6f, pumpFeed: 4.2f);

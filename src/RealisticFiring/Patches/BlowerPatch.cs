@@ -20,7 +20,7 @@ namespace RealisticFiring.Patches
             if (!BlowerFit.TryGet(__instance, out var draft))
                 return true;
             var pressure = __instance.boilerPressure.Value;
-            var blower = draft.BlowerSteam(pressure, __instance.blowerControl.Value);
+            var blower = BlowerFit.NozzleSteam(__instance, draft, out var blowerFromBoiler);
             var whistle = Mathf.Min(Mathf.InverseLerp(1f, 2f, pressure), __instance.whistleControl.Value);
             __instance.whistleFlowNormalizedReadOut.Value = whistle;
             var exhaust = __instance.exhaustFlow.Value + BlowerFit.PumpSteam(__instance);
@@ -28,7 +28,7 @@ namespace RealisticFiring.Patches
             __instance.airFlowReadOut.Value = air;
             var maxTotal = draft.MaxTotal(__instance.engineMaxFlowReader.Value);
             __instance.totalFlowNormalizedReadOut.Value = maxTotal > 0f ? (blower + exhaust + air) / maxTotal : 0f;
-            __instance.steamConsumptionReadOut.Value = blower + whistle * __instance.maxWhistleFlow;
+            __instance.steamConsumptionReadOut.Value = blowerFromBoiler + whistle * __instance.maxWhistleFlow;
             return false;
         }
     }

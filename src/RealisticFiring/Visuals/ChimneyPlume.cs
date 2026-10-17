@@ -37,6 +37,13 @@ namespace RealisticFiring.Visuals
         private const float PuffSpread = 0.06f;
         private const float HazeSpread = 0.25f;
 
+        // The shimmer: this many particles a second while it shows, leaving
+        // at least this fast, in m/s, this wide, in m (about the stack's mouth).
+        private const float ShimmerRate = 14f;
+        private const float MinShimmer = 0.02f;
+        private const float ShimmerSpeed = 2f;
+        private const float ShimmerSize = 0.7f;
+
         // Jet streaks start at this share of the puff's spread-out size.
         private const float JetStreakSize = 0.3f;
 
@@ -149,8 +156,10 @@ namespace RealisticFiring.Visuals
         private ParticleSystem smoke;
         private ParticleSystem sootCore;
         private ParticleSystem jet;
+        private ParticleSystem heat;
         private ParticleSystem[] embers;
         private float hazeDue;
+        private float heatDue;
         private float tubeGas;
         private float tubeSmokeOut;
         private float plugSteamDue;
@@ -363,6 +372,7 @@ namespace RealisticFiring.Visuals
             var order = Commonest(r => r.sortingOrder);
             var fudge = Commonest(r => r.sortingFudge);
             var before = string.Join(", ", ours.Select(r => $"{r.name} q{r.sharedMaterial?.renderQueue} o{r.sortingOrder} f{r.sortingFudge:F0}"));
+            sortingFudge = fudge;
             foreach (var renderer in ours)
             {
                 renderer.sortingLayerID = layer;
@@ -374,6 +384,25 @@ namespace RealisticFiring.Visuals
             var seen = string.Join(", ", stock.GroupBy(r => (r.sharedMaterial.name, r.sharedMaterial.renderQueue, r.sortingOrder, r.sortingFudge))
                 .Select(g => $"{g.Key.name} q{g.Key.renderQueue} o{g.Key.sortingOrder} f{g.Key.sortingFudge:F0} ×{g.Count()}"));
             return $"sorting matched to the stock steam (queue {queue}, order {order}, fudge {fudge:F0}; was {before}; stock: {seen})";
+        }
+
+        // The stock steam's sorting fudge, matched: the plume's before its
+        // distance is made the stack's.
+        private float sortingFudge;
+
+        private void SortAtStack()
+        {
+            var camera = PlayerManager.ActiveCamera != null ? PlayerManager.ActiveCamera : Camera.main;
+            if (camera == null || smoke == null)
+                return;
+            var eye = camera.transform.position;
+            var stack = Vector3.Distance(eye, Emitter(smoke));
+            foreach (var system in Systems())
+            {
+                var renderer = system.GetComponent<ParticleSystemRenderer>();
+                if (renderer != null)
+                    renderer.sortingFudge = sortingFudge + stack - Vector3.Distance(eye, renderer.bounds.center);
+            }
         }
 
         // Puts the custom plume where the stock smoke leaves the stack, in the
@@ -415,6 +444,12 @@ namespace RealisticFiring.Visuals
             smoke = Child(fx, "Cloud");
             sootCore = Child(fx, "Soot");
             jet = Child(fx, "Jet");
+            heat = Child(fx, "Heat");
+            if (heat != null && !Main.Settings.HeatShimmer)
+            {
+                heat.gameObject.SetActive(false);
+                heat = null;
+            }
 
             // The jet's streaks are drawn along each particle's velocity. In
             // the world's space that includes the train's speed, so at speed
@@ -479,7 +514,7 @@ namespace RealisticFiring.Visuals
         {
             // The stock reader's chuff and stop coroutines would fight over the systems.
             stock.StopAllCoroutines();
-            foreach (var system in new[] { smoke, sootCore, jet }.Where(s => s != null))
+            foreach (var system in new[] { smoke, sootCore, jet, heat }.Where(s => s != null))
                 Prepare(system, buoyant: true);
             foreach (var system in new[] { smoke, sootCore }.Where(s => s != null))
                 aloft[system] = new PlumeAloft(system, MinMaxParticles);
@@ -600,6 +635,7 @@ namespace RealisticFiring.Visuals
         {
             if (!Active || smoke == null)
                 return;
+            SortAtStack();
 
             var dt = Time.deltaTime;
             var position = smoke.transform.position;
@@ -634,6 +670,16 @@ namespace RealisticFiring.Visuals
                 Emit(smoke, haze.Speed, 1.2f * tuning.PuffSize, ToColor(haze.Color), carVelocity, HazeSpread, 0.85f, 1.15f,
                     plume: Aloft(smoke), smokeShare: haze.SmokeShare, smokeColor: ToColor(haze.SmokeColor));
 
+            // The hot gas's shimmer, plainest over a clean fire.
+            if (heat != null)
+            {
+                var shimmer = PlumeModel.Shimmer(tuning, inputs);
+                heatDue = shimmer > MinShimmer ? Mathf.Min(heatDue + ShimmerRate * dt, MaxBeatsPerFrame) : 0f;
+                var shimmerColor = new Color(1f, 1f, 1f, shimmer);
+                for (; heatDue >= 1f; heatDue -= 1f)
+                    Emit(heat, Mathf.Max(haze.Speed, ShimmerSpeed), ShimmerSize, shimmerColor, carVelocity, HazeSpread, 0.8f, 1.2f);
+            }
+
             if (boilerWater != null || BoilerWaterRig.TryGet(car, out boilerWater))
             {
                 var vent = boilerWater.PlugVent;
@@ -647,6 +693,7 @@ namespace RealisticFiring.Visuals
             Drift(smoke, dt, lift: true);
             Drift(sootCore, dt, lift: true);
             Drift(jet, dt, lift: true);
+            Drift(heat, dt, lift: true);
             foreach (var system in embers)
                 Fly(system, dt);
 
@@ -666,7 +713,7 @@ namespace RealisticFiring.Visuals
             tubeGas += (firebox.Smoke.TotalGasRate - tubeGas) * transit;
             tubeSmokeOut += (firebox.Smoke.TotalSmokeOutRate - tubeSmokeOut) * transit;
             stackHeat = fire.Heat;
-            return new PlumeInputs
+            var inputs = new PlumeInputs
             {
                 ExhaustPressure = exhaustPressure.Value,
                 TotalFlowNormalized = StackSteamFlow(),
@@ -674,7 +721,13 @@ namespace RealisticFiring.Visuals
                 FireOn = fire.FireOn,
                 FireboxGas = tubeGas,
                 FireboxSmokeOut = tubeSmokeOut,
+                HeatShare = Mathf.Clamp01(fire.Heat / Mathf.Max(1f, fire.Parameters.MaxHeatOutput)),
             };
+            // No smoke to see and air to spare: a clear stack, as an oil fire's with too much air.
+            var air = fire.PrimaryAirFlow + fire.DoorAirFlow;
+            inputs.ClearStack = PlumeModel.CoalClearStack(Mathf.Max(inputs.Soot, PlumeModel.FireboxSoot(inputs)),
+                air > 0f ? fire.ExcessAirFlow / air : 0f);
+            return inputs;
         }
 
         // An oil fire's smoke: its stack's darkness (a sanding's and a
@@ -682,7 +735,9 @@ namespace RealisticFiring.Visuals
         private PlumeInputs OilInputs()
         {
             stackHeat = oil.Model.Heat;
-            return PlumeModel.OilInputs(oil.StackDarkness, exhaustPressure.Value, StackSteamFlow(), oil.Model.FireOn);
+            var inputs = PlumeModel.OilInputs(oil.StackDarkness, exhaustPressure.Value, StackSteamFlow(), oil.Model.FireOn);
+            inputs.HeatShare = Mathf.Clamp01(oil.Model.Heat / Mathf.Max(1f, oil.Model.Parameters.MaxHeatOutput));
+            return inputs;
         }
 
         private void EmitPuff(Puff puff, Vector3 carVelocity)
@@ -1085,6 +1140,6 @@ namespace RealisticFiring.Visuals
             : RealisticOilFirebox.TryGetTended(PlayerManager.Car, out var burner) && burner == oil;
 
         private IEnumerable<ParticleSystem> Systems() =>
-            new[] { smoke, sootCore, jet }.Concat(embers ?? new ParticleSystem[0]).Where(s => s != null).Distinct();
+            new[] { smoke, sootCore, jet, heat }.Concat(embers ?? new ParticleSystem[0]).Where(s => s != null).Distinct();
     }
 }

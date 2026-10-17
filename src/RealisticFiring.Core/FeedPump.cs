@@ -103,8 +103,11 @@ namespace RealisticFiring.Core
         /// <summary>Seconds the valve must stay shut to reset a tripped turbine.</summary>
         public float TripResetTime { get; set; } = 5f;
 
-        /// <summary>Below this the operating valve counts as shut.</summary>
-        public float OpenThreshold { get; set; } = 0.05f;
+        /// <summary>The operating valve's opening at and below which a pump counts as shut, unless its spec says otherwise.</summary>
+        public const float ShutOpening = 0.05f;
+
+        /// <summary>At and below this the operating valve counts as shut.</summary>
+        public float OpenThreshold { get; set; } = ShutOpening;
 
         /// <summary>Time constant of the pump coming up to speed or running down, s.</summary>
         public float SpinTime { get; set; } = 3f;

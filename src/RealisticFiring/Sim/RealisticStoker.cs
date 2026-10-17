@@ -191,6 +191,7 @@ namespace RealisticFiring.Sim
                     Controls = controls,
                     BoilerPressure = pressure,
                     TenderCoal = available,
+                    CoalMoisture = firebox.Model.FeedMoisture,
                 }, delta);
             }
             else

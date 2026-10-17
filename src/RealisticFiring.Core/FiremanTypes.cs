@@ -119,6 +119,13 @@ namespace RealisticFiring.Core
         /// <summary>Whether the train is stopped.</summary>
         public bool Standing;
 
+        /// <summary>
+        /// The game's Steam Startup speedup on the fire, 1 none: standing
+        /// below its start-up pressure the fire burns up to 25 times as fast.
+        /// 0 unknown, taken as 1.
+        /// </summary>
+        public float StartupMultiplier;
+
         /// <summary>The water in the glass, 0 at the crown sheet to 1 at the steam outlet.</summary>
         public float Glass;
 

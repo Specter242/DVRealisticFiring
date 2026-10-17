@@ -105,6 +105,9 @@ internal sealed class Footplate
     public bool Standing;
     public bool Braking;
 
+    /// <summary>The game's Steam Startup speedup on the fire (1 none).</summary>
+    public float StartupMultiplier = 1f;
+
     /// <summary>Standing with the reverser set and the brakes off.</summary>
     public bool StartComing;
 
@@ -175,6 +178,7 @@ internal sealed class Footplate
         PumpFullFeed = Pump != null ? Pump.Spec.Capacity : 0f,
         Solids = Solids,
         ShovelMass = 3f,
+        StartupMultiplier = StartupMultiplier,
     };
 
     /// <summary>Runs for <paramref name="seconds"/>, calling <paramref name="each"/> after every tick.</summary>
@@ -240,7 +244,7 @@ internal sealed class Footplate
         {
             AirFlow = Air,
             DoorOpening = Door,
-            StartupMultiplier = 1f,
+            StartupMultiplier = StartupMultiplier,
             BoilerTemperature = saturation,
             Speed = Standing ? 0f : 15f,
         });

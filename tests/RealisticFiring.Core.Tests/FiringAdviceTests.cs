@@ -111,7 +111,7 @@ namespace RealisticFiring.Core.Tests;
         Assert.Contains("The fire's out", advice.Text);
     }
 
-    private static OilReading Cold => new OilReading { BoilerPressure = 1f, OilTemperature = 20f, GlassLevel = 0.7f, ServiceTracks = "a service track" };
+    private static OilReading Cold => new OilReading { BoilerPressure = 1f, OilTemperature = 20f, GlassLevel = 0.7f };
 
     [Fact]
     public void LightingAnOilFireGoesStepByStep()
@@ -139,16 +139,29 @@ namespace RealisticFiring.Core.Tests;
     }
 
     [Fact]
-    public void ADeadEngineOffTheServiceTrackIsSentToOne()
+    public void ADeadEngineAwayFromAStandIsTowedToOne()
+    {
+        var text = FiringAdvice.ForOil(Cold).Text;
+        Assert.Contains("tow her to a roundhouse stall or engine shed", text);
+        Assert.DoesNotContain("SHOP STEAM", text);
+    }
+
+    [Fact]
+    public void ADeadEngineByAStandIsToldToPlugInItsLine()
     {
         var oil = Cold;
-        oil.ServiceTracks = "a loco parking track";
-        Assert.Contains("get her onto a loco parking track", FiringAdvice.ForOil(oil).Text);
-        oil.OnServiceTrack = true;
-        Assert.Contains("open SHOP STEAM", FiringAdvice.ForOil(oil).Text);
-        Assert.DoesNotContain("(or", FiringAdvice.ForOil(oil).Text);
-        oil.SteamLineKey = "F11";
-        Assert.Contains("open SHOP STEAM (or F11)", FiringAdvice.ForOil(oil).Text);
+        oil.StandNearby = true;
+        var text = FiringAdvice.ForOil(oil).Text;
+        Assert.Contains("plug the stand's blower line into the fitting on the smokebox", text);
+        Assert.DoesNotContain("SHOP STEAM", text);
+        Assert.Contains("stand's blower line", FiringAdvice.Steps(oil)[0].How);
+    }
+
+    [Fact]
+    public void AnEngineOnItsOwnSteamIsToldToTakeTheLineOff()
+    {
+        var oil = new OilReading { FireOn = true, BoilerPressure = 8f, GlassLevel = 0.6f, StackSmoke = 0.15f, Injectors = Feeding, OnSteamLine = true, SteamLineOpening = 1f };
+        Assert.Contains("take its line off", FiringAdvice.ForOil(oil).Text);
     }
 
     [Fact]
@@ -162,6 +175,6 @@ namespace RealisticFiring.Core.Tests;
         Assert.Equal(AdviceLevel.Ok, FiringAdvice.ForOil(oil).Level);
         oil.OnSteamLine = true;
         oil.SteamLineOpening = 1f;
-        Assert.Contains("shut SHOP STEAM", FiringAdvice.ForOil(oil).Text);
+        Assert.Contains("shut the stand's valve", FiringAdvice.ForOil(oil).Text);
     }
 }

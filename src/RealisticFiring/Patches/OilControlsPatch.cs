@@ -15,7 +15,10 @@ namespace RealisticFiring.Patches
     [HarmonyPatch(typeof(SimController), nameof(SimController.Initialize))]
     internal static class OilControlsPatch
     {
-        private static void Prefix(SimController __instance, TrainCar trainCar)
+        private static void Prefix(SimController __instance, TrainCar trainCar) =>
+            SetupGuard.Run(trainCar, "oil burner's controls", () => Add(__instance, trainCar));
+
+        private static void Add(SimController __instance, TrainCar trainCar)
         {
             var graph = __instance.connectionsDefinition;
             if (graph == null || graph.executionOrder == null || !OilBurnerFit.IsOilBurner(trainCar))

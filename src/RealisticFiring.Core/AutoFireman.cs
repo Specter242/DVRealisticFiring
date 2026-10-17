@@ -36,6 +36,9 @@ namespace RealisticFiring.Core
         /// <summary>With the stoker feeding, he fires by hand only a corner it starves, at most this many shovelfuls a round.</summary>
         public const int StokerRound = 2;
 
+        public const float BoostedThrowInterval = 1f;
+        private const float BoostStokes = 1.5f;
+
         /// <summary>He fires no more while the stack is this black (the fire's soot density).</summary>
         public const float BlackSmoke = 0.35f;
 
@@ -154,26 +157,30 @@ namespace RealisticFiring.Core
             if (outOfWater)
                 roundLeft = 0;
 
-            Stoking = r.HasStoker && j.Working && fire.FireOn && !outOfWater && Mode != FiremanMode.KeepAlive;
+            var boost = Math.Max(1f, r.StartupMultiplier);
+            Stoking = r.HasStoker && (j.Working || boost >= BoostStokes) && fire.FireOn && !outOfWater && Mode != FiremanMode.KeepAlive;
             if (r.HasStoker)
-                Stoker(fire, r, rate, coal, ref actions);
+                Stoker(fire, r, boost * rate, coal, ref actions);
 
             sinceRound += dt;
             crackLeft = Math.Max(0f, crackLeft - dt);
             var shovel = Math.Max(0.1f, r.ShovelMass);
             // With the stoker feeding he fires only a corner it starves;
-            // otherwise the whole of what the fire is short.
-            var deficit = Stoking ? ZoneShortfall(fire, CoalTarget) : CoalTarget - coal;
+            // otherwise, or with the start-up boost burning faster than a
+            // stoker feeds, the whole of what the fire is short.
+            var boosted = boost > 1.01f;
+            var corners = Stoking && !boosted;
+            var deficit = corners ? ZoneShortfall(fire, CoalTarget) : CoalTarget - coal;
             // Far behind with the engine working he hurries; with it not
             // working the draft could not take a hurried round.
             var far = !Stoking && j.Working && deficit > HeavyRound * shovel;
             if (roundLeft == 0 && fire.FireOn && !outOfWater && !WaitingOnSmoke && (!lifting || j.Building || coal < least)
-                && deficit >= (Stoking ? 1f : 0.5f) * shovel && r.TenderCoal >= shovel
-                && sinceRound >= (far ? HurriedRoundGap : RoundGap))
+                && deficit >= (corners ? 1f : 0.5f) * shovel && r.TenderCoal >= shovel
+                && sinceRound >= (far ? HurriedRoundGap : RoundGap) / boost)
             {
-                var most = Stoking ? StokerRound : far ? HeavyRound : LightRound;
+                var most = corners ? StokerRound : far || boosted ? HeavyRound : LightRound;
                 roundLeft = Math.Max(1, Math.Min(most, (int)Math.Round(deficit / shovel)));
-                roundInterval = far ? HurriedThrowInterval : ThrowInterval;
+                roundInterval = Math.Max(boosted ? BoostedThrowInterval : 0f, (far ? HurriedThrowInterval : ThrowInterval) / boost);
                 roundClock = 0f;
             }
 

@@ -259,6 +259,7 @@ namespace RealisticFiring
                     c.Rows.Add(new Row { Label = "Ashpan", Value = P0(fire.AshpanFill), Meter = fire.AshpanFill, Level = fire.AshpanFill >= FiringAdvice.FullAshpan ? AdviceLevel.Watch : AdviceLevel.Ok });
                     c.Rows.Add(new Row { Label = "Clinker", Value = $"{fire.ClinkerMass:F1} kg", Level = FiringAdvice.WantsCleaning(fire) ? AdviceLevel.Watch : AdviceLevel.Ok });
                     c.Rows.Add(new Row { Label = "In the box", Value = $"{fire.CoalMass:F0} kg" });
+                    c.Rows.Add(CoalRow(fire.FeedMoisture, firebox.CoalCoverOpen));
                     c.Rows.Add(firebox.LastStoker is StokerFlow stoker
                         ? new Row { Label = "Stoker", Value = $"{(stoker.Jammed ? "JAMMED" : P0(firebox.StokerEngineSpeed))} · jets {stoker.ManifoldPressure:F1} bar", Level = stoker.Jammed ? AdviceLevel.Act : (AdviceLevel?)null }
                         : new Row { Label = "Firebox", Value = $"{fire.Temperature:F0} °C" });
@@ -321,6 +322,22 @@ namespace RealisticFiring
             }
             return c;
         }
+
+        // The coal's water: rain soaks it in an open tender or bunker.
+        private static Row CoalRow(float moisture, float? coverOpen)
+        {
+            var word = moisture >= WetCoal ? "wet" : moisture >= DampCoal ? "damp" : "dry";
+            // A cover over the coal (the Hudson's bunker door) keeps the rain off while it is shut.
+            var cover = coverOpen.HasValue ? (coverOpen.Value < ShutCover ? " · bunker shut" : " · bunker open") : "";
+            return new Row { Label = "Coal", Value = $"{word} · {moisture:P0} water{cover}", Level = moisture >= WetCoal ? AdviceLevel.Watch : (AdviceLevel?)null };
+        }
+
+        // A cover open less than this lets in almost no rain.
+        private const float ShutCover = 0.05f;
+
+        // Coal this wet is damp, and this wet catches slow enough to watch (share of its mass).
+        private const float DampCoal = 0.045f;
+        private const float WetCoal = 0.07f;
 
         private static void WaterRows(Card c, InjectorRig rig)
         {

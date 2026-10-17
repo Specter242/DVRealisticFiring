@@ -34,6 +34,9 @@ namespace RealisticFiring.Core
         /// shows its haze between beats only, its beats white steam).
         /// </summary>
         public float PuffHaze;
+
+        /// <summary>The fire's heat over the most it makes, 0 to 1: how hot the gas leaving the stack is.</summary>
+        public float HeatShare;
     }
 
     /// <summary>A particle color, 0 to 1 per channel.</summary>
@@ -132,8 +135,7 @@ namespace RealisticFiring.Core
         /// <summary>Multiplier on how quickly soot darkens the smoke.</summary>
         public float SootDarkness { get; set; } = 1f;
 
-        /// <summary>Opacity of the haze from a clean fire between beats, 0 to 1.</summary>
-        public float HazeOpacity { get; set; } = 0.25f;
+ public float HazeOpacity { get; set; } = 0.15f;
 
         /// <summary>How far the hardest beat's jet carries before it spreads, in m.</summary>
         public float JetLength { get; set; } = 3.5f;
@@ -150,6 +152,9 @@ namespace RealisticFiring.Core
 
         /// <summary>Multiplier on sparks; at 1 the hardest beat under full draft throws about two.</summary>
         public float Sparks { get; set; } = 0.25f;
+
+        /// <summary>Multiplier on the heat shimmer over the stack (0 none).</summary>
+        public float Shimmer { get; set; } = 1f;
     }
 
     /// <summary>
@@ -216,6 +221,10 @@ namespace RealisticFiring.Core
             var flow = Clamp01(inputs.TotalFlowNormalized);
             var darkness = Darkness(tuning, soot);
             var haze = Clamp01(inputs.PuffHaze);
+            // A puff is exhaust steam, darkened by the soot it carries and
+            // tinted by the haze, which stays as the steam evaporates.
+            var smokeShare = darkness + (1f - darkness) * haze * PuffHazeSmoke;
+            var smokeColor = SmokeOf(darkness, (1f - darkness) * haze * PuffHazeSmoke);
             return new Puff
             {
                 Speed = PuffSpeed(tuning, strength),
@@ -227,12 +236,9 @@ namespace RealisticFiring.Core
                     : 0,
                 LifetimeScale = 1f + HeavyLifetime * heavy,
                 Sparks = inputs.FireOn ? tuning.Sparks * 2f * Math.Max(0f, strength - 0.7f) / 0.3f * flow : 0f,
-                Color = Mix(Mix(Steam, CleanHaze, haze * PuffHazeTint, 1f), Sooty, darkness,
-                    Lerp(tuning.SteamOpacity * ClearSteam(inputs), 0.8f, darkness)),
-                // A puff is exhaust steam, darkened by the soot it carries and
-                // tinted by the haze, which stays as the steam evaporates.
-                SmokeShare = darkness + (1f - darkness) * haze * PuffHazeSmoke,
-                SmokeColor = SmokeOf(darkness, (1f - darkness) * haze * PuffHazeSmoke),
+                Color = Tinted(smokeShare, smokeColor, Lerp(tuning.SteamOpacity * ClearSteam(inputs), 0.8f, darkness)),
+                SmokeShare = smokeShare,
+                SmokeColor = smokeColor,
             };
         }
 
@@ -276,11 +282,8 @@ namespace RealisticFiring.Core
         // up the stack (the S282's and Hudson's blowers, 1.1 kg/s and up).
         private const float FullBlowerFlow = 0.1f;
 
-        // A clean fire's haze is this much smoke; the rest is the water its
-        // burning makes, which evaporates as the steam does.
-        private const float CleanHazeSmoke = 0.6f;
+        private const float CleanHazeSmoke = 0.35f;
 
-        private const float PuffHazeTint = 0.7f;
         private const float PuffHazeSmoke = 0.7f;
 
         private const float ClearStackSteamThinning = 0.5f;
@@ -304,19 +307,53 @@ namespace RealisticFiring.Core
             var steam = SteamThroughStack(inputs.TotalFlowNormalized);
             var darkness = Darkness(tuning, Soot(inputs));
             var fireboxSmoke = inputs.FireOn ? Math.Max(0f, inputs.FireboxGas) + Math.Max(0f, inputs.FireboxSmokeOut) : 0f;
-            var clean = Mix(CleanHaze, Steam, steam, 1f);
             var haze = tuning.HazeOpacity * (1f - Clamp01(inputs.ClearStack));
             var opacity = Lerp(Lerp(haze, tuning.SteamOpacity * ClearSteam(inputs), steam), 0.7f, darkness);
+            // The blower's stream is steam; a clean fire's own haze is part
+            // smoke, part the water its burning makes.
+            var smokeShare = darkness + (1f - darkness) * (1f - steam) * CleanHazeSmoke;
+            var smokeColor = SmokeOf(darkness, (1f - darkness) * (1f - steam) * CleanHazeSmoke);
             return new Haze
             {
                 Rate = (inputs.FireOn ? StandingRate : 0f) + StackPuffsPerFireboxPuff * fireboxSmoke + BlowerRate * steam,
                 Speed = HazeSpeed(steam),
-                Color = Mix(clean, Sooty, darkness, opacity),
-                // The blower's stream is steam; a clean fire's own haze is
-                // part smoke, part the water its burning makes.
-                SmokeShare = darkness + (1f - darkness) * (1f - steam) * CleanHazeSmoke,
-                SmokeColor = SmokeOf(darkness, (1f - darkness) * (1f - steam) * CleanHazeSmoke),
+                Color = Tinted(smokeShare, smokeColor, opacity),
+                SmokeShare = smokeShare,
+                SmokeColor = smokeColor,
             };
+        }
+
+ public static float SmokeTint(float smokeShare) => (float)Math.Sqrt(Clamp01(smokeShare));
+
+        // A parcel's color: white steam tinted by its smoke.
+        private static PlumeColor Tinted(float smokeShare, PlumeColor smokeColor, float alpha) =>
+            Mix(Steam, smokeColor, SmokeTint(smokeShare), alpha);
+
+        // A coal fire sends up no smoke to see under this soot, and clears
+        // its stack fully with this share of the air through it passing
+        // unburned beyond the design's 20 % excess.
+        private const float CleanSoot = 0.05f;
+        private const float ClearingAir = 0.25f;
+
+ public static float CoalClearStack(float soot, float unburnedAirShare) =>
+            Clamp01(1f - Math.Max(0f, soot) / CleanSoot) * Clamp01(unburnedAirShare / ClearingAir);
+
+        // The shimmer shows from a fire at this share of its heat on, fully
+        // at this; the blower's steam and a hard beat's hide most of it.
+        private const float ShimmerFrom = 0.02f;
+        private const float ShimmerFull = 0.3f;
+        private const float SteamHidesShimmer = 0.7f;
+        private const float BeatHidesShimmer = 0.8f;
+
+ public static float Shimmer(PlumeTuning tuning, PlumeInputs inputs)
+        {
+            if (!inputs.FireOn)
+                return 0f;
+            var hot = Clamp01((inputs.HeatShare - ShimmerFrom) / (ShimmerFull - ShimmerFrom));
+            var clean = 1f - Darkness(tuning, Soot(inputs));
+            var steam = SteamThroughStack(inputs.TotalFlowNormalized);
+            var beat = BeatStrength(tuning, inputs.ExhaustPressure);
+            return Clamp01(Math.Max(0f, tuning.Shimmer) * hot * clean * (1f - SteamHidesShimmer * steam) * (1f - BeatHidesShimmer * beat));
         }
 
         /// <summary>

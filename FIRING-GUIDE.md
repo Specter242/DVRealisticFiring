@@ -45,18 +45,32 @@ Rake a bank level with the empty shovel; don't stir it.
 
 **Read the bed and the stack.**
 
-- Bright, even, yellow-white bed, light haze at the stack: right.
+- Bright, even, yellow-white bed, light haze at the stack: right. Burning
+  clean with air to spare, the stack shows almost nothing but heat
+  shimmering over it.
+- Grey exhaust steam: smoke riding in it, the start of black smoke.
 - Dark lumps: green coal still catching. Wait before firing more there.
 - Black smoke: more fresh coal than the air can burn. Crack the door or fire
   lighter.
 - Dull red bed: ash. Shake the grate.
 - Dark patch that won't brighten: clinker (see below).
 
+**Wet coal.** Rain soaks the coal in an open tender or bunker, and it dries
+again over an hour or so once the weather does. Wet coal catches slower and
+spends heat drying, so the fire steams a little less: fire a little more,
+lighter and more often, and give each charge time to catch. The overlay's
+fire page shows how wet the coal is. Fresh coal from the coaling stage comes
+dry. The Hudson's tender has a coal bunker door: keep it shut in the rain
+and its coal stays dry.
+
 **Raising steam.** A cold boiler's water must boil before the gauge moves;
 the overlay's boiler dial shows its temperature until then. The water swells
 as it heats, rising about a sixth of the glass: fill a cold boiler low. The game's Steam
 Startup setting speeds up a cold fire (×25 at 100 %). Set it to 2500 % for a
-real-time light-up.
+real-time light-up. At a roundhouse stall or engine shed, plug the stand's
+blower line into the fitting on the smokebox and open its handwheel a
+little as you lay the fire, more as it catches; take it off at about 50 psi
+and use the cab's blower (the 8F has no fitting).
 
 ### Each engine
 
@@ -135,6 +149,9 @@ real-time light-up.
     back jets' sideways into the corners, the front jets' up each side;
     each jet's steam shows how hard it blows, and the fines catch and burn
     in the air.
+- **Wet coal** sticks on the distributor table and falls short: raise the
+  jets a little in the rain. A little damp keeps the fines on the fire
+  instead of up the stack.
 - **Fire the back corners and under the door by hand.** The stoker runs them
   short.
 - **Don't stoke standing.** With no draft it banks the fire and smokes. Shut
@@ -165,11 +182,11 @@ real-time light-up.
   box on the cab floor (by the fire door, fireman's side) with the empty
   shovel to load a quart of sand, open the peep hole, and throw it in while
   working hard. Black clouds at the stack mean it's scouring.
-- **A dead engine** fires up on the shed's steam line on a service track
-  (a service station with water, a loco parking track, or a roundhouse
-  stall by a turntable; tow it there): open SHOP STEAM (or F11),
-  warm the oil for about ten minutes, light up, and shut the valve once
-  the boiler makes its own steam. The screen says each next step.
+- **A dead engine** fires up on the shed's steam at a roundhouse stall or
+  engine shed (tow it there): plug the stand's blower line into the
+  fitting on the smokebox and open the stand's valve (it feeds the blower,
+  atomizer, and heater), warm the oil for about ten minutes, light up, and
+  take the line off at about 20 psi. The screen says each next step.
 
 ## Water
 

@@ -26,6 +26,9 @@
     <Reference Include="DV.NAudio" HintPath="$(DvManagedDir)/DV.NAudio.dll" Private="false" />
     <Reference Include="DV.PointSet" HintPath="$(DvManagedDir)/DV.PointSet.dll" Private="false" />
     <Reference Include="DV.RailTrack" HintPath="$(DvManagedDir)/DV.RailTrack.dll" Private="false" />
+    <Reference Include="BezierCurves" HintPath="$(DvManagedDir)/BezierCurves.dll" Private="false" />
+    <Reference Include="VerletRope" HintPath="$(DvManagedDir)/VerletRope.dll" Private="false" />
+    <Reference Include="Unity.Mathematics" HintPath="$(DvManagedDir)/Unity.Mathematics.dll" Private="false" />
     <Reference Include="net.smkd.vector3d" HintPath="$(DvManagedDir)/net.smkd.vector3d.dll" Private="false" />
     <Reference Include="DV.Simulation" HintPath="$(DvManagedDir)/DV.Simulation.dll" Private="false" />
     <Reference Include="DV.ThingTypes" HintPath="$(DvManagedDir)/DV.ThingTypes.dll" Private="false" />

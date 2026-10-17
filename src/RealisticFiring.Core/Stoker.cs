@@ -176,6 +176,29 @@ namespace RealisticFiring.Core
         /// <summary>How sharply carryover grows with draft.</summary>
         public float CarryoverExponent { get; set; } = 1.4f;
 
+        /// <summary>
+        /// Share of the carryover damp fines keep on the fire instead, at
+        /// <see cref="DampFinesMoisture"/> and wetter (inferred: "With fine
+        /// coal, wetting it down tends to prevent too much fine coal being
+        /// drawn out through the stack", Santa Fe, Instructions for Enginemen,
+        /// 1921, p.31; "moist fine coal cokes better", Baker, 1922).
+        /// </summary>
+        public float DampFinesHold { get; set; } = 0.4f;
+
+        /// <summary>
+        /// Moisture at which fines hold best: a bed of screenings passed air
+        /// most freely at 7.5 % (Power Plant Engineering, 15 Feb 1923).
+        /// </summary>
+        public float DampFinesMoisture { get; set; } = 0.075f;
+
+        /// <summary>
+        /// Rain-soaked coal sticks on the distributor table and the jets
+        /// throw it as if this much weaker (inferred: "raise the jets
+        /// slightly" for wet coal, New York State, Locomotive Firing, 1944,
+        /// Unit P-6 pp.81-82).
+        /// </summary>
+        public float WetTableLoss { get; set; } = 0.15f;
+
         // Jet opening times manifold pressure, summed over the jets, at the
         // working setting: what the working jet steam share is spent on.
         private static float WorkingJetLoad(StokerSpec spec)
@@ -201,6 +224,9 @@ namespace RealisticFiring.Core
 
         /// <summary>The exhaust draft through the firebox, in kg/s of air.</summary>
         public float AirFlow;
+
+        /// <summary>The water's share of the tender's coal (<see cref="CoalMoisture"/>), 0 to 1.</summary>
+        public float CoalMoisture;
     }
 
     /// <summary>The stoker's output for one tick.</summary>
@@ -311,7 +337,7 @@ namespace RealisticFiring.Core
         public float LostShare { get; private set; }
 
         /// <summary>The share of the stoked coal each zone receives, and the share lost, at the given settings.</summary>
-        public float Distribute(StokerControls controls, float boilerPressure, float airFlow, float[] lumpShares, float[] fineShares)
+        public float Distribute(StokerControls controls, float boilerPressure, float airFlow, float[] lumpShares, float[] fineShares, float moisture = 0f)
         {
             if (lumpShares == null || fineShares == null
                 || lumpShares.Length != GrateLayout.ZoneCount || fineShares.Length != GrateLayout.ZoneCount)
@@ -319,7 +345,9 @@ namespace RealisticFiring.Core
             Array.Clear(lumpShares, 0, lumpShares.Length);
             Array.Clear(fineShares, 0, fineShares.Length);
 
-            var manifold = ManifoldPressure(controls, boilerPressure);
+            // Wet coal sticks on the table: the jets throw it as if weaker.
+            var soaked = Clamp01((moisture - Core.CoalMoisture.Delivered) / (Core.CoalMoisture.Soaked - Core.CoalMoisture.Delivered));
+            var manifold = ManifoldPressure(controls, boilerPressure) / (1f + Spec.WetTableLoss * soaked);
             var draft = DraftFraction(airFlow);
             var lump = 1f - Spec.FinesShare;
             var lost = 0f;
@@ -340,7 +368,9 @@ namespace RealisticFiring.Core
 
             // Fines: the draft lifts part of them straight out of the stack;
             // the fine-coal jet spreads the rest, or they fall at the door.
-            var carried = Math.Min(0.95f, Spec.FinesCarryoverAtFullDraft * (float)Math.Pow(Math.Min(draft, 1.5f), Spec.CarryoverExponent));
+            var damp = Clamp01((moisture - Core.CoalMoisture.Delivered) / Math.Max(1e-3f, Spec.DampFinesMoisture - Core.CoalMoisture.Delivered));
+            var carried = Math.Min(0.95f, Spec.FinesCarryoverAtFullDraft * (float)Math.Pow(Math.Min(draft, 1.5f), Spec.CarryoverExponent))
+                          * (1f - Spec.DampFinesHold * damp);
             var remaining = Spec.FinesShare * (1f - carried);
             lost += Spec.FinesShare * carried;
             var reach = manifold * Clamp01(controls.Fines) / Spec.FinesReachPressure;
@@ -371,7 +401,7 @@ namespace RealisticFiring.Core
             var offered = Math.Min(RunEngine(dt, controls.Throttle, inputs.BoilerPressure, controls.Direction) * dt, Math.Max(0f, inputs.TenderCoal));
             if (offered > 0f)
             {
-                var lostShare = Distribute(controls, inputs.BoilerPressure, inputs.AirFlow, lumps, fines);
+                var lostShare = Distribute(controls, inputs.BoilerPressure, inputs.AirFlow, lumps, fines, inputs.CoalMoisture);
                 LostShare = lostShare;
                 for (var i = 0; i < GrateLayout.ZoneCount; i++)
                 {

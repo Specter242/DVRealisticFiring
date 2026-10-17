@@ -23,7 +23,12 @@ namespace RealisticFiring.Patches
         // A retrofitted stoker feeds a quarter more than the firebox can burn at most.
         private const float RetrofitFeedMargin = 1.25f;
 
-        private static void Prefix(SimController __instance, TrainCar trainCar)
+        private static void Prefix(SimController __instance, TrainCar trainCar) =>
+
+            SetupGuard.Run(trainCar, "stoker's controls", () => Add(__instance, trainCar));
+
+
+        private static void Add(SimController __instance, TrainCar trainCar)
         {
             var graph = __instance.connectionsDefinition;
             if (!Main.ReplacementEnabled || !FireboxRegistry.IsSupported(trainCar) || graph == null || graph.executionOrder == null)

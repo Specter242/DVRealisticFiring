@@ -14,7 +14,10 @@ namespace RealisticFiring.Patches
     [HarmonyPatch(typeof(SimController), nameof(SimController.Initialize))]
     internal static class FeedPumpPatch
     {
-        private static void Prefix(SimController __instance, TrainCar trainCar)
+        private static void Prefix(SimController __instance, TrainCar trainCar) =>
+            SetupGuard.Run(trainCar, "feed pump's control", () => Add(__instance, trainCar));
+
+        private static void Add(SimController __instance, TrainCar trainCar)
         {
             var graph = __instance.connectionsDefinition;
             if (!Main.RealisticInjectorsEnabled || trainCar == null || graph == null || graph.executionOrder == null)

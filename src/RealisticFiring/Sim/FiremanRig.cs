@@ -391,6 +391,7 @@ namespace RealisticFiring.Sim
                 Cutoff = reverser,
                 Braking = braked,
                 Standing = standing,
+                StartupMultiplier = Firebox != null ? Firebox.StartupMultiplier : 1f,
                 Glass = (level - crown) / (outlet - crown),
                 TenderWater = rig != null ? rig.TenderWater : boiler.water.Value,
                 TenderCoal = OilFirebox != null ? OilFirebox.Feed != null ? OilFirebox.Feed.TenderFuel : 0f : TenderCoal(),

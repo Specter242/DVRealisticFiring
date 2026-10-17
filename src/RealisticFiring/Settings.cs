@@ -39,6 +39,9 @@ namespace RealisticFiring
         [Draw("Fit feedwater heaters and pumps where the prototypes had them: the Hudson, 844, S484-840, and Santa Fe 2901 (needs a restart)")]
         public bool FitFeedPumps = true;
 
+        [Draw("Rain wets the coal in open tenders and bunkers: wet coal catches slower and takes heat to dry, and sticks on a stoker's table")]
+        public bool RainWetsCoal = true;
+
         [Draw("Coal's clinker tendency, × (1 typical coal, about two hours of hard work between cleanings; 0 never; raise it to see clinker sooner)", DrawType.Slider, Min = 0, Max = 20, Precision = 1)]
         public float ClinkerTendency = 1f;
 
@@ -56,6 +59,9 @@ namespace RealisticFiring
 
         [Draw("Use the custom smoke effects when installed (restart required)")]
         public bool CustomSmokeEffects = true;
+
+        [Draw("Heat shimmer over the stack (custom smoke effects; restart required)")]
+        public bool HeatShimmer = true;
 
         [Header("Shovel")]
         [Draw("Coal per standard shovelful on supported coal locomotives, kg (0 = the locomotive's stock shovel size)", Min = 0, Precision = 1)]
@@ -75,6 +81,10 @@ namespace RealisticFiring
         [Draw("Draw the fire door's aiming keypad while aiming with the keypad")]
         public bool ShowAimKeypad = true;
 
+        [Header("Brakes")]
+        [Draw("Click the independent brake lever to bail off: the engine's own brakes release from a train brake application, the train's stay on (every locomotive)")]
+        public bool ClickToBailOff = true;
+
         [Header("Controls")]
         [Draw("Open these settings (Unity Mod Manager's Ctrl+F10 is taken by some desktops)")]
         public KeyBinding OpenSettingsKey = Bind(KeyCode.F8);
@@ -84,9 +94,6 @@ namespace RealisticFiring
 
         [Draw("Wash out the boiler and fill it from a hydrant (on a service track: a service station with water, a loco parking track, or a roundhouse stall; boiler cold)")]
         public KeyBinding HydrantKey = Bind(KeyCode.F9);
-
-        [Draw("Hook up a shed's steam line to an oil burner's atomizer and heater, to fire a dead engine (on a service track)")]
-        public KeyBinding SteamLineKey = Bind(KeyCode.F11);
 
         [Draw("Shake grate")]
         public KeyBinding ShakeGrateKey = Bind(KeyCode.Z);
@@ -137,6 +144,9 @@ namespace RealisticFiring
         // Dump each supported loco's firebox geometry and chimney smoke setup once per session.
         public bool DumpFireboxGeometry;
 
+        // Log the turntables, parking tracks, and service stations once a session, for the shed hoses.
+        public bool SurveySheds;
+
         // Log coal deliveries, door openings, grate shakes, and injector changes.
         public bool LogCoalDeliveries;
 
@@ -183,7 +193,6 @@ namespace RealisticFiring
             Move(OpenSettingsKey, KeyCode.F, ctrlShift, fresh.OpenSettingsKey);
             Move(HandPumpKey, KeyCode.P, ctrlShift, fresh.HandPumpKey);
             Move(HydrantKey, KeyCode.H, ctrlShift, fresh.HydrantKey);
-            Move(SteamLineKey, KeyCode.L, ctrlShift, fresh.SteamLineKey);
             Move(ShakeGrateKey, KeyCode.G, ctrl, fresh.ShakeGrateKey);
             Move(ToggleOverlayKey, KeyCode.F, ctrl, fresh.ToggleOverlayKey);
             Move(FiremanKey, KeyCode.J, ctrl, fresh.FiremanKey);

@@ -294,12 +294,13 @@ namespace RealisticFiring.Visuals
                 particle.startSize = size;
                 if (under)
                     UnderRoof(ref particle, roof, still, rise, outward + stir, age, keep);
-                // As its white steam evaporates it turns its smoke's color.
+                // White steam tinted by its smoke, turning the smoke's color
+                // as the steam evaporates (as its puff was tinted at the stack).
                 var steam = PlumeRise.SteamLeft(parcel.Thickness, age, air.SteamLinger);
                 var depth = steam + parcel.Thickness.SmokeDepth;
                 shown = PlumeRise.OpacityOf(depth, height, spread);
                 if (depth > 1e-4f)
-                    color = Color.Lerp(SteamColor, parcel.SmokeColor, parcel.Thickness.SmokeDepth / depth);
+                    color = Color.Lerp(SteamColor, parcel.SmokeColor, PlumeModel.SmokeTint(parcel.Thickness.SmokeDepth / depth));
                 // Fewer, wider particles carry the plume as it widens: one past
                 // its share fades out, then goes; one too thin to see goes at once.
                 if (parcel.RetiredAt < 0f && Hash(particle.randomSeed) > PlumeRise.Survival(height, spread))

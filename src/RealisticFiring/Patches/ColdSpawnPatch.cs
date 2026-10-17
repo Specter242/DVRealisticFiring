@@ -16,7 +16,10 @@ namespace RealisticFiring.Patches
     [HarmonyPatch(typeof(SimController), nameof(SimController.Initialize))]
     internal static class ColdSpawnPatch
     {
-        private static void Prefix(SimController __instance, TrainCar trainCar)
+        private static void Prefix(SimController __instance, TrainCar trainCar) =>
+            SetupGuard.Run(trainCar, "cold spawn", () => Add(__instance, trainCar));
+
+        private static void Add(SimController __instance, TrainCar trainCar)
         {
             var graph = __instance.connectionsDefinition;
             if (trainCar == null || graph == null || graph.executionOrder == null || !OilBurnerFit.IsOilBurner(trainCar))

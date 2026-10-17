@@ -57,6 +57,9 @@ namespace RealisticFiring
             var start = PerfMeter.Start();
             HandleKeys();
             Visuals.StokerCab.EnsureBuilt();
+            Diagnostics.ShedSurvey.TryRun();
+            Diagnostics.ShedSurvey.ProbeRoofs();
+            Shed.ShedStands.Update();
             Visuals.OilBurnerCab.EnsureBuilt();
             Visuals.OilFlareback.Update();
             PerfMeter.Stop(PerfSection.Controller, start);
@@ -110,7 +113,6 @@ namespace RealisticFiring
                 LetGoOfPump(null);
             if (RealisticOilFirebox.TryGetTended(PlayerManager.Car, out var oil))
             {
-                UpdateSteamLine(oil, settings);
                 AnnounceFireUp(oil);
             }
         }
@@ -133,45 +135,8 @@ namespace RealisticFiring
             lastFireUpStep = step;
         }
 
-        private float steamLineCheckTime;
-
-        // The shed's steam line toggles, and comes off once the train has left the pit stop.
-        private void UpdateSteamLine(RealisticOilFirebox oil, Settings settings)
-        {
-            if (settings.SteamLineKey.Down())
-            {
-                if (Net.IsClient)
-                    Net.TrySend(oil.Car, FireAction.SteamLine);
-                else
-                    Notify(ToggleSteamLine(oil));
-                steamLineCheckTime = Time.time;
-            }
-            if (Net.IsClient || !oil.SteamLine || Time.time - steamLineCheckTime < HydrantCheckInterval)
-                return;
-            steamLineCheckTime = Time.time;
-            if (!WaterPoints.Serves(oil.Car))
-            {
-                oil.SteamLine = false;
-                Notify("Steam line off: the engine left the service track");
-            }
-        }
-
-        /// <summary>
-        /// Hooks a shed's steam line to the burner's valves where there is
-        /// one, or takes it off. Returns the notice for whoever asked.
-        /// </summary>
-        internal static string ToggleSteamLine(RealisticOilFirebox oil)
-        {
-            if (oil.SteamLine)
-            {
-                oil.SteamLine = false;
-                return "Steam line off";
-            }
-            if (!WaterPoints.Serves(oil.Car))
-                return $"No steam line here: stand the engine on {WaterPoints.Where}";
-            oil.SteamLine = true;
-            return $"Steam line on: the shed's steam at {RealisticOilFirebox.SteamLinePressure - 1f:F1} bar for the atomizer and oil heater";
-        }
+ internal static string ToggleSteamLine(RealisticOilFirebox oil) =>
+            "The shed's steam comes by a stand's blower line: plug it into the fitting on the smokebox and open the stand's valve";
 
         // The hand pump works while its key is held, on the loco being tended:
         // leaving it, or turning to another, lets go (audit 2026-10-10). The
@@ -277,6 +242,7 @@ namespace RealisticFiring
             {
                 if (RealisticOilFirebox.TryGetTended(PlayerManager.Car, out var oil))
                     Main.Mod.Logger.Log($"{oil.Car.ID} oil status: fire {(oil.Model.FireOn ? "on" : "out")}; {DescribeOil(oil)}" +
+                                        (DescribeBlower(oil.Car) is string oilBlower ? $"; {oilBlower}" : "") +
                                         (InjectorRig.TryGetTended(PlayerManager.Car, out var oilRig) ? $"; {Describe(oilRig)}" : "") +
                                         (DescribeCylinders(oil.Car) is string oilCylinders ? $"; {oilCylinders}" : "") +
                                         (FiremanRig.TryGet(oil.Car, out var oilFireman) && oilFireman.Fireman.Mode != FiremanMode.Off
@@ -296,12 +262,35 @@ namespace RealisticFiring
                 $"ashpan {fire.Ashpan:F0} kg ({fire.AshpanFill:P0}), " +
                 $"startup x{firebox.StartupMultiplier:F1}, stoked {firebox.TakeContinuousFeed():F1} kg, zones back-to-front [{zones}]" +
                 (DescribeStoker(firebox) is string stoker ? $"; {stoker}" : "") +
+                (DescribeBlower(firebox.Car) is string blower ? $"; {blower}" : "") +
                 (InjectorRig.TryGetTended(PlayerManager.Car, out var rig) ? $"; {Describe(rig)}" : "") +
                 (DescribeBooster(firebox.Car) is string booster ? $"; {booster}" : "") +
                 (DescribeCylinders(firebox.Car) is string cylinders ? $"; {cylinders}" : "") +
                 (FiremanRig.TryGet(firebox.Car, out var fireman) && fireman.Fireman.Mode != FiremanMode.Off
                     ? $"; fireman {fireman.Fireman.Mode}: {string.Join("; ", FiremanPanel.Describe(fireman))}, trim {fireman.Fireman.Trim:F2}"
                     : ""));
+        }
+
+        /// <summary>
+        /// The blower, for the status log: its cab valve, the shed's blower
+        /// line where one is in and its stand's valve, the steam at its nozzle
+        /// and whose it is, and the damper; null without an exhaust.
+        /// </summary>
+        internal static string DescribeBlower(TrainCar car)
+        {
+            var flow = car != null && car.SimController != null ? car.SimController.SimulationFlow : null;
+            var exhaust = flow?.OrderedSimComps.OfType<SteamExhaust>().FirstOrDefault();
+            if (exhaust == null)
+                return null;
+            var text = $"blower valve {exhaust.blowerControl.Value:P0}";
+            if (Shed.ShedConnections.LineIn(exhaust))
+                text += $", shed's blower line in, its valve {Shed.ShedConnections.BlowerLine(exhaust):P0}";
+            if (Sim.BlowerFit.TryGet(exhaust, out var draft))
+            {
+                var steam = Sim.BlowerFit.NozzleSteam(exhaust, draft, out var fromBoiler);
+                text += $", {steam:F2} kg/s of steam at its nozzle" + (steam <= 0f ? "" : fromBoiler > 0f ? " (the boiler's)" : " (the shed's)");
+            }
+            return text + $", damper {exhaust.damperControl.Value:P0}";
         }
 
         /// <summary>The stoker's engine, feed, jets, and losses, for the status log and overlay; null without one.</summary>
@@ -370,9 +359,7 @@ namespace RealisticFiring
                 FlueSoot = fire.FlueSoot,
                 BlowerOn = Blower(oil.Car) > 0.05f,
                 AtomizerOpen = oil.AtomizerValve > 0.01f,
-                OnServiceTrack = oil.AtServiceTrack,
-                ServiceTracks = WaterPoints.Where,
-                SteamLineKey = Main.Settings.SteamLineKey.keyCode != KeyCode.None ? Main.Settings.SteamLineKey.ToString() : null,
+                StandNearby = oil.StandReaches,
                 GlassLevel = rig != null ? Visuals.GaugeGlass.Read(rig) : 1f,
                 Injectors = rig == null ? NoInjectors : rig.Circuits.Select(c => new InjectorReading(c.Flow.State, c.Feed.Value, c.SteamValve != null, c.TenderValveShut)).ToArray(),
             };
@@ -402,7 +389,7 @@ namespace RealisticFiring
                    $"oil {fire.OilTemperature:F0} C ({fire.OilTemperature * 9f / 5f + 32f:F0} F), heater {oil.HeaterValve:P0}" +
                    (oil.SteamLineOpening > 0f
                        ? (fire.OnSteamLine ? $", on the shed's steam line ({oil.SteamLineOpening:P0})" : ", shed's steam line open (the boiler's own steam is stronger)")
-                       : oil.ShopSteamValve > 0f ? ", shop steam open but no line here (stand on a service track)" : "") + "; " +
+                       : "") + "; " +
                    $"flues {fire.FlueSoot:P0} sooted" + (fire.FlueSoot > 0.3f ? " (sand them)" : "") +
                    (fire.Vapor > 0.01f || fire.PooledOil > 0.01f ? $"; vapor {fire.Vapor:F2} kg, pooled oil {fire.PooledOil:F2} kg: clear it with the blower before lighting" : "") +
                    $"; flue sand on the shovel {Visuals.FlueSandBox.Loaded:F1} kg";

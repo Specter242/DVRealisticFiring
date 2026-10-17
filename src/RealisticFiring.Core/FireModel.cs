@@ -256,6 +256,61 @@ namespace RealisticFiring.Core
             }
         }
 
+        /// <summary>Coal not yet caught, in kg.</summary>
+        public float FreshMass => Sum(z => z.Fresh);
+
+        /// <summary>
+        /// The water's share of the coal now going on the fire, 0 to 1 (wet
+        /// coal; <see cref="CoalMoisture"/>): each kg fired carries the water
+        /// the rain left on it beyond the coal as delivered (the stock coal),
+        /// which dries off as the coal catches, taking its heat and slowing the
+        /// catching.
+        /// </summary>
+        public float FeedMoisture { get; set; }
+
+        /// <summary>Rain water on the fresh coal, in kg.</summary>
+        public float FreshWater { get; private set; }
+
+        /// <summary>Heat spent drying wet coal last tick, in W, already taken from <see cref="Heat"/>.</summary>
+        public float DryingHeat { get; private set; }
+
+        /// <summary>
+        /// Heat to dry a kg of the coal's water and carry it off as steam, in
+        /// J: about 1,200 BTU a pound, from 70 to 400 °F (ICS Reference Library,
+        /// 1904, p.20).
+        /// </summary>
+        public const float DryingEnergy = 2.79e6f;
+
+        // The fresh coal the water was last counted against, and water on
+        // coal that caught at once (stoked fines), dried this tick.
+        private float wettedFresh;
+        private float flashWater;
+
+        // Fresh coal gone other than by catching (dumped, dropped, scaled)
+        // takes its share of the water; the water spreads evenly over the
+        // fresh coal wherever it is moved on the grate.
+        private void CountWater()
+        {
+            var fresh = FreshMass;
+            if (fresh <= NegligibleMass)
+                FreshWater = 0f;
+            else if (fresh < wettedFresh)
+                FreshWater *= fresh / wettedFresh;
+            wettedFresh = fresh;
+        }
+
+        // Fresh coal put on, wet as the coal it comes from.
+        private void Wet(float fresh)
+        {
+            CountWater();
+            FreshWater += Math.Max(0f, fresh) * RainWater(FeedMoisture);
+            wettedFresh = FreshMass;
+        }
+
+        // The rain's water on a kg of coal: beyond the coal as delivered, which the stock fire's heat already allows for.
+        private static float RainWater(float moisture) =>
+            Math.Max(0f, CoalMoisture.WaterPerKg(moisture) - CoalMoisture.WaterPerKg(CoalMoisture.Delivered));
+
         public float AshMass => Sum(z => z.Ash);
 
         public float ClinkerMass => Sum(z => z.Clinker);
@@ -343,6 +398,7 @@ namespace RealisticFiring.Core
             zones[(int)target].Fresh += accepted - spillPerSide * neighbors.Count;
             foreach (var neighbor in neighbors)
                 zones[(int)neighbor].Fresh += spillPerSide;
+            Wet(accepted);
             return accepted;
         }
 
@@ -352,6 +408,7 @@ namespace RealisticFiring.Core
             var accepted = Accept(mass);
             foreach (var zone in zones)
                 zone.Fresh += accepted * zoneArea;
+            Wet(accepted);
             return accepted;
         }
 
@@ -373,13 +430,20 @@ namespace RealisticFiring.Core
                 return 0f;
 
             var share = accepted / offered;
+            var freshAdded = 0f;
+            var caught = 0f;
             for (var i = 0; i < zones.Length; i++)
             {
-                zones[i].Fresh += Math.Max(0f, lumps[i]) * share;
-                zones[i].Burning += FireOn ? Math.Max(0f, fines[i]) * share : 0f;
-                if (!FireOn)
-                    zones[i].Fresh += Math.Max(0f, fines[i]) * share;
+                var lump = Math.Max(0f, lumps[i]) * share;
+                var fine = Math.Max(0f, fines[i]) * share;
+                zones[i].Fresh += lump + (FireOn ? 0f : fine);
+                zones[i].Burning += FireOn ? fine : 0f;
+                freshAdded += lump + (FireOn ? 0f : fine);
+                caught += FireOn ? fine : 0f;
             }
+            Wet(freshAdded);
+            // Fines that catch at once dry at once.
+            flashWater += caught * RainWater(FeedMoisture);
             return accepted;
         }
 
@@ -617,6 +681,7 @@ namespace RealisticFiring.Core
                     zone.Fresh = coalMass * zoneArea;
             }
             FireOn = fireOn;
+            DryWater();
         }
 
  public void LayReadyFire(bool lit)
@@ -637,6 +702,7 @@ namespace RealisticFiring.Core
                     zones[i].Fresh = mass;
             }
             FireOn = lit;
+            DryWater();
         }
 
         /// <summary>
@@ -712,6 +778,7 @@ namespace RealisticFiring.Core
                 zones[i].Clinker = data[i * 4 + 3];
             }
             FireOn = fireOn;
+            DryWater();
             return true;
         }
 
@@ -737,7 +804,15 @@ namespace RealisticFiring.Core
                 zones[i].Clinker = data[i * 4 + 3];
             }
             FireOn = fireOn;
+            DryWater();
             return true;
+        }
+
+        // Coal restored or mirrored comes dry: its water is not saved.
+        private void DryWater()
+        {
+            FreshWater = flashWater = 0f;
+            wettedFresh = FreshMass;
         }
 
         /// <summary>
@@ -763,7 +838,14 @@ namespace RealisticFiring.Core
 
             // Fresh coal catches from burning coal beneath and beside it. Part
             // of it leaves at once as volatile gas that has to burn above the bed.
+            // Wet coal dries first: it catches slower by the heat its water
+            // takes beside the coal's own warming ("the dry piece caught flame
+            // first", Power Plant Engineering, 15 Feb 1923, pp.215-217).
+            CountWater();
+            var waterPerFresh = wettedFresh > NegligibleMass ? FreshWater / wettedFresh : 0f;
+            var drying = tuning.WarmUpEnergy / (tuning.WarmUpEnergy + waterPerFresh * DryingEnergy);
             var ignitedToBed = 0f;
+            var caught = 0f;
             for (var i = 0; i < zones.Length; i++)
             {
                 var zone = zones[i];
@@ -771,14 +853,20 @@ namespace RealisticFiring.Core
                 if (!FireOn || zone.Fresh <= 0f)
                     continue;
 
-                var ignited = Math.Min(zone.Fresh, speedup * zone.Fresh * IgnitionSupport((GrateZone)i) / ignitionTime * dt);
+                var ignited = Math.Min(zone.Fresh, speedup * zone.Fresh * IgnitionSupport((GrateZone)i) / ignitionTime * drying * dt);
                 if (zone.Fresh - ignited < NegligibleMass)
                     ignited = zone.Fresh;
                 zone.Fresh -= ignited;
+                caught += ignited;
                 zone.Burning += ignited * (1f - tuning.VolatileFraction);
                 ignitedToBed += ignited * (1f - tuning.VolatileFraction);
                 volatileRate[i] = ignited * tuning.VolatileFraction / (dt * speedup);
             }
+            // The water on the coal that caught has dried off.
+            var dried = Math.Min(FreshWater, caught * waterPerFresh) + flashWater;
+            FreshWater = Math.Max(0f, FreshWater - caught * waterPerFresh);
+            wettedFresh = FreshMass;
+            flashWater = 0f;
 
             // Burning coal: the stock rule per zone, rate = min(fuel, 2 × air).
             // The stock total of what the coal can burn is shared out by draft:
@@ -891,7 +979,11 @@ namespace RealisticFiring.Core
             var coldAirLoss = excessPrimary * tuning.ExcessAirHeatLoss + excessDoor * tuning.DoorAirHeatLoss;
             // Warming fresh coal stores heat that comes back as it burns away.
             var warmUp = tuning.WarmUpEnergy * (ignitedToBed - burnedToGas) / dt;
-            Heat = Math.Max(0f, grossHeat - coldAirLoss - warmUp);
+            // Drying the wet coal's water takes its heat up the stack as steam:
+            // about 1 per cent of the heat for 10 per cent of moisture
+            // (Kreisinger, Bureau of Mines Technical Paper 80, 1915, p.63).
+            DryingHeat = dried * DryingEnergy / dt;
+            Heat = Math.Max(0f, grossHeat - coldAirLoss - warmUp - DryingHeat);
 
             ConsumptionRate = consumed / dt;
             CombustionRateNormalized = baseRateTotal / parameters.MaxCombustionRate;

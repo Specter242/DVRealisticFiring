@@ -138,7 +138,55 @@ namespace RealisticFiring.Core.Tests;
 
         Assert.True(haze.Rate >= 2f, $"{haze.Rate} particles a second");
         Assert.InRange(haze.Speed, 1f, 2.5f);
-        Assert.True(haze.Color.A < 0.35f);
+        Assert.True(haze.Color.A < 0.25f, $"opacity {haze.Color.A}");
+    }
+
+    [Fact]
+    public void SootGreysTheSteamItRidesIn()
+    {
+        // A puff and the stack's haze are white steam tinted by their smoke,
+        // a little soot greying a lot of steam; a particle keeps that rule as
+        // its steam evaporates, so it shows its puff's color as it leaves.
+        foreach (var soot in new[] { 0.05f, 0.1f, 0.2f, 0.3f })
+        {
+            var puff = PlumeModel.ForBeat(Tuning, Working(5f, smoke: soot));
+            var tint = PlumeModel.SmokeTint(puff.SmokeShare);
+            var expected = PlumeModel.Steam.R + (puff.SmokeColor.R - PlumeModel.Steam.R) * tint;
+            Assert.Equal(expected, puff.Color.R, 3);
+            Assert.True(tint > puff.SmokeShare + 0.1f, $"soot {soot}: tinted {tint:F2} for a smoke share of {puff.SmokeShare:F2}");
+        }
+        // A fifth soot greys a working puff to the middle, where it was a light grey.
+        Assert.InRange(Brightness(PlumeModel.ForBeat(Tuning, Working(5f, smoke: 0.2f)).Color), 0.4f, 0.6f);
+    }
+
+    [Fact]
+    public void ACleanFireWithAirToSpareClearsItsStack()
+    {
+        // Standing on a thin, clean fire, half its air passing unburned: no haze, thinner steam.
+        var clear = PlumeModel.CoalClearStack(0f, 0.5f);
+        Assert.Equal(1f, clear, 3);
+        var standing = Working(1f, smoke: 0f, flow: 0f) with { ClearStack = clear };
+        Assert.True(PlumeModel.Between(Tuning, standing).Color.A < 0.02f);
+        var drifting = Working(2f) with { ClearStack = clear };
+        Assert.True(PlumeModel.ForBeat(Tuning, drifting).Color.A < 0.7f * PlumeModel.ForBeat(Tuning, Working(2f)).Color.A);
+        // Working hard it burns nearly all its air: the stack keeps its steam.
+        Assert.True(PlumeModel.CoalClearStack(0f, 0.02f) < 0.1f);
+        // Any smoke to see and it is not clear, whatever the air.
+        Assert.Equal(0f, PlumeModel.CoalClearStack(0.06f, 1f), 3);
+    }
+
+    [Fact]
+    public void ACleanHotFireShimmersOverTheStack()
+    {
+        var clean = Working(0f, smoke: 0f, flow: 0.01f) with { HeatShare = 0.3f };
+        Assert.True(PlumeModel.Shimmer(Tuning, clean) > 0.8f);
+        // Smoke hides it, as do the blower's steam and a hard beat.
+        Assert.True(PlumeModel.Shimmer(Tuning, clean with { Soot = 0.4f }) < 0.3f);
+        Assert.True(PlumeModel.Shimmer(Tuning, clean with { TotalFlowNormalized = 0.1f }) < 0.4f);
+        Assert.True(PlumeModel.Shimmer(Tuning, clean with { ExhaustPressure = 8f }) < 0.3f);
+        // A banked fire hardly, a dead one not at all.
+        Assert.True(PlumeModel.Shimmer(Tuning, clean with { HeatShare = 0.05f }) < 0.15f);
+        Assert.Equal(0f, PlumeModel.Shimmer(Tuning, clean with { FireOn = false }));
     }
 
     [Fact]
@@ -176,7 +224,7 @@ namespace RealisticFiring.Core.Tests;
     [Fact]
     public void LightSootOnlyGreysThePuffAndHeavySootBlackensIt()
     {
-        Assert.True(Brightness(PlumeModel.ForBeat(Tuning, Working(5f, smoke: 0.1f)).Color) > 0.75f);
+        Assert.InRange(Brightness(PlumeModel.ForBeat(Tuning, Working(5f, smoke: 0.1f)).Color), 0.6f, 0.75f);
         Assert.True(Brightness(PlumeModel.ForBeat(Tuning, Working(5f, smoke: PlumeModel.SootForBlack)).Color) < 0.25f);
     }
 

@@ -38,11 +38,7 @@ namespace RealisticFiring.Patches
             }
 
             if (Main.RealisticInjectorsEnabled && __instance.simFlow != null)
-            {
-                var tenderValves = Visuals.TenderWaterValves.Attach(trainCar, __instance.simFlow);
-                if (tenderValves != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {tenderValves}");
-            }
+                SetupGuard.Logged(trainCar, "tender water valves", () => Visuals.TenderWaterValves.Attach(trainCar, __instance.simFlow));
 
             if (LeftStock.Is(trainCar))
             {
@@ -55,70 +51,61 @@ namespace RealisticFiring.Patches
             if (FireboxRegistry.TryGet(trainCar, out _) || RealisticOilFirebox.TryGet(trainCar, out _))
             {
                 // The valves first: the blower and the injectors take the lift as working pressure.
-                var valves = SafetyValveFit.Attach(trainCar, __instance.simFlow);
-                if (valves != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {valves}");
-                var blower = BlowerFit.Attach(trainCar, __instance.simFlow);
-                if (blower != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {blower}");
+                SetupGuard.Logged(trainCar, "safety valves", () => SafetyValveFit.Attach(trainCar, __instance.simFlow));
+                SetupGuard.Logged(trainCar, "blower and air pumps", () => BlowerFit.Attach(trainCar, __instance.simFlow));
+                SetupGuard.Logged(trainCar, "shed's blower line connection", () => Shed.ShedConnections.Attach(trainCar, __instance.simFlow));
             }
 
             if (Main.RealisticInjectorsEnabled && __instance.simFlow != null)
             {
-                var injectors = InjectorRig.Attach(trainCar, __instance.simFlow);
-                if (injectors != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {injectors}");
-                var steamHandles = InjectorRig.TryGet(trainCar, out var rig) ? Visuals.InjectorSteamCab.NotchSteamHandles(trainCar, rig) : null;
-                if (steamHandles != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {steamHandles}");
+                SetupGuard.Logged(trainCar, "injectors", () => InjectorRig.Attach(trainCar, __instance.simFlow));
+                SetupGuard.Logged(trainCar, "injector steam handles",
+                    () => InjectorRig.TryGet(trainCar, out var rig) ? Visuals.InjectorSteamCab.NotchSteamHandles(trainCar, rig) : null);
             }
 
             if (__instance.simFlow != null)
             {
-                var superheater = EngineSuperheater.Attach(trainCar, __instance);
-                if (superheater != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {superheater}");
-                var water = BoilerWaterRig.Attach(trainCar, __instance.simFlow);
-                if (water != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {water}");
+                SetupGuard.Logged(trainCar, "superheater", () => EngineSuperheater.Attach(trainCar, __instance));
+                SetupGuard.Logged(trainCar, "boiler water", () => BoilerWaterRig.Attach(trainCar, __instance.simFlow));
             }
 
             if (__instance.simFlow != null && RealisticOilFirebox.TryGet(trainCar, out var oil))
             {
-                var doorId = __instance.firebox != null ? __instance.firebox.fireboxDoorPortId : null;
-                __instance.simFlow.TryGetPort(doorId, out var door, canBeNullOrEmpty: true);
-                __instance.simFlow.TryGetPort(OilBurnerFit.Atomizer.PortId, out var atomizer, canBeNullOrEmpty: true);
-                __instance.simFlow.TryGetPort(OilBurnerFit.Heater.PortId, out var heater, canBeNullOrEmpty: true);
-                __instance.simFlow.TryGetPort(OilBurnerFit.ShopSteam.PortId, out var shopSteam, canBeNullOrEmpty: true);
-                __instance.simFlow.TryGetPort(OilBurnerFit.PeepHolePortId, out var peepHole, canBeNullOrEmpty: true);
-                oil.AttachPorts(door, atomizer, heater, shopSteam, peepHole);
-                var oilFireman = FiremanRig.AttachOil(trainCar, __instance, oil);
-                if (oilFireman != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {oilFireman}");
+                SetupGuard.Run(trainCar, "oil burner's controls", () =>
+                {
+                    var doorId = __instance.firebox != null ? __instance.firebox.fireboxDoorPortId : null;
+                    __instance.simFlow.TryGetPort(doorId, out var door, canBeNullOrEmpty: true);
+                    __instance.simFlow.TryGetPort(OilBurnerFit.Atomizer.PortId, out var atomizer, canBeNullOrEmpty: true);
+                    __instance.simFlow.TryGetPort(OilBurnerFit.Heater.PortId, out var heater, canBeNullOrEmpty: true);
+                    __instance.simFlow.TryGetPort(OilBurnerFit.ShopSteam.PortId, out var shopSteam, canBeNullOrEmpty: true);
+                    __instance.simFlow.TryGetPort(OilBurnerFit.PeepHolePortId, out var peepHole, canBeNullOrEmpty: true);
+                    oil.AttachPorts(door, atomizer, heater, shopSteam, peepHole);
+                });
+                SetupGuard.Logged(trainCar, "oil fireman", () => FiremanRig.AttachOil(trainCar, __instance, oil));
             }
 
             if (!FireboxRegistry.TryGet(trainCar, out var firebox) || __instance.simFlow == null)
                 return;
 
-            // The door is not a firebox port in the stock graph. Read the door
-            // port FireboxSimController already uses for the shovel check.
-            var doorPortId = __instance.firebox != null ? __instance.firebox.fireboxDoorPortId : null;
-            if (__instance.simFlow.TryGetPort(doorPortId, out var doorPort, canBeNullOrEmpty: true))
-                firebox.AttachDoorPort(doorPort);
-            else
-                Main.Mod.Logger.Warning($"{trainCar.carLivery.id}: no firebox door port; door air stays closed");
-            if (__instance.simFlow.TryGetPort(RealisticFirebox.DropGrateControl.PortId, out var dropGratePort, canBeNullOrEmpty: true))
-                firebox.AttachDropGratePort(dropGratePort);
-            if (__instance.simFlow.TryGetPort(RealisticFirebox.AshpanControl.PortId, out var ashpanPort, canBeNullOrEmpty: true))
+            SetupGuard.Run(trainCar, "firebox's door, drop grate, and ashpan", () =>
             {
-                firebox.AttachAshpanPort(ashpanPort);
-                Visuals.AshpanLever.Attach(trainCar, firebox, ashpanPort);
-            }
-            Visuals.AshpanGlow.Attach(trainCar, firebox);
-
-            var fireman = FiremanRig.Attach(trainCar, __instance, firebox);
-            if (fireman != null && Main.Settings.LogFireboxCreation)
-                Main.Mod.Logger.Log($"{trainCar.carLivery.id}: {fireman}");
+                // The door is not a firebox port in the stock graph. Read the door
+                // port FireboxSimController already uses for the shovel check.
+                var doorPortId = __instance.firebox != null ? __instance.firebox.fireboxDoorPortId : null;
+                if (__instance.simFlow.TryGetPort(doorPortId, out var doorPort, canBeNullOrEmpty: true))
+                    firebox.AttachDoorPort(doorPort);
+                else
+                    Main.Mod.Logger.Warning($"{trainCar.carLivery.id}: no firebox door port; door air stays closed");
+                if (__instance.simFlow.TryGetPort(RealisticFirebox.DropGrateControl.PortId, out var dropGratePort, canBeNullOrEmpty: true))
+                    firebox.AttachDropGratePort(dropGratePort);
+                if (__instance.simFlow.TryGetPort(RealisticFirebox.AshpanControl.PortId, out var ashpanPort, canBeNullOrEmpty: true))
+                {
+                    firebox.AttachAshpanPort(ashpanPort);
+                    Visuals.AshpanLever.Attach(trainCar, firebox, ashpanPort);
+                }
+            });
+            SetupGuard.Run(trainCar, "ashpan's glow", () => Visuals.AshpanGlow.Attach(trainCar, firebox));
+            SetupGuard.Logged(trainCar, "fireman", () => FiremanRig.Attach(trainCar, __instance, firebox));
         }
     }
 }

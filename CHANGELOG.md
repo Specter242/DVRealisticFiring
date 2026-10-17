@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.12.0 (2026-10-17)
+
+- Shed blower lines (`Shed/`): a stand at each of seven roundhouses' 48 stalls and at six engine sheds (`ShedStands`, set on the floor under it as the shed loads), each a copy of a service station's diesel hose (`ShedHoses`: its own rope mesh, 81 points over 12 m, the station's runtime parts stripped, its texture scaled with its length) with a handwheel valve; each fired engine's Barco fitting seated per livery (`ShedConnections`; the S060's on the right, none on the 8F); the fittings built as turned meshes with seamless grime (`FittingMesh`, `FittingGrime`, `BlowerFittings`: Barco body, Dixon Boss coupling, gooseneck clamp); points held on raised ground between the rope's job and its mesh's (`HoseGround`, a prefix on `RopeMeshGenerator.Schedule`); steam from an open line (`HoseSteam`); a plug fallen under a floor put back (`StandPlugWatch`); far hoses' solvers paused. House steam drives the blower (`BlowerFit.NozzleSteam`) and an oil burner's atomizer and heater (`RealisticOilFirebox.HouseLine`); the service track's steam line and its key are gone.
+- The game's firebox sparks are off on every engine (`FireboxFlames.KeepSparksOff`).
+- The fireman fires in step with the start-up boost (`AutoFireman`, `FiremanReadings.StartupMultiplier`) and keeps the feed pump turning light (`AutoFiremanBase.PumpLeast`).
+- Each step of a car's setup is guarded and logged (`SetupGuard`).
+- Smoke tints the steam (`PlumeModel.SmokeTint`), a clean coal fire clears its stack (`PlumeModel.CoalClearStack`), heat shimmer (`PlumeModel.Shimmer`, `HeatHaze.shader`), and the plume sorted as if at the stack (`ChimneyPlume.SortAtStack`).
+- A renewed boiler's steel starts as hot as its water (`BoilerWaterRig`, `BoilerMetal.Settle`).
+- Bail off the independent (`BailOff`, `BailOffPatches`, `IndependentBailClick`).
+- Wet coal (`CoalMoisture`, `CoalStore`; the Hudson's bunker door keeps the rain off).
+- The stoker manifold's plates hang from their valves (`StokerCab.HangLabel`).
+- Unity Mod Manager's update feed (`repository.json`, `Info.json`'s HomePage and Repository).
+
 ## 1.11.2 (2026-10-16)
 
 - Aim by the keypad or the grate (`Settings.Aim`, `ShovelAim`): the grate follows the look to the drawn bed (`ZonedCoalBed.TryAim`, the 1.8.1 walk), taking the keypad's zone without its keypad where the look never passes over the bed.

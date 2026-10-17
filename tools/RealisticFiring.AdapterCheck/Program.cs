@@ -163,12 +163,25 @@ namespace RealisticFiring.AdapterCheck
             CheckBlower(gameParams);
             CheckAirPump(gameParams);
             CheckSafetyValveFit(gameParams);
+            CheckCoalStore(gameParams);
 
             CheckControlSteps();
             CheckShovelLoads();
             CheckFiremanHand();
             CheckPatchTargets();
             CheckCarPoolGuard();
+            var after = false;
+            var contained = true;
+            try
+            {
+                Patches.SetupGuard.Run(null, "check", () => throw new InvalidOperationException("a fitting that breaks"));
+                after = true;
+            }
+            catch (Exception)
+            {
+                contained = false;
+            }
+            Check(contained && after, "a car's setup step that throws is logged and the setup goes on (SetupGuard)");
             CheckPurchaseGuard();
             Check(AccessTools.Field(typeof(ShovelNonPhysicalCoal), "_coalMassLoaded")?.FieldType == typeof(float),
                 "the shovel's load is readable, for saying a shovelful does not fit the firebox");
@@ -707,6 +720,19 @@ namespace RealisticFiring.AdapterCheck
                 $"a cold boiler starts at {startTemp:F0} C and after 60 s of a 20 MW fire is {warmTemp:F0} C at {warmPressure - 1f:F2} bar on the gauge " +
                 $"(the game's cold boiler {stockPressure - 1f:F1} bar), boiling after {boiledAt:F0} s; saved and loaded at {loadedTemp:F0} C (the stock load {stockLoadTemp:F0} C)");
 
+            var started = NewBoiler(8000f, 1f);
+            var startedRig = BoilerWaterRig.Create(started, null, BoilerWaterRig.Guard.None);
+            Run(started, startedRig, 0.02f);
+            var steelBefore = startedRig.Steel.Temperature;
+            started.waterChangeRequestedExtIn.ExternalValueUpdate(3f);
+            startedRig.Washout();
+            var startedAt = startedRig.BoilerPressure;
+            Run(started, startedRig, 60f);
+            Check(steelBefore < 30f && startedAt > 12.5f && startedRig.BoilerPressure > startedAt - 0.3f
+                  && Math.Abs(startedRig.Steel.Temperature - startedRig.WaterTemperature) < 2f,
+                $"a cold engine started up holds its {startedAt - 1f:F1} bar: {startedRig.BoilerPressure - 1f:F1} bar a minute on, " +
+                $"its steel {startedRig.Steel.Temperature:F0} C (was {steelBefore:F0}) with its water at {startedRig.WaterTemperature:F0} C");
+
             // The steel gives its heat back as the pressure falls: drawing
             // 5 kg/s for a minute with no fire, the pressure falls less than
             // in the game's boiler of water alone. And the falling pressure
@@ -894,9 +920,8 @@ namespace RealisticFiring.AdapterCheck
                 dead.Tick(0.02f);
             var unlit = P(dead, "FIRE_ON").Value;
             var pooledCold = dead.Model.PooledOil;
-            // At a pit stop on the line, the heater warms the oil for ten minutes, then the fire is lit.
-            RealisticOilFirebox.ServedByPitStop = _ => true;
-            dead.SteamLine = true;
+            // On a stand's line, the heater warms the oil for ten minutes, then the fire is lit.
+            RealisticOilFirebox.HouseLineOf = (_, _) => 1f;
             valve.Value = 0f;
             for (var t = 0f; t < 600f; t += 0.02f)
                 dead.Tick(0.02f);
@@ -914,24 +939,24 @@ namespace RealisticFiring.AdapterCheck
                 $"({coldOil:F0} -> {warmed:F0} C in ten minutes) and it lights without drawing the boiler's steam " +
                 $"({dead.Model.FeedRate:F2} kg/s of oil, atomizing {dead.Model.Atomizing:F2})");
 
-            // The cab's shop steam valve opens the line as the key does, as far as it is open, at a pit stop only.
+            // The cab's shop steam valve alone puts no line on the burner; a stand's line does, as far as its valve is open.
             var valved = new RealisticOilFirebox(fireboxDef, null);
             valved.SetGameParams(gameParams);
             foreach (var reference in valved.GetAllPortReferences())
                 reference.SetPortReference(new Port("src", new PortDefinition(PortType.READONLY_OUT, PortValueType.GENERIC, "OUT"),
                     reference.id.EndsWith("BOILER_PRESSURE") ? 1f : 0f));
-            var shopSteam = new Port(OilBurnerFit.ShopSteam.Id, new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"), 0.5f);
+            var shopSteam = new Port(OilBurnerFit.ShopSteam.Id, new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"), 1f);
             valved.AttachPorts(null, atomizer, heater, shopSteam);
-            RealisticOilFirebox.ServedByPitStop = _ => false;
+            RealisticOilFirebox.HouseLineOf = (_, _) => 0f;
             for (var t = 0f; t < 2f; t += 0.02f)
                 valved.Tick(0.02f);
-            var away = valved.Model.OnSteamLine;
-            RealisticOilFirebox.ServedByPitStop = _ => true;
+            var cabOnly = valved.Model.OnSteamLine;
+            RealisticOilFirebox.HouseLineOf = (_, _) => 0.5f;
             for (var t = 0f; t < 2f; t += 0.02f)
                 valved.Tick(0.02f);
-            Check(!away && valved.Model.OnSteamLine && Math.Abs(valved.SteamLineOpening - 0.5f) < 1e-4f,
-                $"the shop steam valve puts the line on the burner at a pit stop only, as far as it is open ({valved.SteamLineOpening:P0})");
-            RealisticOilFirebox.ServedByPitStop = WaterPoints.Serves;
+            Check(!cabOnly && valved.Model.OnSteamLine && Math.Abs(valved.SteamLineOpening - 0.5f) < 1e-4f,
+                $"the cab's shop steam valve alone puts no line on the burner; a stand's line does, as far as its valve is open ({valved.SteamLineOpening:P0})");
+            RealisticOilFirebox.HouseLineOf = (car, exhaust) => exhaust != null ? RealisticFiring.Shed.ShedConnections.BlowerLine(exhaust) : 0f;
         }
 
         // What a multiplayer host sends clients' views of a loco: captured from
@@ -1642,6 +1667,62 @@ namespace RealisticFiring.AdapterCheck
                 Check(Math.Abs(stockAir.Value - 0.59f) < 0.01f && Math.Abs(fittedAir.Value - 2.3f) < 0.01f && Math.Abs(fittedSteam.Value - 0.4f) < 0.01f,
                     $"the S060's period blower wide open draws {fittedAir.Value:F2} kg/s of air for {fittedSteam.Value:F2} kg/s of steam " +
                     $"(the game's {stockAir.Value:F2} for {stockSteam.Value:F2})");
+            }
+            finally
+            {
+                harmony.UnpatchAll(harmony.Id);
+            }
+        }
+
+        // The rain's water in a tender's coal, kept by the game's coal
+        // container: saved beside its stock key and back on load, before or
+        // after the store is made; coal loaded at the stage mixes in dry.
+        private static void CheckCoalStore(SimGameParams gameParams)
+        {
+            var harmony = new HarmonyLib.Harmony("RealisticFiring.AdapterCheck.CoalStore");
+            harmony.CreateClassProcessor(typeof(CoalSavePatch)).Patch();
+            harmony.CreateClassProcessor(typeof(CoalLoadPatch)).Patch();
+            try
+            {
+                ResourceContainer NewTender()
+                {
+                    var tender = (ResourceContainer)new CoalContainerDefinition { ID = "tenderCoal", capacity = 10000f, defaultValue = 5000f }.InstantiateImplementation();
+                    tender.SetGameParams(gameParams);
+                    return tender;
+                }
+
+                var wet = NewTender();
+                var store = CoalStore.Create(wet);
+                store.Water.Restore(CoalMoisture.Soaked);
+                var saved = wet.GetSaveStateData();
+
+                // Loaded before its store is made, as the game loads a car.
+                var loaded = NewTender();
+                loaded.SetSaveStateData(saved);
+                var restored = CoalStore.Create(loaded);
+
+                // Filled from half to full with coal as delivered.
+                restored.Step(0.02f, 1f);
+                loaded.refillExtIn.ExternalValueUpdate(5000f);
+                restored.Step(0.02f, 1f);
+                var mixed = (CoalMoisture.Soaked + CoalMoisture.Delivered) / 2f;
+                Check(saved.ContainsKey(CoalStore.MoistureKey) && saved.ContainsKey("filled")
+                      && Math.Abs(loaded.amountReadOut.Value - 10000f) < 1f && Math.Abs(restored.Moisture - mixed) < 0.002f,
+                    $"a tender's wet coal saves its water ({saved.Value<float>(CoalStore.MoistureKey):P0}) beside the stock key, comes back on load, " +
+                    $"and mixes with coal loaded at the stage: {restored.Moisture:P1} with the tender filled from half");
+
+                // The Hudson's coal bunker door: shut, an hour's rain leaves the coal as delivered; opened, it soaks.
+                var door = new Port("coalbunkedoorControl", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"));
+                var covered = CoalStore.Create(NewTender(), door);
+                for (var t = 0f; t < 3600f; t += 1f)
+                    covered.Step(1f, 1f);
+                var dryUnder = covered.Moisture;
+                door.ExternalValueUpdate(1f);
+                for (var t = 0f; t < 900f; t += 1f)
+                    covered.Step(1f, 1f);
+                Check(covered.HasCover && door.id == CoalStore.CoverPorts[0] && Math.Abs(dryUnder - CoalMoisture.Delivered) < 0.001f
+                      && covered.Moisture > 0.07f,
+                    $"the Hudson's shut coal bunker door keeps the rain off ({dryUnder:P1} after an hour's rain), opened it soaks ({covered.Moisture:P1} in a quarter hour)");
             }
             finally
             {

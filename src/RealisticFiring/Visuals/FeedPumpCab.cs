@@ -53,7 +53,6 @@ namespace RealisticFiring.Visuals
 
         private const float GaugeDepth = 0.035f;
         private const float WheelDepth = -0.012f;
-        private const float LabelDrop = 0.044f;
         private const float BodyBack = 0.035f;
         private const float BodyFront = -0.004f;
         private const float BodyRadius = 0.014f;
@@ -112,8 +111,8 @@ namespace RealisticFiring.Visuals
                     "feed pump valve", FallbackPanelDepth));
                 var control = StokerCab.PlaceWheel(sourceValve, frame, valvePoint, FeedwaterFit.Valve, port);
                 control.GetComponent<HoverName>().Source = () => Hover(rig);
-                var labelled = plateFacing != null && StokerCab.PlaceLabel(sourceControl, sourceLabel, plateFacing, frame,
-                    new Vector3(valvePoint.x, valvePoint.y - LabelDrop, BodyFront - 0.002f), "FEED PUMP");
+                var labelled = plateFacing != null && StokerCab.HangLabel(sourceControl, sourceLabel, plateFacing, frame,
+                    new Vector2(valvePoint.x, valvePoint.y), "FEED PUMP");
                 notes.Add("its operating valve" + (labelled ? " and plate" : ""));
             }
             var open = fit.Type == FeedHeaterType.Open;

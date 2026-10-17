@@ -35,6 +35,7 @@ namespace RealisticFiringFX
         private const string EmberBedShaderName = "RealisticFiring/EmberBed";
         private const string FlameCardShaderName = "RealisticFiring/FlameCard";
         private const string FireIronShaderName = "RealisticFiring/FireIron";
+        private const string HeatHazeShaderName = "RealisticFiring/HeatHaze";
         public const string FireIronMaterialName = "FireIron";
 
         [MenuItem("Realistic Firing/Build plume bundle")]
@@ -75,7 +76,11 @@ namespace RealisticFiringFX
             var jet = CreateMaterial(shader, "Jet", ImportFlipbook("smoke_jet_flipbook.png"));
             var spark = CreateMaterial(sparkShader, "Spark", ImportFlipbook("spark.png"));
             var droplet = CreateMaterial(shader, "Droplet", ImportFlipbook("spark.png"));
-            CreatePrefab(puff, jet, spark);
+            // The hot gas's shimmer: the scene behind, bent by the fire's noise.
+            var heat = new Material(FindShader(HeatHazeShaderName)) { name = "SmokeHeat" };
+            heat.SetTexture("_NoiseTex", ImportData("fire_noise.png"));
+            SaveMaterial(heat);
+            CreatePrefab(puff, jet, spark, heat);
             CreateOverflowPrefab(puff, droplet);
 
             var coalBed = new Material(FindShader(CoalBedShaderName)) { name = "FireboxCoalBed" };
@@ -148,7 +153,7 @@ namespace RealisticFiringFX
             return material;
         }
 
-        private static void CreatePrefab(Material puff, Material jet, Material spark)
+        private static void CreatePrefab(Material puff, Material jet, Material spark, Material heat)
         {
             var root = new GameObject(PrefabName);
             try
@@ -186,6 +191,12 @@ namespace RealisticFiringFX
                 sparkRenderer.renderMode = ParticleSystemRenderMode.Stretch;
                 sparkRenderer.velocityScale = 0.035f;
                 sparkRenderer.lengthScale = 1f;
+
+                // The hot gas's shimmer just over the stack: swelling and
+                // fading out within a couple of seconds as it mixes with the air.
+                CreateSystem(root, "Heat", heat, tiles: 1, lifetime: (1.2f, 1.8f), maxParticles: 200,
+                    growth: Curve(0f, 0.6f, 1f, 2.4f),
+                    fade: Fade((0f, 0f), (0.15f, 1f), (0.6f, 0.6f), (1f, 0f)));
 
                 PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
             }

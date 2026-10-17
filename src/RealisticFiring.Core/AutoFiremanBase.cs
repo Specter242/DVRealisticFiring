@@ -128,20 +128,20 @@ namespace RealisticFiring.Core
         private const float LeastMargin = 0.06f;
 
         /// <summary>
-        /// With a feed pump fitted, once the engine has worked this long, in s,
-        /// he feeds with the pump, the injector shut; standing or drifting he
-        /// goes back to the injector, as the period practice was.
+        /// With a feed pump fitted, once the engine has run with steam on this
+        /// long, in s, he feeds with the pump, the injector shut, however light
+        /// the work; standing or drifting he goes back to the injector, as the
+        /// period practice was (an open heater has no exhaust to warm the feed).
         /// </summary>
         public const float PumpAfter = 120f;
+
+        /// <summary>Standing or drifting this long, in s, he shuts the pump for the injector: not for a moment's easing.</summary>
+        public const float PumpDrop = 15f;
 
         /// <summary>The water valve he starts a two-valve injector on, before he regulates it; at least its least.</summary>
         public const float StartWater = 0.6f;
 
-        // The pump turns down as far as he likes; he keeps it this open while
-        // feeding. Tripped (its overspeed trip fallen) or without suction, he
-        // shuts it and feeds with the injector this long, in s, while it
-        // resets and primes, and then tries it again.
-        private const float PumpLeast = 0.05f;
+        private const float PumpLeast = FeedPumpSpec.ShutOpening + 0.03f;
         private const float PumpRest = 60f;
 
         // Within this of the safety valve, in bar, he soaks heat up with
@@ -192,7 +192,8 @@ namespace RealisticFiring.Core
         private float averageWork;
         private float workMark;
         private float lastPressure = float.NaN;
-        private float workingFor;
+        private float steamOnFor;
+        private float steamOffFor;
         private bool feeding;
         private float feedingFor = LeastRest;
         private float seenGlass = float.NaN;
@@ -304,7 +305,6 @@ namespace RealisticFiring.Core
             var full = r.FullWorkSteam > 0f ? r.FullWorkSteam : most;
             Hear(dt, r);
             var working = HeardWork > WorkingShare;
-            workingFor = working ? workingFor + dt : 0f;
             averageWork += (HeardWork - averageWork) * Math.Min(1f, dt / ShuntingAverageTime);
             var startComing = r.Standing && r.Cutoff > StartCutoff && !r.Braking;
             StopComing = !r.Standing && r.Throttle < ShutThrottle && r.Braking;
@@ -427,12 +427,17 @@ namespace RealisticFiring.Core
                 goal = Math.Max(goal, GlassSoak);
             GlassTarget = goal;
 
-            // Once the engine has worked a while, a fitted pump does the
-            // feeding; standing or drifting, the injector.
+            // Once the engine has run a while with steam on, a fitted pump does
+            // the feeding, light work or hard; standing or drifting, the
+            // injector. Running light, the heard work alone shut a warm pump
+            // (a player, 2026-10-16).
+            var steamOn = !r.Standing && r.Throttle >= ShutThrottle;
+            steamOnFor = steamOn ? steamOnFor + dt : 0f;
+            steamOffFor = steamOn ? 0f : steamOffFor + dt;
             pumpRest = Math.Max(0f, pumpRest - dt);
             if (r.HasPump && (r.Pump == FeedPumpState.Tripped || r.Pump == FeedPumpState.LostSuction))
                 pumpRest = PumpRest;
-            var usePump = r.HasPump && workingFor >= PumpAfter && pumpRest <= 0f;
+            var usePump = r.HasPump && pumpRest <= 0f && (onPump ? steamOffFor < PumpDrop : steamOnFor >= PumpAfter);
             if (usePump != onPump)
             {
                 onPump = usePump;

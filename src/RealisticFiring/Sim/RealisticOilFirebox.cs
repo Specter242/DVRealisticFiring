@@ -66,13 +66,16 @@ namespace RealisticFiring.Sim
         private Port heaterPort;
         private Port shopSteamPort;
         private Port peepHolePort;
-        private bool atPitStop;
-        private float pitStopCheck;
+        private float standCheck;
 
-        /// <summary>Whether a pit stop serves a car (checks outside the game stand at one).</summary>
-        internal static System.Func<TrainCar, bool> ServedByPitStop = WaterPoints.Serves;
-        private bool atServiceTrack;
+        /// <summary>
+        /// How far a shed stand's blower line in the engine's connection is
+        /// open, 0 to 1 (checks outside the game set it).
+        /// </summary>
+        internal static System.Func<TrainCar, SteamExhaust, float> HouseLineOf =
+            (car, exhaust) => exhaust != null ? Shed.ShedConnections.BlowerLine(exhaust) : 0f;
         private ReciprocatingSteamEngine engine;
+        private SteamExhaust exhaustSim;
         private bool resolved;
         private bool restored;
 
@@ -152,32 +155,22 @@ namespace RealisticFiring.Sim
 
         public float AtomizerValve => atomizerPort != null ? Mathf.Clamp01(atomizerPort.Value) : OilBurnerFit.Atomizer.Default;
 
-        /// <summary>
-        /// Whether a shed's steam line is hooked to the burner's valves, so a
-        /// dead engine can heat its oil and atomize it to raise its own steam
-        /// (set at a pit stop by the cab controls; not saved).
-        /// </summary>
-        public bool SteamLine { get; set; }
-
         public float HeaterValve => heaterPort != null ? Mathf.Clamp01(heaterPort.Value) : 0f;
 
-        /// <summary>The cab's shop steam valve, 0 shut to 1 wide open; 0 without one.</summary>
+        /// <summary>The cab's shop steam valve, 0 shut to 1 wide open; 0 without one. The shed's steam comes by a stand's line, not by it.</summary>
         public float ShopSteamValve => shopSteamPort != null ? Mathf.Clamp01(shopSteamPort.Value) : 0f;
 
-        /// <summary>Whether the engine stands on a service track with the shed's steam line hooked up (the valve open or the key).</summary>
-        public bool AtPitStop => atPitStop;
-
-        /// <summary>Whether the engine stands on a service track, where a shed's steam line reaches it (checked once a second).</summary>
-        public bool AtServiceTrack => atServiceTrack;
+        /// <summary>Whether a shed stand's blower line reaches the engine's connection: there the shed's steam comes by it alone (checked once a second).</summary>
+        public bool StandReaches => standReaches;
+        private bool standReaches;
 
         /// <summary>The boiler's pressure, absolute bar.</summary>
         internal float BoilerPressure => boilerPressure.Value;
 
-        /// <summary>
-        /// How far the shed's steam line is open to the burner's valves: the
-        /// cab's shop steam valve, or the steam line key's hook-up, at a pit stop.
-        /// </summary>
-        public float SteamLineOpening => atPitStop ? Mathf.Max(SteamLine ? 1f : 0f, ShopSteamValve) : 0f;
+ public float SteamLineOpening => HouseLine;
+
+        /// <summary>How far a roundhouse stand's valve is open to the burner through its blower line, 0 without one in.</summary>
+        public float HouseLine => HouseLineOf(Car, exhaustSim);
 
         /// <summary>Air drawn through the firebox, in kg/s.</summary>
         public float AirFlowIn => airFlow.Value;
@@ -281,15 +274,12 @@ namespace RealisticFiring.Sim
                 return;
             if (!resolved)
                 Resolve();
-            // The service track is looked for once a second, only while the
-            // shed's line is wanted or a dead engine's lighting steps ask for it.
-            pitStopCheck -= delta;
-            if (pitStopCheck <= 0f)
+            // Whether a stand's line reaches, for the lighting steps, looked for once a second.
+            standCheck -= delta;
+            if (standCheck <= 0f)
             {
-                pitStopCheck = 1f;
-                var wanted = SteamLine || ShopSteamValve > 0f;
-                atServiceTrack = (wanted || !Model.FireOn && BoilerPressure < FiringAdvice.DeadBoiler) && ServedByPitStop(Car);
-                atPitStop = wanted && atServiceTrack;
+                standCheck = 1f;
+                standReaches = Shed.ShedConnections.StandReaches(Car);
             }
             if (ignitionExtIn.Value == 1f)
             {
@@ -381,6 +371,7 @@ namespace RealisticFiring.Sim
             resolved = true;
             var flow = Car != null && Car.SimController != null ? Car.SimController.SimulationFlow : null;
             engine = flow?.OrderedSimComps.OfType<ReciprocatingSteamEngine>().FirstOrDefault();
+            exhaustSim = flow?.OrderedSimComps.OfType<SteamExhaust>().FirstOrDefault();
             // A loco spawned cold has cold oil and brick.
             if (!restored && !Model.FireOn && boilerPressure.Value < 2f)
                 Model.Restore(false, Mathf.Max(OilFire.ColdBrick, boilerTemperature.Value), OilFire.AmbientTemperature, Model.FlueSoot);

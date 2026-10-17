@@ -439,6 +439,7 @@ namespace RealisticFiring.Sim
 
         public override void Tick(float delta)
         {
+            FollowCoal(delta);
             if (Net.IsClient)
             {
                 FollowHost(delta);
@@ -455,6 +456,29 @@ namespace RealisticFiring.Sim
 
         /// <summary>The fireman's mode in the save, for a fireman not yet set up when it loaded.</summary>
         internal FiremanMode SavedFiremanMode { get; private set; }
+
+        // The coal it fires from, looked for again this often, in s (a tender can be coupled or uncoupled).
+        private const float CoalLookAgain = 2f;
+        private CoalStore coal;
+        private float coalLookIn;
+
+        /// <summary>How far a cover over the coal is open, 0 shut to 1; null where it has none.</summary>
+        internal float? CoalCoverOpen => coal != null && coal.HasCover ? coal.Open : (float?)null;
+
+        // The coal going on the fire, as wet as the rain has left it (a
+        // client follows its own weather, for the overlay).
+        private void FollowCoal(float delta)
+        {
+            coalLookIn -= delta;
+            if (coalLookIn <= 0f)
+            {
+                coal = CoalStore.For(Car);
+                coalLookIn = CoalLookAgain;
+            }
+            // A setting keeps the rain off the coal.
+            coal?.Step(delta, Main.Settings.RainWetsCoal ? GameWeather.Wetness : 0f);
+            Model.FeedMoisture = coal != null ? coal.Moisture : CoalMoisture.Delivered;
+        }
 
         private void Step(float delta)
         {

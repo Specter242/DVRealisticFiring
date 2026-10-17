@@ -78,12 +78,8 @@ namespace RealisticFiring.Core
         public float FlueSoot;
         public bool BlowerOn;
         public bool AtomizerOpen;
-        /// <summary>Whether the engine stands on a service track, where the shed's steam is.</summary>
-        public bool OnServiceTrack;
-        /// <summary>The service tracks, in a few words, for the step that sends the player to one.</summary>
-        public string ServiceTracks;
-        /// <summary>The key that hooks up the shed's steam line, as the player has it bound; null for none.</summary>
-        public string SteamLineKey;
+        /// <summary>Whether a shed stand's blower line reaches the engine: the shed's steam comes only by plugging one in.</summary>
+        public bool StandNearby;
         public float GlassLevel;
         public IReadOnlyList<InjectorReading> Injectors;
     }
@@ -211,7 +207,7 @@ namespace RealisticFiring.Core
             if (oil.GlassLevel < LowGlass)
                 return new Advice(AdviceLevel.Act, "Water's low in the glass: get the injector on.");
             if (oil.OnSteamLine && oil.SteamLineOpening > 0f && oil.BoilerPressure >= OwnSteam)
-                return new Advice(AdviceLevel.Watch, $"She makes her own steam ({oil.BoilerPressure - 1f:F1} bar): shut SHOP STEAM before you leave.", LightingSteps + 1);
+                return new Advice(AdviceLevel.Watch, $"She makes her own steam ({oil.BoilerPressure - 1f:F1} bar): shut the stand's valve and take its line off before you leave.", LightingSteps + 1);
             if (oil.StackSmoke >= BlackStack)
                 return new Advice(AdviceLevel.Act, "Black at the stack: too much oil for the air. Ease the firing valve or open the damper.");
             if (oil.StackSmoke < HazeStack)
@@ -234,7 +230,7 @@ namespace RealisticFiring.Core
             };
             var titles = new[]
             {
-                ("Shed's steam on", "SHOP STEAM open on a service track"),
+                ("Shed's steam on", "a roundhouse or engine shed stand's blower line in the smokebox's fitting, its valve open"),
                 ("Oil warm", $"OIL HEATER open; runs from {OilFire.WarmOil:F0} °C (now {oil.OilTemperature:F0} °C)"),
                 ("Box clear", "no vapor or pooled oil; blow it out if there is"),
                 ("Blower on, atomizer cracked", "air through the box, steam at the burner"),
@@ -252,9 +248,9 @@ namespace RealisticFiring.Core
             switch (step)
             {
                 case 1:
-                    return new Advice(AdviceLevel.Act, oil.OnServiceTrack
-                        ? $"{of}, no steam for the burner: open SHOP STEAM" + (string.IsNullOrEmpty(oil.SteamLineKey) ? "." : $" (or {oil.SteamLineKey}).")
-                        : $"{of}, no steam for the burner: get her onto {oil.ServiceTracks ?? "a service track"} and open SHOP STEAM.", step);
+                    return new Advice(AdviceLevel.Act, oil.StandNearby
+                        ? $"{of}, no steam for the burner: plug the stand's blower line into the fitting on the smokebox and open the stand's valve."
+                        : $"{of}, no steam for the burner: tow her to a roundhouse stall or engine shed and plug a stand's blower line into the fitting on the smokebox.", step);
                 case 2:
                     return new Advice(AdviceLevel.Watch, $"{of}, warm the oil: OIL HEATER open. It's {oil.OilTemperature:F0} °C and runs from {OilFire.WarmOil:F0} °C.", step);
                 case 3:

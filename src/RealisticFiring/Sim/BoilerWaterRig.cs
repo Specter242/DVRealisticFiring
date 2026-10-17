@@ -272,12 +272,15 @@ namespace RealisticFiring.Sim
         public void Washout()
         {
             var vessel = Vessel(boiler);
+            var renewed = vessel != knownVessel;
             knownVessel = vessel;
             Water.Washout(vessel != null ? vessel.mass : 0f);
             Fouling.Washout();
             Plug?.Renew(vessel != null ? vessel.waterTemp : 20f);
             PlugVent = 0f;
             SetDrowning(0f);
+            if (renewed)
+                Settle(vessel);
             Log("boiler washed out: fresh water, sludge cleared" + (Plug != null ? ", new fusible plug" : ""));
         }
 

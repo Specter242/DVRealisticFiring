@@ -101,6 +101,10 @@ namespace RealisticFiring.Visuals
         private const float LabelDrop = 0.044f;
         private const float LabelScale = 0.75f;
 
+        private const float HangerRadius = 0.0025f;
+        private const float HangerDepth = BodyFront + 0.001f;
+        private const float HangerIntoBody = 0.005f;
+
         /// <summary>
         /// Where a loco's manifold sits, from its fireman's stoker valve mount:
         /// across (toward the middle of the cab), up, and out (into the panel),
@@ -217,7 +221,7 @@ namespace RealisticFiring.Visuals
             if (engine)
             {
                 var control = PlaceWheel(sourceValve, frame, new Vector3(EngineAt.x, EngineAt.y, WheelDepth), StokerJetControls.Engine, enginePort);
-                if (PlaceLabel(sourceControl, sourceLabel, control, frame, new Vector3(EngineAt.x, EngineAt.y - LabelDrop, BodyFront - 0.002f), "STOKER"))
+                if (HangLabel(sourceControl, sourceLabel, control, frame, EngineAt, "STOKER"))
                     labels++;
             }
             for (var i = 0; i < Layout.Length; i++)
@@ -228,7 +232,7 @@ namespace RealisticFiring.Visuals
                 var at = Layout[i].At;
                 var control = PlaceWheel(sourceValve, frame, new Vector3(at.x, at.y, WheelDepth), valve, port);
                 plateFacing = control;
-                if (PlaceLabel(sourceControl, sourceLabel, control, frame, new Vector3(at.x, at.y - LabelDrop, BodyFront - 0.002f), Layout[i].Plate))
+                if (HangLabel(sourceControl, sourceLabel, control, frame, at, Layout[i].Plate))
                     labels++;
             }
 
@@ -411,6 +415,20 @@ namespace RealisticFiring.Visuals
             return false;
         }
 
+        /// <summary>
+        /// A plate under the manifold valve at <paramref name="valveAt"/> (its
+        /// center on the manifold's face, in the frame), hung from the valve's
+        /// body on a rod behind it.
+        /// </summary>
+        internal static bool HangLabel(Transform sourceControl, Transform sourceLabel, Transform facing, Transform frame, Vector2 valveAt, string text)
+        {
+            if (!PlaceLabel(sourceControl, sourceLabel, facing, frame, new Vector3(valveAt.x, valveAt.y - LabelDrop, BodyFront - 0.002f), text))
+                return false;
+            Pipe(frame, "hanger " + text, new Vector3(valveAt.x, valveAt.y - HangerIntoBody, HangerDepth),
+                new Vector3(valveAt.x, valveAt.y - LabelDrop, HangerDepth), HangerRadius);
+            return true;
+        }
+
         // A copy of the S282's blower label plate under a wheel, turned as the
         // S282's sits to its valve, smaller, with new text.
         internal static bool PlaceLabel(Transform sourceControl, Transform sourceLabel, Transform control, Transform frame, Vector3 at, string text, float scale = LabelScale)
@@ -478,7 +496,7 @@ namespace RealisticFiring.Visuals
             Pipe(frame, "body stoker engine", new Vector3(at.x, at.y, HeaderDepth), new Vector3(at.x, at.y, BodyFront), BodyRadius);
             var supply = BuildSupplyPipe(frame, car, at.y, "stoker engine steam");
             var label = plateFacing != null
-                        && PlaceLabel(sourceControl, sourceLabel, plateFacing, frame, new Vector3(at.x, at.y - LabelDrop, BodyFront - 0.002f), "STOKER");
+                        && HangLabel(sourceControl, sourceLabel, plateFacing, frame, new Vector2(at.x, at.y), "STOKER");
             return $"a copy of its stoker valve under the manifold{(label ? " with a STOKER plate" : "")} ({supply})";
         }
 

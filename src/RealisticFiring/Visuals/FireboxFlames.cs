@@ -137,6 +137,9 @@ namespace RealisticFiring.Visuals
         private ParticleSystem smoke;
         private Renderer[] stockFlames = new Renderer[0];
         private int stockFlameChildren = -1;
+
+        private ParticleSystem[] stockSparks = new ParticleSystem[0];
+        private int stockSparkChildren = -1;
         private readonly float[] smokeDue = new float[GrateLayout.ZoneCount];
         private readonly float[] smokeOutDue = new float[GrateLayout.ZoneCount];
         private bool dustDrained;
@@ -359,6 +362,7 @@ namespace RealisticFiring.Visuals
                 if (renderer != null)
                     renderer.enabled = !shown && cards == null;
             }
+            KeepSparksOff();
             if (oldFlames != null && oldFlames.isPlaying)
                 oldFlames.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
             if (cardRenderer != null)
@@ -661,6 +665,29 @@ namespace RealisticFiring.Visuals
             fire.fireLight.intensity *= (0.85f + 0.3f * Mathf.PerlinNoise(Time.time * 6f, 0.37f)) * (1f + 0.5f * Pulse);
         }
 
+        // The game's sparks, kept off: gathered again as their object's
+        // children change (a Custom Car Loader engine makes its copy of the
+        // game's sparks under it once it starts), and stopped whenever the
+        // game's fire plays them.
+        private void KeepSparksOff()
+        {
+            var sparks = fire != null ? fire.sparksObj : null;
+            if (sparks == null)
+                return;
+            if (sparks.transform.childCount != stockSparkChildren)
+            {
+                stockSparkChildren = sparks.transform.childCount;
+                stockSparks = sparks.GetComponentsInChildren<ParticleSystem>(true);
+                foreach (var renderer in sparks.GetComponentsInChildren<Renderer>(true))
+                    renderer.enabled = false;
+            }
+            foreach (var system in stockSparks)
+            {
+                if (system != null && (system.isPlaying || system.particleCount > 0))
+                    system.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            }
+        }
+
         private void OnDestroy()
         {
             foreach (var renderer in stockFlames)
@@ -668,6 +695,7 @@ namespace RealisticFiring.Visuals
                 if (renderer != null)
                     renderer.enabled = true;
             }
+
             if (fire != null && fire.fireLight != null)
                 fire.fireLight.color = lightColor;
             if (cards != null)

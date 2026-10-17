@@ -212,15 +212,12 @@ namespace RealisticFiring.Visuals
 
         private static string ShopSteamHover(RealisticOilFirebox firebox)
         {
-            var valve = firebox.ShopSteamValve;
-            if (valve <= 0f)
-                return firebox.AtServiceTrack
-                    ? "Shop steam: shut (open it to fire a dead engine on this service track's steam line)"
-                    : "Shop steam: shut (on a service track, open it to fire a dead engine on the shed's steam)";
-            if (!firebox.AtPitStop)
-                return $"Shop steam: {valve:P0}, no steam line here (stand on a service track: a service station with water, a loco parking track, or a roundhouse stall)";
-            return $"Shop steam: {valve:P0}, the shed's steam line at {(RealisticOilFirebox.SteamLinePressure - 1f) * firebox.SteamLineOpening:F1} bar" +
-                   (firebox.Model.OnSteamLine ? " to the atomizer and heater" : " (the boiler's own steam is stronger)");
+            if (firebox.HouseLine > 0f)
+                return $"Shop steam: the roundhouse's blower line in at the smoke arch, {(RealisticOilFirebox.SteamLinePressure - 1f) * firebox.SteamLineOpening:F1} bar" +
+                       (firebox.Model.OnSteamLine ? " to the blower, atomizer, and heater" : " (the boiler's own steam is stronger)");
+            return firebox.StandReaches
+                ? "Shop steam: plug the stand's blower line into the fitting on the smokebox and open the stand's valve"
+                : "Shop steam: it comes by a roundhouse or engine shed stand's blower line on the smokebox; tow a dead engine to one";
         }
 
         // Shovel targets into the firebox where the cab's own coal targets are

@@ -1,4 +1,3 @@
-using DV.WeatherSystem;
 using RealisticFiring.Core;
 using UnityEngine;
 
@@ -15,12 +14,6 @@ namespace RealisticFiring.Visuals
         // A spell of calm or breeze lasts minutes; a gust, seconds.
         private const float SpellTime = 240f;
         private const float GustTime = 5f;
-
-        // The game's weather, found rather than taken from its singleton,
-        // which would make one if there were none yet; looked for again this often, in s.
-        private const float LookAgain = 5f;
-        private static WeatherDriver driver;
-        private static float nextLook;
 
         private static int frame = -1;
         private static Vector3 wind;
@@ -51,14 +44,9 @@ namespace RealisticFiring.Visuals
             frame = Time.frameCount;
             wind = Vector3.zero;
             speed = 0f;
-            if (driver == null && Time.time >= nextLook)
-            {
-                nextLook = Time.time + LookAgain;
-                driver = Object.FindObjectOfType<WeatherDriver>();
-            }
-            if (driver == null)
+            var weather = Sim.GameWeather.Driver;
+            if (weather == null)
                 return;
-            var weather = driver;
             degrees = weather.WindDirection.CurrentValue;
             var time = Time.time;
             speed = PlumeWind.Speed(weather.RainValue.CurrentValue, weather.ThunderValue.CurrentValue,

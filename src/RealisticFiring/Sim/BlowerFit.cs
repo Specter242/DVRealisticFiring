@@ -134,13 +134,22 @@ namespace RealisticFiring.Sim
             return true;
         }
 
+ public static float NozzleSteam(SteamExhaust exhaust, SteamDraft draft, out float fromBoiler)
+        {
+            var cab = draft.BlowerSteam(exhaust.boilerPressure.Value, exhaust.blowerControl.Value);
+            var line = Shed.ShedConnections.BlowerLine(exhaust);
+            var house = line > 0f ? draft.BlowerSteam(Shed.ShedConnections.HousePressure, line) : 0f;
+            fromBoiler = house > cab ? 0f : cab;
+            return Mathf.Max(cab, house);
+        }
+
         /// <summary>The blower's steam now, kg/s, fitted or as the game works it out.</summary>
         public static float BlowerSteam(SteamExhaust exhaust)
         {
             if (exhaust == null)
                 return 0f;
             if (TryGet(exhaust, out var draft))
-                return draft.BlowerSteam(exhaust.boilerPressure.Value, exhaust.blowerControl.Value);
+                return NozzleSteam(exhaust, draft, out _);
             return exhaust.maxBlowerFlow * Mathf.Min(Mathf.InverseLerp(1f, exhaust.pressureForMaxBlowerFlow, exhaust.boilerPressure.Value),
                 exhaust.blowerControl.Value);
         }

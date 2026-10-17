@@ -16,7 +16,10 @@ namespace RealisticFiring.Patches
     [HarmonyPatch(typeof(SimController), nameof(SimController.Initialize))]
     internal static class DropGratePatch
     {
-        private static void Prefix(SimController __instance, TrainCar trainCar)
+        private static void Prefix(SimController __instance, TrainCar trainCar) =>
+            SetupGuard.Run(trainCar, "drop grate and ashpan controls", () => Add(__instance, trainCar));
+
+        private static void Add(SimController __instance, TrainCar trainCar)
         {
             var graph = __instance.connectionsDefinition;
             if (!Main.ReplacementEnabled || !FireboxRegistry.IsSupported(trainCar) || graph == null || graph.executionOrder == null)
