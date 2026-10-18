@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.13.7 (2026-10-18)
+
+- The S060's engines take the stock engine's steam a stroke too (`EngineCylinders.MarkStockSteam`): already without wet walls, its clearance took 1.25 to 1.45 times it at 10 to 20 % cut-off.
+
 ## 1.13.6 (2026-10-18)
 
 - The JK3's engines take the stock engine's steam a stroke (`SteamCylinders.StockAdmission`, `EngineCylinders.MarkStockSteam` by livery): the model's clearance and condensation took 1.5 to 1.9 times it at 10 to 20 % cut-off, more than its boiler was balanced for. Pressures, torque, and valve events stay the model's.
