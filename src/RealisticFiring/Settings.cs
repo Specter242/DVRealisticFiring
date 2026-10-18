@@ -116,9 +116,6 @@ namespace RealisticFiring
         [Draw("Fireman's orders: show or hide his window (hold Alt to free the mouse and click it)")]
         public KeyBinding FiremanKey = Bind(KeyCode.F7);
 
-        [Draw("Plume test bed: show or hide it, to set the weather and the stack and tune the smoke (hold Alt to free the mouse)")]
-        public KeyBinding PlumeTestBedKey = Bind(KeyCode.F9);
-
         [Draw("Show what the fireman is doing at the top of the screen")]
         public bool ShowFiremanStatus = true;
 
@@ -156,9 +153,17 @@ namespace RealisticFiring
         // Log the fire on your loco every N seconds (0 = off).
         public int FireStatusLogInterval;
 
-        // The plume test bed's sliders set away from their defaults, as
-        // name=value pairs. Not in the menu.
+        // The plume test bed, a development tool for tuning the chimney
+        // smoke: shown and hidden by this key, unbound unless set here (not
+        // in the menu; it shipped bound to F9 in 1.13.3 by mistake, and that
+        // setting's name is no longer read). Its sliders set away from their
+        // defaults, as name=value pairs, are put back only while the key is bound.
+        public KeyBinding DevPlumeTestBedKey = new KeyBinding();
+
         public string PlumeTestBed = "";
+
+        /// <summary>Whether the plume test bed's key is bound (a development setup).</summary>
+        public bool PlumeTestBedEnabled => DevPlumeTestBedKey != null && DevPlumeTestBedKey.keyCode != KeyCode.None;
 
         public override void Save(UnityModManager.ModEntry modEntry)
         {

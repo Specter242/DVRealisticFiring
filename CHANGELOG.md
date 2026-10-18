@@ -1,14 +1,17 @@
 # Changelog
 
+## 1.13.4 (2026-10-18)
+
+- The plume tuning window that came along in 1.13.3 is off: no menu entry or default key (`Settings.DevPlumeTestBedKey`, unbound), and its saved tuning is not restored unless that key is bound.
+
 ## 1.13.3 (2026-10-18)
 
-- The exhaust's white from the air's temperature and humidity (`SteamCloud`, `Psychrometrics`, `PlumeAir`): each dilution's heat and water balanced as the steam, a share of the fire's flue gas, and the air mix, its thickness seen across forming and evaporating as the air mixes in (`12 × U^(1/3) × t^1.3`); its thickest against a cool, damp reference scales the steam's depth (`PlumeModel.Weathered`). Fitted to 43 dated reference photos and their hours' weather (ERA5); 13 tests from them.
+- The exhaust's white from the air's temperature and humidity (`SteamCloud`, `Psychrometrics`, `PlumeAir`): each dilution's heat and water balanced as the steam, a share of the fire's flue gas, and the air mix, its thickness seen across forming and evaporating as the air mixes in (`12 × U^(1/3) × t^1.3`); its thickest against a cool, damp reference scales the steam's depth (`PlumeModel.Weathered`).
 - The air: a season setting's day at the game's hour, damp in the rain (`PlumeClimate`), or DV Seasons' temperature when it runs, read by reflection (`SeasonsMod`). The mod's ambient (`Ambient`) gives DV Seasons' temperature to a cold boiler's water and steel, the tender's water and oil (`OilFireInputs.AirTemperature`), and a shut injector; without it each keeps its value. The adapter check finds DV Seasons' state and the stock boiler's one outside temperature.
 - A coal fire's beats carry its haze (`PlumeModel.CoalPuffHaze`, "haze in a coal fire's beats" 0.5).
 - The stack's bore and outside radius read from its rim; particles at least the bore wide through the neck and spreading on (`ChimneyPlume.Least`), held from hanging beside the stack (`Widest`), narrowed while fast by their speed through the air, growing as they thin to keep their width through the shader's fraying (`PlumeAloft.Thinning`); smoke emitted in the stack shows at once.
 - The train's wake 0.3 of its speed over 1.5 m (`PlumeTuning.WakeCarry`, `WakeDepth`); the plume's systems in a fixed draw order (`ChimneyPlume.DrawnBefore`); the jet's streaks colored by their age.
 - The heat shimmer's bend set from code (2 % of the view), widening with the hot gas and weakening as it widens, living about 3 s.
-- The plume test bed (`PlumeTestBed`, F9): weather and stack presets, the model's and look's sliders live, kept in the settings when moved away from their defaults; "Write to the log".
 
 ## 1.13.2 (2026-10-17)
 

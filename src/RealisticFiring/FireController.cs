@@ -90,7 +90,7 @@ namespace RealisticFiring
             }
             if (settings.ToggleOverlayKey.Down())
                 FireOverlay.Step(settings);
-            if (settings.PlumeTestBedKey.Down())
+            if (settings.PlumeTestBedEnabled && settings.DevPlumeTestBedKey.Down())
                 Visuals.PlumeTestBed.Toggle();
 
             var withFireman = FiremanRig.TryGetTended(PlayerManager.Car, out _);
