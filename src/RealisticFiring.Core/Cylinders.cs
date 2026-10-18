@@ -382,6 +382,18 @@ namespace RealisticFiring.Core
             };
         }
 
+        /// <summary>
+        /// The steam a stroke takes in the stock engine, kg: the cut-off's
+        /// share of the cylinder filled from the steam chest as the two share
+        /// its steam, with no clearance, cushion, or condensation
+        /// (`ReciprocatingSteamEngine.SimulateValveFlow`).
+        /// </summary>
+        public static float StockAdmission(float cutoff, float chestSteam, float chestVolume, float cylinderVolume)
+        {
+            var filled = Math.Max(0f, cylinderVolume * cutoff);
+            return filled > 0f ? filled / (filled + Math.Max(0f, chestVolume)) * Math.Max(0f, chestSteam) : 0f;
+        }
+
         /// <summary>Saturated steam's temperature at an absolute pressure in bar, in °C (within 3 °C from 1 to 20 bar).</summary>
         public static float SaturationTemperature(float pressure) =>
             99.6f * (float)Math.Pow(Math.Max(0.05f, pressure), 0.25);

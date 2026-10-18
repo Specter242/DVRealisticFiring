@@ -13,6 +13,27 @@ namespace RealisticFiring.Sim
         /// <summary>How the cylinders are built: one long-lap valve gear for every engine, sized by its bore.</summary>
         public static readonly CylinderSpec Spec = new CylinderSpec();
 
+        private static readonly System.Collections.Generic.HashSet<string> StockSteamLiveries =
+            new System.Collections.Generic.HashSet<string> { "Jk3A" };
+
+        private static readonly object StockSteamMark = new object();
+        private static readonly ConditionalWeakTable<ReciprocatingSteamEngine, object> StockSteamEngines =
+            new ConditionalWeakTable<ReciprocatingSteamEngine, object>();
+
+        /// <summary>Marks <paramref name="car"/>'s engines to take the stock engine's steam, if its livery's boiler was balanced for it.</summary>
+        public static void MarkStockSteam(TrainCar car, SimulationFlow flow)
+        {
+            var livery = car != null ? car.carLivery : null;
+            if (flow == null || livery == null || !StockSteamLiveries.Contains(livery.id))
+                return;
+            foreach (var engine in flow.OrderedSimComps.OfType<ReciprocatingSteamEngine>())
+                StockSteamEngines.GetValue(engine, _ => StockSteamMark);
+        }
+
+        /// <summary>Whether <paramref name="engine"/> takes the stock engine's steam a stroke.</summary>
+        public static bool TakesStockSteam(ReciprocatingSteamEngine engine) =>
+            engine != null && StockSteamEngines.TryGetValue(engine, out _);
+
         private EngineCylinders(ReciprocatingSteamEngine engine)
         {
             Model = new SteamCylinders(Spec, engine.cylinderBore, engine.pistonStroke, engine.throttleMaxFlow);

@@ -298,4 +298,27 @@ public class CylinderTests
     {
         Assert.InRange(SteamCylinders.SaturationTemperature(pressure), celsius - 3f, celsius + 3f);
     }
+
+    [Fact]
+    public void TheJk3TakesTheStockEnginesSteamAStroke()
+    {
+        // The JK3's engine as its bundle has it: two 0.65 m by 0.51 m
+        // cylinders, a 300 L steam chest, 2.4 kg/s through the throttle.
+        // The model's clearance and condensation take 1.5 to 1.9 times the
+        // stock engine's steam a stroke at 10 to 20 % cut-off, more than its
+        // small boiler was balanced for, so it takes the stock's (2026-10-18).
+        const float bore = 0.65f, stroke = 0.51f, chest = 300f;
+        var volume = (float)(Math.PI / 4 * bore * bore * stroke * 1000);
+        var chestSteam = chest / SteamVolume(14f);
+        foreach (var cutoff in new[] { 0.1f, 0.15f, 0.2f })
+        {
+            var stock = SteamCylinders.StockAdmission(cutoff, chestSteam, chest, volume);
+            Assert.Equal(volume * cutoff / (volume * cutoff + chest) * chestSteam, stock, 4);
+            var cylinders = new SteamCylinders(new CylinderSpec(), bore, stroke, 2.4f);
+            cylinders.Set(cutoff, 1.5f, 14f, SteamCylinders.SaturationTemperature(14f));
+            var model = cylinders.Admit(14f, chestSteam, chest, volume, 2f, SteamVolume, SteamPressure);
+            Assert.InRange(model.Mass / stock, 1.45f, 2.1f);
+        }
+        Assert.Equal(0f, SteamCylinders.StockAdmission(0f, chestSteam, chest, volume));
+    }
 }

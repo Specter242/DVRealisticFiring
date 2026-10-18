@@ -48,6 +48,8 @@ namespace RealisticFiring.Patches
                 return;
             }
 
+            EngineCylinders.MarkStockSteam(trainCar, __instance.simFlow);
+
             if (FireboxRegistry.TryGet(trainCar, out _) || RealisticOilFirebox.TryGet(trainCar, out _))
             {
                 // The valves first: the blower and the injectors take the lift as working pressure.

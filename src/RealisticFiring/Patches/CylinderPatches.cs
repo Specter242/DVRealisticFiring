@@ -37,7 +37,10 @@ namespace RealisticFiring.Patches
             }
             var admission = model.Admit(chest, ___steamChestSteamMass, __instance.steamChestVolume, ___cylinderVolume, turns,
                 EngineCylinders.SteamVolume, EngineCylinders.SteamPressure);
-            ___steamMassPerChuff = admission.Mass;
+            // An engine whose boiler was balanced for the stock engine takes its steam.
+            ___steamMassPerChuff = EngineCylinders.TakesStockSteam(__instance)
+                ? Core.SteamCylinders.StockAdmission(___cutoff, ___steamChestSteamMass, __instance.steamChestVolume, ___cylinderVolume)
+                : admission.Mass;
             ___admissionPressure = admission.Pressure;
             cylinders.Admitted = admission.Mass;
             cylinders.Condensed = admission.Condensed;

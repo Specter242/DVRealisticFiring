@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.13.6 (2026-10-18)
+
+- The JK3's engines take the stock engine's steam a stroke (`SteamCylinders.StockAdmission`, `EngineCylinders.MarkStockSteam` by livery): the model's clearance and condensation took 1.5 to 1.9 times it at 10 to 20 % cut-off, more than its boiler was balanced for. Pressures, torque, and valve events stay the model's.
+
 ## 1.13.5 (2026-10-18)
 
 - Working lightly (under 40 % of full work heard), the fireman closes the damper over his mark building for work ahead too (`AutoFireman.Blower`, `LightWork`); standing builds keep it open for the blower.
