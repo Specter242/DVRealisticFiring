@@ -5,6 +5,18 @@ namespace RealisticFiring.Core
     /// <summary>What the cab and the engine give an oil fire each tick.</summary>
     public struct OilFireInputs
     {
+        private float? airTemperature;
+
+        /// <summary>
+        /// The temperature the tender's oil and a dead fire's brick cool
+        /// toward, °C (the outside air's with DV Seasons); <see cref="OilFire.AmbientTemperature"/> unless set.
+        /// </summary>
+        public float AirTemperature
+        {
+            get => airTemperature ?? OilFire.AmbientTemperature;
+            set => airTemperature = value;
+        }
+
         /// <summary>The firing valve, 0 shut to 1 wide open.</summary>
         public float FiringValve;
 
@@ -173,7 +185,11 @@ namespace RealisticFiring.Core
         // The black cloud a sanding throws clears over this time, in s.
         private const float SandBurstTime = 6f;
 
-        /// <summary>Air temperature, and the oil's best range for flow and atomizing, in °C.</summary>
+        /// <summary>
+        /// The air's temperature unless the inputs give it, and the cold oil
+        /// its flow and atomizing are reckoned from (fully cold at or under
+        /// it); with the oil's best range for flow and atomizing, in °C.
+        /// </summary>
         public const float AmbientTemperature = 15f;
         public const float WarmOil = 45f;
         public const float HotOil = 80f;
@@ -580,7 +596,7 @@ namespace RealisticFiring.Core
             {
                 var torch = Torch > 0f ? 0.2f : 0f;
                 var pull = 1f + 4f * Smoothing.Clamp01(air / Math.Max(0.1f, parameters.MaxCombustionRate * FireModel.AirPerCoal));
-                var floor = Math.Max(AmbientTemperature, inputs.BoilerTemperature);
+                var floor = Math.Max(inputs.AirTemperature, inputs.BoilerTemperature);
                 BrickTemperature += (floor - BrickTemperature) * Math.Min(1f, pull * dt / BrickCoolTime) + torch * dt;
             }
         }
@@ -597,7 +613,7 @@ namespace RealisticFiring.Core
         {
             var steam = Smoothing.Clamp01(inputs.Heater) * SteamValveShare(valvePressure);
             HeaterSteamUsed = steam * HeaterSteam;
-            OilTemperature += (steam * HeaterWarming - (OilTemperature - AmbientTemperature) / OilCoolTime) * dt;
+            OilTemperature += (steam * HeaterWarming - (OilTemperature - inputs.AirTemperature) / OilCoolTime) * dt;
         }
 
         private static float Clean(float value, float fallback) => float.IsNaN(value) || float.IsInfinity(value) ? fallback : value;

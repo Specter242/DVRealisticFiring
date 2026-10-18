@@ -63,6 +63,9 @@ namespace RealisticFiring
         [Draw("Heat shimmer over the stack (custom smoke effects; restart required)")]
         public bool HeatShimmer = true;
 
+        [Draw("Season for the chimney's steam (the game has none; with DV Seasons running, its season's temperature is used instead): a summer afternoon's dry air shows little white, a damp dawn or the rain plenty, and winter the most", DrawType.ToggleGroup)]
+        public Core.SmokeSeason SmokeSeason = Core.SmokeSeason.Summer;
+
         [Header("Shovel")]
         [Draw("Coal per standard shovelful on supported coal locomotives, kg (0 = the locomotive's stock shovel size)", Min = 0, Precision = 1)]
         public float ShovelfulMass = 3f;
@@ -113,6 +116,9 @@ namespace RealisticFiring
         [Draw("Fireman's orders: show or hide his window (hold Alt to free the mouse and click it)")]
         public KeyBinding FiremanKey = Bind(KeyCode.F7);
 
+        [Draw("Plume test bed: show or hide it, to set the weather and the stack and tune the smoke (hold Alt to free the mouse)")]
+        public KeyBinding PlumeTestBedKey = Bind(KeyCode.F9);
+
         [Draw("Show what the fireman is doing at the top of the screen")]
         public bool ShowFiremanStatus = true;
 
@@ -149,6 +155,10 @@ namespace RealisticFiring
 
         // Log the fire on your loco every N seconds (0 = off).
         public int FireStatusLogInterval;
+
+        // The plume test bed's sliders set away from their defaults, as
+        // name=value pairs. Not in the menu.
+        public string PlumeTestBed = "";
 
         public override void Save(UnityModManager.ModEntry modEntry)
         {

@@ -30,13 +30,34 @@ namespace RealisticFiring.Core
 
         /// <summary>
         /// How much of a well-set fire's haze rides in the beats' steam, 0 to
-        /// 1: an oil fire's light haze leaves with its exhaust (a coal fire
-        /// shows its haze between beats only, its beats white steam).
+        /// 1: an oil fire's light haze leaves with its exhaust, and a coal
+        /// fire's fine ash and light smoke with its (<see cref="PlumeModel.CoalPuffHaze"/>).
         /// </summary>
         public float PuffHaze;
 
         /// <summary>The fire's heat over the most it makes, 0 to 1: how hot the gas leaving the stack is.</summary>
         public float HeatShare;
+
+        private float? steamWhiteness;
+        private float? waterWhiteness;
+
+        /// <summary>
+        /// How white the weather lets the exhaust's and blower's steam be
+        /// against the reference air (<see cref="SteamCloud.Whiteness"/>):
+        /// 0 in hot, dry air, about 3 in bitter cold. 1 unless set.
+        /// </summary>
+        public float SteamWhiteness
+        {
+            get => steamWhiteness ?? 1f;
+            set => steamWhiteness = value;
+        }
+
+        /// <summary>As <see cref="SteamWhiteness"/>, for the water a clean fire's own burning sends up its stack. 1 unless set.</summary>
+        public float WaterWhiteness
+        {
+            get => waterWhiteness ?? 1f;
+            set => waterWhiteness = value;
+        }
     }
 
     /// <summary>A particle color, 0 to 1 per channel.</summary>
@@ -147,8 +168,20 @@ namespace RealisticFiring.Core
         /// </summary>
         public float Buoyancy { get; set; } = 1f;
 
-        /// <summary>How long the exhaust steam takes to evaporate in the air, in s: longer in cold, damp air.</summary>
-        public float SteamLinger { get; set; } = 6f;
+ public float FlueGasMixing { get; set; } = 0.6f;
+
+        /// <summary>Multiplier on how fast the exhaust mixes into the air, and so how soon its white evaporates.</summary>
+        public float SteamMixing { get; set; } = 3f;
+
+ public float SteamForming { get; set; } = 1f;
+
+        /// <summary>The share of the train's speed its wake carries the plume's base with at the stack's lip (<see cref="PlumeRise.Wake(float, float, float)"/>).</summary>
+        public float WakeCarry { get; set; } = PlumeRise.WakeCarry;
+
+        /// <summary>The height the train's wake falls away over, in m.</summary>
+        public float WakeDepth { get; set; } = PlumeRise.WakeDepth;
+
+ public float CoalHaze { get; set; } = 0.5f;
 
         /// <summary>Multiplier on sparks; at 1 the hardest beat under full draft throws about two.</summary>
         public float Sparks { get; set; } = 0.25f;
@@ -223,8 +256,9 @@ namespace RealisticFiring.Core
             var haze = Clamp01(inputs.PuffHaze);
             // A puff is exhaust steam, darkened by the soot it carries and
             // tinted by the haze, which stays as the steam evaporates.
-            var smokeShare = darkness + (1f - darkness) * haze * PuffHazeSmoke;
             var smokeColor = SmokeOf(darkness, (1f - darkness) * haze * PuffHazeSmoke);
+            var (alpha, smokeShare) = Weathered(Lerp(tuning.SteamOpacity * ClearSteam(inputs), 0.8f, darkness),
+                darkness + (1f - darkness) * haze * PuffHazeSmoke, inputs.SteamWhiteness);
             return new Puff
             {
                 Speed = PuffSpeed(tuning, strength),
@@ -236,7 +270,7 @@ namespace RealisticFiring.Core
                     : 0,
                 LifetimeScale = 1f + HeavyLifetime * heavy,
                 Sparks = inputs.FireOn ? tuning.Sparks * 2f * Math.Max(0f, strength - 0.7f) / 0.3f * flow : 0f,
-                Color = Tinted(smokeShare, smokeColor, Lerp(tuning.SteamOpacity * ClearSteam(inputs), 0.8f, darkness)),
+                Color = Tinted(smokeShare, smokeColor, alpha),
                 SmokeShare = smokeShare,
                 SmokeColor = smokeColor,
             };
@@ -308,10 +342,15 @@ namespace RealisticFiring.Core
             var darkness = Darkness(tuning, Soot(inputs));
             var fireboxSmoke = inputs.FireOn ? Math.Max(0f, inputs.FireboxGas) + Math.Max(0f, inputs.FireboxSmokeOut) : 0f;
             var haze = tuning.HazeOpacity * (1f - Clamp01(inputs.ClearStack));
-            var opacity = Lerp(Lerp(haze, tuning.SteamOpacity * ClearSteam(inputs), steam), 0.7f, darkness);
             // The blower's stream is steam; a clean fire's own haze is part
-            // smoke, part the water its burning makes.
-            var smokeShare = darkness + (1f - darkness) * (1f - steam) * CleanHazeSmoke;
+            // smoke, part the water its burning makes, each as white as the
+            // weather lets it be.
+            var water = (1f - steam) * (1f - CleanHazeSmoke);
+            var whiteness = water + steam > 1e-4f
+                ? (water * inputs.WaterWhiteness + steam * inputs.SteamWhiteness) / (water + steam)
+                : inputs.SteamWhiteness;
+            var (opacity, smokeShare) = Weathered(Lerp(Lerp(haze, tuning.SteamOpacity * ClearSteam(inputs), steam), 0.7f, darkness),
+                darkness + (1f - darkness) * (1f - steam) * CleanHazeSmoke, whiteness);
             var smokeColor = SmokeOf(darkness, (1f - darkness) * (1f - steam) * CleanHazeSmoke);
             return new Haze
             {
@@ -329,6 +368,23 @@ namespace RealisticFiring.Core
         private static PlumeColor Tinted(float smokeShare, PlumeColor smokeColor, float alpha) =>
             Mix(Steam, smokeColor, SmokeTint(smokeShare), alpha);
 
+        /// <summary>
+        /// A parcel of <paramref name="opacity"/> in the reference air,
+        /// <paramref name="smokeShare"/> of its thickness smoke, in air that
+        /// makes its steam <paramref name="whiteness"/> as white: the steam's
+        /// optical depth scaled, the smoke's kept. Returns its opacity and
+        /// its smoke's share of its new thickness.
+        /// </summary>
+        public static (float Opacity, float SmokeShare) Weathered(float opacity, float smokeShare, float whiteness)
+        {
+            var depth = -(float)Math.Log(1f - Math.Min(0.98f, Math.Max(0f, opacity)));
+            var share = Clamp01(smokeShare);
+            var smoke = depth * share;
+            var steam = depth * (1f - share) * Math.Max(0f, whiteness);
+            var total = smoke + steam;
+            return (1f - (float)Math.Exp(-total), total > 1e-6f ? smoke / total : share);
+        }
+
         // A coal fire sends up no smoke to see under this soot, and clears
         // its stack fully with this share of the air through it passing
         // unburned beyond the design's 20 % excess.
@@ -345,14 +401,22 @@ namespace RealisticFiring.Core
         private const float SteamHidesShimmer = 0.7f;
         private const float BeatHidesShimmer = 0.8f;
 
+        /// <summary>
+        /// The haze a coal fire's beats carry (<see cref="PlumeInputs.PuffHaze"/>):
+        /// the tuning's, none from a clear stack (no smoke to see and air to spare).
+        /// </summary>
+        public static float CoalPuffHaze(PlumeTuning tuning, float clearStack) =>
+            Clamp01(tuning.CoalHaze) * (1f - Clamp01(clearStack));
+
  public static float Shimmer(PlumeTuning tuning, PlumeInputs inputs)
         {
             if (!inputs.FireOn)
                 return 0f;
             var hot = Clamp01((inputs.HeatShare - ShimmerFrom) / (ShimmerFull - ShimmerFrom));
             var clean = 1f - Darkness(tuning, Soot(inputs));
-            var steam = SteamThroughStack(inputs.TotalFlowNormalized);
-            var beat = BeatStrength(tuning, inputs.ExhaustPressure);
+            var white = Clamp01(inputs.SteamWhiteness);
+            var steam = SteamThroughStack(inputs.TotalFlowNormalized) * white;
+            var beat = BeatStrength(tuning, inputs.ExhaustPressure) * white;
             return Clamp01(Math.Max(0f, tuning.Shimmer) * hot * clean * (1f - SteamHidesShimmer * steam) * (1f - BeatHidesShimmer * beat));
         }
 

@@ -13,6 +13,15 @@ namespace RealisticFiring.Visuals
         private const float FadeIn = 0.4f;
         private const float FadeOut = 0.75f;
 
+        // A particle is held narrow (the jet's width) going faster than this
+        // through the air, and at its full size slower than this, in m/s.
+        private const float JetFast = 8f;
+        private const float JetSlow = 1.5f;
+
+        private const float FrayEdge = 0.82f;
+        private const float SoftEdge = 0.15f;
+        private const float MostThinGrowth = 2.2f;
+
         // A particle is drawn this share of the plume's width, and drifts out
         // from where it left the stack by up to this share of the plume's
         // widening (its rise's and the air's spread), so the particles fill it.
@@ -38,6 +47,10 @@ namespace RealisticFiring.Visuals
             public float Size;
             // When it began fading out, retired as the plume widened; below 0 not yet.
             public float RetiredAt;
+            // The white its steam makes in the air it left into (null: the frame's).
+            public SteamCloud Cloud;
+            // Emitted from the stack by the mod: shown at once, no fade in.
+            public bool FromStack;
         }
 
         private static readonly Color SteamColor = new Color(PlumeModel.Steam.R, PlumeModel.Steam.G, PlumeModel.Steam.B);
@@ -63,8 +76,24 @@ namespace RealisticFiring.Visuals
             /// <summary>The train's velocity, whose wake carries the plume's base with it.</summary>
             public Vector3 Train;
 
-            /// <summary>How long the exhaust steam takes to evaporate, s.</summary>
-            public float SteamLinger;
+            /// <summary>The white the frame's steam makes in the air, for a particle that brought none.</summary>
+            public SteamCloud Cloud;
+
+            /// <summary>Multiplier on how fast the steam mixes into the air (<see cref="PlumeTuning.SteamMixing"/>).</summary>
+            public float Mixing;
+
+            /// <summary>Multiplier on how fast its white forms above the stack (<see cref="PlumeTuning.SteamForming"/>).</summary>
+            public float Forming;
+
+            /// <summary>The train's wake: its share of the train's speed at the lip, and the height it falls away over, m.</summary>
+            public float WakeCarry;
+            public float WakeDepth;
+
+            /// <summary>How narrow a particle is held while it goes fast through the air, against its size, 0 to 1.</summary>
+            public float JetWidth;
+
+            /// <summary>The smoke shader's fraying, 0 to 1: as a particle thins its thin edges go first.</summary>
+            public float Fray;
 
             /// <summary>How hard the plume's eddies stir it, × (0 none).</summary>
             public float Eddies;
@@ -191,7 +220,7 @@ namespace RealisticFiring.Visuals
         /// Records what a particle about to be emitted with <paramref name="seed"/>
         /// carries: its steam and smoke, and the color of its smoke.
         /// </summary>
-        public void Expect(uint seed, Color color, float size, float smokeShare, Color smokeColor) =>
+        public void Expect(uint seed, Color color, float size, float smokeShare, Color smokeColor, SteamCloud cloud) =>
             parcels.Expect(seed, new Parcel
             {
                 Thickness = PlumeRise.Parcel(color.a, smokeShare),
@@ -199,6 +228,8 @@ namespace RealisticFiring.Visuals
                 SmokeColor = smokeColor,
                 Size = size,
                 RetiredAt = -1f,
+                Cloud = cloud,
+                FromStack = true,
             });
 
         public void Begin(Air frame)
@@ -220,11 +251,12 @@ namespace RealisticFiring.Visuals
 
         /// <summary>
         /// Carries <paramref name="particle"/>, <paramref name="height"/> m
-        /// above the stack and drawn no wider than <paramref name="widest"/>;
+        /// above the stack and drawn no narrower than <paramref name="least"/>
+        /// (the bore, at the lip) and no wider than <paramref name="widest"/>;
         /// still <paramref name="inStack"/>, only its size and fade (the
         /// caller moves it). False when it is retired.
         /// </summary>
-        public bool Carry(ref ParticleSystem.Particle particle, float height, float widest, bool inStack)
+        public bool Carry(ref ParticleSystem.Particle particle, float height, float least, float widest, bool inStack)
         {
             // Its turn this frame, or young: else the game moves it as it is.
             var age = Mathf.Max(0f, particle.startLifetime - particle.remainingLifetime);
@@ -253,9 +285,18 @@ namespace RealisticFiring.Visuals
             var shown = 1f;
             var color = parcel.Color;
             var leaving = 1f;
+            var cloud = parcel.Cloud ?? air.Cloud;
             if (inStack)
             {
-                particle.startSize = Mathf.Min(grown, widest);
+                // Moving with the stack: its speed through the air is its rise.
+                var narrow = JetNarrowing((particle.velocity - air.Train).magnitude);
+                particle.startSize = Mathf.Min(Mathf.Max(grown * narrow, least), widest);
+                // Its smoke shows at once, its white only as it forms.
+                var formed = PlumeRise.SteamLeft(parcel.Thickness, cloud, age, air.Speed, air.Mixing, air.Forming);
+                var whole = formed + parcel.Thickness.SmokeDepth;
+                shown = PlumeRise.OpacityOf(whole, 0f);
+                if (whole > 1e-4f)
+                    color = Color.Lerp(SteamColor, parcel.SmokeColor, PlumeModel.SmokeTint(parcel.Thickness.SmokeDepth / whole));
                 if (onTurn)
                     stats.InStack++;
             }
@@ -263,7 +304,7 @@ namespace RealisticFiring.Visuals
             {
                 // Near the train its wake carries the plume along, and the air
                 // goes past it the slower.
-                var wake = PlumeRise.Wake(height);
+                var wake = PlumeRise.Wake(height, air.WakeCarry, air.WakeDepth);
                 var airSpeed = air.Speed * (1f - wake);
                 var still = air.Still + (air.Train - air.Still) * wake;
                 // Under a tunnel's roof, a train in the bore pushes its air along.
@@ -283,7 +324,15 @@ namespace RealisticFiring.Visuals
                 var outward = (across * Mathf.Cos(angle) + along * Mathf.Sin(angle)) * (share * widening);
                 var stir = Stir(particle.position, height, rise) * air.Eddies;
                 var spread = PlumeRise.SpreadWidth(age, air.Speed);
-                var size = Mathf.Min(Mathf.Max(grown, PlumeRise.PlumeWidth(height, spread) * SizePerWidth), widest);
+                // White steam tinted by its smoke, turning the smoke's color
+                // as the steam evaporates (as its puff was tinted at the stack).
+                var steam = PlumeRise.SteamLeft(parcel.Thickness, cloud, age, air.Speed, air.Mixing, air.Forming);
+                var depth = steam + parcel.Thickness.SmokeDepth;
+                shown = PlumeRise.OpacityOf(depth, height, spread);
+                if (depth > 1e-4f)
+                    color = Color.Lerp(SteamColor, parcel.SmokeColor, PlumeModel.SmokeTint(parcel.Thickness.SmokeDepth / depth));
+                var narrow = JetNarrowing((particle.velocity - still).magnitude);
+                var size = Mathf.Min(Mathf.Max(Mathf.Max(grown, PlumeRise.PlumeWidth(height, spread) * SizePerWidth) * narrow, least) * Thinning(shown), widest);
                 if (under)
                     size = Mathf.Min(size, TunnelSmoke.WidestParticle);
                 else
@@ -294,13 +343,6 @@ namespace RealisticFiring.Visuals
                 particle.startSize = size;
                 if (under)
                     UnderRoof(ref particle, roof, still, rise, outward + stir, age, keep);
-                // White steam tinted by its smoke, turning the smoke's color
-                // as the steam evaporates (as its puff was tinted at the stack).
-                var steam = PlumeRise.SteamLeft(parcel.Thickness, age, air.SteamLinger);
-                var depth = steam + parcel.Thickness.SmokeDepth;
-                shown = PlumeRise.OpacityOf(depth, height, spread);
-                if (depth > 1e-4f)
-                    color = Color.Lerp(SteamColor, parcel.SmokeColor, PlumeModel.SmokeTint(parcel.Thickness.SmokeDepth / depth));
                 // Fewer, wider particles carry the plume as it widens: one past
                 // its share fades out, then goes; one too thin to see goes at once.
                 if (parcel.RetiredAt < 0f && Hash(particle.randomSeed) > PlumeRise.Survival(height, spread))
@@ -310,7 +352,10 @@ namespace RealisticFiring.Visuals
                 }
                 if (parcel.RetiredAt >= 0f)
                     leaving = 1f - (Time.time - parcel.RetiredAt) / FadeOut;
-                if (age > FadeIn && shown < PlumeRise.Invisible || leaving <= 0f)
+                // Too thin to see goes, unless its white is still forming.
+                var formedAll = parcel.Thickness.SteamDepth < 1e-3f || cloud == null
+                                || cloud.PastThickest(age, air.Speed, air.Mixing, air.Forming);
+                if (age > FadeIn && shown < PlumeRise.Invisible && formedAll || leaving <= 0f)
                 {
                     particle.remainingLifetime = 0f;
                     if (onTurn)
@@ -331,8 +376,8 @@ namespace RealisticFiring.Visuals
                     }
                 }
             }
-            var fade = Mathf.Clamp01(age / FadeIn);
-            particle.startColor = new Color(color.r, color.g, color.b, (inStack ? parcel.Color.a : shown) * fade * leaving);
+            var fade = parcel.FromStack ? 1f : Mathf.Clamp01(age / FadeIn);
+            particle.startColor = new Color(color.r, color.g, color.b, shown * fade * leaving);
             return true;
         }
 
@@ -368,6 +413,16 @@ namespace RealisticFiring.Visuals
             if (outwards > 0f)
                 particle.velocity -= roof.Across * (sign * outwards);
         }
+
+        // How much larger a particle of opacity <paramref name="shown"/> is
+        // drawn, to keep the width it shows as its edges go.
+        private float Thinning(float shown) =>
+            Mathf.Min(MostThinGrowth, 1f / Mathf.Max(0.05f, 1f - (FrayEdge * Mathf.Clamp01(air.Fray) + SoftEdge) * (1f - Mathf.Clamp01(shown))));
+
+        // While a particle goes fast through the air it is held narrow, the
+        // jet's width; slowing, it swells to its size.
+        private float JetNarrowing(float speed) =>
+            Mathf.Lerp(1f, Mathf.Clamp01(air.JetWidth), Mathf.Clamp01((speed - JetSlow) / (JetFast - JetSlow)));
 
         // The plume's eddies at a point: a smooth field drifting through the
         // plume, its whorls as big as half its width there.

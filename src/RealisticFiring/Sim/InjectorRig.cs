@@ -21,8 +21,11 @@ namespace RealisticFiring.Sim
     /// </summary>
     internal sealed class InjectorRig
     {
-        /// <summary>The game does not model tender water temperature.</summary>
-        public const float TenderWaterTemperature = 15f;
+        /// <summary>
+        /// The tender's water, °C (<see cref="Ambient.TenderWater"/>): DV
+        /// Seasons' air, kept liquid, else 15 °C. The game does not model it.
+        /// </summary>
+        public static float TenderWaterTemperature => Ambient.TenderWater;
 
         /// <summary>A two-man boiler hand pump, from the tender, in kg/s while worked.</summary>
         public const float HandPumpRate = 1.5f;
@@ -738,6 +741,8 @@ namespace RealisticFiring.Sim
             foreach (var circuit in Circuits)
             {
                 circuit.Injector.Spec.TechniqueAndHeat = Main.Settings.InjectorTechniqueAndHeat;
+                // A shut injector cools to the air's temperature.
+                circuit.Injector.Spec.AmbientTemperature = Ambient.Air;
                 var flow = circuit.Injector.Step(delta, new InjectorInputs
                 {
                     SteamValve = broken ? 0f : (circuit.SteamValve ?? circuit.Control).Value,

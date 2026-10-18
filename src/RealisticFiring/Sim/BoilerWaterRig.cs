@@ -54,8 +54,9 @@ namespace RealisticFiring.Sim
         private const float WearPerLoss = 2f;
         private const float LeastWear = 1e-4f;
 
-        /// <summary>The air's temperature, °C, toward which the stock boiler cools, and a cold boiler's water.</summary>
-        public const float AmbientWater = 25f;
+        // A cold boiler's water is the air's (Ambient.BoilerWater): the
+        // game's 25 °C, toward which the stock boiler cools, or DV Seasons'.
+        internal static float AmbientWater => Ambient.BoilerWater;
 
         // A boiler at no more than this pressure, bar absolute, is at the
         // atmosphere's: cold, or not yet boiling. Below this temperature, °C,

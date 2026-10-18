@@ -305,6 +305,7 @@ namespace RealisticFiring.Sim
                 Exhaust = exhaust,
                 BoilerPressure = boilerPressure.Value,
                 BoilerTemperature = boilerTemperature.Value,
+                AirTemperature = Ambient.TenderOil,
                 TenderFuel = Feed != null ? Feed.TenderFuel : 0f,
                 IntakeWater = intakeWaterContent.Value,
                 StartupMultiplier = StartupMultiplier(),
@@ -377,7 +378,7 @@ namespace RealisticFiring.Sim
             exhaustSim = flow?.OrderedSimComps.OfType<SteamExhaust>().FirstOrDefault();
             // A loco spawned cold has cold oil and brick.
             if (!restored && !Model.FireOn && boilerPressure.Value < 2f)
-                Model.Restore(false, Mathf.Max(OilFire.ColdBrick, boilerTemperature.Value), OilFire.AmbientTemperature, Model.FlueSoot);
+                Model.Restore(false, Mathf.Max(OilFire.ColdBrick, boilerTemperature.Value), Ambient.TenderOil, Model.FlueSoot);
             if (Main.Settings.LogFireboxCreation)
                 Main.Mod?.Logger.Log($"{Car?.ID}: realistic oil burner '{id}': up to {Model.MaxFeed:F2} kg/s of oil (firebox kg), " +
                                      $"firing valve from {(Feed != null ? $"'{Feed.ControlName}'" : "nothing: no feed found")}, " +

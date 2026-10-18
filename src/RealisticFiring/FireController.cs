@@ -90,6 +90,8 @@ namespace RealisticFiring
             }
             if (settings.ToggleOverlayKey.Down())
                 FireOverlay.Step(settings);
+            if (settings.PlumeTestBedKey.Down())
+                Visuals.PlumeTestBed.Toggle();
 
             var withFireman = FiremanRig.TryGetTended(PlayerManager.Car, out _);
             if (settings.FiremanKey.Down())
@@ -552,6 +554,7 @@ namespace RealisticFiring
                 DrawLabel(notice, NoticeOffset, new Color(1f, 0.85f, 0.5f));
             if (FiremanRig.TryGetTended(PlayerManager.Car, out var fireman))
                 firemanPanel.Draw(fireman);
+            Visuals.PlumeTestBed.Draw();
             if (!FireboxRegistry.TryGetTended(PlayerManager.Car, out var firebox))
             {
                 if (Main.Settings.ShowOverlay && RealisticOilFirebox.TryGetTended(PlayerManager.Car, out var oil))

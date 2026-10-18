@@ -78,6 +78,7 @@ namespace RealisticFiring
             if (changed)
                 Settings.Save(modEntry);
             Core.FireTuning.Default.ClinkerTendency = Settings.ClinkerTendency;
+            Visuals.PlumeTestBed.Restore(Settings.PlumeTestBed);
             session = Session.From(Settings);
             ReplacementEnabled = session.RealisticFireboxes;
             RealisticSmokeEnabled = session.RealisticSmoke;

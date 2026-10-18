@@ -69,8 +69,9 @@ namespace RealisticFiring.Core.Tests;
     [Fact]
     public void TheTrainsWakeCarriesThePlumesBaseOnly()
     {
-        Assert.Equal(0.5f, PlumeRise.Wake(0f), 3);
-        Assert.True(PlumeRise.Wake(20f) < 0.05f);
+        Assert.Equal(0.3f, PlumeRise.Wake(0f), 3);
+        Assert.True(PlumeRise.Wake(3f) < 0.05f, $"{PlumeRise.Wake(3f):F2} of the train's speed 3 m up");
+        Assert.True(PlumeRise.Wake(20f) < 0.001f);
     }
 
     [Fact]
@@ -92,14 +93,18 @@ namespace RealisticFiring.Core.Tests;
     {
         var black = PlumeRise.Parcel(0.8f, 1f);
         var steam = PlumeRise.Parcel(0.7f, 0f);
+        var mild = SteamCloud.For(new PlumeAir(10f, 0.8f), SteamCloud.ReferenceFlueGas);
+        var raw = SteamCloud.For(new PlumeAir(1f, 0.95f), SteamCloud.ReferenceFlueGas);
         // A minute on, 300 m up: the smoke still shows, the steam is gone.
-        Assert.True(PlumeRise.Opacity(black, 60f, 300f, 4f) > 0.08f);
-        Assert.True(PlumeRise.Opacity(steam, 60f, 300f, 4f) < PlumeRise.Invisible);
-        // Near the stack both show as they left.
-        Assert.Equal(0.8f, PlumeRise.Opacity(black, 0f, 0f, 4f), 2);
-        Assert.Equal(0.7f, PlumeRise.Opacity(steam, 0f, 0f, 4f), 2);
+        Assert.True(PlumeRise.Opacity(black, mild, 60f, 300f, 5f) > 0.08f);
+        Assert.True(PlumeRise.Opacity(steam, mild, 60f, 300f, 5f) < PlumeRise.Invisible);
+        // At the lip the smoke shows as it left; the steam's white forms a
+        // little way up, and shows as it left once formed.
+        Assert.Equal(0.8f, PlumeRise.Opacity(black, mild, 0f, 0f, 5f), 2);
+        Assert.True(PlumeRise.Opacity(steam, mild, 0f, 0f, 5f) < 0.1f);
+        Assert.InRange(PlumeRise.Opacity(steam, mild, 1f, 2f, 5f), 0.55f, 0.7f);
         // Cold, damp air keeps the steam longer.
-        Assert.True(PlumeRise.Opacity(steam, 10f, 20f, 20f) > PlumeRise.Opacity(steam, 10f, 20f, 4f));
+        Assert.True(PlumeRise.Opacity(steam, raw, 10f, 20f, 5f) > PlumeRise.Opacity(steam, mild, 10f, 20f, 5f) + 0.1f);
     }
 
     [Fact]

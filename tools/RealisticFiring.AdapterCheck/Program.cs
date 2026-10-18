@@ -198,6 +198,8 @@ namespace RealisticFiring.AdapterCheck
                     CheckMultiplayerCabHooks(path);
                 else if (Path.GetFileName(path) == Items.SkinManagerFireIronLoading.AssemblyName + ".dll")
                     CheckSkinManagerFireIron(path);
+                else if (Path.GetFileName(path) == Sim.SeasonsMod.AssemblyName + ".dll")
+                    CheckDvSeasons(path);
             }
             Console.WriteLine(failures == 0 ? "All adapter checks passed" : $"{failures} adapter checks failed");
             return failures == 0 ? 0 : 1;
@@ -2381,6 +2383,40 @@ namespace RealisticFiring.AdapterCheck
         // game's Managed folder and Unity Mod Manager's, and the other mods'
         // folders, without adding the game's mscorlib to MONO_PATH and
         // replacing Mono's own core library.
+        // DV Seasons: the state the chimney's steam and the mod's ambient read
+        // by reflection is where SeasonsMod looks for it, and the stock
+        // boiler's cooling it retargets still has its one 25 °C, so a cold
+        // boiler matches what the stock boiler cools toward.
+        private static void CheckDvSeasons(string path)
+        {
+            var resolve = ModResolver(path);
+            AppDomain.CurrentDomain.AssemblyResolve += resolve;
+            try
+            {
+                var assembly = Assembly.LoadFrom(path);
+                var (runtime, currentState) = Sim.SeasonsMod.Resolve(assembly.GetType(Sim.SeasonsMod.MainType));
+                var state = currentState?.PropertyType;
+                Check(runtime != null && currentState != null && state?.FullName == Sim.SeasonsMod.StateType
+                      && state.GetProperty(Sim.SeasonsMod.TemperatureProperty)?.PropertyType == typeof(float)
+                      && new[] { "Current", "Next", "Transition", "SnowAmount" }.All(p => state.GetProperty(p) != null),
+                    $"DV Seasons (assembly {assembly.GetName().Version}): its runtime's current state and temperature are where the mod reads them");
+                var cooling = HarmonyLib.AccessTools.Method(typeof(Boiler), "SimulateSteamConsumption");
+                var ambient = cooling != null
+                    ? HarmonyLib.PatchProcessor.GetOriginalInstructions(cooling)
+                        .Count(i => i.opcode == System.Reflection.Emit.OpCodes.Ldc_R4 && i.operand is float f && Math.Abs(f - SimConsts.OUTSIDE_TEMPERATURE) < 1e-4f)
+                    : 0;
+                Check(ambient == 1, "the stock boiler cools toward one outside temperature, which DV Seasons retargets and the mod's cold boiler follows");
+            }
+            catch (Exception e)
+            {
+                Check(false, $"DV Seasons could not be checked: {e.GetType().Name}: {e.Message}");
+            }
+            finally
+            {
+                AppDomain.CurrentDomain.AssemblyResolve -= resolve;
+            }
+        }
+
         private static ResolveEventHandler ModResolver(string path)
         {
             var modFolder = Path.GetDirectoryName(path);

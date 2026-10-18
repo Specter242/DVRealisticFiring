@@ -45,11 +45,10 @@ namespace RealisticFiring.Core
         // standing engine's plume over from the stack.
         private const float CalmAir = 1f;
 
-        // The air the train drags along carries the plume's base with it:
-        // this share of the train's speed at the stack's lip, falling away
-        // over this height, in m.
-        private const float WakeCarry = 0.5f;
-        private const float WakeDepth = 5f;
+ public const float WakeCarry = 0.3f;
+
+        /// <summary>The height over which the train's wake falls away, m.</summary>
+        public const float WakeDepth = 1.5f;
 
  public const float WidthPerHeight = 0.3f;
 
@@ -107,7 +106,15 @@ namespace RealisticFiring.Core
         /// plume with, <paramref name="height"/> m above the stack: it lifts
         /// over the train before it streams back.
         /// </summary>
-        public static float Wake(float height) => WakeCarry * (float)Math.Exp(-Math.Max(0f, height) / WakeDepth);
+        public static float Wake(float height) => Wake(height, WakeCarry, WakeDepth);
+
+        /// <summary>
+        /// The share of the train's speed its wake carries the plume with,
+        /// <paramref name="height"/> m above the stack: <paramref name="carry"/>
+        /// at the lip, falling away over <paramref name="depth"/> m.
+        /// </summary>
+        public static float Wake(float height, float carry, float depth) =>
+            Math.Max(0f, carry) * (float)Math.Exp(-Math.Max(0f, height) / Math.Max(0.05f, depth));
 
         /// <summary>The plume's width <paramref name="height"/> m above the stack, in m.</summary>
         public static float Width(float height) => WidthPerHeight * (Math.Max(0f, height) + VirtualSource);
@@ -172,15 +179,20 @@ namespace RealisticFiring.Core
 
         /// <summary>
         /// The parcel's opacity <paramref name="age"/> s after it left the
-        /// stack, now <paramref name="height"/> m above it, its steam lasting
-        /// <paramref name="steamLinger"/> s as it evaporates.
+        /// stack, now <paramref name="height"/> m above it, its steam's white
+        /// <paramref name="cloud"/> evaporating as it mixes into the air going
+        /// past at <paramref name="airSpeed"/> m/s (<see cref="SteamCloud"/>).
         /// </summary>
-        public static float Opacity(PlumeParcel parcel, float age, float height, float steamLinger) =>
-            OpacityOf(SteamLeft(parcel, age, steamLinger) + parcel.SmokeDepth, height);
+        public static float Opacity(PlumeParcel parcel, SteamCloud cloud, float age, float height, float airSpeed, float mixing = 1f, float forming = 1f) =>
+            OpacityOf(SteamLeft(parcel, cloud, age, airSpeed, mixing, forming) + parcel.SmokeDepth, height);
 
-        /// <summary>The parcel's steam still unevaporated <paramref name="age"/> s on, as an optical depth at the stack.</summary>
-        public static float SteamLeft(PlumeParcel parcel, float age, float steamLinger) =>
-            parcel.SteamDepth * (float)Math.Exp(-Math.Max(0f, age) / Math.Max(0.1f, steamLinger));
+        /// <summary>
+        /// The parcel's white steam <paramref name="age"/> s on, formed and
+        /// not yet evaporated (<see cref="SteamCloud.Left(float, float, float, float)"/>),
+        /// as an optical depth at the stack.
+        /// </summary>
+        public static float SteamLeft(PlumeParcel parcel, SteamCloud cloud, float age, float airSpeed, float mixing = 1f, float forming = 1f) =>
+            cloud == null ? parcel.SteamDepth : parcel.SteamDepth * cloud.Left(age, airSpeed, mixing, forming);
 
         /// <summary>The opacity of <paramref name="depth"/> (at the stack) thinned to <paramref name="height"/> and spread to <paramref name="spreadWidth"/>.</summary>
         public static float OpacityOf(float depth, float height, float spreadWidth = 0f) =>
