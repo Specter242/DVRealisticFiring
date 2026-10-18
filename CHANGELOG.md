@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.13.5 (2026-10-18)
+
+- Working lightly (under 40 % of full work heard), the fireman closes the damper over his mark building for work ahead too (`AutoFireman.Blower`, `LightWork`); standing builds keep it open for the blower.
+
 ## 1.13.4 (2026-10-18)
 
 - The plume tuning window that came along in 1.13.3 is off: no menu entry or default key (`Settings.DevPlumeTestBedKey`, unbound), and its saved tuning is not restored unless that key is bound.

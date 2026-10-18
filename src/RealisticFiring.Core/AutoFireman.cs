@@ -50,6 +50,9 @@ namespace RealisticFiring.Core
         // Blower: standing or drifting, raising steam or building the fire,
         // during a round standing, and near the safety valve.
         private const float IdleBlower = 0.3f;
+
+        /// <summary>Under this much work heard the damper checks the fire over his mark, as standing.</summary>
+        public const float LightWork = 0.4f;
         private const float KeepAliveBlower = 0.15f;
         private const float RaisingBlower = 1f;
         private const float FiringBlower = 0.5f;
@@ -296,7 +299,12 @@ namespace RealisticFiring.Core
         private void Blower(FireModel fire, FiremanReadings r, Judgement j, ref FiremanActions actions)
         {
             actions.Damper = 1f;
-            if (!fire.FireOn || j.Working)
+            if (!fire.FireOn)
+                return;
+            var smoking = fire.SootDensity > BlackSmoke;
+            if (j.Working ? HeardWork < LightWork : !j.Building)
+                actions.Damper = Clamp(1f - (r.Pressure - PressureTarget) / DamperRange, smoking ? SmokeDamper : 0f, 1f);
+            if (j.Working)
                 return;
             var blower = Mode == FiremanMode.KeepAlive ? KeepAliveBlower : IdleBlower;
             if (r.Pressure >= r.SafetyValve - SoakMargin)
@@ -306,15 +314,9 @@ namespace RealisticFiring.Core
             if (actions.Door > DoorCrack)
                 blower = Math.Max(blower, FiringBlower);
             // A black stack standing wants draft to burn its smoke.
-            var smoking = fire.SootDensity > BlackSmoke;
             if (smoking)
                 blower = Math.Max(blower, IdleBlower);
             actions.Blower = blower;
-
-            // Standing or drifting, the damper holds the fire back from
-            // blowing off, unless he is building it for work ahead.
-            if (!j.Building)
-                actions.Damper = Clamp(1f - (r.Pressure - PressureTarget) / DamperRange, smoking ? SmokeDamper : 0f, 1f);
         }
 
         private void Grate(float dt, FireModel fire, ref FiremanActions actions)

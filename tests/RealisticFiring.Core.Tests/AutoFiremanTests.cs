@@ -53,6 +53,30 @@ namespace RealisticFiring.Core.Tests;
         Assert.True(engine.Fire.FireOn);
     }
 
+    [Theory]
+    [InlineData(1.2f, 3.7f, 120f)]
+    [InlineData(1.2f, 4.5f, 90f)]
+    [InlineData(1.8f, 4.5f, 120f)]
+    public void BuildingForAClimbWhileWorkingLightlyHeDoesNotBlowOff(float crawl, float climb, float approach)
+    {
+        var engine = new Footplate(coal: 20f, pressure: 14.2f);
+        engine.Standing = true;
+        engine.Run(60f);
+        engine.Standing = false;
+        engine.EngineSteam = crawl;
+        engine.SteamAhead = climb;
+        engine.Run(approach);
+        var blownApproach = engine.BlownOff;
+        engine.EngineSteam = climb;
+        var low = float.MaxValue;
+        engine.Run(300f, e => low = Math.Min(low, e.Pressure));
+        var target = AutoFireman.PressureFor(FiremanMode.Road, engine.SafetyValve);
+        output.WriteLine($"blown off {blownApproach:F0} kg approaching, {engine.BlownOff - blownApproach:F0} on the climb; climb low {low:F2} (target {target:F2})");
+        // It blew off 86 to 229 kg; the climb's low was 13.3 to 13.8 bar.
+        Assert.True(engine.BlownOff < 60f, $"blew off {engine.BlownOff:F0} kg");
+        Assert.True(low >= target - 1.2f, $"pressure fell to {low:F2}");
+    }
+
     [Fact]
     public void FiringAheadOfAClimbHoldsThePressureBetterThanFollowingIt()
     {
