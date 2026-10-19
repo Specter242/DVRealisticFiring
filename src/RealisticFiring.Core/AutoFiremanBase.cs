@@ -89,6 +89,18 @@ namespace RealisticFiring.Core
         /// the water to spend.
         /// </summary>
         public const float GlassLeast = 0.3f;
+
+        /// <summary>
+        /// On the grades ahead he keeps the glass in sight: reading no higher
+        /// than this on the steepest climb, and no lower than
+        /// <see cref="GlassLeast"/> on the steepest descent, where the water
+        /// runs forward off the crown sheet (the crown sheet first). He judges
+        /// the water as it would stand level (<see cref="FiremanReadings.GlassTilt"/>
+        /// taken off), which is what primes the cylinders; on a descent he had
+        /// filled to his usual reading, and the glass ran full once the road
+        /// levelled (a player's screenshot, 2026-10-18).
+        /// </summary>
+        public const float GlassTop = 0.9f;
         public const float SacrificeFromWork = 0.5f;
         public const float SacrificeFrom = 0.5f;
         public const float SacrificeOver = 1.5f;
@@ -196,6 +208,7 @@ namespace RealisticFiring.Core
         private float steamOffFor;
         private bool feeding;
         private float feedingFor = LeastRest;
+        // His reading of the glass, as the water would stand level.
         private float seenGlass = float.NaN;
         private float glassTrend;
         private float workAtLever;
@@ -403,11 +416,13 @@ namespace RealisticFiring.Core
         /// <summary>The water: the glass and its trend, the injector or pump, and blowdowns.</summary>
         protected void Water(float dt, FiremanReadings r, Judgement j, ref FiremanActions actions)
         {
-            // He reads the glass through its bobbing and watches which way it goes.
+            // He reads the glass through its bobbing and watches which way it
+            // goes, as the water would stand level: he knows the grade he is on.
+            var level = r.Glass - r.GlassTilt;
             if (float.IsNaN(seenGlass))
-                seenGlass = r.Glass;
+                seenGlass = level;
             var before = seenGlass;
-            seenGlass += (r.Glass - seenGlass) * Math.Min(1f, dt / GlassReadTime);
+            seenGlass += (level - seenGlass) * Math.Min(1f, dt / GlassReadTime);
             glassTrend += ((seenGlass - before) / dt - glassTrend) * Math.Min(1f, dt / TrendTime);
 
             var hardAhead = call == FiremanCall.HeavyAhead || j.Building || r.WorkAhead > SacrificeFromWork && Mode == FiremanMode.Road;
@@ -425,7 +440,12 @@ namespace RealisticFiring.Core
                 soaking = false;
             if (soaking)
                 goal = Math.Max(goal, GlassSoak);
-            GlassTarget = goal;
+            // The glass in sight on the road ahead, the crown sheet covered first.
+            var up = Math.Max(0f, Math.Max(r.GlassTilt, r.GlassTiltHigh));
+            var down = Math.Min(0f, Math.Min(r.GlassTilt, r.GlassTiltLow));
+            goal = Math.Max(Math.Min(goal, GlassTop - up), GlassLeast - down);
+            // Where he holds it as the glass reads it here.
+            GlassTarget = goal + r.GlassTilt;
 
             // Once the engine has run a while with steam on, a fitted pump does
             // the feeding, light work or hard; standing or drifting, the

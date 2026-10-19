@@ -167,6 +167,27 @@ namespace RealisticFiring.Sim
         /// <summary>The level the glass shows, foam included.</summary>
         public float GlassLevel => boiler.waterLevelReadOut.Value;
 
+        // The game's boiler shifts its glass by its length over its diameter,
+        // halved, times the tangent of its tilt (Boiler.SimulateWaterLevel).
+        private static readonly AccessTools.FieldRef<Boiler, float> AspectRatio =
+            AccessTools.FieldRefAccess<Boiler, float>("aspectRatio");
+
+        /// <summary>
+        /// How far the glass of <paramref name="boiler"/> moves for a grade of
+        /// 1 (rise over run) under the engine's front, in shares of a glass
+        /// spanning <paramref name="span"/> of the boiler's height.
+        /// </summary>
+        public static float GlassPerGrade(Boiler boiler, float span) =>
+            boiler != null && span > 1e-3f ? 0.5f * AspectRatio(boiler) / span : 0f;
+
+        /// <summary>
+        /// How much higher the glass of <paramref name="boiler"/> reads than
+        /// the water stands level, from its tilt now, in shares of a glass
+        /// spanning <paramref name="span"/>: the game's own shift.
+        /// </summary>
+        public static float GlassTiltNow(Boiler boiler, float span) =>
+            boiler != null ? GlassPerGrade(boiler, span) * (float)System.Math.Tan(-boiler.angleExtIn.Value * System.Math.PI / 180.0) : 0f;
+
         public float CrownSheetLevelNormalized => CrownSheetLevel(boiler);
 
         /// <summary>What blows through a melted plug into the firebox, in kg/s.</summary>
@@ -675,7 +696,7 @@ namespace RealisticFiring.Sim
                 PendingSaves[boiler] = data;
         }
 
-        private void Log(string text) => Main.Mod?.Logger.Log($"{Car?.ID}: {text}");
+        private void Log(string text) => Main.Mod?.Logger.Log($"{Car.LogName()}: {text}");
 
         /// <summary>Gives <paramref name="boiler"/> a rig directly, for checks outside the game.</summary>
         internal static BoilerWaterRig Create(Boiler boiler, ReciprocatingSteamEngine engine, Guard guard)

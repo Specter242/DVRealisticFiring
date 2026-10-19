@@ -85,7 +85,7 @@ namespace RealisticFiring
         public bool ShowAimKeypad = true;
 
         [Header("Brakes")]
-        [Draw("Click the independent brake lever to bail off: the engine's own brakes release from a train brake application, the train's stay on (every locomotive)")]
+        [Draw("Click the independent brake lever to bail off (in VR, hold it and press the trigger): the engine's own brakes release from a train brake application, the train's stay on (every locomotive)")]
         public bool ClickToBailOff = true;
 
         [Header("Controls")]

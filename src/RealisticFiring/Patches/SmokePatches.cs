@@ -31,7 +31,7 @@ namespace RealisticFiring.Patches
                     return;
                 // Car numbers are assigned after the sim graph is built.
                 if (Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{(string.IsNullOrEmpty(car.ID) ? car.carLivery.id : car.ID)}: {result}");
+                    Main.Mod.Logger.Log($"{car.LogName()}: {result}");
             }
             catch (Exception e)
             {

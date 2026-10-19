@@ -155,6 +155,8 @@ namespace RealisticFiring.AdapterCheck
             CheckLms8FInjectors(gameParams);
             CheckJk3Firebox(gameParams);
             CheckBoilerWater();
+            CheckGlassTilt();
+            CheckVrBailButton();
             CheckStoker(gameParams, def);
             CheckOilBurner(gameParams);
             CheckClientMirror(gameParams, def);
@@ -666,6 +668,62 @@ namespace RealisticFiring.AdapterCheck
         // its hooks run between the stock steps in tick order as the patches do
         // (the stock damage step needs Unity's curves, so its crown sheet test
         // is read instead).
+        // In VR the trigger bails off while the independent brake lever is
+        // held (IndependentBailClick): the game's own use of a held object.
+        // What it rests on: VRTK's usable flags and use event, the game's use
+        // as the trigger is let go while holding, and its narrowing of the use
+        // to the hand that grabbed. Not run: no VR here.
+        private static void CheckVrBailButton()
+        {
+            const BindingFlags any = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            var interactable = typeof(VRTK.VRTK_InteractableObject);
+            var flags = interactable.GetField("isUsable") != null && interactable.GetField("useOnlyIfGrabbed") != null
+                        && interactable.GetEvent("InteractableObjectUsed") != null;
+            var gameUse = typeof(DV.VRTK_Extensions.VRTK_InteractUse_DV);
+            var releaseUse = gameUse.GetMethod("OnUseButtonReleased", any, null, new[] { typeof(object), typeof(VRTK.ControllerInteractionEventArgs) }, null) != null;
+            var grabbedHand = typeof(DV.VRTK_Extensions.VRTK_InteractableObject_DV).GetMethod("OnInteractableObjectGrabbed", any) != null;
+            var lever = typeof(DV.CabControls.VRTK.LeverVRTK).IsSubclassOf(typeof(DV.CabControls.ControlImplBase))
+                        && typeof(DV.CabControls.VRTK.VRTK_ControlImplBaseInteractableObject).IsSubclassOf(interactable);
+            Check(flags && releaseUse && grabbedHand && lever,
+                "the VR independent brake lever can take the trigger while held: VRTK's use flags and event, the game's use on release and its grabbing hand");
+        }
+
+        // The fireman takes the glass's tilt off as the game puts it on: the
+        // stock boiler's level step at a tilt, against level.
+        private static void CheckGlassTilt()
+        {
+            var def = new BoilerDefinition
+            {
+                ID = "boiler", diameter = 1.7f, length = 8.8f, capacityMultiplier = 0.85f,
+                maxInjectorRate = 20f, waterConsumptionMultiplier = 4f, maxBlowdownRate = 100f,
+                safetyValveOpeningPressure = 15f, safetyValveClosingPressure = 14.8f,
+                spawnPressure = 14f, spawnWaterLevel = 12000f,
+                crownSheetNormalizedWaterLevel = 0.6f, steamOutletNormalizedWaterLevel = 0.98f,
+            };
+            var boiler = (Boiler)def.InstantiateImplementation();
+            var level = typeof(Boiler).GetMethod("SimulateWaterLevel", BindingFlags.Instance | BindingFlags.NonPublic);
+            const float span = 0.98f - 0.6f;
+            float Shift(float angle)
+            {
+                boiler.angleExtIn.Value = 0f;
+                level.Invoke(boiler, new object[] { 0.02f });
+                var flat = boiler.waterLevelReadOut.Value;
+                boiler.angleExtIn.Value = angle;
+                level.Invoke(boiler, new object[] { 0.02f });
+                return (boiler.waterLevelReadOut.Value - flat) / span;
+            }
+            // 2 % front down (the game's angle is the car's pitch, its euler x), then front up.
+            var down = (float)(Math.Atan(0.02) * 180.0 / Math.PI);
+            var stockDown = Shift(down);
+            var oursDown = BoilerWaterRig.GlassTiltNow(boiler, span);
+            var stockUp = Shift(360f - down);
+            var oursUp = BoilerWaterRig.GlassTiltNow(boiler, span);
+            Check(Math.Abs(stockDown - oursDown) < 1e-3f && Math.Abs(stockUp - oursUp) < 1e-3f && stockDown < 0f && stockUp > 0f,
+                $"the fireman reads the glass's tilt as the game shifts it (2 % front down {oursDown:F3}, game {stockDown:F3}; front up {oursUp:F3}, game {stockUp:F3})");
+            Check(Math.Abs(BoilerWaterRig.GlassPerGrade(boiler, span) * 0.02f - stockUp) < 2e-3f,
+                $"a grade ahead turns into the same shift ({BoilerWaterRig.GlassPerGrade(boiler, span) * 0.02f:F3} for 2 %)");
+        }
+
         private static void CheckBoilerWater()
         {
             var failuresOn = new SimGameParams(true, false, false, 1f, 1f);

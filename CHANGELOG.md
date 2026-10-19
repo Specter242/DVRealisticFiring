@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.13.8 (2026-10-19)
+
+- The fireman judges the water as it would stand level (`FiremanReadings.GlassTilt`, the game's glass shift from the boiler's pitch, `BoilerWaterRig.GlassTiltNow`) and bounds his goal by the steepest climb and descent within the water's lead (`GlassTiltHigh`, `GlassTiltLow`): under `GlassTop` (0.9) on the climb, over `GlassLeast` on the descent.
+- A shed hose hanging on its stand runs its rope only within 15 m once it has settled (10 s hanging); one in use keeps 150 m (`ShedStands.SleepFar`).
+- VR: the independent brake lever is made usable while grabbed, and its use (the trigger) bails off (`IndependentBailClick`, VRTK `InteractableObjectUsed`).
+- `CarNames.LogName`: a car goes by its livery until the game numbers it, so the log no longer reads `TrainCar.ID` early.
+
 ## 1.13.7 (2026-10-18)
 
 - The S060's engines take the stock engine's steam a stroke too (`EngineCylinders.MarkStockSteam`): already without wet walls, its clearance took 1.25 to 1.45 times it at 10 to 20 % cut-off.

@@ -2,6 +2,11 @@
   "Releases": [
     {
       "Id": "RealisticFiring",
+      "Version": "1.13.8",
+      "DownloadUrl": "https://github.com/Specter242/DVRealisticFiring/releases/download/v1.13.8/RealisticFiring-1.13.8.zip"
+    },
+    {
+      "Id": "RealisticFiring",
       "Version": "1.13.7",
       "DownloadUrl": "https://github.com/Specter242/DVRealisticFiring/releases/download/v1.13.7/RealisticFiring-1.13.7.zip"
     },

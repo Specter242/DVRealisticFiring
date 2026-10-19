@@ -283,7 +283,11 @@ namespace RealisticFiring.Shed
                 stand.position += Vector3.up * rise;
                 var hose = stand.GetComponentInChildren<PropHose>(true);
                 if (hose != null)
+                {
                     ShedHoses.SetFloor(hose, RopeFloor(stand, floor.Value));
+                    // Its rope settles again on the new floor before it sleeps.
+                    HungStill.Remove(hose);
+                }
             }
         }
 
@@ -293,33 +297,67 @@ namespace RealisticFiring.Shed
                 .Where(f => f.Controller != null)
                 .ToList();
 
-        // A stand's hose is simulated only with the player this near it: the
-        // map's 54 hoses each run a rope of 81 points, 100 passes a frame.
-        // A far one keeps the shape it had.
+        // A stand's hose is simulated only with the player near it: the map's
+        // 54 hoses each run a rope of 81 points, 100 passes a frame, laid on
+        // the ground (HoseGround) after each. One in use (off its stand: in a
+        // hand, in an engine, or dropped) runs within 150 m, as all did. One
+        // hanging on its stand, once it has hung still long enough to settle,
+        // runs only within 15 m, near enough to wake a second before it can
+        // be reached (ThinBlueWarrior, Nexus, 2026-10-18: the frame rate fell
+        // with the shed stands; a big roundhouse has 20 or more within 150 m).
+        // A sleeping one keeps the shape it had.
         private const float SimulateWithin = 150f;
+        private const float HangingWithin = 15f;
+        private const float SettleTime = 10f;
         private const float SleepEvery = 1f;
         private static float sleepAt;
+        private static float lastSleepCheck;
+
+        // How long each hose has hung on its stand with its rope running, s.
+        private static readonly Dictionary<PropHose, float> HungStill = new Dictionary<PropHose, float>();
 
         private static void SleepFar()
         {
             if (Time.unscaledTime < sleepAt || PlayerManager.PlayerTransform == null)
                 return;
+            // At most two checks' time: the first check, or one after a
+            // load's long frame, counts no time a hose was not seen hanging.
+            var elapsed = Mathf.Min(Time.unscaledTime - lastSleepCheck, 2f * SleepEvery);
+            lastSleepCheck = Time.unscaledTime;
             sleepAt = Time.unscaledTime + SleepEvery;
             var player = PlayerManager.PlayerTransform.position;
+            foreach (var gone in HungStill.Keys.Where(h => h == null).ToList())
+                HungStill.Remove(gone);
             foreach (var stand in Built)
             {
                 if (stand == null)
                     continue;
-                var near = Vector3.Distance(stand.transform.position, player) < SimulateWithin;
-                foreach (var solver in stand.GetComponentsInChildren<VerletRope.VerletSolver>(true))
+                foreach (var hose in stand.GetComponentsInChildren<PropHose>(true))
                 {
-                    if (solver.enabled == near)
+                    var solver = hose.GetComponent<VerletRope.VerletSolver>();
+                    if (solver == null)
                         continue;
-                    if (!near)
+                    HungStill.TryGetValue(hose, out var hung);
+                    hung = Hanging(hose) ? hung + (solver.enabled ? elapsed : 0f) : 0f;
+                    HungStill[hose] = hung;
+                    var within = hung >= SettleTime ? HangingWithin : SimulateWithin;
+                    var awake = Vector3.Distance(hose.transform.position, player) < within;
+                    if (solver.enabled == awake)
+                        continue;
+                    if (!awake)
                         solver.Complete();
-                    solver.enabled = near;
+                    solver.enabled = awake;
                 }
             }
+        }
+
+        // Whether a hose's plug hangs on its own stand, nobody's hand on it
+        // here or on another machine in a session.
+        private static bool Hanging(PropHose hose)
+        {
+            var plug = hose.plug;
+            return plug != null && plug.State == PluggableObject.PluggableState.PluggedIn && plug.Socket == hose.stationSocket
+                   && !plug.IsHeldInHand && !ShedNet.IsFollowing(plug);
         }
 
         /// <summary>Builds the stands once their places and a hose to copy are loaded; call every frame.</summary>

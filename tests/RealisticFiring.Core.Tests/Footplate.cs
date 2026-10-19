@@ -98,6 +98,11 @@ internal sealed class Footplate
     /// <summary>The glass bobs this much either way (foam, the engine's rocking).</summary>
     public float GlassBob;
 
+    /// <summary>The glass reads this much over the water's level from the engine's tilt now (+ front up), and the most and least on the road ahead.</summary>
+    public float Tilt;
+    public float TiltHigh;
+    public float TiltLow;
+
 
     /// <summary>The hardest work ahead along the road, as a share of full work.</summary>
     public float WorkAhead;
@@ -127,7 +132,9 @@ internal sealed class Footplate
     /// <summary>Water run out of the overflow, in kg.</summary>
     public float Overflowed;
 
+    /// <summary>The water as it stands level, in glass shares; the glass reads <see cref="GlassShown"/>.</summary>
     public float Glass => WaterMass / GlassMass;
+    public float GlassShown => Glass + Tilt;
     // The draft as the mod fits it: the blower's steam entrains more air a kg than the exhaust's.
     public SteamDraft Draft => new SteamDraft(BlowerSteam, PassiveAir, Entrainment, SafetyValve);
     public float BlowerFlow => Draft.BlowerSteam(Pressure, Blower);
@@ -155,7 +162,10 @@ internal sealed class Footplate
         Cutoff = StartComing || !Standing && EngineSteam > 0.05f ? 0.6f : 0f,
         RoadKnown = SteamAhead.HasValue,
         WorkSoon = (SteamAhead ?? 0f) / FullWorkSteam,
-        Glass = Glass + GlassBob * MathF.Sin(2f * MathF.PI * 1.3f * Time),
+        Glass = GlassShown + GlassBob * MathF.Sin(2f * MathF.PI * 1.3f * Time),
+        GlassTilt = Tilt,
+        GlassTiltHigh = TiltHigh,
+        GlassTiltLow = TiltLow,
         Work = WorkHeardBias * EngineSteam / FullWorkSteam,
         WorkAhead = WorkAhead,
         FullWorkSteam = FullWorkSteam,

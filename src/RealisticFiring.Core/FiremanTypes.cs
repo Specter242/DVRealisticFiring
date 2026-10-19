@@ -129,6 +129,24 @@ namespace RealisticFiring.Core
         /// <summary>The water in the glass, 0 at the crown sheet to 1 at the steam outlet.</summary>
         public float Glass;
 
+        /// <summary>
+        /// How much higher the glass reads than the water stands level, in
+        /// glass shares, from the engine's tilt now: up with its front up
+        /// (the water runs back to the glass at the backhead), down with it
+        /// down. The game shifts the glass by the boiler's length over its
+        /// diameter, halved, times the grade: about a fifth of the glass for
+        /// 2 % on a long boiler.
+        /// </summary>
+        public float GlassTilt;
+
+        /// <summary>
+        /// The most and least <see cref="GlassTilt"/> on the road ahead within
+        /// the water's lead (the steepest climb and descent the engine's front
+        /// will meet), in glass shares; 0 where the road is not known.
+        /// </summary>
+        public float GlassTiltHigh;
+        public float GlassTiltLow;
+
         /// <summary>Water in the tender, in kg.</summary>
         public float TenderWater;
 

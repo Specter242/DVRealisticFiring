@@ -149,6 +149,24 @@ namespace RealisticFiring.Core
             }
             return steepest;
         }
+
+        /// <summary>
+        /// The steepest descent (the least average grade over
+        /// <paramref name="window"/> m, negative going down) starting between
+        /// <paramref name="from"/> and <paramref name="to"/> m along the road;
+        /// NaN where none fits.
+        /// </summary>
+        public static float SteepestDescent(IReadOnlyList<RoadPoint> road, float from, float to, float window, float step = 25f)
+        {
+            var steepest = float.NaN;
+            for (var start = Math.Max(0f, from); start <= to; start += Math.Max(1f, step))
+            {
+                var grade = Grade(road, start, start + window);
+                if (!float.IsNaN(grade) && (float.IsNaN(steepest) || grade < steepest))
+                    steepest = grade;
+            }
+            return steepest;
+        }
     }
 
     /// <summary>

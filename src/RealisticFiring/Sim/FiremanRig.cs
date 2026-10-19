@@ -38,6 +38,11 @@ namespace RealisticFiring.Sim
         private const float NowStretch = 150f;
         private const float RoadSpacing = 20f;
 
+        // For the glass, the steepest 100 m the engine's front meets within the
+        // water's lead: the engine tilts with the grade under it, not a long
+        // stretch's average.
+        private const float TiltStretch = 100f;
+
         // A skilled fireman's first reckoning of his engine's pull at full
         // work: its rated steam at about 0.3 MJ of pull a kg. He learns the
         // rest from steady running.
@@ -158,6 +163,9 @@ namespace RealisticFiring.Sim
             public float GradeNow;
             public float GradeSoon;
             public float GradeAhead;
+            public bool Forward;
+            public float SteepestClimb;
+            public float SteepestDescent;
             public float FireLead;
             public float WaterLead;
             public float Mass;
@@ -410,6 +418,7 @@ namespace RealisticFiring.Sim
             }
             var work = rated > 0f ? Mathf.Max(0f, exhaust) / rated : 0f;
             var road = ReadRoad(work, rated, Car.GetForwardSpeed());
+            var (tilt, tiltHigh, tiltLow) = GlassTilts(boiler, outlet - crown);
 
             var brakes = Car.brakeSystem;
             var braked = brakes != null && (brakes.trainBrakePosition > BrakesOff || brakes.independentBrakePosition > BrakesOff);
@@ -436,6 +445,9 @@ namespace RealisticFiring.Sim
                 Standing = standing,
                 StartupMultiplier = Firebox != null ? Firebox.StartupMultiplier : 1f,
                 Glass = (level - crown) / (outlet - crown),
+                GlassTilt = tilt,
+                GlassTiltHigh = tiltHigh,
+                GlassTiltLow = tiltLow,
                 TenderWater = rig != null ? rig.TenderWater : boiler.water.Value,
                 TenderCoal = OilFirebox != null ? OilFirebox.Feed != null ? OilFirebox.Feed.TenderFuel : 0f : TenderCoal(),
                 Injector = injectorState,
@@ -456,6 +468,23 @@ namespace RealisticFiring.Sim
                 Solids = water != null ? water.Water.Concentration : 0f,
                 ShovelMass = ShovelfulMass(),
             };
+        }
+
+        // The glass's shift from the engine's tilt, in glass shares: now, from
+        // the boiler's own tilt input (the game's shift exactly), and the most
+        // and least on the road ahead, its climbs and descents turned to the
+        // engine's front up or down by the way it is going.
+        private (float Now, float High, float Low) GlassTilts(Boiler boiler, float span)
+        {
+            var perGrade = BoilerWaterRig.GlassPerGrade(boiler, span);
+            var now = BoilerWaterRig.GlassTiltNow(boiler, span);
+            if (!Road.Known)
+                return (now, 0f, 0f);
+            var climb = float.IsNaN(Road.SteepestClimb) ? 0f : Road.SteepestClimb;
+            var descent = float.IsNaN(Road.SteepestDescent) ? 0f : Road.SteepestDescent;
+            return Road.Forward
+                ? (now, perGrade * climb, perGrade * descent)
+                : (now, -perGrade * descent, -perGrade * climb);
         }
 
         // The road ahead: every few seconds while moving, its grades, turned
@@ -496,6 +525,9 @@ namespace RealisticFiring.Sim
                 GradeNow = now,
                 GradeSoon = soon,
                 GradeAhead = ahead,
+                Forward = speed > 0f,
+                SteepestClimb = RoadAhead.Steepest(road, 0f, waterLead, TiltStretch),
+                SteepestDescent = RoadAhead.SteepestDescent(road, 0f, waterLead, TiltStretch),
                 FireLead = fireLead,
                 WaterLead = waterLead,
                 Mass = mass,

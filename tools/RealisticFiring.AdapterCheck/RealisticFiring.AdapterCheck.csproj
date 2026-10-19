@@ -32,6 +32,7 @@
     <Reference Include="Newtonsoft.Json" HintPath="$(DvManagedDir)/Newtonsoft.Json.dll" />
     <Reference Include="UnityEngine" HintPath="$(DvManagedDir)/UnityEngine.dll" />
     <Reference Include="UnityEngine.CoreModule" HintPath="$(DvManagedDir)/UnityEngine.CoreModule.dll" />
+    <Reference Include="VRTK" HintPath="$(DvManagedDir)/VRTK.dll" />
   </ItemGroup>
 
 </Project>

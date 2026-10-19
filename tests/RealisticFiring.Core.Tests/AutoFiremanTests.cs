@@ -320,6 +320,55 @@ namespace RealisticFiring.Core.Tests;
     }
 
     [Fact]
+    public void OnADescentHeHoldsTheWaterNotTheTiltedGlass()
+    {
+        // The glass reads low with the front down: filled to his usual
+        // reading there, it ran full once the road levelled (2026-10-18).
+        var engine = new Footplate(injectorDelivery: 20f);
+        engine.EngineSteam = Cruise;
+        engine.Run(300f);
+        engine.Tilt = engine.TiltLow = -0.2f;
+        var lowShown = float.MaxValue;
+        engine.Run(300f, e => lowShown = Math.Min(lowShown, e.GlassShown));
+        var level = engine.Glass;
+        engine.Tilt = engine.TiltLow = 0f;
+        engine.Run(60f);
+        output.WriteLine($"level {level:F2} after the descent, the glass reading {lowShown:F2} at least; {engine.GlassShown:F2} on the level again");
+        Assert.InRange(level, AutoFireman.GlassGoal - 0.1f, AutoFireman.GlassGoal + 0.1f);
+        Assert.True(lowShown > AutoFireman.GlassLeast - GlassFloorSlack, "the crown sheet kept covered");
+        Assert.True(engine.GlassShown < AutoFireman.GlassGoal + 0.12f);
+    }
+
+    [Fact]
+    public void ASteepDescentAheadHeCarriesTheWaterToCoverTheCrownSheet()
+    {
+        var engine = new Footplate(injectorDelivery: 20f);
+        engine.EngineSteam = Cruise;
+        engine.Run(300f);
+        var glass = engine.Glass;
+        engine.TiltLow = -0.4f;
+        engine.Run(300f);
+        output.WriteLine($"level {glass:F2} -> {engine.Glass:F2} with a descent ahead that reads 0.40 lower; on it the glass would read {engine.Glass - 0.4f:F2}");
+        Assert.True(engine.Glass - 0.4f > AutoFireman.GlassLeast - 0.08f);
+    }
+
+    [Fact]
+    public void HardWorkUpAClimbAheadHeKeepsTheGlassInSight()
+    {
+        // Carried high for the work, the glass on the climb itself would read
+        // over its top.
+        var engine = new Footplate(injectorDelivery: 20f);
+        engine.EngineSteam = Cruise;
+        engine.Run(300f);
+        engine.WorkAhead = 0.8f;
+        engine.TiltHigh = 0.3f;
+        engine.Run(300f);
+        output.WriteLine($"level {engine.Glass:F2} before a climb that reads 0.30 higher: {engine.Glass + 0.3f:F2} on it");
+        Assert.True(engine.Glass + 0.3f < AutoFireman.GlassTop + 0.06f);
+        Assert.True(engine.Glass > AutoFireman.GlassGoal - 0.05f);
+    }
+
+    [Fact]
     public void HeOpensTheInjectorWhenHeHearsTheEngineWorkHarder()
     {
         var engine = new Footplate(injectorDelivery: No11);

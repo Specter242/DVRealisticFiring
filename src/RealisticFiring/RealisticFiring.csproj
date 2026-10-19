@@ -47,6 +47,7 @@
     <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(DvManagedDir)/UnityEngine.TextRenderingModule.dll" Private="false" />
     <Reference Include="UnityEngine.UI" HintPath="$(DvManagedDir)/UnityEngine.UI.dll" Private="false" />
     <Reference Include="UnityEngine.VRModule" HintPath="$(DvManagedDir)/UnityEngine.VRModule.dll" Private="false" />
+    <Reference Include="VRTK" HintPath="$(DvManagedDir)/VRTK.dll" Private="false" />
   </ItemGroup>
 
   <ItemGroup>
