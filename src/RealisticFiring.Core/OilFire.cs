@@ -515,9 +515,9 @@ namespace RealisticFiring.Core
             burning = fed * (1f - unburned);
             BurnRate = burning;
 
-            // The heat: the stock heat for the oil burned, less what too much
-            // air, over-atomizing, an open door, and sooted flues take away.
-            var efficiency = Smoothing.Lerp(1f, parameters.EfficiencyAtMaxCombustion, burning / parameters.MaxCombustionRate);
+            // The heat: the boiler's share of the oil burned, less what too
+            // much air, over-atomizing, an open door, and sooted flues take away.
+            var efficiency = parameters.EfficiencyAt(burning);
             var excessLoss = Math.Min(MaxExcessAirLoss, ExcessAirLoss * Math.Max(0f, ExcessAir - WastefulExcessAir));
             var gross = burning * FireboxParameters.CoalHeatContent * efficiency * (1f - excessLoss);
             Drumming = FireOn ? Smoothing.Clamp01((Atomizing - DrummingStart) / (DrummingFull - DrummingStart)) : 0f;

@@ -17,7 +17,7 @@ namespace RealisticFiring.Visuals
     /// </summary>
     internal static class DropGrateCab
     {
-        private const string RootName = "[RealisticFiring drop grate]";
+        internal const string RootName = "[RealisticFiring drop grate]";
         private static readonly string[] Notches = { "Closed", "Open" };
 
         // Where the lever stands from the fire-dump lever, in the car frame (x
@@ -25,6 +25,40 @@ namespace RealisticFiring.Visuals
         // loco.
         private static readonly Vector3 DefaultFromDump = new Vector3(0f, 0f, -0.3f);
         private static readonly Dictionary<string, Vector3> Placements = new Dictionary<string, Vector3>();
+
+        // Seats set this session on the seating bench (SeatingBench, a
+        // development tool), by livery, as Placements: they come first and
+        // are never saved.
+        internal static readonly Dictionary<string, Vector3> DevPlacements = new Dictionary<string, Vector3>();
+
+        /// <summary>Where the lever stands from the fire-dump lever for <paramref name="livery"/>: the bench's seat, the table's, or the default.</summary>
+        internal static Vector3 SeatFor(string livery) =>
+            DevPlacements.TryGetValue(livery, out var dev) ? dev
+            : Placements.TryGetValue(livery, out var seated) ? seated
+            : DefaultFromDump;
+
+        private static readonly Dictionary<TrainCar, Transform> Interiors = new Dictionary<TrainCar, Transform>();
+
+        /// <summary>Rebuilds the lever in every loaded cab, as the seating bench moves it.</summary>
+        public static void RebuildLoaded()
+        {
+            foreach (var pair in Interiors.ToList())
+            {
+                var car = pair.Key;
+                var interior = pair.Value;
+                if (car == null || interior == null || car.loadedInterior == null || car.loadedInterior.transform != interior)
+                {
+                    Interiors.Remove(car);
+                    continue;
+                }
+                var old = interior.Find(RootName);
+                if (old != null)
+                    Object.DestroyImmediate(old.gameObject);
+                var result = Attach(car, interior);
+                if (result != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{car.LogName()}: {result}");
+            }
+        }
 
         // The floor is looked for straight down from this far above the dump
         // lever's pivot, which on the S282 sits just under the deck.
@@ -63,11 +97,12 @@ namespace RealisticFiring.Visuals
             var sourceControl = sourceValve != null ? sourceValve.Find(StokerCab.SourceControl) : null;
             var sourceLabel = cabPrefab.Find(StokerCab.SourceLabel);
 
+            Interiors[car] = interior;
             var root = new GameObject(RootName);
             root.SetActive(false);
             root.transform.SetParent(interior, false);
 
-            var offset = Placements.TryGetValue(car.carLivery.id, out var seated) ? seated : DefaultFromDump;
+            var offset = SeatFor(car.carLivery.id);
             var spot = dump.position + car.transform.TransformVector(offset);
             var onFloor = StokerCab.TryFindFloor(car, spot + car.transform.up * SearchAbove, out var floor);
             if (!onFloor)

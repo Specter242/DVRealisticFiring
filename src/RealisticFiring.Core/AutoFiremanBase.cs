@@ -283,7 +283,7 @@ namespace RealisticFiring.Core
 
         /// <summary>
         /// The burn rate that gives <paramref name="heat"/> W, in kg/s, as the
-        /// stock firebox's efficiency falls with the rate.
+        /// boiler's efficiency falls with the rate (<see cref="FireboxParameters.EfficiencyAt"/>).
         /// </summary>
         public static float RateFor(FireboxParameters p, float heat)
         {
@@ -291,12 +291,14 @@ namespace RealisticFiring.Core
                 return 0f;
             var most = p.MaxCombustionRate;
             var c = FireboxParameters.CoalHeatContent;
-            // heat = r c (1 + (e - 1) r / most), solved for r.
-            var a = (p.EfficiencyAtMaxCombustion - 1f) * c / most;
-            var disc = c * c + 4f * a * heat;
+            var light = p.EfficiencyAt(0f);
+            // heat = r c (light + (e - light) r / most), solved for r.
+            var a = (p.EfficiencyAtMaxCombustion - light) * c / most;
+            var b = light * c;
+            var disc = b * b + 4f * a * heat;
             if (disc <= 0f)
                 return most;
-            return Math.Min(most, 2f * heat / (c + (float)Math.Sqrt(disc)));
+            return Math.Min(most, 2f * heat / (b + (float)Math.Sqrt(disc)));
         }
 
         /// <summary>The pressure a mode holds, absolute bar, for a safety valve lifting at <paramref name="safetyValve"/>.</summary>

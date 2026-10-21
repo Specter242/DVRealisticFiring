@@ -973,8 +973,7 @@ namespace RealisticFiring.Core
 
             var burnedRate = completeRate + OverFireBurnout * unburnedRate;
             var yieldAverage = baseRateTotal > 0f ? burnedRate / baseRateTotal : 1f;
-            var efficiency = Smoothing.Lerp(1f, parameters.EfficiencyAtMaxCombustion,
-                yieldAverage * baseRateTotal / parameters.MaxCombustionRate);
+            var efficiency = parameters.EfficiencyAt(yieldAverage * baseRateTotal);
             var grossHeat = speedup * burnedRate * FireboxParameters.CoalHeatContent * efficiency;
             var coldAirLoss = excessPrimary * tuning.ExcessAirHeatLoss + excessDoor * tuning.DoorAirHeatLoss;
             // Warming fresh coal stores heat that comes back as it burns away.

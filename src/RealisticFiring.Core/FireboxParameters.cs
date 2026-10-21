@@ -64,5 +64,30 @@ namespace RealisticFiring.Core
 
         /// <summary>Heat delivered at the maximum combustion rate, in W.</summary>
         public float MaxHeatOutput => MaxCombustionRate * CoalHeatContent * EfficiencyAtMaxCombustion;
+
+ public const float LightFiringEfficiency = 0.8f;
+
+        /// <summary>
+        /// The share of the coal's heat delivered burning <paramref name="rate"/>
+        /// kg/s: falling in a straight line from <see cref="LightFiringEfficiency"/>
+        /// to <see cref="EfficiencyAtMaxCombustion"/> at the maximum rate, as
+        /// the tested boilers' did with the rate of firing.
+        /// </summary>
+        public float EfficiencyAt(float rate) =>
+            Smoothing.Lerp(Math.Max(LightFiringEfficiency, EfficiencyAtMaxCombustion), EfficiencyAtMaxCombustion, rate / MaxCombustionRate);
+
+        /// <summary>
+        /// The burn time that makes a box of <paramref name="maxCoalCapacity"/>
+        /// kg at <paramref name="efficiencyAtMaxCombustion"/> give
+        /// <paramref name="heat"/> W at its most, <paramref name="forcing"/>
+        /// times its maximum rate (an oil burner forced past it). The box and
+        /// its efficiency stay as they are, so a full box still makes the most.
+        /// </summary>
+        public static float BurnTimeFor(float maxCoalCapacity, float efficiencyAtMaxCombustion, float heat, float forcing = 1f)
+        {
+            if (!(heat > 0f))
+                throw new ArgumentOutOfRangeException(nameof(heat), heat, "Must be positive.");
+            return forcing * maxCoalCapacity * CoalHeatContent * efficiencyAtMaxCombustion / heat;
+        }
     }
 }

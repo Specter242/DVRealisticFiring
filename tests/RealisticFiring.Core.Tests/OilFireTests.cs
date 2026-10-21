@@ -4,12 +4,12 @@ namespace RealisticFiring.Core.Tests;
 
  public class OilFireTests
 {
-    // An S484-841-sized firebox: 200 kg over 100 s, 0.6 efficient at its most.
-    private static readonly FireboxParameters Gs4 = new FireboxParameters(200f, 100f, 0.6f);
+    // A big oil engine's firebox: 200 kg over 100 s, 0.6 efficient at its most.
+    private static readonly FireboxParameters Box = new FireboxParameters(200f, 100f, 0.6f);
     private const float Dt = 0.1f;
     private const float HalfOil = 1f;
 
-    private static float Valve(float oil) => oil / (OilFire.MaxFeedFactor * Gs4.MaxCombustionRate);
+    private static float Valve(float oil) => oil / (OilFire.MaxFeedFactor * Box.MaxCombustionRate);
 
     // Air for an oil rate at an excess-air ratio.
     private static float Air(float oil, float excess) => oil * FireModel.StoichiometricAirPerCoal * excess;
@@ -18,7 +18,7 @@ namespace RealisticFiring.Core.Tests;
     private static float AtomizerFor(float oil, float share, float exhaust = 0.5f)
     {
         var need = oil * OilFire.AtomizingSteamPerKg * (0.6f + 0.4f * exhaust);
-        return share * need / (OilFire.AtomizerCapacity * OilFire.AtomizingSteamPerKg * OilFire.MaxFeedFactor * Gs4.MaxCombustionRate);
+        return share * need / (OilFire.AtomizerCapacity * OilFire.AtomizingSteamPerKg * OilFire.MaxFeedFactor * Box.MaxCombustionRate);
     }
 
     private static OilFireInputs Inputs(float oil, float excess = OilFire.BestExcessAir, float atomizing = 1.2f, float exhaust = 0.5f) => new OilFireInputs
@@ -35,7 +35,7 @@ namespace RealisticFiring.Core.Tests;
 
     private static OilFire Burning()
     {
-        var fire = new OilFire(Gs4);
+        var fire = new OilFire(Box);
         fire.PrepareFire();
         return fire;
     }
@@ -46,15 +46,15 @@ namespace RealisticFiring.Core.Tests;
             fire.Step(Dt, inputs);
     }
 
-    private static double StockHeat(float rate) => FireTestKit.StockHeat(Gs4, rate);
+    private static double CurveHeat(float rate) => FireTestKit.CurveHeat(Box, rate);
 
     [Fact]
-    public void AWellSetFireMakesTheStockSteamForItsOil()
+    public void AWellSetFireMakesItsCurvesSteamForItsOil()
     {
         var fire = Burning();
         Run(fire, Inputs(HalfOil), 60f);
 
-        Assert.Equal(StockHeat(HalfOil), fire.Heat, 0.03 * StockHeat(HalfOil));
+        Assert.Equal(CurveHeat(HalfOil), fire.Heat, 0.03 * CurveHeat(HalfOil));
         Assert.True(fire.SootDensity < 0.05f, $"soot {fire.SootDensity:F2}");
         Assert.Equal(0f, fire.Drumming);
         Assert.Equal(OilFire.BestExcessAir, fire.ExcessAir, 0.05f);
@@ -104,14 +104,14 @@ namespace RealisticFiring.Core.Tests;
     {
         static OilFire LightFire(float brick)
         {
-            var fire = new OilFire(Gs4);
+            var fire = new OilFire(Box);
             fire.Restore(fireOn: true, brickTemperature: brick, oilTemperature: OilFire.WarmOil, flueSoot: 0f);
             return fire;
         }
 
         var cold = LightFire(OilFire.ColdBrick);
         var hot = LightFire(OilFire.HotBrick);
-        var light = 0.08f * Gs4.MaxCombustionRate;
+        var light = 0.08f * Box.MaxCombustionRate;
         foreach (var fire in new[] { cold, hot })
         {
             Run(fire, Inputs(light), 5f);
@@ -128,7 +128,7 @@ namespace RealisticFiring.Core.Tests;
     {
         static OilFire OutOnWarmBrick()
         {
-            var fire = new OilFire(Gs4);
+            var fire = new OilFire(Box);
             fire.Restore(fireOn: false, brickTemperature: 500f, oilTemperature: OilFire.WarmOil, flueSoot: 0f);
             // The fire went out and the oil was left on, with little draft.
             Run(fire, Inputs(0.3f) with { AirFlow = 0.05f }, 15f);
@@ -158,7 +158,7 @@ namespace RealisticFiring.Core.Tests;
     [Fact]
     public void LitInOrderItLightsCleanlyButOilBeforeTheAtomizerExplodes()
     {
-        var right = new OilFire(Gs4);
+        var right = new OilFire(Box);
         right.Restore(false, OilFire.ColdBrick, OilFire.WarmOil, 0f);
         right.Ignite();
         var flared = 0f;
@@ -170,7 +170,7 @@ namespace RealisticFiring.Core.Tests;
         Assert.True(right.FireOn);
         Assert.Equal(0f, flared);
 
-        var wrong = new OilFire(Gs4);
+        var wrong = new OilFire(Box);
         wrong.Restore(false, OilFire.ColdBrick, OilFire.WarmOil, 0f);
         wrong.Ignite();
         flared = 0f;
@@ -239,7 +239,7 @@ namespace RealisticFiring.Core.Tests;
     [Fact]
     public void ColdHeavyOilDoesNotRunThroughAnOpenValve()
     {
-        var fire = new OilFire(Gs4);
+        var fire = new OilFire(Box);
         fire.Restore(false, OilFire.ColdBrick, OilFire.AmbientTemperature, 0f);
         Run(fire, Inputs(0f) with { FiringValve = 1f, Atomizer = 0f, BoilerPressure = 1f }, 60f);
 
@@ -250,7 +250,7 @@ namespace RealisticFiring.Core.Tests;
     [Fact]
     public void WithoutBoilerPressureNeitherTheHeaterNorTheAtomizerWorks()
     {
-        var fire = new OilFire(Gs4);
+        var fire = new OilFire(Box);
         fire.Restore(false, OilFire.ColdBrick, OilFire.AmbientTemperature, 0f);
         Run(fire, Inputs(0f) with { Heater = 1f, Atomizer = 1f, BoilerPressure = 1f }, 600f);
 
@@ -292,13 +292,13 @@ namespace RealisticFiring.Core.Tests;
     [Fact]
     public void AShedsSteamLineLightsADeadEngine()
     {
-        var dead = new OilFire(Gs4);
+        var dead = new OilFire(Box);
         Run(dead, Inputs(HalfOil) with { BoilerPressure = 1f }, 1f);
         dead.Ignite();
         Run(dead, Inputs(HalfOil) with { BoilerPressure = 1f }, 5f);
         Assert.False(dead.FireOn, "with no steam the atomizer cannot work, so the oil will not light");
 
-        var lined = new OilFire(Gs4);
+        var lined = new OilFire(Box);
         lined.Ignite();
         Run(lined, Inputs(HalfOil) with { BoilerPressure = 1f, SteamLinePressure = 7.9f }, 20f);
         Assert.True(lined.FireOn && lined.OnSteamLine && lined.AtomizerSteam > 0f, $"atomizing {lined.Atomizing:F2}");
@@ -312,13 +312,13 @@ namespace RealisticFiring.Core.Tests;
     {
         float Heated(float pressure)
         {
-            var fire = new OilFire(Gs4);
+            var fire = new OilFire(Box);
             fire.Restore(false, OilFire.ColdBrick, OilFire.AmbientTemperature, 0f);
             Run(fire, Inputs(0f) with { Heater = 1f, Atomizer = 1f, BoilerPressure = pressure }, 300f);
             return fire.OilTemperature;
         }
-        var low = new OilFire(Gs4);
-        var high = new OilFire(Gs4);
+        var low = new OilFire(Box);
+        var high = new OilFire(Box);
         Run(low, Inputs(0f) with { Atomizer = 1f, BoilerPressure = 3f }, 1f);
         Run(high, Inputs(0f) with { Atomizer = 1f, BoilerPressure = 15f }, 1f);
 
@@ -345,7 +345,7 @@ namespace RealisticFiring.Core.Tests;
     {
         var fire = Burning();
         Run(fire, Inputs(HalfOil, excess: 0.8f), 30f);
-        var mirror = new OilFire(Gs4);
+        var mirror = new OilFire(Box);
 
         mirror.Mirror(fire.Snapshot());
 
@@ -409,7 +409,7 @@ namespace RealisticFiring.Core.Tests;
     [Fact]
     public void PooledOilDrainsFromAColdBoxUntilItLightsSafely()
     {
-        var fire = new OilFire(Gs4);
+        var fire = new OilFire(Box);
         fire.Restore(false, OilFire.ColdBrick, OilFire.WarmOil, 0f, pooledOil: 1f);
         Run(fire, Inputs(0f), 300f);
 
@@ -420,7 +420,7 @@ namespace RealisticFiring.Core.Tests;
     [Fact]
     public void PooledOilAndVaporSurviveARestoreAndStillFlareBack()
     {
-        var fire = new OilFire(Gs4);
+        var fire = new OilFire(Box);
         fire.Restore(false, OilFire.ColdBrick, OilFire.WarmOil, 0f, pooledOil: 3f, vapor: 1f);
         Assert.Equal(3f, fire.PooledOil);
         Assert.Equal(1f, fire.Vapor);
@@ -434,7 +434,7 @@ namespace RealisticFiring.Core.Tests;
     [Fact]
     public void ARestoreRejectsNonsense()
     {
-        var fire = new OilFire(Gs4);
+        var fire = new OilFire(Box);
         fire.Restore(false, float.NaN, float.PositiveInfinity, 0f, pooledOil: -2f, vapor: float.NaN);
         Assert.Equal(0f, fire.PooledOil);
         Assert.Equal(0f, fire.Vapor);

@@ -202,7 +202,7 @@ namespace RealisticFiring.Core.Tests;
         }
 
         var burnRate = burned / 1200.0;
-        var handHeatPerCoal = FireTestKit.StockHeat(Hudson, burnRate) / burnRate;
+        var handHeatPerCoal = FireTestKit.CurveHeat(Hudson, burnRate) / burnRate;
         var loss = 1.0 - heat / drawn / handHeatPerCoal;
         Assert.InRange(loss, minLoss, maxLoss);
     }

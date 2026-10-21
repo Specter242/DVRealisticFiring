@@ -62,6 +62,14 @@ namespace RealisticFiring.Shed
             ["A.T.&S.F. 2901-A"] = (new Vector3(-1.22f, 2.03f, -7.98f), 0f, 0f, 0f, 0f),
         };
 
+        // Seats set this session on the seating bench (Visuals.SeatingBench, a
+        // development tool), by livery, as Seated and WaterSeated: they come
+        // first and are never saved.
+        internal static readonly Dictionary<string, (Vector3 At, float Swing, float Down, float Spin, float Out)> DevSeated =
+            new Dictionary<string, (Vector3, float, float, float, float)>();
+        internal static readonly Dictionary<string, (Vector3 At, float Swing, float Down, float Spin, float Out)> DevWaterSeated =
+            new Dictionary<string, (Vector3, float, float, float, float)>();
+
  private static readonly HashSet<string> RightSide = new HashSet<string> { "LocoS060" };
 
  private static readonly HashSet<string> NoConnection = new HashSet<string> { "em_lms_8f_loc_black", "em_lms_8f_loc_grey" };
@@ -177,7 +185,8 @@ namespace RealisticFiring.Shed
             var further = 0f;
             Vector3 at;
             string how;
-            if ((water ? WaterSeated : Seated).TryGetValue(livery, out var seat))
+            if ((water ? DevWaterSeated : DevSeated).TryGetValue(livery, out var seat)
+                || (water ? WaterSeated : Seated).TryGetValue(livery, out seat))
             {
                 at = seat.At;
                 swing = seat.Swing;
@@ -205,6 +214,36 @@ namespace RealisticFiring.Shed
             return $"{connection.Kind.Name} connection with its flange at ({at.x:F2}, {at.y:F2}, {at.z:F2}) m in the car frame on its {(side > 0f ? "right" : "left")}" +
                    (further != 0f ? $" and {further * 100f:F0} cm further out" : "") +
                    $", swung {swing:F0} toward the front, turned {down:F0} down, and spun {spin:F0} degrees, {how}";
+        }
+
+        // The car's connection of the kind, or null.
+        private static Connection ConnectionOf(TrainCar car, bool water) =>
+            car == null ? null
+            : water ? WaterSockets.TryGetValue(car, out var found) && found.Socket != null ? found : null
+            : BlowerSockets.Values.FirstOrDefault(c => c.Car == car && c.Socket != null);
+
+        /// <summary>
+        /// Where <paramref name="car"/>'s connection of the kind is now: the
+        /// bench's seat, the table's, or its guess with no turns; false when
+        /// it has none.
+        /// </summary>
+        internal static bool TrySeat(TrainCar car, bool water, out (Vector3 At, float Swing, float Down, float Spin, float Out) seat)
+        {
+            seat = default;
+            var connection = ConnectionOf(car, water);
+            if (connection == null)
+                return false;
+            var livery = car.carLivery != null ? car.carLivery.id : "";
+            if (!(water ? DevWaterSeated : DevSeated).TryGetValue(livery, out seat) && !(water ? WaterSeated : Seated).TryGetValue(livery, out seat))
+                seat = (connection.Guessed, 0f, 0f, 0f, 0f);
+            return true;
+        }
+
+        /// <summary>Puts <paramref name="car"/>'s connection of the kind where its seat now says (the seating bench). Returns a line for the log, or null.</summary>
+        internal static string Replace(TrainCar car, bool water)
+        {
+            var connection = ConnectionOf(car, water);
+            return connection != null ? Place(connection) : null;
         }
 
         /// <summary>Gives a fired engine its blower line and water connections. Returns a line for the log, or null.</summary>

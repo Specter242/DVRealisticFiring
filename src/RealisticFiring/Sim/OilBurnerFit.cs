@@ -26,8 +26,6 @@ namespace RealisticFiring.Sim
         /// <summary>The shop steam valve: a shed's steam line on the burner's valves, at a pit stop. Shut by default.</summary>
         public static readonly StokerJetControls.Valve ShopSteam = new StokerJetControls.Valve("rfShopSteam", "Shop steam", null, 0f);
 
- private static readonly HashSet<string> Unsupported = new HashSet<string> { "S040F", "S484-841A" };
-
         private static readonly Dictionary<TrainCar, bool> Known = new Dictionary<TrainCar, bool>();
         private static readonly HashSet<string> Skipped = new HashSet<string>();
 
@@ -42,12 +40,11 @@ namespace RealisticFiring.Sim
                 Known.Remove(stale);
             var simController = car.SimController != null ? car.SimController : car.GetComponentInChildren<SimController>(true);
             var oil = FeedsFuel(simController != null ? simController.connectionsDefinition : null, out _);
-            var type = car.carLivery != null && car.carLivery.parentType != null ? car.carLivery.parentType.id : null;
-            if (oil && type != null && Unsupported.Contains(type))
+            if (oil && LeftStock.Is(car))
             {
                 oil = false;
-                if (Skipped.Add(type))
-                    Main.Mod?.Logger.Log($"{type}: oil-fired, but not supported; it keeps its own firing");
+                if (Skipped.Add(car.carLivery.id))
+                    Main.Mod?.Logger.Log($"{car.carLivery.id}: left stock, not part of the mod");
             }
             Known[car] = oil;
             return oil;

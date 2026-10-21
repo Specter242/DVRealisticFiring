@@ -31,7 +31,8 @@ namespace RealisticFiring.Core
         /// <summary>
         /// How much of a well-set fire's haze rides in the beats' steam, 0 to
         /// 1: an oil fire's light haze leaves with its exhaust, and a coal
-        /// fire's fine ash and light smoke with its (<see cref="PlumeModel.CoalPuffHaze"/>).
+        /// fire's fine ash and light smoke with its, both the tuning's
+        /// (<see cref="PlumeModel.WellFiredHaze"/>).
         /// </summary>
         public float PuffHaze;
 
@@ -181,7 +182,7 @@ namespace RealisticFiring.Core
         /// <summary>The height the train's wake falls away over, in m.</summary>
         public float WakeDepth { get; set; } = PlumeRise.WakeDepth;
 
- public float CoalHaze { get; set; } = 0.5f;
+ public float BeatHaze { get; set; } = 0.5f;
 
         /// <summary>Multiplier on sparks; at 1 the hardest beat under full draft throws about two.</summary>
         public float Sparks { get; set; } = 0.25f;
@@ -402,11 +403,12 @@ namespace RealisticFiring.Core
         private const float BeatHidesShimmer = 0.8f;
 
         /// <summary>
-        /// The haze a coal fire's beats carry (<see cref="PlumeInputs.PuffHaze"/>):
-        /// the tuning's, none from a clear stack (no smoke to see and air to spare).
+        /// The haze a fire's beats carry (<see cref="PlumeInputs.PuffHaze"/>),
+        /// coal or oil: the tuning's, none from a clear stack (no smoke to see
+        /// and air to spare).
         /// </summary>
-        public static float CoalPuffHaze(PlumeTuning tuning, float clearStack) =>
-            Clamp01(tuning.CoalHaze) * (1f - Clamp01(clearStack));
+        public static float WellFiredHaze(PlumeTuning tuning, float clearStack) =>
+            Clamp01(tuning.BeatHaze) * (1f - Clamp01(clearStack));
 
  public static float Shimmer(PlumeTuning tuning, PlumeInputs inputs)
         {
@@ -432,8 +434,8 @@ namespace RealisticFiring.Core
             return (SootForBlack * (float)Math.Pow(dark, 1.0 / 1.3), 1f - Clamp01(stackDarkness / OilFire.HazeSmoke));
         }
 
-        /// <summary>The plume's inputs for an oil fire's stack, its beats carrying its haze.</summary>
-        public static PlumeInputs OilInputs(float stackDarkness, float exhaustPressure, float totalFlowNormalized, bool fireOn)
+        /// <summary>The plume's inputs for an oil fire's stack, its beats carrying its haze as a coal fire's do.</summary>
+        public static PlumeInputs OilInputs(PlumeTuning tuning, float stackDarkness, float exhaustPressure, float totalFlowNormalized, bool fireOn)
         {
             var (soot, clear) = OilStack(stackDarkness);
             return new PlumeInputs
@@ -443,7 +445,7 @@ namespace RealisticFiring.Core
                 Soot = soot,
                 FireOn = fireOn,
                 ClearStack = clear,
-                PuffHaze = 1f - clear,
+                PuffHaze = WellFiredHaze(tuning, clear),
             };
         }
 

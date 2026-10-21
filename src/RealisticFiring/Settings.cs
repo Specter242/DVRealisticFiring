@@ -165,6 +165,15 @@ namespace RealisticFiring
         /// <summary>Whether the plume test bed's key is bound (a development setup).</summary>
         public bool PlumeTestBedEnabled => DevPlumeTestBedKey != null && DevPlumeTestBedKey.keyCode != KeyCode.None;
 
+        // The seating bench, a development tool for seating a new engine's
+        // added cab parts and shed connections in game: shown and hidden by
+        // this key, unbound unless set here (not in the menu). Nothing it
+        // sets is saved; it writes the seats to the log to be built in.
+        public KeyBinding DevSeatingKey = new KeyBinding();
+
+        /// <summary>Whether the seating bench's key is bound (a development setup).</summary>
+        public bool SeatingBenchEnabled => DevSeatingKey != null && DevSeatingKey.keyCode != KeyCode.None;
+
         public override void Save(UnityModManager.ModEntry modEntry)
         {
             Save(this, modEntry);

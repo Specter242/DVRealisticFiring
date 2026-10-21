@@ -27,6 +27,27 @@ namespace RealisticFiring
                 ["em_lms_8f_loc_grey"] = (0.000f, 2.018f, 0.540f, 0.410f, -4.379f),
             };
 
+        // Holes set this session on the seating bench (Visuals.SeatingBench, a
+        // development tool), by livery, as Holes: they come first and are
+        // never saved. And the hole last worked out for a cab not fitted,
+        // kept only while the bench is open, for it to start from.
+        internal static readonly Dictionary<string, (float Middle, float Foot, float Width, float Height, float Plane)> DevHoles =
+            new Dictionary<string, (float, float, float, float, float)>();
+        private static readonly Dictionary<string, (float Middle, float Foot, float Width, float Height, float Plane)> LastUnfitted =
+            new Dictionary<string, (float, float, float, float, float)>();
+
+        /// <summary>
+        /// <paramref name="livery"/>'s hole: the bench's, the table's, or the
+        /// one last worked out while aiming with the bench open; false before
+        /// one is known.
+        /// </summary>
+        internal static bool TryHole(string livery, out (float Middle, float Foot, float Width, float Height, float Plane) hole) =>
+            DevHoles.TryGetValue(livery, out hole) || Holes.TryGetValue(livery, out hole) || LastUnfitted.TryGetValue(livery, out hole);
+
+        // The bench's hole, then the table's.
+        private static bool TryFitted(string livery, out (float Middle, float Foot, float Width, float Height, float Plane) hole) =>
+            DevHoles.Count > 0 && DevHoles.TryGetValue(livery, out hole) || Holes.TryGetValue(livery, out hole);
+
         private FireholeOpening(Vector3 min, Vector3 max)
         {
             Min = min;
@@ -56,7 +77,7 @@ namespace RealisticFiring
         {
             plane = foot = 0f;
             var livery = car != null && car.carLivery != null ? car.carLivery.id : null;
-            if (livery == null || !Holes.TryGetValue(livery, out var fitted))
+            if (livery == null || !TryFitted(livery, out var fitted))
                 return false;
             plane = fitted.Plane;
             foot = fitted.Foot;
@@ -67,7 +88,7 @@ namespace RealisticFiring
         public static FireholeOpening For(TrainCar car, Bounds target)
         {
             var livery = car != null && car.carLivery != null ? car.carLivery.id : null;
-            if (livery != null && Holes.TryGetValue(livery, out var fitted))
+            if (livery != null && TryFitted(livery, out var fitted))
                 return new FireholeOpening(new Vector3(fitted.Middle - fitted.Width / 2f, fitted.Foot, fitted.Plane),
                     new Vector3(fitted.Middle + fitted.Width / 2f, fitted.Foot + fitted.Height, fitted.Plane));
             // Not yet fitted: the S282's hole at the foot and middle of the target.
@@ -76,6 +97,8 @@ namespace RealisticFiring
             var width = Mathf.Min(UsualWidth, target.size.x);
             var height = UsualHeight;
             var face = target.max.z;
+            if (livery != null && Visuals.SeatingBench.Open)
+                LastUnfitted[livery] = (middle, foot, width, height, face);
             return new FireholeOpening(new Vector3(middle - width / 2f, foot, face), new Vector3(middle + width / 2f, foot + height, face));
         }
 

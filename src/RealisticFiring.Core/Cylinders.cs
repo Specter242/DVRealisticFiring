@@ -326,6 +326,22 @@ namespace RealisticFiring.Core
         /// </summary>
         public float Condensation(float turnsPerSecond, float chestPressure)
         {
+            var condensed = WallsShare(turnsPerSecond, chestPressure) - Superheat * Spec.CondensationPerSuperheat;
+            return condensed > 0f ? condensed / (1f - condensed) : 0f;
+        }
+
+        /// <summary>
+        /// The superheat the steam keeps once the walls have taken theirs, in
+        /// °C: superheated steam warms the walls before any of it condenses,
+        /// each °C covering <see cref="CylinderSpec.CondensationPerSuperheat"/>
+        /// of saturated steam's condensation.
+        /// </summary>
+        public float SuperheatAtCutoff(float turnsPerSecond, float chestPressure) =>
+            Math.Max(0f, Superheat - WallsShare(turnsPerSecond, chestPressure) / Spec.CondensationPerSuperheat);
+
+        // Saturated steam's condensation on these walls, a share of the steam admitted.
+        private float WallsShare(float turnsPerSecond, float chestPressure)
+        {
             if (!WallCondensation || Spec.QuarterCondensation <= 0f)
                 return 0f;
             var cutoff = Math.Max(0.05f, Events.Cutoff);
@@ -335,8 +351,7 @@ namespace RealisticFiring.Core
                 Math.Sqrt((0.25 + Spec.Clearance) / (cutoff + Spec.Clearance))
                 * Math.Pow(Spec.CondensationTurns / turns, 1.0 / 3.0)
                 * Math.Pow(Spec.CondensationPressure / pressure, 1.0 / 3.0));
-            var condensed = Math.Min(0.6f, saturated) - Superheat * Spec.CondensationPerSuperheat;
-            return condensed > 0f ? condensed / (1f - condensed) : 0f;
+            return Math.Min(0.6f, saturated);
         }
 
         /// <summary>Sets this tick's notch, steam, and exhaust.</summary>
@@ -363,18 +378,28 @@ namespace RealisticFiring.Core
         /// closes. The throttle refills the chest between strokes, so its limit
         /// shows as the chest's pressure. The walls' condensation takes steam
         /// as a larger cylinder would: drawn from the chest and through the
-        /// port, but doing no work. Steam volumes are L/kg.
+        /// port, but doing no work. Steam volumes are L/kg, saturated: the
+        /// chest's steam is kept as the game keeps it, and superheated steam
+        /// fills the cylinder by volume, so a stroke takes as much less of it
+        /// as it is lighter at cut-off, and the port passes it as the root of
+        /// its density at the chest (a nozzle's flow goes as √(p·ρ)).
         /// </summary>
         public CylinderAdmission Admit(float chestPressure, float chestSteam, float chestVolume, float cylinderVolume,
             float turnsPerSecond, Func<float, float> steamVolume, Func<float, float> steamPressure)
         {
             var condensation = Condensation(turnsPerSecond, chestPressure);
+            var lighter = 1f / SuperheatedVolumeRatio(chestPressure, SuperheatAtCutoff(turnsPerSecond, chestPressure));
+            var portLighter = (float)Math.Sqrt(1f / SuperheatedVolumeRatio(chestPressure, Superheat));
             var filled = (Events.Cutoff + Spec.Clearance) * cylinderVolume * (1f + condensation);
             var cushion = (Events.Compression + Spec.Clearance) * cylinderVolume / steamVolume(BackPressure);
+            // In saturated steam's kg: what the same volumes would hold saturated.
             var shared = filled / (filled + chestVolume) * (chestSteam + cushion) - cushion;
-            var timed = turnsPerSecond > 0f ? PortFlowPerBar * Math.Max(1f, chestPressure) * Events.PortWindow / turnsPerSecond : shared;
-            var mass = Math.Max(0f, Math.Min(shared, timed));
-            var pressure = mass > 0f ? Math.Min(chestPressure, steamPressure(filled / (mass + cushion))) : 1f;
+            var timed = turnsPerSecond > 0f
+                ? PortFlowPerBar * Math.Max(1f, chestPressure) * Events.PortWindow / turnsPerSecond * portLighter / lighter
+                : shared;
+            var saturatedMass = Math.Max(0f, Math.Min(shared, timed));
+            var pressure = saturatedMass > 0f ? Math.Min(chestPressure, steamPressure(filled / (saturatedMass + cushion))) : 1f;
+            var mass = saturatedMass * lighter;
             return new CylinderAdmission
             {
                 Mass = mass, Pressure = Math.Max(1f, pressure), Cushion = cushion,
@@ -392,6 +417,23 @@ namespace RealisticFiring.Core
         {
             var filled = Math.Max(0f, cylinderVolume * cutoff);
             return filled > 0f ? filled / (filled + Math.Max(0f, chestVolume)) * Math.Max(0f, chestSteam) : 0f;
+        }
+
+        /// <summary>
+        /// Superheated steam's specific volume over saturated steam's at the
+        /// same absolute pressure in bar, <paramref name="superheat"/> °C over
+        /// saturation. Callendar's equation, `v = RT/p − c·(273/T)^(10/3) + b`
+        /// (R 461.5 J/kg·K, b 0.001 m³/kg), with c 0.0882 m³/kg fitted to the
+        /// IAPWS-IF97 tables: within 0.6 % from 10 to 25 bar up to 400 °C.
+        /// </summary>
+        public static float SuperheatedVolumeRatio(float pressure, float superheat)
+        {
+            if (!(superheat > 0f))
+                return 1f;
+            var p = Math.Max(1f, pressure) * 1e5;
+            var saturated = SaturationTemperature(pressure) + 273.15;
+            double Volume(double t) => 461.5 * t / p - 0.0882 * Math.Pow(273.15 / t, 10.0 / 3.0) + 0.001;
+            return (float)(Volume(saturated + superheat) / Volume(saturated));
         }
 
         /// <summary>Saturated steam's temperature at an absolute pressure in bar, in °C (within 3 °C from 1 to 20 bar).</summary>

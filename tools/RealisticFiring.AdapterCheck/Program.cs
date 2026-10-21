@@ -1848,7 +1848,7 @@ namespace RealisticFiring.AdapterCheck
                 Check(realFull.Flow < 6.6f && realFull.Chest < 13f,
                     $"in full gear at speed the throttle's flow limits them through the steam chest ({realFull.Flow:F2} kg/s, chest {realFull.Chest:F1} bar)");
 
-                // A loco left stock (the C-16) keeps the game's own cylinders with the setting on.
+                // A loco left stock keeps the game's own cylinders with the setting on.
                 var keptQuarter = RunEngine(gameParams, true, Notch(0.25f), 180f, leftStock: true);
                 Check(Math.Abs(keptQuarter.Torque - stockQuarter.Torque) < 0.01f * Math.Abs(stockQuarter.Torque) + 1f,
                     $"a loco left stock keeps the game's cylinders ({keptQuarter.Torque:F0} against the stock {stockQuarter.Torque:F0} N·m)");

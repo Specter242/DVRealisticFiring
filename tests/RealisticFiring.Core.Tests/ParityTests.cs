@@ -4,8 +4,8 @@ namespace RealisticFiring.Core.Tests;
 
 /// <summary>
 /// The stock locos must keep their performance: a well-managed fire has to
-/// burn coal against the draft, and turn coal into heat, like the stock
-/// Firebox does at full oxygen availability.
+/// burn coal against the draft like the stock Firebox does at full oxygen
+/// availability, and turn it into heat on the boiler's efficiency curve.
 /// </summary>
 public class ParityTests
 {
@@ -17,7 +17,7 @@ public class ParityTests
     [InlineData(0.5f)]
     [InlineData(0.75f)]
     [InlineData(0.95f)]
-    public void WellManagedSteadyFireMatchesStockHeatPerCoalAndCoalPerAir(float load)
+    public void WellManagedSteadyFireBurnsTheStockCoalPerAirAndGivesItsHeat(float load)
     {
         var p = new FireboxParameters();
         var stockRate = load * p.MaxCombustionRate;
@@ -36,10 +36,10 @@ public class ParityTests
 
         var burnRate = burned / 1200.0;
         var heatPerCoal = heat / burned;
-        var stockHeatPerCoal = FireTestKit.StockHeat(p, burnRate) / burnRate;
+        var curveHeatPerCoal = FireTestKit.CurveHeat(p, burnRate) / burnRate;
 
         Assert.InRange(burnRate / stockRate, 1 - Tolerance, 1 + Tolerance);
-        Assert.InRange(heatPerCoal / stockHeatPerCoal, 1 - Tolerance, 1 + Tolerance);
+        Assert.InRange(heatPerCoal / curveHeatPerCoal, 1 - Tolerance, 1 + Tolerance);
         Assert.True(smoke < 0.15, $"mean smoke {smoke:F3} should stay light");
     }
 

@@ -366,7 +366,7 @@ namespace RealisticFiring.Visuals
             Slider("White forming above the stack, ×", () => Tuning.SteamForming, v => Tuning.SteamForming = v, 0.1f, 10f, "F2");
             Slider("Steam opacity (tuned air)", () => Tuning.SteamOpacity, v => Tuning.SteamOpacity = v, 0.2f, 0.95f, "F2");
             Slider("Clean haze opacity", () => Tuning.HazeOpacity, v => Tuning.HazeOpacity = v, 0f, 0.5f, "F2");
-            Slider("Haze in a coal fire's beats", () => Tuning.CoalHaze, v => Tuning.CoalHaze = v, 0f, 1f, "F2");
+            Slider("Haze in a well-fired engine's beats", () => Tuning.BeatHaze, v => Tuning.BeatHaze = v, 0f, 1f, "F2");
             Slider("Puff size, ×", () => Tuning.PuffSize, v => Tuning.PuffSize = v, 0.4f, 2.5f, "F2");
             Slider("Jet length, m", () => Tuning.JetLength, v => Tuning.JetLength = v, 1f, 8f, "F1");
             Slider("Buoyancy, ×", () => Tuning.Buoyancy, v => Tuning.Buoyancy = v, 0.2f, 3f, "F2");

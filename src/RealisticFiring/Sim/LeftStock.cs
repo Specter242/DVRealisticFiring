@@ -7,7 +7,7 @@ namespace RealisticFiring.Sim
 {
  internal static class LeftStock
     {
-        private static readonly HashSet<string> Types = new HashSet<string> { "S040F" };
+        private static readonly HashSet<string> Types = new HashSet<string> { "S040F", "S484-841A" };
         private static readonly object Mark = new object();
         private static readonly ConditionalWeakTable<ReciprocatingSteamEngine, object> Engines =
             new ConditionalWeakTable<ReciprocatingSteamEngine, object>();

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.13.9 (2026-10-20)
+
+- Superheated steam fills the cylinders by volume (`SteamCylinders.SuperheatedVolumeRatio`: Callendar's equation, fitted to IAPWS-IF97 within 0.54 % from 10 to 25 bar and up to 400 °C), after the walls take their share of the superheat (`SuperheatAtCutoff`); the ports pass in proportion to √(p·ρ).
+- `BoilerFit`: the Hudson's, FEF-3's, S484-840's, 2901's, and 8F's burn times set so the fire's most heat makes the prototype's tested evaporation at 2.6 MJ a kg (`FireboxParameters.BurnTimeFor`); the box and its efficiency stay the maker's.
+- `FireboxParameters.EfficiencyAt`: the efficiency falls in a straight line from `LightFiringEfficiency` (0.8) to the maker's at the most, for the coal fire, the oil fire, and `AutoFireman.RateFor`.
+- `SafetyValveFit` capacities resized to the standing fires on the sized boilers and the new curve.
+- An oil fire's beats take the tuning's haze share as a coal fire's do (`PlumeModel.BeatHaze`).
+- The plume's cloud sorts far to near, with a dark puff's soot core drawn in it (`ChimneyPlume`).
+- The fire iron keeps the shovel's `ShovelMountAnchor`, so the shovel mount's sliding snap point takes it.
+- A seating bench for a new engine's added parts, development-only (`Settings.DevSeatingKey`, unbound, never in the menu).
+
 ## 1.13.8 (2026-10-19)
 
 - The fireman judges the water as it would stand level (`FiremanReadings.GlassTilt`, the game's glass shift from the boiler's pitch, `BoilerWaterRig.GlassTiltNow`) and bounds his goal by the steepest climb and descent within the water's lead (`GlassTiltHigh`, `GlassTiltLow`): under `GlassTop` (0.9) on the climb, over `GlassLeast` on the descent.

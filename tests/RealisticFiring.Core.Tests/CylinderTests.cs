@@ -266,15 +266,70 @@ public class CylinderTests
     }
 
     [Fact]
-    public void SaturatedSteamCostsAFifthMoreForTheSameWork()
+    public void SuperheatSavesAThirdOfTheSteamForTheSameWork()
     {
         var dry = WaterRate(S282(0.25f));
         var wet = WaterRate(S282(0.25f, superheat: 0f));
 
-        // Goss's superheated engine 21.6 lb at 200 psi, the saturated 25.5;
-        // PRR's H8sb against the H8b, 26 to 35 % less steam.
-        Assert.InRange(dry, 18f, 22f);
-        Assert.InRange(wet / dry, 1.12f, 1.4f);
+        // PRR's H8sb against the saturated H8b, 26 to 35 % less steam
+        // (Bulletin 10, 1914, pp.85–86); Goss's saturated engine used 25.5 lb.
+        Assert.InRange(dry, 15.5f, 19.5f);
+        Assert.InRange(wet, 23f, 28f);
+        Assert.InRange(1f - dry / wet, 0.26f, 0.35f);
+    }
+
+    [Fact]
+    public void ABigSuperheatedEngineUsesWhatTheTestedOnesDid()
+    {
+        // The J-3a's cylinders on 20.3 bar with its Type E's 175 °C: the
+        // Santa Fe 3766 made 5,450 ihp on at most 82,000 lb/h, 15 lb an
+        // ihp-hour (Trains, Feb 1987); the QJ's best was 6.7 kg a PS-hour,
+        // 14.8 lb (Schaefer).
+        const float bore = 0.696f, stroke = 0.813f, chest = 1500f, p = 20.3f;
+        var volume = (float)(Math.PI / 4 * bore * bore * stroke * 1000);
+        var cylinders = new SteamCylinders(new CylinderSpec(), bore, stroke, 15f);
+        cylinders.Set(0.25f, 10f, p, SteamCylinders.SaturationTemperature(p) + 175f);
+        var admission = cylinders.Admit(p, chest / SteamVolume(p), chest, volume, 2.5f, SteamVolume, SteamPressure);
+        var work = cylinders.Cycle(admission.Pressure).MeanEffectivePressure * 1e5f * volume / 1000f;
+        var rate = admission.Mass / work * 3.6e6f * 2.2046f * 0.7457f;
+
+        Assert.InRange(rate, 13.5f, 16.5f);
+    }
+
+    [Theory]
+    // IAPWS-IF97: saturated and superheated specific volumes at the same pressure.
+    [InlineData(10f, 120.1f, 1.327f)]
+    [InlineData(15f, 151.7f, 1.416f)]
+    [InlineData(20f, 187.6f, 1.518f)]
+    [InlineData(25f, 76.1f, 1.237f)]
+    public void SuperheatedSteamIsLighterAsTheTablesHaveIt(float pressure, float superheat, float ratio)
+    {
+        Assert.InRange(SteamCylinders.SuperheatedVolumeRatio(pressure, superheat), ratio * 0.99f, ratio * 1.01f);
+        Assert.Equal(1f, SteamCylinders.SuperheatedVolumeRatio(pressure, 0f));
+    }
+
+    [Fact]
+    public void TheWallsTakeTheSuperheatBeforeAnySteamCondenses()
+    {
+        var saturated = Goss(0f).Condensation(2f, 10f);
+        var share = saturated / (1f + saturated);
+        var hot = Goss(200f);
+
+        Assert.Equal(0f, hot.Condensation(2f, 10f));
+        Assert.Equal(200f - share / new CylinderSpec().CondensationPerSuperheat, hot.SuperheatAtCutoff(2f, 10f), 1);
+        Assert.Equal(0f, Goss(50f).SuperheatAtCutoff(2f, 10f));
+        hot.WallCondensation = false;
+        Assert.Equal(200f, hot.SuperheatAtCutoff(2f, 10f), 3);
+    }
+
+    [Fact]
+    public void SuperheatedSteamFillsTheCylinderOnLessSteam()
+    {
+        var hot = Admit(S282(0.25f, superheat: 200f), 2f);
+        var warm = Admit(S282(0.25f, superheat: 100f), 2f);
+
+        Assert.Equal(warm.Pressure, hot.Pressure, 1);
+        Assert.True(hot.Mass < 0.92f * warm.Mass, $"{hot.Mass} against {warm.Mass}");
     }
 
     [Fact]

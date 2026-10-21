@@ -603,6 +603,13 @@ namespace RealisticFiring.Visuals
             {
                 var bySpeed = system.sizeBySpeed;
                 bySpeed.enabled = false;
+                // Drawn far to near. The bundle's systems drew their particles
+                // unsorted, in the order Unity keeps them, which reshuffles as
+                // particles die: steam and smoke clipped in and out of each
+                // other (ThinBlueWarrior, Nexus, 2026-10-19).
+                var renderer = system.GetComponent<ParticleSystemRenderer>();
+                if (renderer != null)
+                    renderer.sortMode = ParticleSystemSortMode.Distance;
             }
             ApplyLook();
             Active = true;
@@ -845,7 +852,7 @@ namespace RealisticFiring.Visuals
             var air = fire.PrimaryAirFlow + fire.DoorAirFlow;
             inputs.ClearStack = PlumeModel.CoalClearStack(Mathf.Max(inputs.Soot, PlumeModel.FireboxSoot(inputs)),
                 air > 0f ? fire.ExcessAirFlow / air : 0f);
-            inputs.PuffHaze = PlumeModel.CoalPuffHaze(tuning, inputs.ClearStack);
+            inputs.PuffHaze = PlumeModel.WellFiredHaze(tuning, inputs.ClearStack);
             return inputs;
         }
 
@@ -854,7 +861,7 @@ namespace RealisticFiring.Visuals
         private PlumeInputs OilInputs()
         {
             stackHeat = oil.Model.Heat;
-            var inputs = PlumeModel.OilInputs(oil.StackDarkness, exhaustPressure.Value, StackSteamFlow(), oil.Model.FireOn);
+            var inputs = PlumeModel.OilInputs(tuning, oil.StackDarkness, exhaustPressure.Value, StackSteamFlow(), oil.Model.FireOn);
             inputs.HeatShare = Mathf.Clamp01(oil.Model.Heat / Mathf.Max(1f, oil.Model.Parameters.MaxHeatOutput));
             return inputs;
         }
@@ -871,7 +878,7 @@ namespace RealisticFiring.Visuals
                 Soot = test.FireOn ? test.Soot : 0f,
                 FireOn = test.FireOn,
                 ClearStack = test.Clear,
-                PuffHaze = oil != null ? 1f - Mathf.Clamp01(test.Clear) : PlumeModel.CoalPuffHaze(tuning, test.Clear),
+                PuffHaze = PlumeModel.WellFiredHaze(tuning, test.Clear),
                 HeatShare = test.FireOn ? Mathf.Clamp01(test.Heat) : 0f,
             };
         }
@@ -955,12 +962,18 @@ namespace RealisticFiring.Visuals
                 }
             }
 
-            if (sootCore != null && puff.SootParticles > 0)
+            // A dark puff's sooty core goes into the cloud's own system, drawn
+            // among its particles by distance: in a system of its own it was
+            // drawn over the whole cloud, white steam in front of it too, and
+            // a fresh charge's black smoke cut through the steam as a layer
+            // (ThinBlueWarrior, Nexus, 2026-10-19). It keeps its shorter
+            // life, drawn as the Soot system's.
+            if (puff.SootParticles > 0)
             {
                 var soot = new Color(color.r * 0.8f, color.g * 0.8f, color.b * 0.8f, Mathf.Min(1f, color.a + 0.1f));
                 for (var i = 0; i < puff.SootParticles; i++)
-                    Emit(sootCore, puff.Speed * 0.9f, puff.Size * 0.6f, soot, carVelocity, PuffSpread, PuffSlowest, PuffFastest, Lifetime(sootCore, puff.LifetimeScale),
-                        Aloft(sootCore), 1f, soot, steamCloud);
+                    Emit(smoke, puff.Speed * 0.9f, puff.Size * 0.6f, soot, carVelocity, PuffSpread, PuffSlowest, PuffFastest,
+                        SootLifetime(puff.LifetimeScale), Aloft(smoke), 1f, soot, steamCloud);
             }
 
             // Usually well under one spark a beat: round at random. A stoker's
@@ -1342,11 +1355,21 @@ namespace RealisticFiring.Visuals
         {
             if (!(scale > 1.001f))
                 return 0f;
+            return DrawLifetime(system) * scale;
+        }
+
+        // The sooty core's life: the Soot system's, 4 to 7 s against the
+        // cloud's 6 to 10, or seven tenths of the cloud's in a bundle without it.
+        private float SootLifetime(float scale) =>
+            (sootCore != null ? DrawLifetime(sootCore) : 0.7f * DrawLifetime(smoke)) * Mathf.Max(1f, scale);
+
+        private static float DrawLifetime(ParticleSystem system)
+        {
             var curve = system.main.startLifetime;
             var life = curve.mode == ParticleSystemCurveMode.TwoConstants
                 ? Random.Range(curve.constantMin, curve.constantMax)
                 : curve.mode == ParticleSystemCurveMode.Constant ? curve.constant : curve.Evaluate(Random.value);
-            return life * scale;
+            return life;
         }
 
         // The stock total flow through the smokebox counts the stack's natural

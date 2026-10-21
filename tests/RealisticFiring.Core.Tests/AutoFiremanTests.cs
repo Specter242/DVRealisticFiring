@@ -45,7 +45,9 @@ namespace RealisticFiring.Core.Tests;
         output.WriteLine($"pressure low {low:F2}, glass {lowGlass:F2}-{highGlass:F2}, blown off {engine.BlownOff:F0} of {engine.SteamMade:F0} kg, " +
                          $"coal {engine.CoalFired:F0} kg, trim {engine.Fireman.Trim:F2}, rounds {string.Join(",", engine.Rounds())}");
         var target = AutoFireman.PressureFor(FiremanMode.Road, engine.SafetyValve);
-        Assert.True(low >= target - 1.5f, $"pressure fell to {low:F2}");
+        // The climb comes unannounced, and he builds its fire by hand: at the
+        // boiler's real efficiency about a fifth more coal than the stock curve's.
+        Assert.True(low >= target - 1.6f, $"pressure fell to {low:F2}");
         Assert.True(engine.BlownOff <= 0.03f * engine.SteamMade, $"blew off {engine.BlownOff:F0} kg");
         Assert.InRange(lowGlass, 0.3f, 1f);
         Assert.InRange(highGlass, 0f, 0.9f);
@@ -783,13 +785,13 @@ namespace RealisticFiring.Core.Tests;
     }
 
     [Fact]
-    public void TheCoalRateGivesTheHeatAsTheStockFireboxWould()
+    public void TheCoalRateGivesTheHeatOnTheBoilersCurve()
     {
         var p = Footplate.S282;
         foreach (var share in new[] { 0.1f, 0.5f, 0.9f })
         {
             var rate = share * p.MaxCombustionRate;
-            var heat = (float)FireTestKit.StockHeat(p, rate);
+            var heat = (float)FireTestKit.CurveHeat(p, rate);
             Assert.Equal(rate, AutoFireman.RateFor(p, heat), 3);
         }
         Assert.Equal(p.MaxCombustionRate, AutoFireman.RateFor(p, 2f * p.MaxHeatOutput));

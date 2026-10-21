@@ -13,24 +13,24 @@ namespace RealisticFiring.Sim
         // capacity, kg/s: 1.25 times the steam at the lift of the most heat
         // the mod's fire gives standing, door shut, blower wide open, its box
         // kept 30 to 100 % full (the 2901: its burner at any setting), rounded
-        // up to half a kg/s. Lifts within the ICC's 6 psi of the prototype's
-        // pressure are the maker's: the S282 203 psi (the USRA light Mikado
-        // 200), the S060 210 (the S100's), the Hudson 280 (the J-3a's 275 as
-        // built), the 2901 297 (300).
+        // up to half a kg/s; on the engines whose boilers are sized to their
+        // prototypes' (BoilerFit, 2026-10-20), of that fire, and on the
+        // boiler's efficiency curve (FireboxParameters.EfficiencyAt). Lifts within the
+        // ICC's 6 psi of the prototype's pressure are the maker's: the S282
+        // 203 psi (the USRA light Mikado 200), the S060 210 (the S100's), the
+        // Hudson 280 (the J-3a's 275 as built), the 2901 297 (300).
         private static readonly Dictionary<string, (float Lift, float Capacity)> Fits = new Dictionary<string, (float, float)>
         {
-            ["LocoS282A"] = (15.0f, 7f),
+            ["LocoS282A"] = (15.0f, 6f),
             ["LocoS060"] = (15.5f, 3.5f),
-            ["Jk3A"] = (15.0f, 3f),
-            ["S464-730"] = (20.3f, 12f),
-            // The UP 4-8-4s' 300 psi, where the FEF-3's maker set 290 and the
-            // S484-840's 309.
-            ["FEF-3"] = (21.7f, 12.5f),
-            ["S484-840A"] = (21.7f, 13f),
-            ["A.T.&S.F. 2901-A"] = (21.5f, 10f),
+            ["Jk3A"] = (15.0f, 2.5f),
+            ["S464-730"] = (20.3f, 9.5f),
+            ["FEF-3"] = (21.7f, 10.5f),
+            ["S484-840A"] = (21.7f, 10.5f),
+            ["A.T.&S.F. 2901-A"] = (21.5f, 8f),
             // The 8F's 225 psi, which its maker set as 15.5 bar, gauge.
-            ["em_lms_8f_loc_black"] = (16.5f, 5.5f),
-            ["em_lms_8f_loc_grey"] = (16.5f, 5.5f),
+            ["em_lms_8f_loc_black"] = (16.5f, 4f),
+            ["em_lms_8f_loc_grey"] = (16.5f, 4f),
         };
 
         /// <summary>

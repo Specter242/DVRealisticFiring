@@ -215,7 +215,7 @@ namespace RealisticFiring.Core.Tests;
     {
         var inputs = Working(4f, whiteness, smoke: soot);
         inputs.ClearStack = clear;
-        inputs.PuffHaze = PlumeModel.CoalPuffHaze(Tuning, clear);
+        inputs.PuffHaze = PlumeModel.WellFiredHaze(Tuning, clear);
         return PlumeModel.ForBeat(Tuning, inputs);
     }
 

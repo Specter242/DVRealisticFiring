@@ -31,9 +31,14 @@ namespace RealisticFiring.Items
 
         // The shovel's own behaviour and its coal-carrying parts. Its
         // ShopRestocker stays: the shops count bought irons by it, and give
-        // the stock back when one is destroyed.
+        // the stock back when one is destroyed. Its [ShovelMountAnchor]
+        // stays too: the shovel mount gadget is a sliding snap point, which
+        // takes only an item whose anchor for it slides
+        // (SnapPointGadgetSliding.CanSnapCheck), and the shovel's sits at its
+        // origin on the shaft, where the iron's bar runs too. Without it the
+        // iron would not hang on the mount (SmoothJazz17, Nexus, 2026-10-19).
         private static readonly string[] ShovelComponents = { "ShovelAudio", "Shovel", "ShovelNonPhysicalCoal" };
-        private static readonly string[] ShovelChildren = { "scoop pivot", "[spawn anchors]", "[visual coal anchor]", "[ShovelMountAnchor]" };
+        private static readonly string[] ShovelChildren = { "scoop pivot", "[spawn anchors]", "[visual coal anchor]" };
 
         private static GameObject template;
         private static bool noShovel;

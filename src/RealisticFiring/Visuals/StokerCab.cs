@@ -70,7 +70,7 @@ namespace RealisticFiring.Visuals
         // with the mod's stoker.
         private static readonly Vector2 EngineAt = new Vector2(0f, 0.135f);
         private const float EngineHeaderTop = 0.165f;
-        private const string RootName = "[RealisticFiring stoker manifold]";
+        internal const string RootName = "[RealisticFiring stoker manifold]";
 
         // The blower's own keys and joystick axis; the clones have none.
         internal static readonly string[] InputComponents =
@@ -111,7 +111,7 @@ namespace RealisticFiring.Visuals
         /// in cm, in the mount's frame; then turned and tilted from the mount's
         /// facing, in degrees. It always stands upright.
         /// </summary>
-        private readonly struct Placement
+        internal readonly struct Placement
         {
             public Placement(Vector3 offsetCm, float turn, float tilt)
             {
@@ -146,6 +146,24 @@ namespace RealisticFiring.Visuals
         private static readonly Vector2 CopiedValveAt = new Vector2(0f, -0.34f);
 
         private static readonly Placement DefaultPlacement = new Placement(new Vector3(18f, 0f, 0f), 0f, 0f);
+
+        // Seats set this session on the seating bench (SeatingBench, a
+        // development tool), by livery: they come before the tables and are
+        // never saved.
+        internal static readonly Dictionary<string, Placement> DevPlacements = new Dictionary<string, Placement>();
+        internal static readonly Dictionary<string, Vector3> DevLeverMoves = new Dictionary<string, Vector3>();
+
+        /// <summary>Where the manifold sits for <paramref name="livery"/>: the bench's seat, the table's, or the default.</summary>
+        internal static Placement PlacementFor(string livery) =>
+            DevPlacements.TryGetValue(livery, out var dev) ? dev
+            : Placements.TryGetValue(livery, out var known) ? known
+            : DefaultPlacement;
+
+        /// <summary>Where the operating lever moves from its place under the manifold, for <paramref name="livery"/>, in the car frame, m.</summary>
+        internal static Vector3 LeverMoveFor(string livery) =>
+            DevLeverMoves.TryGetValue(livery, out var dev) ? dev
+            : LeverMoves.TryGetValue(livery, out var seated) ? seated
+            : Vector3.zero;
 
         private static readonly Dictionary<string, float> SupplyPipeAt = new Dictionary<string, float>
         {
@@ -202,7 +220,7 @@ namespace RealisticFiring.Visuals
             root.AddComponent<ManifoldTracer>().Car = car;
             // The wheel spins as it turns; its mount doesn't.
             var mount = anchor.parent != null ? anchor.parent : anchor;
-            var placement = Placements.TryGetValue(car.carLivery.id, out var known) ? known : DefaultPlacement;
+            var placement = PlacementFor(car.carLivery.id);
             var offset = placement.OffsetCm;
             var facing = mount.rotation * Quaternion.Euler(placement.Tilt, placement.Turn, 0f);
             var into = facing * Vector3.forward;
@@ -262,6 +280,38 @@ namespace RealisticFiring.Visuals
 
         private static float nextCheck;
 
+        /// <summary>True while the manifold is being rebuilt on purpose (the seating bench).</summary>
+        internal static bool Rebuilding { get; private set; }
+
+        /// <summary>Rebuilds the manifold in every loaded cab, as the seating bench moves it.</summary>
+        public static void RebuildLoaded()
+        {
+            Rebuilding = true;
+            try
+            {
+                foreach (var pair in Interiors.ToList())
+                {
+                    var car = pair.Key;
+                    var interior = pair.Value;
+                    if (car == null || interior == null || car.loadedInterior == null || car.loadedInterior.transform != interior)
+                    {
+                        Interiors.Remove(car);
+                        continue;
+                    }
+                    var old = interior.Find(RootName);
+                    if (old != null)
+                        Object.DestroyImmediate(old.gameObject);
+                    var result = Attach(car, interior);
+                    if (result != null && Main.Settings.LogFireboxCreation)
+                        Main.Mod.Logger.Log($"{car.LogName()}: {result}");
+                }
+            }
+            finally
+            {
+                Rebuilding = false;
+            }
+        }
+
         /// <summary>
         /// Puts the manifold back in any loaded cab that has lost it, checking
         /// once a second; call every frame.
@@ -310,7 +360,7 @@ namespace RealisticFiring.Visuals
         // went, for the log, or null.
         private static string PlaceLever(Transform cabPrefab, Transform frame, Port port, TrainCar car, Transform sourceControl, Transform sourceLabel)
         {
-            var move = LeverMoves.TryGetValue(car.carLivery.id, out var seated) ? seated : Vector3.zero;
+            var move = LeverMoveFor(car.carLivery.id);
             var above = frame.TransformPoint(LeverAbove) + car.transform.TransformVector(move);
             var onFloor = TryFindFloor(car, above, out var floor);
             if (!onFloor)
@@ -623,7 +673,7 @@ namespace RealisticFiring.Visuals
 
         private void OnDestroy()
         {
-            if (Car == null || Car.loadedInterior == null || !Main.Settings.LogFireboxCreation)
+            if (StokerCab.Rebuilding || Car == null || Car.loadedInterior == null || !Main.Settings.LogFireboxCreation)
                 return;
             var ownCab = transform.parent != null && transform.parent.gameObject == Car.loadedInterior;
             Main.Mod.Logger.Log($"{Car.ID}: stoker manifold removed while {(ownCab ? "its" : "another")} cab is loaded; " +

@@ -76,10 +76,13 @@ namespace RealisticFiring.Core.Tests;
         var expected = water * FireModel.DryingEnergy;
         var perKgDry = dry.Heat / dry.Coal;
         var perKgWet = wet.Heat / wet.Coal;
-        // The drying, and a little more as the slower-catching coal keeps more of the bed green.
-        Assert.InRange(perKgDry - perKgWet, 0.8f * expected, 2f * expected);
-        // About 1 per cent of the heat for 10 per cent of moisture (Kreisinger, 1915).
-        Assert.InRange((perKgDry - perKgWet) / perKgDry, 0.005f, 0.02f);
+        // The drying, and about as much again: the slower-catching coal keeps
+        // more of the bed green and burns less of the same draft, the air
+        // left over cooling the box.
+        Assert.InRange(perKgDry - perKgWet, 0.8f * expected, 2.5f * expected);
+        // The drying about 1 per cent of the heat for 10 per cent of moisture (Kreisinger, 1915).
+        Assert.InRange(expected / perKgDry, 0.005f, 0.015f);
+        Assert.InRange((perKgDry - perKgWet) / perKgDry, 0.005f, 0.03f);
     }
 
     [Fact]

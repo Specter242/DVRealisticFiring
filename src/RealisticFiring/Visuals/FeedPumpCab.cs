@@ -21,7 +21,7 @@ namespace RealisticFiring.Visuals
     /// </summary>
     internal static class FeedPumpCab
     {
-        private readonly struct Spot
+        internal readonly struct Spot
         {
             public Spot(Vector2 valve, Vector2 gauge, Vector3? valveInCar = null)
             {
@@ -51,6 +51,47 @@ namespace RealisticFiring.Visuals
 
         private static readonly Spot DefaultSpot = new Spot(new Vector2(-0.165f, -0.12f), new Vector2(-0.165f, 0.03f));
 
+        // Seats set this session on the seating bench (SeatingBench, a
+        // development tool), by livery, as Spots and LeverGaugeSeats: they
+        // come first and are never saved.
+        internal static readonly Dictionary<string, Spot> DevSpots = new Dictionary<string, Spot>();
+        internal static readonly Dictionary<string, Vector3> DevLeverGaugeSeats = new Dictionary<string, Vector3>();
+
+        /// <summary>Where the pump's valve and gauge go beside the manifold for <paramref name="livery"/>: the bench's seat, the table's, or the default.</summary>
+        internal static Spot SpotFor(string livery) =>
+            DevSpots.TryGetValue(livery, out var dev) ? dev
+            : Spots.TryGetValue(livery, out var seated) ? seated
+            : DefaultSpot;
+
+        /// <summary>Where an oil burner's wall gauge goes from its handwheel for <paramref name="livery"/>: the bench's seat, the table's, or the default.</summary>
+        internal static Vector3 LeverGaugeSeatFor(string livery) =>
+            DevLeverGaugeSeats.TryGetValue(livery, out var dev) ? dev
+            : LeverGaugeSeats.TryGetValue(livery, out var seated) ? seated
+            : LeverGaugeDefault;
+
+        // Whether a livery's wall gauge is seated (by the bench or the table).
+        private static bool LeverGaugeSeated(string livery) => DevLeverGaugeSeats.ContainsKey(livery) || LeverGaugeSeats.ContainsKey(livery);
+
+        /// <summary>Moves every loaded lever-mounted pump gauge, as the seating bench moves it.</summary>
+        public static void RebuildLeverGauges()
+        {
+            foreach (var rig in InjectorRig.All)
+            {
+                var car = rig.Car;
+                var interior = car != null && car.loadedInterior != null ? car.loadedInterior.transform : null;
+                var old = interior != null ? interior.Find(LeverGaugeRoot) : null;
+                if (old == null || rig.Pump == null || !FeedwaterFit.TryGet(car.carLivery.id, out var fit))
+                    continue;
+                Object.DestroyImmediate(old.gameObject);
+                var lever = interior.GetComponentsInChildren<InteractablePortFeeder>(true).FirstOrDefault(f => f.portId == FeedwaterFit.Valve.PortId);
+                if (lever == null)
+                    continue;
+                var result = BuildLeverGauge(car, interior, rig, fit, lever.transform);
+                if (result != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{car.LogName()}: feed pump {result}");
+            }
+        }
+
         private const float GaugeDepth = 0.035f;
         private const float WheelDepth = -0.012f;
         private const float BodyBack = 0.035f;
@@ -72,7 +113,7 @@ namespace RealisticFiring.Visuals
         // and its back out from the wall's collider, m, unless seated. The
         // collider can lie outside the drawn wall (the 2901's does, by a few
         // cm), so the back stands off it.
-        private const string LeverGaugeRoot = "[RealisticFiring feed pump gauge]";
+        internal const string LeverGaugeRoot = "[RealisticFiring feed pump gauge]";
         private static readonly Vector3 LeverGaugeDefault = new Vector3(0f, 0.25f, 0.06f);
         private const float WallSearch = 1.5f;
         private static readonly Dictionary<string, Vector3> LeverGaugeSeats = new Dictionary<string, Vector3>();
@@ -90,7 +131,7 @@ namespace RealisticFiring.Visuals
                 || !FeedwaterFit.TryGet(car.carLivery.id, out var fit) || !flow.TryGetPort(FeedwaterFit.Valve.PortId, out var port))
                 return (null, null);
 
-            var spot = Spots.TryGetValue(car.carLivery.id, out var seated) ? seated : DefaultSpot;
+            var spot = SpotFor(car.carLivery.id);
             var valveAt = spot.Valve;
             var gaugeAt = spot.Gauge;
             if (spot.ValveInCar is Vector3 inCar)
@@ -165,8 +206,8 @@ namespace RealisticFiring.Visuals
         {
             if (!DV.Globals.G.Types.TryGetLivery(StokerCab.SourceLivery, out var livery) || livery.interiorPrefab == null)
                 return null;
-            var seated = LeverGaugeSeats.TryGetValue(car.carLivery.id, out var seat);
-            var spot = seated ? seat : LeverGaugeDefault;
+            var seated = LeverGaugeSeated(car.carLivery.id);
+            var spot = LeverGaugeSeatFor(car.carLivery.id);
             var up = car.transform.up;
             var at = lever.position + car.transform.forward * spot.x + up * spot.y;
             // Out to the wall on the handwheel's side of the cab.

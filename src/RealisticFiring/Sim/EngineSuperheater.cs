@@ -33,8 +33,6 @@ namespace RealisticFiring.Sim
             // at the full rate is inferred.
             ["em_lms_8f_loc_black"] = Superheat("Type A", 100f, 0.72f),
             ["em_lms_8f_loc_grey"] = Superheat("Type A", 100f, 0.72f),
-            // SP GS-4: Elesco Type E, its valves rated for 750 °F (SP spec, 1940).
-            ["S484-841A"] = Superheat("Type E", 180f, 0.82f),
         };
 
         private static readonly HashSet<string> Exempt = new HashSet<string> { "LocoS060" };

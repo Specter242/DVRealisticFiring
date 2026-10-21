@@ -127,7 +127,7 @@ public class ShovelDeliveryTests
         }
 
         var burnRate = burned / 1200.0;
-        var stockHeatPerCoal = FireTestKit.StockHeat(S282, burnRate) / burnRate;
-        Assert.InRange(heat / burned / stockHeatPerCoal, 0.95, 1.05);
+        var curveHeatPerCoal = FireTestKit.CurveHeat(S282, burnRate) / burnRate;
+        Assert.InRange(heat / burned / curveHeatPerCoal, 0.95, 1.05);
     }
 }

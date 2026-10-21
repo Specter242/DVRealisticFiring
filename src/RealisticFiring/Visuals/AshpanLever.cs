@@ -65,6 +65,37 @@ namespace RealisticFiring.Visuals
             ["em_lms_8f_loc_grey"] = new Vector3(-1.00f, 1.42f, -2.39f),
         };
 
+        // Seats set this session on the seating bench (SeatingBench, a
+        // development tool), by livery, as Placements: they come first and
+        // are never saved. And where each livery's pull was last built, for
+        // the bench to start from.
+        internal static readonly Dictionary<string, Vector3> DevPlacements = new Dictionary<string, Vector3>();
+        private static readonly Dictionary<string, Vector3> BuiltPulls = new Dictionary<string, Vector3>();
+
+        /// <summary>Where <paramref name="livery"/>'s pull is seated (the bench's or the table's), or last built; false before one is built.</summary>
+        internal static bool TrySeat(string livery, out Vector3 pull) =>
+            DevPlacements.TryGetValue(livery, out pull) || Placements.TryGetValue(livery, out pull) || BuiltPulls.TryGetValue(livery, out pull);
+
+        private static readonly HashSet<AshpanLever> Levers = new HashSet<AshpanLever>();
+
+        /// <summary>Rebuilds every loaded lever, as the seating bench moves it.</summary>
+        public static void RebuildLoaded()
+        {
+            foreach (var lever in Levers.ToList())
+            {
+                if (lever == null || lever.car == null)
+                {
+                    Levers.Remove(lever);
+                    continue;
+                }
+                var root = lever.car.loadedExternalInteractables;
+                var old = root != null ? root.transform.Find(RootName) : null;
+                if (old != null)
+                    DestroyImmediate(old.gameObject);
+                lever.OnLoaded(root);
+            }
+        }
+
         private TrainCar car;
         private RealisticFirebox firebox;
         private Port port;
@@ -82,6 +113,7 @@ namespace RealisticFiring.Visuals
 
         private void Start()
         {
+            Levers.Add(this);
             car.ExternalInteractableLoaded += OnLoaded;
             car.ExternalInteractableAboutToBeUnloaded += OnUnloading;
             OnLoaded(car.loadedExternalInteractables);
@@ -89,6 +121,7 @@ namespace RealisticFiring.Visuals
 
         private void OnDestroy()
         {
+            Levers.Remove(this);
             if (car != null)
             {
                 car.ExternalInteractableLoaded -= OnLoaded;
@@ -111,7 +144,7 @@ namespace RealisticFiring.Visuals
         private void OnLoaded(GameObject root)
         {
             if (root == null || root.transform.Find(RootName) != null
-                || (!firebox.GrateBox.HasValue && !Placements.ContainsKey(car.carLivery.id)))
+                || (!firebox.GrateBox.HasValue && !Placements.ContainsKey(car.carLivery.id) && !DevPlacements.ContainsKey(car.carLivery.id)))
                 return;
             var result = Build(root.transform);
             if (result != null && Main.Settings.LogFireboxCreation)
@@ -143,7 +176,7 @@ namespace RealisticFiring.Visuals
             // On the fireman's side (left, -x), at the back of the grate, under
             // it, unless seated for the livery.
             var frame = car.transform;
-            var seatedFor = Placements.TryGetValue(car.carLivery.id, out var seated);
+            var seatedFor = DevPlacements.TryGetValue(car.carLivery.id, out var seated) || Placements.TryGetValue(car.carLivery.id, out seated);
             float pull, y, z, side;
             bool found;
             if (seatedFor)
@@ -163,6 +196,7 @@ namespace RealisticFiring.Visuals
             }
             // The plate goes on the wall beside the handle wherever it was
             // moved: the first surface of the loco in from the pull.
+            BuiltPulls[car.carLivery.id] = new Vector3(pull, y, z);
             if (!TryFindSide(pull - 0.05f, y + PlateUp, z, out var wall))
                 wall = pull + PullOut;
 

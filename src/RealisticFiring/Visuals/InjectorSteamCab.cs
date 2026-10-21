@@ -14,7 +14,7 @@ namespace RealisticFiring.Visuals
 {
  internal static class InjectorSteamCab
     {
-        private const string RootName = "[RealisticFiring injector steam]";
+        internal const string RootName = "[RealisticFiring injector steam]";
         private const string SourceLivery = "LocoS282A";
         private const string SanderHolder = "Right/Sand";
         private const string SanderControl = "C_Sand";
@@ -43,6 +43,34 @@ namespace RealisticFiring.Visuals
         };
 
         private static readonly Vector3 SeatTurns = new Vector3(-180f, 0f, 2f);
+
+        // Seats set this session on the seating bench (SeatingBench, a
+        // development tool), by livery, as Seats: they come first and are
+        // never saved.
+        internal static readonly Dictionary<string, (Vector3 Move, Vector3 Turns)> DevSeats = new Dictionary<string, (Vector3, Vector3)>();
+
+        /// <summary>The backhead lever's seat for <paramref name="livery"/>: the bench's, the table's, or none (no move, the usual turns).</summary>
+        internal static (Vector3 Move, Vector3 Turns) SeatFor(string livery) =>
+            DevSeats.TryGetValue(livery, out var dev) ? dev
+            : Seats.TryGetValue(livery, out var seat) ? seat
+            : (Vector3.zero, SeatTurns);
+
+        /// <summary>Rebuilds every loaded cab's steam levers, as the seating bench moves them.</summary>
+        public static void RebuildLoaded()
+        {
+            foreach (var rig in InjectorRig.All)
+            {
+                var car = rig.Car;
+                var interior = car != null && car.loadedInterior != null ? car.loadedInterior.transform : null;
+                var old = interior != null ? interior.Find(RootName) : null;
+                if (old == null)
+                    continue;
+                Object.DestroyImmediate(old.gameObject);
+                var result = Attach(car, interior);
+                if (result != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{car.LogName()}: {result}");
+            }
+        }
 
         private static readonly Dictionary<string, Vector3> FixedSeats = new Dictionary<string, Vector3>
         {
@@ -276,7 +304,7 @@ namespace RealisticFiring.Visuals
             var middle = local.x > 0f ? -car.transform.right : car.transform.right;
             var up = car.transform.up;
             var forward = car.transform.forward;
-            var seatedHere = Seats.TryGetValue(car.carLivery.id, out var seat);
+            var seatedHere = DevSeats.TryGetValue(car.carLivery.id, out var seat) || Seats.TryGetValue(car.carLivery.id, out seat);
             var aim = stock.position + middle * (Across + seat.Move.x) + up * (Up + seat.Move.y);
             var proud = seat.Move.z;
             var fixedSeat = FixedSeats.TryGetValue(car.carLivery.id, out var fromHandle);

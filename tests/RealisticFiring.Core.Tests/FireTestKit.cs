@@ -11,13 +11,15 @@ internal static class FireTestKit
     public const float StockAirPerCoal = 13.899433f;
 
     /// <summary>
-    /// Stock Firebox heat at a steady combustion rate with full oxygen
-    /// availability: rate × 32 MJ/kg × lerp(1, efficiencyAtMax, rate / maxRate).
+    /// The heat a fire should give at a steady combustion rate with full
+    /// oxygen availability: rate × 32 MJ/kg × the boiler's efficiency there,
+    /// lerp(0.8, efficiencyAtMax, rate / maxRate).
     /// </summary>
-    public static double StockHeat(FireboxParameters p, double rate)
+    public static double CurveHeat(FireboxParameters p, double rate)
     {
         var t = Math.Clamp(rate / p.MaxCombustionRate, 0, 1);
-        var efficiency = 1 + (p.EfficiencyAtMaxCombustion - 1) * t;
+        var light = Math.Max(0.8, p.EfficiencyAtMaxCombustion);
+        var efficiency = light + (p.EfficiencyAtMaxCombustion - light) * t;
         return rate * FireboxParameters.CoalHeatContent * efficiency;
     }
 

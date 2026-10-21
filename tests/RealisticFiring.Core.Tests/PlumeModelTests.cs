@@ -111,8 +111,8 @@ namespace RealisticFiring.Core.Tests;
     public void AnOilFiresLightHazeTintsItsBeatsAndLingers()
     {
         // A light haze read the same as a clear stack: white steam, gone in seconds.
-        var clear = PlumeModel.ForBeat(Tuning, PlumeModel.OilInputs(0f, 4f, 0.5f, true));
-        var haze = PlumeModel.ForBeat(Tuning, PlumeModel.OilInputs(OilFire.HazeSmoke, 4f, 0.5f, true));
+        var clear = PlumeModel.ForBeat(Tuning, PlumeModel.OilInputs(Tuning, 0f, 4f, 0.5f, true));
+        var haze = PlumeModel.ForBeat(Tuning, PlumeModel.OilInputs(Tuning, OilFire.HazeSmoke, 4f, 0.5f, true));
         Assert.True(Brightness(haze.Color) < Brightness(clear.Color) - 0.1f);
         Assert.Equal(0f, clear.SmokeShare, 3);
         Assert.True(haze.SmokeShare > 0.2f);
@@ -120,6 +120,21 @@ namespace RealisticFiring.Core.Tests;
         Assert.Equal(0f, PlumeModel.ForBeat(Tuning, Working(4f)).SmokeShare, 3);
         // Too much air thins the steam: a clear stack is thinner than a light haze.
         Assert.True(clear.Color.A < 0.7f * haze.Color.A);
+    }
+
+    [Fact]
+    public void AnOilFireBurningRightDrawsAWellFiredCoalFiresHaze()
+    {
+        // The 2901 burning right drew a solid gray column on a hot, dry day:
+        // its beats carried twice a well-fired coal fire's haze.
+        var oil = PlumeModel.OilInputs(Tuning, OilFire.HazeSmoke, 4f, 0.5f, true);
+        var coal = Working(4f);
+        coal.PuffHaze = PlumeModel.WellFiredHaze(Tuning, 0f);
+        oil.SteamWhiteness = coal.SteamWhiteness = 0f;
+        var oilBeat = PlumeModel.ForBeat(Tuning, oil);
+        var coalBeat = PlumeModel.ForBeat(Tuning, coal);
+        Assert.Equal(coalBeat.SmokeShare, oilBeat.SmokeShare, 3);
+        Assert.Equal(coalBeat.Color.A, oilBeat.Color.A, 3);
     }
 
     [Fact]
