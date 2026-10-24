@@ -259,8 +259,9 @@ namespace RealisticFiring.Visuals
             var share = spilling ? 1f : 0f;
             SetRate(water, Mathf.Min(MaxWaterParticles, share * flow.Overflow * WaterParticlesPerKg));
             SetRate(steam, Mathf.Min(MaxSteamParticles, share * flow.OverflowSteam * SteamParticlesPerKg));
-            SetVolume(waterSound, share * Mathf.Clamp01(flow.Overflow / (0.3f * full)));
-            SetVolume(steamSound, share * Mathf.Clamp01(flow.OverflowSteam / (0.05f * full)));
+            var loudness = share * Mathf.Max(0f, Main.Settings.SteamVentVolume);
+            SetVolume(waterSound, loudness * Mathf.Clamp01(flow.Overflow / (0.3f * full)));
+            SetVolume(steamSound, loudness * Mathf.Clamp01(flow.OverflowSteam / (0.05f * full)));
         }
 
         // Whether this side spills: with a lever each side, the one whose lever

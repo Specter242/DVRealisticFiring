@@ -86,14 +86,17 @@ namespace RealisticFiring.Core
         /// <summary>
         /// The plume's rise speed <paramref name="height"/> m above the stack,
         /// in m/s, with the air moving past it at <paramref name="airSpeed"/>
-        /// m/s: the slower of the still-air and bent-over plume.
+        /// m/s: the slower of the still-air and bent-over plume, the still
+        /// air's × <paramref name="calmShare"/> (the speed its visible
+        /// surface shows, where the bent-over plume's trajectory is the
+        /// air's and its rise's together and is kept).
         /// </summary>
-        public static float RiseSpeed(float flux, float height, float airSpeed)
+        public static float RiseSpeed(float flux, float height, float airSpeed, float calmShare = 1f)
         {
             if (!(flux > 0f))
                 return 0f;
             var z = Math.Max(0f, height) + VirtualSource;
-            var calm = CalmRise * (float)Math.Pow(flux / z, 1.0 / 3.0);
+            var calm = CalmRise * Math.Max(0f, calmShare) * (float)Math.Pow(flux / z, 1.0 / 3.0);
             var bending = airSpeed - CalmAir;
             if (!(bending > 0.1f))
                 return calm;
@@ -119,14 +122,19 @@ namespace RealisticFiring.Core
         /// <summary>The plume's width <paramref name="height"/> m above the stack, in m.</summary>
         public static float Width(float height) => WidthPerHeight * (Math.Max(0f, height) + VirtualSource);
 
-        /// <summary>How fast the air's turbulence spreads a parcel, in m/s of width, with the air going past at <paramref name="airSpeed"/> m/s.</summary>
-        public static float SpreadRate(float airSpeed) => StillSpread + SpreadPerAirSpeed * Math.Max(0f, airSpeed);
+        /// <summary>
+        /// How fast the air's turbulence spreads a parcel, in m/s of width,
+        /// with the air going past at <paramref name="airSpeed"/> m/s, ×
+        /// <paramref name="scale"/> (<see cref="PlumeTuning.TrailSpread"/>).
+        /// </summary>
+        public static float SpreadRate(float airSpeed, float scale = 1f) =>
+            (StillSpread + SpreadPerAirSpeed * Math.Max(0f, airSpeed)) * Math.Max(0f, scale);
 
         /// <summary>
         /// How wide the air's turbulence has spread a parcel <paramref name="age"/>
         /// s old, with the air going past at <paramref name="airSpeed"/> m/s, in m.
         /// </summary>
-        public static float SpreadWidth(float age, float airSpeed) => SpreadRate(airSpeed) * Math.Max(0f, age);
+        public static float SpreadWidth(float age, float airSpeed, float scale = 1f) => SpreadRate(airSpeed, scale) * Math.Max(0f, age);
 
         /// <summary>The plume's width at a parcel: its rise's and its spread's together, in m.</summary>
         public static float PlumeWidth(float height, float spreadWidth)

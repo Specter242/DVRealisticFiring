@@ -57,6 +57,24 @@ namespace RealisticFiring.Visuals
             }
         }
 
+        /// <summary>
+        /// How much of the day's light there is, 0 at night to 1 by day: the
+        /// sun's height, through twilight from 6° below the horizon to 6°
+        /// above. By day when the game's sky is not found.
+        /// </summary>
+        public static float Daylight
+        {
+            get
+            {
+                Update();
+                return daylight;
+            }
+        }
+
+        private static float daylight = 1f;
+        private const float TwilightBelow = 96f;
+        private const float TwilightAbove = 84f;
+
         /// <summary>The wind in a few words, for the status log.</summary>
         public static string Describe()
         {
@@ -72,6 +90,8 @@ namespace RealisticFiring.Visuals
             wind = Vector3.zero;
             speed = 0f;
             var weather = Sim.GameWeather.Driver;
+            var sky = weather != null && weather.manager != null ? weather.manager.todSky : null;
+            daylight = sky != null ? Mathf.Clamp01((TwilightBelow - sky.SunZenith) / (TwilightBelow - TwilightAbove)) : 1f;
             if (PlumeTestBed.Air is PlumeAir testAir)
             {
                 air = testAir;

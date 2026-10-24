@@ -26,6 +26,7 @@ namespace RealisticFiring.Sim
         private const string OilTemperatureSaveKey = "rfOilTemp";
         private const string FlueSootSaveKey = "rfFlueSoot";
         private const string VaporSaveKey = "rfVapor";
+        private const string ValveStopSaveKey = "rfValveStop";
 
         private const float StartupMultiplierBase = 25f;
 
@@ -122,6 +123,8 @@ namespace RealisticFiring.Sim
                 foreach (var stale in ByCar.Keys.Where(c => c == null).ToList())
                     ByCar.Remove(stale);
                 ByCar[car] = this;
+                // Its feed, if built first; one built after joins this.
+                OilFeed.Of(car)?.Join(this);
             }
         }
 
@@ -133,6 +136,9 @@ namespace RealisticFiring.Sim
 
         /// <summary>The feed standing in for the loco's stoker, once it has made itself known.</summary>
         public OilFeed Feed { get; set; }
+
+        /// <summary>The firing valve's stop for the drifting fire, set and taken out by a click on the valve; kept in the save.</summary>
+        public FiringValveStop Stop { get; } = new FiringValveStop();
 
         /// <summary>A flareback's cloud at the stack, 0 to 1.</summary>
         public float FlarebackSmoke { get; private set; }
@@ -400,6 +406,8 @@ namespace RealisticFiring.Sim
             data.SetFloat(FlueSootSaveKey, Model.FlueSoot);
             if (Model.Vapor > 0f)
                 data.SetFloat(VaporSaveKey, Model.Vapor);
+            if (Stop.In)
+                data.SetFloat(ValveStopSaveKey, Stop.At);
             var mode = Fireman != null ? Fireman.Fireman.Mode : SavedFiremanMode;
             if (mode != FiremanMode.Off)
                 data[RealisticFirebox.FiremanSaveKey] = (int)mode;
@@ -420,6 +428,7 @@ namespace RealisticFiring.Sim
             var envDamage = savedData.GetFloat(RealisticFirebox.CoalEnvDamageSaveKey);
             if (envDamage.HasValue)
                 coalEnvDamage.Value = envDamage.Value;
+            Stop.Restore(savedData.GetFloat(ValveStopSaveKey) ?? 0f);
             var saved = savedData[RealisticFirebox.FiremanSaveKey]?.Type == JTokenType.Integer ? (int)savedData[RealisticFirebox.FiremanSaveKey] : 0;
             SavedFiremanMode = System.Enum.IsDefined(typeof(FiremanMode), saved) ? (FiremanMode)saved : FiremanMode.Off;
             Fireman?.SetMode(SavedFiremanMode);

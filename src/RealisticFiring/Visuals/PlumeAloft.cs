@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using RealisticFiring.Core;
 using UnityEngine;
 
@@ -22,11 +23,10 @@ namespace RealisticFiring.Visuals
         private const float SoftEdge = 0.15f;
         private const float MostThinGrowth = 2.2f;
 
-        // A particle is drawn this share of the plume's width, and drifts out
-        // from where it left the stack by up to this share of the plume's
-        // widening (its rise's and the air's spread), so the particles fill it.
-        private const float SizePerWidth = 0.75f;
-        private const float MostSpread = 0.3f;
+        // A particle is drawn a share of the plume's width (Air.FillWidth),
+        // and drifts out from where it left the stack by up to a share of the
+        // plume's widening (its rise's and the air's spread; Air.Disperse),
+        // so the particles fill it.
 
         // The plume's eddies are about this share of its width (at least the
         // smallest, in m), stir the smoke at up to this share of its rise,
@@ -51,6 +51,9 @@ namespace RealisticFiring.Visuals
             public SteamCloud Cloud;
             // Emitted from the stack by the mod: shown at once, no fade in.
             public bool FromStack;
+            // The particles emitted a second as it left: those overlapping it
+            // left with it (Drawn).
+            public float Rate;
         }
 
         private static readonly Color SteamColor = new Color(PlumeModel.Steam.R, PlumeModel.Steam.G, PlumeModel.Steam.B);
@@ -95,8 +98,79 @@ namespace RealisticFiring.Visuals
             /// <summary>The smoke shader's fraying, 0 to 1: as a particle thins its thin edges go first.</summary>
             public float Fray;
 
+            /// <summary>Rolling steam's wisp's edge lost as it thins, × <see cref="Fray"/> (<see cref="Thinning"/>).</summary>
+            public float WispFrayEdge;
+
+            /// <summary>Rolling steam is wholly a wisp where the plume is this opaque or less, wholly a puff from the next.</summary>
+            public float WispBelow;
+            public float WispAbove;
+
             /// <summary>How hard the plume's eddies stir it, × (0 none).</summary>
             public float Eddies;
+
+            /// <summary>
+            /// The plume's rise in still air as its particles show it, × its
+            /// mean (<see cref="PlumeRise.RiseSpeed"/>): a plume's visible
+            /// surface moves slower than its gas does on the whole.
+            /// </summary>
+            public float RiseShown;
+
+            /// <summary>How fast the air's turbulence spreads the plume as it ages, × (<see cref="PlumeTuning.TrailSpread"/>).</summary>
+            public float Spread;
+
+            /// <summary>A particle's size, × the plume's width, and how far out it drifts, × the plume's widening.</summary>
+            public float FillWidth;
+
+            /// <summary>Dense smoke's particle size, × the plume's width (drawn as the steam is: <see cref="AsSteam"/>).</summary>
+            public float SmokeFillWidth;
+            public float Disperse;
+
+            /// <summary>How far a particle's smoke's opacity is shared with those overlapping it, 0 (each as opaque as the plume) to 1.</summary>
+            public float Overlap;
+
+            /// <summary>A particle this wide, m, begins to stay a puff however thin, and wholly by the next (<see cref="Remember"/>).</summary>
+            public float WispLargestFrom;
+            public float WispLargestTo;
+
+            /// <summary>Past the puffs (by its age: <see cref="WispAgeFrom"/> to <see cref="WispAgeTo"/> of the flipbook's time), how far a particle's steam's opacity is shared with those overlapping it, 0 to 1.</summary>
+            public float WispShare;
+            public float WispAgeFrom;
+            public float WispAgeTo;
+
+            /// <summary>A particle's part of the plume's surface measured across the plume at its own age (else from its age band's middle, along the trail too).</summary>
+            public bool ShapeAcross;
+
+            /// <summary>A particle's part of the plume's surface eases to each new measure over this many s (0: at once).</summary>
+            public float ShapeSmoothing;
+
+            /// <summary>Smoke this dense as it left the stack begins to be drawn as the steam is (its opacity not shared), wholly by the next.</summary>
+            public float SmokeAsSteamFrom;
+            public float SmokeAsSteamTo;
+
+            /// <summary>Whether to work out each particle's part of the plume's surface (<see cref="ShapeOf"/>).</summary>
+            public bool Shape;
+
+            /// <summary>The way to the sun (the scene's main light), or zero for none.</summary>
+            public Vector3 ToSun;
+
+            /// <summary>Where the plume is seen from, in this system's space, if known: for its silhouette.</summary>
+            public bool HasEye;
+            public Vector3 Eye;
+
+            /// <summary>How dark the plume's shadow on itself is, × its particles' opacity (0: none worked out; <see cref="ExtraOf"/>).</summary>
+            public float ShadowDensity;
+
+            /// <summary>How long a particle takes to roll up into billows off the jet, s.</summary>
+            public float BillowAge;
+
+            /// <summary>
+            /// Rolling steam (the smoke shader lit six ways): how many puffs
+            /// its flipbooks hold (0: none), how many loops a second a puff
+            /// rolls as it leaves the jet, and the age over which that halves, s.
+            /// </summary>
+            public int Puffs;
+            public float RollRate;
+            public float RollSlows;
 
             /// <summary>
             /// A particle first seen here, not emitted by the mod, takes this
@@ -124,6 +198,141 @@ namespace RealisticFiring.Visuals
         // over at most this many frames.
         private const float UpdateInterval = 0.025f;
         private const int MostStride = 3;
+
+        private const float RateSmoothing = 2f;
+        private int emitted;
+        private float emissionRate;
+
+        private const float ShapeAgeStep = 0.5f;
+        private const int ShapeAges = 240;
+        private const int FewestForMiddle = 3;
+        // How many bands either side a particle's middle is looked for in.
+        private const int MiddleReach = 4;
+        private readonly Vector3[] middleSum = new Vector3[ShapeAges];
+        private readonly int[] middleCount = new int[ShapeAges];
+        private readonly Vector3[] middle = new Vector3[ShapeAges];
+        private readonly bool[] middleKnown = new bool[ShapeAges];
+        // Each band's mean age: its middle is the plume's middle at that age.
+        private readonly float[] middleAgeSum = new float[ShapeAges];
+        private readonly float[] middleAge = new float[ShapeAges];
+        private Dictionary<uint, Vector4> shapes = new Dictionary<uint, Vector4>();
+        private Dictionary<uint, Vector4> shapesNext = new Dictionary<uint, Vector4>();
+
+        /// <summary>A particle's part of the plume's surface: its way out from the plume's middle (xyz) and how far out it is, 0 to 1 (w).</summary>
+        public Vector4 ShapeOf(uint seed) => shapes.TryGetValue(seed, out var shape) ? shape : Vector4.zero;
+
+        /// <summary>
+        /// How far through the flipbook a particle is, 0 to 1: its age over the
+        /// system's own lifetime, as the flipbook plays (then holds its last frame).
+        /// </summary>
+        public float FlipbookAt(ParticleSystem.Particle particle) =>
+            nominalLife > 0f ? Mathf.Clamp01((particle.startLifetime - particle.remainingLifetime) / nominalLife) : 1f;
+
+        /// <summary>
+        /// Which of the wisp flipbook's eight wisps (its rows) a particle is, 0
+        /// to 7: each its own, as the plume's flipbook picked a row at random.
+        /// </summary>
+        public static float WispRow(ParticleSystem.Particle particle) =>
+            Mathf.Min(7f, Mathf.Floor(Hash(particle.randomSeed ^ 0x3c6ef372u) * 8f));
+
+        /// <summary>Where a particle's wisp starts in its row, 0 to 1, apart from its row and turn.</summary>
+        public static float WispPhase(ParticleSystem.Particle particle) => Hash(particle.randomSeed ^ 0xa54ff53au);
+
+        /// <summary>
+        /// A particle's wisp's own turn, radians: any way at birth, spinning
+        /// up to <paramref name="spin"/> rad/s either way as 1.13's particles
+        /// did, apart from the rolling puffs' near-upright pose; slowing as
+        /// the wisp grows, as an eddy's turn slows with its size, its rate
+        /// over 1 + its age over <paramref name="ease"/> s (0: steady).
+        /// </summary>
+        public static float WispTurn(ParticleSystem.Particle particle, float spin, float ease)
+        {
+            var age = particle.startLifetime - particle.remainingLifetime;
+            var turned = ease > 0f ? ease * Mathf.Log(1f + age / ease) : age;
+            return Hash(particle.randomSeed ^ 0x9e3779b9u) * 2f * Mathf.PI
+                + (2f * Hash(particle.randomSeed ^ 0x7f4a7c15u) - 1f) * spin * turned;
+        }
+
+        private const int ShadowCells = 40;
+        private const float SmallestCell = 1f;
+        private const float MarchFrom = 1.5f;
+        private const float ShadowEvery = 0.1f;
+        private const float ShadeEasing = 0.5f;
+        private float nextShadow;
+        private bool shadowTurn;
+        private struct Caster
+        {
+            public Vector3 Position;
+            public float Size;
+            public float Opacity;
+            public uint Seed;
+        }
+        private readonly List<Caster> casters = new List<Caster>();
+        private float[] grid = new float[0];
+        private Dictionary<uint, float> shades = new Dictionary<uint, float>();
+        private Dictionary<uint, float> shadesNext = new Dictionary<uint, float>();
+        // Each particle's plume's opacity where it is, before its share with
+        // the particles overlapping it (ExtraOf: how wispy it is drawn); the
+        // last full turn's, and this one's.
+        private Dictionary<uint, float> plumeHere = new Dictionary<uint, float>();
+        private Dictionary<uint, float> plumeHereNext = new Dictionary<uint, float>();
+        private float meanShade;
+        private float shadedShare;
+
+        /// <summary>
+        /// A particle's second custom data for the smoke shader: how far it
+        /// has rolled up into billows, 0 to 1 (x), how much of the sun the
+        /// plume between keeps from it, 0 to 1 (y), and as rolling steam how
+        /// far its puff has rolled, in loops (z), and which puff it is, plus
+        /// a half when mirrored (w). As rolling steam x is instead the
+        /// plume's opacity where it is, before its share with the particles
+        /// overlapping it: a dense plume's particles are each faint, and by
+        /// their own opacity dense black smoke turned to wisps; and y how far
+        /// it is on the plume's silhouette as seen, 0 to 1 (its way out from
+        /// the plume's middle across the view, × how far out it is): there
+        /// its thin edge frays into strands, which over the plume's faces
+        /// turned toward the view veiled its lobes.
+        /// </summary>
+        public Vector4 ExtraOf(ParticleSystem.Particle particle)
+        {
+            var age = Mathf.Max(0f, particle.startLifetime - particle.remainingLifetime);
+            var onset = air.BillowAge > 0f ? Mathf.SmoothStep(0f, 1f, age / air.BillowAge) : 1f;
+            var roll = 0f;
+            var puff = 0f;
+            if (air.Puffs > 0)
+            {
+                // Each its own puff, mirrored or not, from its own place in
+                // the loop; fast off the jet, slowing as its eddies spend.
+                var seed = particle.randomSeed;
+                puff = Mathf.Min(air.Puffs - 1, Mathf.Floor(Hash(seed ^ 0x68e31da4u) * air.Puffs))
+                       + (Hash(seed ^ 0xb5297a4du) < 0.5f ? 0.5f : 0f);
+                // Each at its own pace, so puffs of an age do not turn together.
+                roll = Hash(seed ^ 0x1b56c4e9u) + Rolled(age, air.RollRate, air.RollSlows) * (0.7f + 0.6f * Hash(seed ^ 0x2545f491u));
+            }
+            var shade = shades.TryGetValue(particle.randomSeed, out var shaded) ? shaded : 0f;
+            if (air.Puffs > 0)
+            {
+                onset = plumeHere.TryGetValue(particle.randomSeed, out var here) ? here : 1f;
+                shade = 0f;
+                var shape = ShapeOf(particle.randomSeed);
+                if (air.HasEye && shape.w > 0f)
+                {
+                    var toEye = (air.Eye - particle.position).normalized;
+                    var facing = Vector3.Dot(new Vector3(shape.x, shape.y, shape.z), toEye);
+                    shade = shape.w * Mathf.Sqrt(Mathf.Max(0f, 1f - facing * facing));
+                }
+            }
+            return new Vector4(onset, shade, roll, puff);
+        }
+
+        /// <summary>
+        /// How many loops a puff has rolled by <paramref name="age"/> s,
+        /// rolling <paramref name="rate"/> loops a second off the jet and
+        /// half that by <paramref name="slows"/> s: the turbulence the jet
+        /// leaves dies away as the puff mixes into the air.
+        /// </summary>
+        public static float Rolled(float age, float rate, float slows) =>
+            slows > 0f ? rate * slows * Mathf.Log(1f + Mathf.Max(0f, age) / slows) : rate * Mathf.Max(0f, age);
 
         private readonly ParticleSystem system;
         private readonly float nominalLife;
@@ -220,7 +429,9 @@ namespace RealisticFiring.Visuals
         /// Records what a particle about to be emitted with <paramref name="seed"/>
         /// carries: its steam and smoke, and the color of its smoke.
         /// </summary>
-        public void Expect(uint seed, Color color, float size, float smokeShare, Color smokeColor, SteamCloud cloud) =>
+        public void Expect(uint seed, Color color, float size, float smokeShare, Color smokeColor, SteamCloud cloud)
+        {
+            emitted++;
             parcels.Expect(seed, new Parcel
             {
                 Thickness = PlumeRise.Parcel(color.a, smokeShare),
@@ -230,16 +441,24 @@ namespace RealisticFiring.Visuals
                 RetiredAt = -1f,
                 Cloud = cloud,
                 FromStack = true,
+                Rate = emissionRate,
             });
+        }
 
         public void Begin(Air frame)
         {
+            var dt = Mathf.Max(Time.deltaTime, 1e-4f);
+            emissionRate += (emitted / dt - emissionRate) * (1f - Mathf.Exp(-dt / RateSmoothing));
+            emitted = 0;
             air = frame;
             if (turn == 0)
             {
                 stride = Mathf.Clamp(Mathf.RoundToInt(UpdateInterval / Mathf.Max(Time.deltaTime, 1e-4f)), 1, MostStride);
                 stats = default;
                 cycleTop = 0f;
+                shadowTurn = frame.ShadowDensity > 0f && Time.time >= nextShadow;
+                if (frame.ShadowDensity <= 0f)
+                    shades.Clear();
             }
             keepStride = Mathf.Pow(frame.Keep, stride);
             across = Vector3.Cross(frame.Up, Vector3.forward);
@@ -275,6 +494,7 @@ namespace RealisticFiring.Visuals
                     SmokeColor = particle.startColor,
                     Size = particle.startSize,
                     RetiredAt = -1f,
+                    Rate = emissionRate,
                 };
                 parcels.Expect(particle.randomSeed, parcel);
                 if (!inStack)
@@ -294,7 +514,11 @@ namespace RealisticFiring.Visuals
                 // Its smoke shows at once, its white only as it forms.
                 var formed = PlumeRise.SteamLeft(parcel.Thickness, cloud, age, air.Speed, air.Mixing, air.Forming);
                 var whole = formed + parcel.Thickness.SmokeDepth;
-                shown = PlumeRise.OpacityOf(whole, 0f);
+                var smokeAtLip = PlumeRise.OpacityOf(parcel.Thickness.SmokeDepth, 0f);
+                var steamAtLip = PlumeRise.OpacityOf(formed, 0f);
+                Remember(particle.randomSeed, 1f - (1f - steamAtLip) * (1f - smokeAtLip), particle.startSize);
+                shown = Drawn(steamAtLip, smokeAtLip,
+                    particle.startSize, 1f, (particle.velocity - air.Train).magnitude, smokeAtLip, parcel.Rate);
                 if (whole > 1e-4f)
                     color = Color.Lerp(SteamColor, parcel.SmokeColor, PlumeModel.SmokeTint(parcel.Thickness.SmokeDepth / whole));
                 if (onTurn)
@@ -315,24 +539,41 @@ namespace RealisticFiring.Visuals
                     still += (air.Train - still) * TunnelSmoke.PistonShare;
                     airSpeed *= 1f - TunnelSmoke.PistonShare;
                 }
-                var rise = PlumeRise.RiseSpeed(air.Flux, height, airSpeed);
+                var rise = PlumeRise.RiseSpeed(air.Flux, height, airSpeed, air.RiseShown);
                 // Out its own way, evenly over the plume's breadth as it widens,
                 // with its rise and the air's turbulence.
                 var angle = Hash(particle.randomSeed ^ 0x5bd1e995u) * 2f * Mathf.PI;
-                var share = MostSpread * Mathf.Sqrt(Hash(particle.randomSeed ^ 0x27d4eb2du));
-                var widening = PlumeRise.WidthPerHeight * rise + PlumeRise.SpreadRate(air.Speed);
+                var share = air.Disperse * Mathf.Sqrt(Hash(particle.randomSeed ^ 0x27d4eb2du));
+                var smokeAtLip = PlumeRise.OpacityOf(parcel.Thickness.SmokeDepth, 0f);
+                var spread = PlumeRise.SpreadWidth(age, air.Speed, air.Spread);
+                var smokeHere = PlumeRise.OpacityOf(parcel.Thickness.SmokeDepth, height, spread);
+                var widening = PlumeRise.WidthPerHeight * rise + PlumeRise.SpreadRate(air.Speed, air.Spread);
                 var outward = (across * Mathf.Cos(angle) + along * Mathf.Sin(angle)) * (share * widening);
                 var stir = Stir(particle.position, height, rise) * air.Eddies;
-                var spread = PlumeRise.SpreadWidth(age, air.Speed);
                 // White steam tinted by its smoke, turning the smoke's color
                 // as the steam evaporates (as its puff was tinted at the stack).
                 var steam = PlumeRise.SteamLeft(parcel.Thickness, cloud, age, air.Speed, air.Mixing, air.Forming);
                 var depth = steam + parcel.Thickness.SmokeDepth;
-                shown = PlumeRise.OpacityOf(depth, height, spread);
+                var plumeShown = PlumeRise.OpacityOf(depth, height, spread);
+                shown = plumeShown;
                 if (depth > 1e-4f)
                     color = Color.Lerp(SteamColor, parcel.SmokeColor, PlumeModel.SmokeTint(parcel.Thickness.SmokeDepth / depth));
                 var narrow = JetNarrowing((particle.velocity - still).magnitude);
-                var size = Mathf.Min(Mathf.Max(Mathf.Max(grown, PlumeRise.PlumeWidth(height, spread) * SizePerWidth) * narrow, least) * Thinning(shown), widest);
+                var fill = Mathf.Lerp(air.FillWidth, air.SmokeFillWidth, AsSteam(smokeAtLip));
+                var steamHere = PlumeRise.OpacityOf(steam, height, spread);
+                var here = 1f - (1f - steamHere) * (1f - smokeHere);
+                var wisp = air.WispAgeTo > air.WispAgeFrom
+                    ? Mathf.SmoothStep(0f, 1f, (FlipbookAt(particle) - air.WispAgeFrom) / (air.WispAgeTo - air.WispAgeFrom))
+                    : 1f;
+                // Rolling steam drawn as a wisp, as the shader has it: where
+                // the plume is thin, or past the puffs by its age.
+                var asWisp = air.Puffs > 0
+                    ? Mathf.Max(1f - Mathf.SmoothStep(0f, 1f, (here - air.WispBelow) / Mathf.Max(0.01f, air.WispAbove - air.WispBelow)), wisp)
+                    : 0f;
+                var size = Mathf.Min(Mathf.Max(Mathf.Max(grown, PlumeRise.PlumeWidth(height, spread) * fill) * narrow, least) * Thinning(shown, asWisp), widest);
+                Remember(particle.randomSeed, here, size);
+                shown = Drawn(steamHere, smokeHere,
+                    size, PlumeRise.Survival(height, spread), Mathf.Max(airSpeed, rise), smokeAtLip, parcel.Rate, air.WispShare * wisp);
                 if (under)
                     size = Mathf.Min(size, TunnelSmoke.WidestParticle);
                 else
@@ -343,6 +584,8 @@ namespace RealisticFiring.Visuals
                 particle.startSize = size;
                 if (under)
                     UnderRoof(ref particle, roof, still, rise, outward + stir, age, keep);
+                if ((air.Shape || air.Puffs > 0) && onTurn)
+                    Shape(particle, age, PlumeRise.PlumeWidth(height, spread));
                 // Fewer, wider particles carry the plume as it widens: one past
                 // its share fades out, then goes; one too thin to see goes at once.
                 if (parcel.RetiredAt < 0f && Hash(particle.randomSeed) > PlumeRise.Survival(height, spread))
@@ -355,7 +598,7 @@ namespace RealisticFiring.Visuals
                 // Too thin to see goes, unless its white is still forming.
                 var formedAll = parcel.Thickness.SteamDepth < 1e-3f || cloud == null
                                 || cloud.PastThickest(age, air.Speed, air.Mixing, air.Forming);
-                if (age > FadeIn && shown < PlumeRise.Invisible && formedAll || leaving <= 0f)
+                if (age > FadeIn && plumeShown < PlumeRise.Invisible && formedAll || leaving <= 0f)
                 {
                     particle.remainingLifetime = 0f;
                     if (onTurn)
@@ -378,6 +621,8 @@ namespace RealisticFiring.Visuals
             }
             var fade = parcel.FromStack ? 1f : Mathf.Clamp01(age / FadeIn);
             particle.startColor = new Color(color.r, color.g, color.b, shown * fade * leaving);
+            if (onTurn && shadowTurn)
+                casters.Add(new Caster { Position = particle.position, Size = particle.startSize, Opacity = shown * fade * leaving, Seed = particle.randomSeed });
             return true;
         }
 
@@ -414,10 +659,33 @@ namespace RealisticFiring.Visuals
                 particle.velocity -= roof.Across * (sign * outwards);
         }
 
-        // How much larger a particle of opacity <paramref name="shown"/> is
-        // drawn, to keep the width it shows as its edges go.
-        private float Thinning(float shown) =>
-            Mathf.Min(MostThinGrowth, 1f / Mathf.Max(0.05f, 1f - (FrayEdge * Mathf.Clamp01(air.Fray) + SoftEdge) * (1f - Mathf.Clamp01(shown))));
+        // A particle's opacity drawn, its white steam's <paramref name="steam"/>
+        // and its smoke's <paramref name="smoke"/>: its smoke's shared with
+        // the particles overlapping it, <paramref name="size"/> m wide, the
+        // share <paramref name="kept"/> still carried, moving away at
+        // <paramref name="speed"/> m/s, <paramref name="rate"/> a second
+        // emitted as it was, so together they show the plume's.
+        // The steam's is not: its opacity was set by eye drawn this way, and
+        // white steam is thick enough that its overlap only fills it in
+        // (shared, a frosty day's billows drew as thin, frayed wisps). Past
+        // the puffs it is, by <paramref name="steamSharing"/> (Air.WispShare):
+        // stacked ten and more deep, the wisps drew an opaque, soft mass.
+        private float Drawn(float steam, float smoke, float size, float kept, float speed, float smokeAtLip, float rate, float steamSharing = 0f)
+        {
+            // Dense smoke is drawn as the steam is, by how dense it left the
+            // stack: thick enough that its overlap only fills it in.
+            var sharing = air.Overlap * (1f - AsSteam(smokeAtLip));
+            var overlaps = rate * size * kept / Mathf.Max(1f, speed);
+            var smokeDrawn = 1f - Mathf.Pow(1f - Mathf.Min(smoke, 0.999f), 1f / (1f + sharing * overlaps));
+            var steamDrawn = 1f - Mathf.Pow(1f - Mathf.Min(steam, 0.999f), 1f / (1f + steamSharing * overlaps));
+            return 1f - (1f - steamDrawn) * (1f - smokeDrawn);
+        }
+
+        private float Thinning(float shown, float asWisp)
+        {
+            var edge = Mathf.Lerp(FrayEdge * Mathf.Clamp01(air.Fray) + SoftEdge, air.WispFrayEdge * Mathf.Clamp01(air.Fray), asWisp);
+            return Mathf.Min(MostThinGrowth, 1f / Mathf.Max(0.05f, 1f - edge * (1f - Mathf.Clamp01(shown))));
+        }
 
         // While a particle goes fast through the air it is held narrow, the
         // jet's width; slowing, it swells to its size.
@@ -436,16 +704,240 @@ namespace RealisticFiring.Visuals
             return new Vector3(x, 0.5f * y, z) * (EddyStir * rise);
         }
 
+        // Records a particle among those of its age, and its part of the
+        // plume's surface from their middle as the last full turn found it.
+        private void Shape(ParticleSystem.Particle particle, float age, float width)
+        {
+            var at = Mathf.Min(ShapeAges - 1, (int)(age / ShapeAgeStep));
+            middleSum[at] += particle.position;
+            middleAgeSum[at] += age;
+            middleCount[at]++;
+            // Its way out from the plume's middle, × how far out.
+            var seen = Vector3.zero;
+            var measured = false;
+            if (air.ShapeAcross)
+            {
+                int below = -1, above = -1;
+                for (var k = Mathf.Min(at + 1, ShapeAges - 1); k >= Mathf.Max(0, at - MiddleReach); k--)
+                    if (middleKnown[k] && middleAge[k] <= age) { below = k; break; }
+                for (var k = Mathf.Max(0, at - 1); k <= Mathf.Min(ShapeAges - 1, at + MiddleReach); k++)
+                    if (middleKnown[k] && middleAge[k] > age) { above = k; break; }
+                if (below >= 0 || above >= 0)
+                {
+                    Vector3 centre, along;
+                    if (below >= 0 && above >= 0)
+                    {
+                        var t = (age - middleAge[below]) / Mathf.Max(1e-3f, middleAge[above] - middleAge[below]);
+                        centre = Vector3.Lerp(middle[below], middle[above], t);
+                        along = middle[above] - middle[below];
+                    }
+                    else
+                    {
+                        centre = middle[below >= 0 ? below : above];
+                        along = particle.velocity;
+                    }
+                    var off = particle.position - centre;
+                    if (along.sqrMagnitude > 1e-6f)
+                    {
+                        along.Normalize();
+                        off -= along * Vector3.Dot(off, along);
+                    }
+                    var outward = Mathf.Clamp01(off.magnitude / Mathf.Max(0.5f, 0.5f * width));
+                    if (outward > 1e-3f)
+                        seen = off.normalized * outward;
+                    measured = true;
+                }
+            }
+            else if (middleKnown[at])
+            {
+                var off = particle.position - middle[at];
+                var outward = Mathf.Clamp01(off.magnitude / Mathf.Max(0.5f, 0.5f * width));
+                if (outward > 1e-3f)
+                    seen = off.normalized * outward;
+                measured = true;
+            }
+            // Eased to it, kept while there is nothing to measure it from.
+            if (air.ShapeSmoothing > 0f && shapes.TryGetValue(particle.randomSeed, out var before))
+            {
+                var was = new Vector3(before.x, before.y, before.z) * before.w;
+                seen = measured
+                    ? Vector3.Lerp(was, seen, 1f - Mathf.Exp(-Mathf.Max(Time.deltaTime * stride, 1e-4f) / air.ShapeSmoothing))
+                    : was;
+            }
+            var far = seen.magnitude;
+            var shape = far > 1e-3f ? new Vector4(seen.x / far, seen.y / far, seen.z / far, Mathf.Clamp01(far)) : Vector4.zero;
+            shapes[particle.randomSeed] = shape;
+            shapesNext[particle.randomSeed] = shape;
+        }
+
         // The turn ends; when every particle has had its turn, the dead are
         // forgotten and the turn's figures shown.
+        // How far smoke as dense as smokeAtLip as it left the stack is drawn as
+        // the steam is, 0 to 1.
+        private float AsSteam(float smokeAtLip) =>
+            Mathf.SmoothStep(0f, 1f, (smokeAtLip - air.SmokeAsSteamFrom) / Mathf.Max(0.01f, air.SmokeAsSteamTo - air.SmokeAsSteamFrom));
+
+        // The plume's opacity at a particle <paramref name="size"/> m wide,
+        // for how wispy it is drawn, kept for this turn and seen from the
+        // last. Thinning smoke of any kind frays into wisps (the photos'
+        // black smoke tears into streaks where it thins), but a giant
+        // particle far down the trail stays a puff: its wisp's strands, tens
+        // of meters across, drew hard, straight shards.
+        private void Remember(uint seed, float opacity, float size)
+        {
+            var giant = air.WispLargestTo > air.WispLargestFrom
+                ? Mathf.SmoothStep(0f, 1f, (size - air.WispLargestFrom) / (air.WispLargestTo - air.WispLargestFrom))
+                : 0f;
+            opacity = Mathf.Lerp(opacity, 1f, giant);
+            plumeHereNext[seed] = opacity;
+            if (!plumeHere.ContainsKey(seed))
+                plumeHere[seed] = opacity;
+        }
+
         public void End()
         {
             if (++turn < stride)
                 return;
             turn = 0;
             parcels.Forget();
+            var seen = plumeHere;
+            plumeHere = plumeHereNext;
+            plumeHereNext = seen;
+            plumeHereNext.Clear();
             Seen = stats;
             Top = cycleTop;
+            for (var i = 0; i < ShapeAges; i++)
+            {
+                middleKnown[i] = middleCount[i] >= FewestForMiddle;
+                if (middleKnown[i])
+                {
+                    middle[i] = middleSum[i] / middleCount[i];
+                    middleAge[i] = middleAgeSum[i] / middleCount[i];
+                }
+                middleSum[i] = Vector3.zero;
+                middleAgeSum[i] = 0f;
+                middleCount[i] = 0;
+            }
+            var spent = shapes;
+            shapes = shapesNext;
+            shapesNext = spent;
+            shapesNext.Clear();
+            if (shadowTurn)
+            {
+                nextShadow = Time.time + ShadowEvery;
+                Shadows();
+            }
+        }
+
+        // Each particle's shade from the plume between it and the sun, from the turn's particles.
+        private void Shadows()
+        {
+            var toSun = air.ToSun;
+            if (casters.Count == 0 || air.ShadowDensity <= 0f || toSun.sqrMagnitude < 0.5f)
+            {
+                casters.Clear();
+                shades.Clear();
+                meanShade = shadedShare = 0f;
+                return;
+            }
+            toSun.Normalize();
+            var low = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+            var high = -low;
+            foreach (var caster in casters)
+            {
+                var reach = Vector3.one * (0.5f * caster.Size);
+                low = Vector3.Min(low, caster.Position - reach);
+                high = Vector3.Max(high, caster.Position + reach);
+            }
+            var extent = high - low;
+            var cell = Mathf.Max(SmallestCell, Mathf.Max(extent.x, Mathf.Max(extent.y, extent.z)) / (ShadowCells - 2));
+            // A cell's margin round the plume, so the spread smoke stays in.
+            low -= Vector3.one * cell;
+            var nx = Mathf.Min(ShadowCells, Mathf.CeilToInt(extent.x / cell) + 3);
+            var ny = Mathf.Min(ShadowCells, Mathf.CeilToInt(extent.y / cell) + 3);
+            var nz = Mathf.Min(ShadowCells, Mathf.CeilToInt(extent.z / cell) + 3);
+            var cells = nx * ny * nz;
+            if (grid.Length < cells)
+                grid = new float[cells];
+            else
+                System.Array.Clear(grid, 0, cells);
+
+            // Each particle's smoke, spread over the eight cells round it.
+            var perVolume = 1f / (cell * cell * cell);
+            foreach (var caster in casters)
+            {
+                var depth = -Mathf.Log(1f - Mathf.Clamp(caster.Opacity, 0f, 0.95f));
+                var smoke = depth * (Mathf.PI / 6f) * caster.Size * caster.Size * perVolume;
+                Splat((caster.Position - low) / cell, smoke, nx, ny, nz);
+            }
+
+            // Each particle's way to the sun through it, a cell a step: the light left is its sun.
+            var total = 0f;
+            var shaded = 0;
+            foreach (var caster in casters)
+            {
+                var from = Mathf.Max(MarchFrom, 0.35f * caster.Size / cell);
+                var at = (caster.Position - low) / cell + toSun * from;
+                var depth = 0f;
+                for (var k = 0; k < 2 * ShadowCells; k++)
+                {
+                    if (at.x < 0f || at.y < 0f || at.z < 0f || at.x > nx - 1 || at.y > ny - 1 || at.z > nz - 1)
+                        break;
+                    depth += Sample(at, nx, ny, nz);
+                    at += toSun;
+                }
+                var shade = 1f - Mathf.Exp(-depth * cell * air.ShadowDensity);
+                if (shades.TryGetValue(caster.Seed, out var was))
+                    shade = was + (shade - was) * ShadeEasing;
+                shadesNext[caster.Seed] = shade;
+                total += shade;
+                if (shade > 0.5f)
+                    shaded++;
+            }
+            meanShade = total / casters.Count;
+            shadedShare = (float)shaded / casters.Count;
+            casters.Clear();
+            var spent = shades;
+            shades = shadesNext;
+            shadesNext = spent;
+            shadesNext.Clear();
+        }
+
+        private void Splat(Vector3 at, float amount, int nx, int ny, int nz)
+        {
+            var x0 = Mathf.Clamp(Mathf.FloorToInt(at.x), 0, nx - 2);
+            var y0 = Mathf.Clamp(Mathf.FloorToInt(at.y), 0, ny - 2);
+            var z0 = Mathf.Clamp(Mathf.FloorToInt(at.z), 0, nz - 2);
+            var fx = Mathf.Clamp01(at.x - x0);
+            var fy = Mathf.Clamp01(at.y - y0);
+            var fz = Mathf.Clamp01(at.z - z0);
+            for (var dz = 0; dz < 2; dz++)
+            for (var dy = 0; dy < 2; dy++)
+            for (var dx = 0; dx < 2; dx++)
+            {
+                var weight = (dx == 0 ? 1f - fx : fx) * (dy == 0 ? 1f - fy : fy) * (dz == 0 ? 1f - fz : fz);
+                grid[((z0 + dz) * ny + y0 + dy) * nx + x0 + dx] += amount * weight;
+            }
+        }
+
+        private float Sample(Vector3 at, int nx, int ny, int nz)
+        {
+            var x0 = Mathf.Min(Mathf.FloorToInt(at.x), nx - 2);
+            var y0 = Mathf.Min(Mathf.FloorToInt(at.y), ny - 2);
+            var z0 = Mathf.Min(Mathf.FloorToInt(at.z), nz - 2);
+            var fx = at.x - x0;
+            var fy = at.y - y0;
+            var fz = at.z - z0;
+            var row = (z0 * ny + y0) * nx + x0;
+            var up = nx;
+            var deep = nx * ny;
+            var a = grid[row] + (grid[row + 1] - grid[row]) * fx;
+            var b = grid[row + up] + (grid[row + up + 1] - grid[row + up]) * fx;
+            var c = grid[row + deep] + (grid[row + deep + 1] - grid[row + deep]) * fx;
+            var d = grid[row + deep + up] + (grid[row + deep + up + 1] - grid[row + deep + up]) * fx;
+            var near = a + (b - a) * fy;
+            var far = c + (d - c) * fy;
+            return near + (far - near) * fz;
         }
 
         /// <summary>This frame's particles in a sentence, for the status log.</summary>
@@ -454,7 +946,8 @@ namespace RealisticFiring.Visuals
             var s = Seen;
             return $"{s.InStack} in the stack, {s.Aloft} aloft (mean {(s.Aloft > 0 ? s.SizeSum / s.Aloft : 0f):F1} m, " +
                    $"widest {s.Widest:F1} m drawn {s.WidestDrawn:F1} m at {s.WidestHeight:F0} m, mean opacity {(s.Aloft > 0 ? s.AlphaSum / s.Aloft : 0f):F2}), " +
-                   $"{s.Retired} retired";
+                   $"{s.Retired} retired" +
+                   (air.ShadowDensity > 0f ? $"; its own shadow: mean shade {meanShade:F2}, {shadedShare:P0} over half" : "");
         }
 
         // A curve over a particle's life squeezed into the first share of it,

@@ -1,15 +1,25 @@
 #!/usr/bin/env python3
 """Generate the chimney smoke flipbook textures for the Realistic Firing FX.
 
-The textures are grayscale lit density with alpha, tinted per particle by the
-mod (white steam, grey haze, dark soot), so one set serves every color.
+The textures carry density in alpha, tinted per particle by the mod (white
+steam, grey haze, dark soot), so one set serves every color. The firebox's
+puffs carry baked top-lit relief in RGB; the chimney's wisps and jet carry
+their surface instead (RG its normal, B its thickness), which the chimney
+smoke shader lights by the sun's and sky's directions.
 
-  smoke_puff_flipbook.png  8 x 8 frames: a puff that swells and breaks up
-                           (the firebox's smoke)
-  smoke_wisp_flipbook.png  8 rows of 8 frames: eight wisps, each frayed and
-                           drawn out over its life (the chimney plume)
-  smoke_jet_flipbook.png   4 x 4 frames: streaky exhaust jet
-  spark.png                a cinder's glow: hot core, soft halo
+  smoke_puff_flipbook.png    8 x 8 frames: a puff that swells and breaks up
+                             (the firebox's smoke)
+  smoke_wisp_flipbook.png    8 rows of 8 frames: eight wisps, each frayed and
+                             drawn out over its life (the chimney plume),
+                             billowed where they are thick
+  smoke_wisp_baked.png       the same wisps with their relief baked in, lit
+                             from above, as 1.13's plume drew them (the
+                             wisps past the puffs, by choice)
+  smoke_billow_flipbook.png  8 rows of 8 frames: eight clusters of round
+                             lobes, loosening over their life (the plume's
+                             dense, young steam, blended to the wisps)
+  smoke_jet_flipbook.png     4 x 4 frames: streaky exhaust jet
+  spark.png                  a cinder's glow: hot core, soft halo
 
 Everything is generated from seeded noise, so the art is our own and the
 output is reproducible. Requires numpy and Pillow.
@@ -176,15 +186,148 @@ def wisp_frames(variants, steps, rng):
         density = np.clip((density - 0.04 - 0.06 * t) / (0.7 - 0.1 * t), 0.0, 1.0)
         density = density / np.maximum(density.max(axis=(1, 2), keepdims=True), 1e-6) * 0.95
 
-        # Gentle relief: a wisp is lit through, not a ball lit from above.
-        # Its density-weighted mean stays at the puffs' 0.63, which the
-        # mod's plume light setting is set for.
-        relief = shade(density)
-        weighted = (relief * density).sum() / max(density.sum(), 1e-6)
-        lit = np.clip(0.63 + 0.45 * (relief - weighted), 0.0, 1.0)
-        lit_rows.append(lit)
+        # Its surface, for the shader to light: the wisp's mass, smoothed,
+        # rounded into soft lobes where it is thick (billows inside a
+        # wisp's ragged outline), with its strands' relief on top.
+        lit_rows.append(wisp_surface(density, np.random.default_rng(RNG_SEED + 1 + len(lit_rows))))
         density_rows.append(density)
     return np.concatenate(lit_rows), np.concatenate(density_rows)
+
+
+def wisp_baked(density, steps):
+    """The wisps' relief baked in, lit from above, as 1.13's plume drew
+    them (owner, 2026-10-23: its crinkled wisps were far better): each
+    wisp's density-weighted mean at the puffs' 0.63."""
+    rows = []
+    for start in range(0, density.shape[0], steps):
+        row = density[start:start + steps]
+        relief = shade(row)
+        weighted = (relief * row).sum() / max(row.sum(), 1e-6)
+        rows.append(np.clip(0.63 + 0.45 * (relief - weighted), 0.0, 1.0))
+    return np.concatenate(rows)
+
+
+def wisp_surface(density, rng):
+    """A wisp's surface over its frames: its mass blurred into a body,
+    soft lobes of a few sizes where the mass is (fewer and flatter as it
+    frays), and the density's own fine relief; B its thickness."""
+    steps = density.shape[0]
+    ys, xs = np.mgrid[-1:1:FRAME * 1j, -1:1:FRAME * 1j]
+    up = -ys
+    mass = blur(density, 6)
+    mass = mass / np.maximum(mass.max(axis=(1, 2), keepdims=True), 1e-6)
+    # Lobes placed where the first frame's mass is, drifting out with the wisp.
+    weights = mass[0].ravel() ** 2
+    weights = weights / weights.sum()
+    lobes = []
+    for size, count, low, high in ((0, 6, 0.22, 0.34), (1, 16, 0.11, 0.18), (2, 24, 0.06, 0.09)):
+        picks = rng.choice(weights.size, size=count, p=weights)
+        for pick in picks:
+            row, col = divmod(int(pick), FRAME)
+            lobes.append((xs[row, col], up[row, col], rng.uniform(low, high), size))
+    heights = []
+    for step in range(steps):
+        t = step / max(1, steps - 1)
+        # Smooth bumps summed (no creases where lobes meet), each as high as it is wide.
+        lobed = np.zeros((FRAME, FRAME))
+        for x, y, r, size in lobes:
+            r = r * (1.0 + 0.2 * t) * (1.0 - 0.45 * size * t)
+            if r <= 0.01:
+                continue
+            spread = 1.0 + 0.2 * t
+            d2 = (xs - x * spread) ** 2 + (up - y * spread) ** 2
+            lobed += 0.6 * r * np.exp(-d2 / (0.5 * r * r))
+        body = smoothstep(0.03, 0.35, mass[step])
+        heights.append(0.3 * mass[step] + (1.0 - 0.5 * t) * blur(lobed[None], 2)[0] * body)
+    return surface(np.stack(heights), mass)
+
+
+def blur(image, passes=1):
+    """A light box blur over the last two axes, edges held."""
+    for _ in range(passes):
+        padded = np.pad(image, [(0, 0)] * (image.ndim - 2) + [(1, 1), (1, 1)], mode="edge")
+        image = sum(padded[..., 1 + dy:padded.shape[-2] - 1 + dy, 1 + dx:padded.shape[-1] - 1 + dx]
+                    for dy in (-1, 0, 1) for dx in (-1, 0, 1)) / 9.0
+    return image
+
+
+def surface(height, thickness, flat=0.0):
+    """The shader's surface for a height field over the frame (y up): RG the
+    normal's x and y (0.5 level), B the thickness through it. Flat leans
+    the normal toward the viewer, 0 to 1."""
+    step = 2.0 / FRAME
+    dy, dx = np.gradient(blur(height), step, axis=(-2, -1))
+    # Rows grow downward; the normal's y is up the frame.
+    nx, ny, nz = -dx, dy, np.full_like(height, 1.0 + 4.0 * flat)
+    norm = np.sqrt(nx * nx + ny * ny + nz * nz)
+    rgb = np.stack([0.5 + 0.5 * nx / norm, 0.5 + 0.5 * ny / norm, np.clip(thickness, 0.0, 1.0)], axis=-1)
+    return np.clip(rgb, 0.0, 1.0)
+
+
+def billow_frames(variants, steps, rng):
+    """Billows for dense, young steam (owner, 2026-10-21: real plumes are
+    round, billowing shapes): a cluster of round lobes, a big one, middling
+    ones on its sides and top, small ones on those (a cauliflower's lobes,
+    their outline round but not one ball), blended softly where they meet
+    and firm at the edge. Over its life each loosens, its small lobes
+    smoothing away, and frays as it thins. The shader blends to the wisps
+    as a particle thins, so these show only where the steam is thick. The
+    lobes' fronts give the surface; their depth through, the thickness."""
+    surface_rows, density_rows = [], []
+    ys, xs = np.mgrid[-1:1:FRAME * 1j, -1:1:FRAME * 1j]
+    up = -ys  # 1 at the top row
+    for _ in range(variants):
+        shape = (steps, FRAME, FRAME)
+        warp_x = fbm(shape, 2.0, 3, rng, stretch=(0.35, 1.0, 1.0))
+        warp_y = fbm(shape, 2.0, 3, rng, stretch=(0.35, 1.0, 1.0))
+        rough = fbm(shape, 6.0, 3, rng, stretch=(0.35, 1.0, 1.0))
+        holes = fbm(shape, 3.0, 4, rng, stretch=(0.35, 1.0, 1.0))
+        # The lobes: (x, y, radius, size), a big one off the middle, then
+        # each size on the outside of the ones before, more toward the top.
+        lobes = [(rng.uniform(-0.06, 0.06), rng.uniform(-0.12, 0.02), rng.uniform(0.3, 0.36), 0)]
+        for size, count, low, high in ((1, 9, 0.2, 0.3), (2, 26, 0.09, 0.15)):
+            parents = [lobe for lobe in lobes if lobe[3] == size - 1]
+            for _ in range(count):
+                px, py, pr, _ = parents[rng.integers(len(parents))]
+                angle = rng.uniform(-0.2 * np.pi, 1.2 * np.pi) if rng.random() < 0.7 else rng.uniform(0.0, 2.0 * np.pi)
+                lobes.append((px + 0.92 * pr * np.cos(angle), py + 0.92 * pr * np.sin(angle), rng.uniform(low, high), size))
+        heights, chords, densities = [], [], []
+        for step in range(steps):
+            t = step / max(1, steps - 1)
+            reach = 0.03 + 0.12 * t
+            wx = xs + reach * warp_x[step]
+            wy = up + reach * warp_y[step]
+            # Soft union: the lobes' fronts summed as exponentials, so they
+            # blend where they meet and keep their round outline.
+            blend = np.zeros((FRAME, FRAME))
+            chord = np.zeros((FRAME, FRAME))
+            for x, y, r, size in lobes:
+                r = r * (1.0 + 0.2 * t) * (1.0 - 0.2 * size * t)
+                if r <= 0.01:
+                    continue
+                spread = 1.0 + 0.15 * t
+                cap = np.sqrt(np.maximum(0.0, r * r - (wx - x * spread) ** 2 - (wy - y * spread) ** 2))
+                blend += np.where(cap > 0, np.exp(cap / 0.015), 0.0)
+                chord += 2.0 * cap
+            # Each lobe's front stands on its own, softened only where they meet.
+            height = np.where(blend > 0, 0.015 * np.log(np.maximum(blend, 1.0)), 0.0)
+            height = height + (0.02 - 0.012 * t) * rough[step] * (height > 0)
+            # Firm at the edge, softened a little (owner, 2026-10-21: crisp
+            # edges made the billows' onset sharp); holes open as it thins late.
+            body = smoothstep(0.0, 0.04 + 0.04 * t, height)
+            thin = smoothstep(-0.3 - 0.4 * t, 0.15, holes[step] + 0.7 - 0.55 * t)
+            border = smoothstep(1.0, 0.88, np.maximum(np.abs(xs), np.abs(ys)))
+            density = np.clip(body * (0.8 + 0.2 * rough[step]) * thin * border, 0.0, 1.0)
+            heights.append(height)
+            chords.append(chord)
+            densities.append(density)
+        density = np.stack(densities)
+        density = density / np.maximum(density.max(axis=(1, 2), keepdims=True), 1e-6) * 0.95
+        chord = np.stack(chords)
+        thickness = np.clip(chord / np.maximum(np.percentile(chord, 99), 1e-6), 0.0, 1.0)
+        surface_rows.append(surface(np.stack(heights), thickness))
+        density_rows.append(density)
+    return np.concatenate(surface_rows), np.concatenate(density_rows)
 
 
 def jet_frames(count, rng):
@@ -196,7 +339,8 @@ def jet_frames(count, rng):
     core = np.exp(-((xs + 0.1 * streaks) / width) ** 2)
     ends = smoothstep(1.0, 0.55, np.abs(ys))
     density = np.clip(core * ends * (0.6 + 0.4 * fbm(shape, 5.0, 3, rng)), 0.0, 1.0)
-    return shade(density), density
+    # A streak is a soft tube: its density as its height, flattish.
+    return surface(0.25 * blur(density, 2), density, flat=0.3), density
 
 
 def spark_texture(size=64):
@@ -211,14 +355,17 @@ def spark_texture(size=64):
 
 
 def atlas(lit, density, columns):
+    """Frames into a sheet: RGB grayscale lit relief (frames × h × w) or a
+    surface (frames × h × w × 3), A the density."""
     count = lit.shape[0]
     rows = int(np.ceil(count / columns))
     rgba = np.zeros((rows * FRAME, columns * FRAME, 4), dtype=np.uint8)
     for i in range(count):
         r, c = divmod(i, columns)
         tile = rgba[r * FRAME:(r + 1) * FRAME, c * FRAME:(c + 1) * FRAME]
-        tile[..., :3] = (lit[i] * 255).astype(np.uint8)[..., None]
-        tile[..., 3] = (density[i] * 255).astype(np.uint8)
+        rgb = lit[i] if lit.ndim == 4 else lit[i][..., None]
+        tile[..., :3] = np.round(rgb * 255).astype(np.uint8)
+        tile[..., 3] = np.round(density[i] * 255).astype(np.uint8)
     return Image.fromarray(rgba)
 
 
@@ -244,10 +391,16 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     puff = atlas(*puff_frames(64, rng), columns=8)
     jet = atlas(*jet_frames(16, rng), columns=4)
-    wisp = atlas(*wisp_frames(8, 8, rng), columns=8)
+    wisp_lit, wisp_density = wisp_frames(8, 8, rng)
+    wisp = atlas(wisp_lit, wisp_density, columns=8)
+    wisp_baked_sheet = atlas(wisp_baked(wisp_density, 8), wisp_density, columns=8)
+    # The billows from a stream of their own, so the others stay as they were.
+    billow = atlas(*billow_frames(8, 8, np.random.default_rng(RNG_SEED + 100)), columns=8)
     puff.save(args.output / "smoke_puff_flipbook.png")
+    billow.save(args.output / "smoke_billow_flipbook.png")
     jet.save(args.output / "smoke_jet_flipbook.png")
     wisp.save(args.output / "smoke_wisp_flipbook.png")
+    wisp_baked_sheet.save(args.output / "smoke_wisp_baked.png")
     spark_texture().save(args.output / "spark.png")
     if args.preview:
         preview([wisp, puff, jet], args.preview)

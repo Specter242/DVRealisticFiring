@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using DV;
+using DV.CabControls;
 using DV.Interaction;
 using DV.Simulation.Ports;
 using HarmonyLib;
@@ -102,6 +103,9 @@ namespace RealisticFiring.Visuals
                 : null;
             if (firing != null && firing.GetComponent<HoverName>() == null)
                 firing.gameObject.AddComponent<HoverName>().Source = () => FiringHover(firebox);
+            // A click sets its stop for the drifting fire, and takes it out.
+            if (firing != null)
+                FiringValveStopClick.Attach(firing.GetComponent<ControlImplBase>(), firebox);
             // "A quadrant lever with fine notches" (ICS pp. 22-26): 2.5 % a
             // notch, where the oil-fired mods' stoker levers step by 10 %.
             var restepped = firing != null && ControlSteps.Restep(firing.transform, FiringValveNotches);
@@ -285,8 +289,9 @@ namespace RealisticFiring.Visuals
         private static string FiringHover(RealisticOilFirebox firebox)
         {
             var fire = firebox.Model;
-            return $"Firing valve: {(firebox.Feed != null ? firebox.Feed.FiringValve : 0f):P0}, oil {fire.FeedRate:F2} kg/s" +
-                   (fire.FireOn ? "" : " (fire out)");
+            return $"Firing valve: {(firebox.Feed != null ? firebox.Feed.FiringValve : 0f):P0}" +
+                   (firebox.Stop.In ? $", stop at {firebox.Stop.At:P0}" : "") +
+                   $", oil {fire.FeedRate:F2} kg/s" + (fire.FireOn ? "" : " (fire out)");
         }
 
         private static string AtomizerHover(RealisticOilFirebox firebox)

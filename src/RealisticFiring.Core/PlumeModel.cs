@@ -59,6 +59,20 @@ namespace RealisticFiring.Core
             get => waterWhiteness ?? 1f;
             set => waterWhiteness = value;
         }
+
+        private float? blowerWhiteness;
+
+        /// <summary>
+        /// As <see cref="SteamWhiteness"/>, for the steady stream between
+        /// beats, the blower's mostly: its narrow jet leaves with less of the
+        /// flue gas (<see cref="PlumeTuning.BlowerFlueGasMixing"/>). The
+        /// exhaust's unless set.
+        /// </summary>
+        public float BlowerWhiteness
+        {
+            get => blowerWhiteness ?? SteamWhiteness;
+            set => blowerWhiteness = value;
+        }
     }
 
     /// <summary>A particle color, 0 to 1 per channel.</summary>
@@ -157,6 +171,23 @@ namespace RealisticFiring.Core
         /// <summary>Multiplier on how quickly soot darkens the smoke.</summary>
         public float SootDarkness { get; set; } = 1f;
 
+        /// <summary>
+        /// How steeply the stack's soot darkens its smoke toward black at
+        /// 0.5: its share to this power (1.3 until 2026-10-21, when a
+        /// well-fired engine's slight soot still drew a grey trail in hot,
+        /// dry air), so light soot greys it little.
+        /// </summary>
+        public float SootCurve { get; set; } = 1.8f;
+
+        /// <summary>
+        /// The opacity of a puff of black smoke, 0 to 1, against a clean
+        /// steam puff's <see cref="SteamOpacity"/> (0.8 until 2026-10-21,
+        /// when its smoke came to be shared by the particles overlapping it;
+        /// 0.9 until 2026-10-22, when heavy coal smoke in the photos stayed
+        /// opaque 30 m up where ours went see-through gray).
+        /// </summary>
+        public float SootOpacity { get; set; } = 0.97f;
+
  public float HazeOpacity { get; set; } = 0.15f;
 
         /// <summary>How far the hardest beat's jet carries before it spreads, in m.</summary>
@@ -171,6 +202,8 @@ namespace RealisticFiring.Core
 
  public float FlueGasMixing { get; set; } = 0.6f;
 
+ public float BlowerFlueGasMixing { get; set; } = 0.2f;
+
         /// <summary>Multiplier on how fast the exhaust mixes into the air, and so how soon its white evaporates.</summary>
         public float SteamMixing { get; set; } = 3f;
 
@@ -183,6 +216,8 @@ namespace RealisticFiring.Core
         public float WakeDepth { get; set; } = PlumeRise.WakeDepth;
 
  public float BeatHaze { get; set; } = 0.5f;
+
+ public float TrailSpread { get; set; } = 1f;
 
         /// <summary>Multiplier on sparks; at 1 the hardest beat under full draft throws about two.</summary>
         public float Sparks { get; set; } = 0.25f;
@@ -258,7 +293,7 @@ namespace RealisticFiring.Core
             // A puff is exhaust steam, darkened by the soot it carries and
             // tinted by the haze, which stays as the steam evaporates.
             var smokeColor = SmokeOf(darkness, (1f - darkness) * haze * PuffHazeSmoke);
-            var (alpha, smokeShare) = Weathered(Lerp(tuning.SteamOpacity * ClearSteam(inputs), 0.8f, darkness),
+            var (alpha, smokeShare) = Weathered(Lerp(tuning.SteamOpacity * ClearSteam(inputs), tuning.SootOpacity, darkness),
                 darkness + (1f - darkness) * haze * PuffHazeSmoke, inputs.SteamWhiteness);
             return new Puff
             {
@@ -348,8 +383,8 @@ namespace RealisticFiring.Core
             // weather lets it be.
             var water = (1f - steam) * (1f - CleanHazeSmoke);
             var whiteness = water + steam > 1e-4f
-                ? (water * inputs.WaterWhiteness + steam * inputs.SteamWhiteness) / (water + steam)
-                : inputs.SteamWhiteness;
+                ? (water * inputs.WaterWhiteness + steam * inputs.BlowerWhiteness) / (water + steam)
+                : inputs.BlowerWhiteness;
             var (opacity, smokeShare) = Weathered(Lerp(Lerp(haze, tuning.SteamOpacity * ClearSteam(inputs), steam), 0.7f, darkness),
                 darkness + (1f - darkness) * (1f - steam) * CleanHazeSmoke, whiteness);
             var smokeColor = SmokeOf(darkness, (1f - darkness) * (1f - steam) * CleanHazeSmoke);
@@ -415,7 +450,7 @@ namespace RealisticFiring.Core
             if (!inputs.FireOn)
                 return 0f;
             var hot = Clamp01((inputs.HeatShare - ShimmerFrom) / (ShimmerFull - ShimmerFrom));
-            var clean = 1f - Darkness(tuning, Soot(inputs));
+            var clean = 1f - Hiding(tuning, Soot(inputs));
             var white = Clamp01(inputs.SteamWhiteness);
             var steam = SteamThroughStack(inputs.TotalFlowNormalized) * white;
             var beat = BeatStrength(tuning, inputs.ExhaustPressure) * white;
@@ -454,9 +489,18 @@ namespace RealisticFiring.Core
         // A puff this dark carries a darker core.
         private const float SootCoreFrom = 0.4f;
 
-        // Light soot only greys the smoke; heavy soot blackens it.
+        // Light soot only greys the smoke; heavy soot blackens it, the more
+        // steeply the higher the curve (PlumeTuning.SootCurve).
         private static float Darkness(PlumeTuning tuning, float soot) =>
-            Clamp01(tuning.SootDarkness * (float)Math.Pow(Math.Max(0f, soot) / SootForBlack, 1.3));
+            Clamp01(tuning.SootDarkness * (float)Math.Pow(Math.Max(0f, soot) / SootForBlack, Math.Max(0.5f, tuning.SootCurve)));
+
+        // How far the stack's soot hides the heat shimmer: on the darkening's
+        // curve before it steepened (2026-10-21), which was for how grey a
+        // well-fired engine's smoke draws, not for what it hides.
+        private const float ShimmerSootCurve = 1.3f;
+
+        private static float Hiding(PlumeTuning tuning, float soot) =>
+            Clamp01(tuning.SootDarkness * (float)Math.Pow(Math.Max(0f, soot) / SootForBlack, ShimmerSootCurve));
 
         // What a parcel's smoke looks like once its steam has gone: its soot
         // and its haze, by their shares of its thickness.

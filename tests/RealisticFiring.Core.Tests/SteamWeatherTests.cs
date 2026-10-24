@@ -22,6 +22,17 @@ namespace RealisticFiring.Core.Tests;
     }
 
     [Fact]
+    public void TheBlowersJetShowsWhiteWhereTheMixedStackDoesNot()
+    {
+        const float airPerSteam = 6f;
+        var mixed = SteamCloud.For(PlumeAir.Reference, Tuning.FlueGasMixing * airPerSteam);
+        var jet = SteamCloud.For(PlumeAir.Reference, Tuning.BlowerFlueGasMixing * airPerSteam);
+        Assert.True(mixed.Whiteness < 0.1f);
+        Assert.True(jet.Whiteness > 0.5f);
+        Assert.Equal(0f, SteamCloud.For(new PlumeAir(36.4f, 0.34f), Tuning.BlowerFlueGasMixing * airPerSteam).Whiteness);
+    }
+
+    [Fact]
     public void TheReferenceAirShowsTheTunedWhite()
     {
         Assert.Equal(1f, Cloud(10f, 0.8f).Whiteness, 3);

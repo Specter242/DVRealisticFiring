@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.14.0 (2026-10-24)
+
+- The 2901's firing valve takes a stop (`FiringValveStop`, `FiringValveStopClick`): a click sets it where the valve stands and the oil never drops under it (`OilFeed.FiringValve`); another click takes it out. The fireman works above it and takes it out to shut the valve. Saved with the oil firebox (`rfValveStop`); in multiplayer each machine keeps its own, and a client's feed joins its firebox whichever is built first.
+- `Settings.SteamVentVolume` sets the volume of steam blowing off: a melted fusible plug, an injector's overflow, and a shed's open steam hose.
+- A deleted tender's tank is dropped before the injectors read it (`InjectorRig`).
+- Every heat shimmer draws after the smoke from one named screen copy (`HeatHaze`, `_SharedGrab_Transparent1`): one grabbed before the smoke cut a hole through the plume.
+- Each puff leaves a frame's travel back from the lip: Unity moves a particle emitted now by its velocity before drawing it, so a moving train's plume led its stack.
+- The plume is lit by the sun and the sky's ambient light (`ChimneySmoke`), as one volume (`PlumeVolume`: the particles' opacity gathered into a grid, its shade from the sun and its outward way), a moonlit gray at night, and fades within a few meters of the camera.
+- Thick steam and dense black smoke are drawn as six-way lit rolling puffs (`make_rolling_steam.py`), upright to the world, handing off by age (sooner for a light beat) to 1.13's wisp flipbook with its relief baked in (`smoke_wisp_baked.png`), each wisp its own row and slowing turn. A puff's thin edge on the plume's silhouette frays into its wisp's strands (`PlumeAloft.ExtraOf`, measured across the plume at its own age).
+- Smoke's opacity is shared by the particles overlapping it, by the emission rate as each left (`PlumeAloft.Drawn`), so a well-fired engine's light haze stays light. A thinning wisp grows only as much as its strands' reach shrinks (`PlumeAloft.Thinning`).
+- The blower's jet makes white steam in cool or damp air (`PlumeModel`), and a standing column rises more slowly.
+
 ## 1.13.9 (2026-10-20)
 
 - Superheated steam fills the cylinders by volume (`SteamCylinders.SuperheatedVolumeRatio`: Callendar's equation, fitted to IAPWS-IF97 within 0.54 % from 10 to 25 bar and up to 400 °C), after the walls take their share of the superheat (`SuperheatAtCutoff`); the ports pass in proportion to √(p·ρ).

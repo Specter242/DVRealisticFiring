@@ -315,7 +315,8 @@ namespace RealisticFiring.Sim
                 // firebox as the sim starts.
                 if (firingValve == null && OilFirebox.Feed != null)
                     firingValve = new FiremanHand("firing valve", Control(OilFirebox.Feed.ControlPort), ValvePace);
-                firingValve?.Work(actions.FiringValve, clock);
+                // Never under the valve's stop; to shut it he takes the stop out.
+                firingValve?.Work(OilFirebox.Stop.ForFireman(actions.FiringValve), clock);
                 atomizer?.Work(actions.Atomizer, clock);
                 heater?.Work(actions.Heater, clock);
                 if (actions.Sand > 0f)

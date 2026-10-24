@@ -41,6 +41,15 @@ namespace RealisticFiring.Core.Tests;
     }
 
     [Fact]
+    public void ShowingTheStillAirRiseSlowerLeavesTheBentPlume()
+    {
+        var flux = Flux(Working);
+        Assert.Equal(0.7f * PlumeRise.RiseSpeed(flux, 10f, 0f), PlumeRise.RiseSpeed(flux, 10f, 0f, 0.7f), 4);
+        // At speed the bent-over plume is the slower, its trajectory the air's and its rise's.
+        Assert.Equal(PlumeRise.RiseSpeed(flux, 10f, 20f), PlumeRise.RiseSpeed(flux, 10f, 20f, 0.7f), 4);
+    }
+
+    [Fact]
     public void ABiggerFireRisesFaster()
     {
         Assert.True(HeightAfter(30f, Working) > HeightAfter(30f, Idling));

@@ -629,6 +629,17 @@ namespace RealisticFiring.Sim
             return false;
         }
 
+        // The tender coupled behind, or null; a deleted one counts as none.
+        // Callers compare it by reference: Unity's == calls a deleted car
+        // null, yet also calls it the same as a real null, so a cache keyed
+        // on a deleted tender kept its tank (assassin4ever96's log,
+        // 2026-10-21: StepOutlet then threw on every step).
+        private TrainCar CoupledTender()
+        {
+            var tender = Car != null && Car.rearCoupler != null && Car.rearCoupler.coupledTo != null ? Car.rearCoupler.coupledTo.train : null;
+            return tender != null ? tender : null;
+        }
+
         // The tender coupled behind, whose water valves were looked for.
         private TrainCar valveTender;
 
@@ -636,8 +647,8 @@ namespace RealisticFiring.Sim
         // when the tender changes or its sim is not yet built.
         private void FindTenderValves()
         {
-            var tender = Car != null && Car.rearCoupler != null && Car.rearCoupler.coupledTo != null ? Car.rearCoupler.coupledTo.train : null;
-            if (tender == valveTender)
+            var tender = CoupledTender();
+            if (ReferenceEquals(tender, valveTender))
                 return;
             var flow = tender != null && tender.SimController != null ? tender.SimController.simFlow : null;
             var valved = tender != null && tender.carLivery != null && InjectorValves.HasTenderValves(tender.carLivery.id);
@@ -692,8 +703,8 @@ namespace RealisticFiring.Sim
 
         private bool StepOutlet(float delta)
         {
-            var car = Car != null && Car.rearCoupler != null && Car.rearCoupler.coupledTo != null ? Car.rearCoupler.coupledTo.train : null;
-            if (car != tankCar)
+            var car = CoupledTender();
+            if (!ReferenceEquals(car, tankCar))
             {
                 tankCar = car;
                 var flow = car != null && car.SimController != null ? car.SimController.simFlow : null;
