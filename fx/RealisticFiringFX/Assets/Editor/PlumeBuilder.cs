@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -70,10 +71,33 @@ namespace RealisticFiringFX
 
             // The chimney's smoke: wisps, eight of them a row each, fraying as
             // they thin (the firebox's smoke keeps the round puffs).
-            var puff = CreateMaterial(shader, "Puff", ImportFlipbook("smoke_wisp_flipbook.png"));
+            // Their RGB is their surface (the normal and thickness the shader
+            // lights), so it is read as data, not color.
+            var puff = CreateMaterial(shader, "Puff", ImportFlipbook("smoke_wisp_flipbook.png", data: true));
             puff.SetFloat("_Fray", 0.5f);
+            puff.SetFloat("_Surface", 1f);
+            puff.SetFloat("_Tiles", 8f);
+            // Round billows where the steam is thick, blended to the wisps as it thins.
+            puff.SetTexture("_BillowTex", ImportFlipbook("smoke_billow_flipbook.png", data: true));
+            // Rolling steam: puffs simulated in 3D, rolling in a loop, lit
+            // six ways (fx/textures/make_rolling_steam.py). The mod picks
+            // each particle's puff and frame (its second custom data).
+            puff.SetFloat("_SixWay", 1f);
+            puff.SetTexture("_LightA", ImportFlipbook("smoke_roll_a.png", data: true));
+            puff.SetTexture("_LightB", ImportFlipbook("smoke_roll_b.png", data: true));
+            puff.SetFloat("_SixColumns", 16f);
+            puff.SetFloat("_SixRows", 16f);
+            puff.SetFloat("_SixFrames", 32f);
+            // As a particle thins it turns to a wisp: the wisp flipbook above,
+            // as the plume drew before its puffs rolled.
+            puff.SetFloat("_Wisps", 1f);
+            // The same wisps with their relief baked in, as 1.13 drew them.
+            puff.SetTexture("_WispTex", ImportFlipbook("smoke_wisp_baked.png"));
             EditorUtility.SetDirty(puff);
-            var jet = CreateMaterial(shader, "Jet", ImportFlipbook("smoke_jet_flipbook.png"));
+            var jet = CreateMaterial(shader, "Jet", ImportFlipbook("smoke_jet_flipbook.png", data: true));
+            jet.SetFloat("_Surface", 1f);
+            jet.SetFloat("_Tiles", 4f);
+            EditorUtility.SetDirty(jet);
             var spark = CreateMaterial(sparkShader, "Spark", ImportFlipbook("spark.png"));
             var droplet = CreateMaterial(shader, "Droplet", ImportFlipbook("spark.png"));
             // The hot gas's shimmer: the scene behind, bent by the fire's noise.
@@ -127,7 +151,7 @@ namespace RealisticFiringFX
             Debug.Log($"Realistic Firing FX: built '{BundleName}' into {Path.GetFullPath(output)}");
         }
 
-        private static Texture2D ImportFlipbook(string file)
+        private static Texture2D ImportFlipbook(string file, bool data = false)
         {
             var path = $"{TexturesDir}/{file}";
             var importer = (TextureImporter)AssetImporter.GetAtPath(path)
@@ -135,7 +159,7 @@ namespace RealisticFiringFX
             importer.textureType = TextureImporterType.Default;
             importer.alphaSource = TextureImporterAlphaSource.FromInput;
             importer.alphaIsTransparency = true;
-            importer.sRGBTexture = true;
+            importer.sRGBTexture = !data;
             importer.mipmapEnabled = true;
             importer.wrapMode = TextureWrapMode.Clamp;
             importer.textureCompression = TextureImporterCompression.CompressedHQ;
@@ -170,14 +194,16 @@ namespace RealisticFiringFX
                 // The billowing cloud: fades in as the jet fades out, swells, and thins out late.
                 // Every smoke particle starts at a quarter of its size, so nothing
                 // spills wider than the stack's mouth before it has left it.
-                CreateSystem(root, "Cloud", puff, tiles: 8, lifetime: (6f, 10f), maxParticles: 1500,
+                // Its puffs roll upright (the shader picks their frames), so
+                // the steam rolls out over their tops and down their sides.
+                CreateSystem(root, "Cloud", puff, tiles: 1, lifetime: (6f, 10f), maxParticles: 1500,
                     growth: Curve(0f, 0.25f, 0.15f, 1f, 1f, 2.4f),
-                    fade: Fade((0f, 0f), (0.06f, 0.95f), (0.45f, 0.7f), (1f, 0f)), noise: 0.35f, variants: true);
+                    fade: Fade((0f, 0f), (0.06f, 0.95f), (0.45f, 0.7f), (1f, 0f)), noise: 0.35f, upright: true);
 
                 // A smaller, darker core when the fire is sooty.
-                CreateSystem(root, "Soot", puff, tiles: 8, lifetime: (4f, 7f), maxParticles: 600,
+                CreateSystem(root, "Soot", puff, tiles: 1, lifetime: (4f, 7f), maxParticles: 600,
                     growth: Curve(0f, 0.25f, 0.15f, 1f, 1f, 2f),
-                    fade: Fade((0f, 0f), (0.05f, 1f), (0.4f, 0.75f), (1f, 0f)), noise: 0.3f, variants: true);
+                    fade: Fade((0f, 0f), (0.05f, 1f), (0.4f, 0.75f), (1f, 0f)), noise: 0.3f, upright: true);
 
                 // Cinders: drawn as streaks along their flight, cooling from
                 // yellow-white through orange to dull red as they burn out.
@@ -388,10 +414,11 @@ namespace RealisticFiringFX
         }
 
         // With variants, each row of the sheet is its own wisp over its life,
-        // and a particle plays a row picked at random.
+        // and a particle plays a row picked at random. Upright, a particle
+        // stands within a few degrees of the view's up and hardly turns.
         private static ParticleSystem CreateSystem(GameObject parent, string name, Material material, int tiles,
             (float min, float max) lifetime, int maxParticles, AnimationCurve growth, Gradient fade, float noise = 0f,
-            bool variants = false)
+            bool variants = false, bool upright = false)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent.transform, false);
@@ -405,7 +432,13 @@ namespace RealisticFiringFX
             main.startLifetime = new ParticleSystem.MinMaxCurve(lifetime.min, lifetime.max);
             main.startSpeed = 0f;
             main.startSize = 1f;
-            main.startRotation = new ParticleSystem.MinMaxCurve(0f, 2f * Mathf.PI);
+            main.startRotation = upright ? new ParticleSystem.MinMaxCurve(-0.2f, 0.2f) : new ParticleSystem.MinMaxCurve(0f, 2f * Mathf.PI);
+            if (upright)
+            {
+                var spin = system.rotationOverLifetime;
+                spin.enabled = true;
+                spin.z = new ParticleSystem.MinMaxCurve(-0.02f, 0.02f);
+            }
             main.gravityModifier = 0f;
             main.simulationSpace = ParticleSystemSimulationSpace.World;
             main.scalingMode = ParticleSystemScalingMode.Hierarchy;
@@ -454,6 +487,14 @@ namespace RealisticFiringFX
 
             var renderer = go.GetComponent<ParticleSystemRenderer>();
             renderer.sharedMaterial = material;
+            // A surface the chimney smoke shader lights needs the particle's tangent.
+            if (material.HasProperty("_Surface") && material.GetFloat("_Surface") > 0.5f)
+                renderer.SetActiveVertexStreams(new List<ParticleSystemVertexStream>
+                {
+                    ParticleSystemVertexStream.Position, ParticleSystemVertexStream.Normal, ParticleSystemVertexStream.Color,
+                    ParticleSystemVertexStream.UV, ParticleSystemVertexStream.Custom1XYZW, ParticleSystemVertexStream.Custom2XYZW,
+                    ParticleSystemVertexStream.Center, ParticleSystemVertexStream.Tangent,
+                });
             renderer.renderMode = ParticleSystemRenderMode.Billboard;
             renderer.maxParticleSize = 3f;
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;

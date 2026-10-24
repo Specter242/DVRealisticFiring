@@ -84,7 +84,7 @@ namespace RealisticFiring.Visuals
             if (rig == null)
                 return;
             SetVolume(whistle, rig.Alarm != null && rig.Alarm.Sounding ? WhistleVolume : 0f);
-            SetVolume(blow, Mathf.Clamp01(rig.PlugVent / LoudestBlow));
+            SetVolume(blow, Mathf.Clamp01(rig.PlugVent / LoudestBlow) * Mathf.Max(0f, Main.Settings.SteamVentVolume));
         }
 
         private static void SetVolume(AudioSource source, float volume)

@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Runtime.CompilerServices;
 using HarmonyLib;
 using LocoSim.Implementations;
 using UnityEngine;
@@ -21,6 +22,12 @@ namespace RealisticFiring.Sim
     {
         private static readonly AccessTools.FieldRef<PortReference, Port> ReferencedPort =
             AccessTools.FieldRefAccess<PortReference, Port>("port");
+
+        // Each car's feed, so its firebox joins it whichever is built first:
+        // a feed built first otherwise joined only on the host's first tick,
+        // and a client, which does not simulate it, never (Vincent5482 on
+        // Nexus, 2026-10-21: no firing valve percentage as a client).
+        private static readonly ConditionalWeakTable<TrainCar, OilFeed> ByCar = new ConditionalWeakTable<TrainCar, OilFeed>();
 
         private readonly Port steamConsumption;
         private readonly Port stokingNormalized;
@@ -53,6 +60,12 @@ namespace RealisticFiring.Sim
             AddPortReference(def.FireboxCoalControl);
             coalAmount = AddPortReference(def.CoalAmount);
             coalConsume = AddPortReference(def.CoalConsume);
+
+            if (car != null)
+            {
+                ByCar.Remove(car);
+                ByCar.Add(car, this);
+            }
         }
 
         /// <summary>The control its firing valve is, by the stoker's reference name.</summary>
@@ -64,8 +77,8 @@ namespace RealisticFiring.Sim
         /// <summary>The firing valve's cab port, for the fireman's hand.</summary>
         internal Port ControlPort => control.IsConnected ? ReferencedPort(control) : null;
 
-        /// <summary>The firing valve, 0 shut to 1 wide open.</summary>
-        public float FiringValve => Mathf.Clamp01(control.Value);
+        /// <summary>The firing valve, 0 shut to 1 wide open: never under its stop.</summary>
+        public float FiringValve => firebox != null ? firebox.Stop.Limit(control.Value) : Mathf.Clamp01(control.Value);
 
         /// <summary>Fuel the tender can give, in firebox kg.</summary>
         public float TenderFuel => Mathf.Max(0f, coalAmount.Value) / (multiplier * Modifier);
@@ -112,17 +125,27 @@ namespace RealisticFiring.Sim
             resolved = true;
             if (car == null)
                 return;
-            if (RealisticOilFirebox.TryGet(car, out firebox))
-                firebox.Feed = this;
+            if (RealisticOilFirebox.TryGet(car, out var built))
+                Join(built);
             var flow = car.SimController != null ? car.SimController.SimulationFlow : null;
             boiler = flow != null ? flow.OrderedSimComps.OfType<Boiler>().FirstOrDefault() : null;
         }
 
-        /// <summary>Joins the firebox at once, before either ticks.</summary>
+        /// <summary>Joins the firebox at once, before either ticks, if it is built yet; it joins this when built after.</summary>
         internal void JoinFirebox()
         {
-            if (car != null && RealisticOilFirebox.TryGet(car, out firebox))
-                firebox.Feed = this;
+            if (car != null && RealisticOilFirebox.TryGet(car, out var built))
+                Join(built);
+        }
+
+        /// <summary>The feed built for <paramref name="car"/>, for its firebox built after it; null with none.</summary>
+        internal static OilFeed Of(TrainCar car) => car != null && ByCar.TryGetValue(car, out var feed) ? feed : null;
+
+        /// <summary>Joins <paramref name="oil"/>, its car's firebox, both ways.</summary>
+        internal void Join(RealisticOilFirebox oil)
+        {
+            firebox = oil;
+            oil.Feed = this;
         }
     }
 }

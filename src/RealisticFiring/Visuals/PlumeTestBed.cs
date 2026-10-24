@@ -12,10 +12,91 @@ namespace RealisticFiring.Visuals
     /// </summary>
     internal sealed class PlumeLook
     {
- public float Light = 1.6f;
+ public float Light = 1.1f;
 
         /// <summary>The smoke's fraying at its edges, 0 fading evenly.</summary>
         public float Fray = 0.5f;
+
+        public float SkyLight = 1.5f;
+        public float SunLight = 0.65f;
+        public float MaxLight = 2f;
+        public float Wrap = 0.4f;
+        public float Relief = 0.6f;
+        public float Bulge = 0.1f;
+        public float SelfShadow = 0.5f;
+        public float Scatter = 0.25f;
+
+        public float Flat = 1f;
+        public float Terminator = 0.25f;
+        public float ShadeLight = 0.6f;
+        public float SunShadow = 0f;
+        public float ShadowDensity = 0.05f;
+
+        public float Volume = 1f;
+        public float VolumeShape = 1f;
+        public float VolumeDensity = 0.03f;
+
+        /// <summary>
+        /// Smoke at the camera fades, shown from this far, m, fully from
+        /// this (2026-10-21: inside a fast train's trail the view was a flat
+        /// white wall of the nearest particles).
+        /// </summary>
+        public float NearFadeFrom = 0.5f;
+        public float NearFadeTo = 4f;
+
+        /// <summary>The light on the plume greyed toward its brightness, 0 to 1.</summary>
+        public float LightGrey = 0f;
+
+        public float NightSkyLight = 0.7f;
+        public float NightGrey = 0.5f;
+
+        /// <summary>
+        /// A plume particle's size, × the plume's width where it is (0.75 until
+        /// 2026-10-21, then 0.9, then 0.6: with the trail spreading faster,
+        /// its wisps tens of meters wide drew soft; 0.75 again with 1.13's
+        /// wisps and spreading, 2026-10-23).
+        /// </summary>
+        public float FillWidth = 0.75f;
+
+ public float SmokeFillWidth = 0.75f;
+
+        /// <summary>How far out a particle drifts from where it left the stack, × the plume's widening (0.3 until 2026-10-21).</summary>
+        public float Disperse = 0.4f;
+
+        /// <summary>
+        /// How far a particle's smoke's opacity is shared with those
+        /// overlapping it, 0 (each as opaque as the plume) to 1 (PlumeAloft):
+        /// at 1 a fresh charge's smoke all but vanished, the wisps covering
+        /// only a fifth of their quads.
+        /// </summary>
+        public float Overlap = 0.5f;
+
+ public float SmokeAsSteamFrom = 0.5f;
+
+ public float WispLargestFrom = 60f;
+        public float WispLargestTo = 150f;
+        public float SmokeAsSteamTo = 0.85f;
+
+
+        /// <summary>How far each particle is lit as its part of the plume's surface, × (0 each alone; PlumeAloft.ShapeOf).</summary>
+        public float PlumeShape = 0f;
+
+        /// <summary>How far a beat's particles leave as one cluster, a core and lobes beside it, 0 (strung up the jet) to 1.</summary>
+        public float BeatCluster = 0.6f;
+
+        /// <summary>
+        /// How far thick steam is drawn as round billows, 0 to 1 (the shader's
+        /// second flipbook), from a particle's opacity <see cref="BillowFrom"/>
+        /// to <see cref="BillowFull"/>, the wisps as it thins.
+        /// </summary>
+        public float Billow = 1f;
+        public float BillowFrom = 0.3f;
+        public float BillowFull = 0.8f;
+
+ public float BillowAge = 1f;
+
+        /// <summary>The surface's up across the particle, ±1 (which way the texture's normal reads).</summary>
+        public float BinormalSign = 1f;
 
         /// <summary>A particle's width while it goes fast through the air, against its size.</summary>
         public float JetWidth = 0.5f;
@@ -25,6 +106,145 @@ namespace RealisticFiring.Visuals
 
         /// <summary>How hard the plume's eddies stir it, ×.</summary>
         public float Eddies = 1f;
+
+ public float RollRate = 0.5f;
+        public float RollSlows = 3f;
+
+        /// <summary>Rolling steam: how far the plume's far side from the sun shades its puffs, 0 to 1.</summary>
+        public float SixPlume = 0.5f;
+
+        /// <summary>
+        /// Rolling steam: the sun's light a puff scatters into its shade, 0 to
+        /// 1 (at 0.6 its lobes hardly showed; 0.35 matched the photos' shade).
+        /// </summary>
+        public float RollShade = 0.4f;
+
+ public float ThickFloor = 0.05f;
+
+        /// <summary>Development: rolling steam's opacity drawn red, × this (0 off), to find faint coverage.</summary>
+        public float DebugAlpha = 0f;
+
+        /// <summary>Development: the cloud and sooty core hidden (above 0), to time what drawing them costs.</summary>
+        public float HidePlume = 0f;
+
+        /// <summary>Development: the jet's streaks hidden (above 0).</summary>
+        public float HideJet = 0f;
+
+        /// <summary>Development: the heat shimmer hidden (above 0).</summary>
+        public float HideHeat = 0f;
+
+        /// <summary>
+        /// Rolling steam: the share of the sun's light scattered into a puff's
+        /// shade that takes the sky's color rather than the sun's, 0 to 1
+        /// (none drew a dawn's whole plume peach; 0.6 tinted a day's plume blue-gray).
+        /// </summary>
+        public float ShadeSky = 0.3f;
+
+ public float RiseShown = 0.7f;
+
+ public float WispBelow = 0.15f;
+        public float WispAbove = 0.6f;
+
+ public float WispFrayEdge = 0.5f;
+
+ public float WispAgeFrom = 0.2f;
+        public float WispAgeTo = 0.45f;
+
+        /// <summary>
+        /// Rolling steam: how far a wisp blends to its next frame, 0 to 1 (0:
+        /// it steps, as the plume's flipbook did on 2026-10-21).
+        /// </summary>
+        public float WispBlend = 0f;
+
+ public float WispSheet = 1f;
+
+        /// <summary>
+        /// Rolling steam: 1, each wisp keeps its own row of the sheet, from a
+        /// frame of its own past the young compact ones; 0, the whole sheet
+        /// in turn (WispSheet), one row blending into another, its strands
+        /// fading out and others in (Sol, 2026-10-23: the light firing's
+        /// flashing; its trail crisper, its curls clearer).
+        /// </summary>
+        public float WispCoherence = 1f;
+
+ public float WispHold = 0f;
+
+ public float WispFadeFrom = 0.8f;
+
+ public float ThinWispAgeFrom = 0.1f;
+        public float ThinWispAgeTo = 0.3f;
+        public float LongPuffsFrom = 0.6f;
+        public float LongPuffsBy = 1f;
+
+        /// <summary>
+        /// Rolling steam: 1, the dead dropped before the particles are set,
+        /// so each keeps its own custom data (Sol, 2026-10-23); 0, a survivor
+        /// moved into a dead one's place drew its wisp for a frame.
+        /// </summary>
+        public float StableParticleData = 1f;
+
+ public float WispBaked = 1f;
+
+        /// <summary>
+        /// Rolling steam: 1, each wisp at its own turn, any way, slowly
+        /// spinning, as 1.13's; 0, its particle's, near upright as the puffs:
+        /// all its strands lay one way, a grain round a rope (2026-10-23).
+        /// </summary>
+        public float WispTurn = 1f;
+
+ public float WispSpin = 0.3f;
+        public float WispSpinEase = 1f;
+
+        /// <summary>Those wisps lit as 1.13 lit them (WispPuffLit 0): its plume light.</summary>
+        public float WispBakedLight = 1.6f;
+
+        /// <summary>
+        /// Rolling steam: 1, those wisps lit as the puffs are, as a puff of the
+        /// flipbook's mean six ways' light, at WispPuffLight of it (by 1.13's
+        /// light the wisps were tan and the puffs white, and each puff handing
+        /// off drew a pale disc with a tan rim).
+        /// </summary>
+        public float WispPuffLit = 1f;
+        public float WispPuffLight = 1f;
+
+ public float WispShare = 0f;
+
+ public float WispRelief = 1f;
+        public float WispBulge = 0.4f;
+        public float WispScatter = 0.5f;
+        public float WispSunLight = 0.9f;
+
+        /// <summary>Rolling steam: opacity below this is drawn as none (a pixel dropped unblended, the plume's cost mostly the blending).</summary>
+        public float LeastOpacity = 0.002f;
+
+ public float Fringe = 0.8f;
+        public float FringeCore = 0.5f;
+
+ public float Upright = 1f;
+        public float Grow = 1f;
+        public float WispReach = 1f;
+
+        /// <summary>Rolling steam: a fringe's strands' opacity, × its particle's wisp's, 0 to 1.</summary>
+        public float FringeShare = 1f;
+
+        /// <summary>
+        /// Rolling steam: a particle is fringed from this far on the plume's
+        /// silhouette (its way out from the plume's middle across the view, ×
+        /// how far out; PlumeAloft.ExtraOf), wholly by the next: over the
+        /// plume's faces turned toward the view the strands veiled its lobes.
+        /// Set for the measure across the plume (<see cref="ShapeAcross"/>):
+        /// from its age band's middle, 0.45 and 0.8, along the trail too it
+        /// measured particles further out, and across at those a puff frayed
+        /// a tenth as much (2026-10-24: as many fray from 0.3 and 0.55).
+        /// </summary>
+        public float FringeRimFrom = 0.3f;
+        public float FringeRimTo = 0.55f;
+
+ public float ShapeAcross = 1f;
+
+ public float ShapeSmoothing = 1f;
+
+ public float SootAlbedo = 0.04f;
 
  public float LipWidth = 0.7f;
 
@@ -148,6 +368,19 @@ namespace RealisticFiring.Visuals
             LookVersion++;
         }
 
+        /// <summary>Every tuning and look value, as name=value pairs <see cref="Restore"/> takes (the capture run's, to put them back).</summary>
+        internal static string Snapshot()
+        {
+            var parts = new List<string>();
+            foreach (var property in typeof(PlumeTuning).GetProperties())
+                if (property.CanWrite && property.PropertyType == typeof(float))
+                    parts.Add($"{property.Name}={((float)property.GetValue(Tuning)).ToString("R", CultureInfo.InvariantCulture)}");
+            foreach (var field in typeof(PlumeLook).GetFields())
+                if (field.FieldType == typeof(float))
+                    parts.Add($"{field.Name}={((float)field.GetValue(Look)).ToString("R", CultureInfo.InvariantCulture)}");
+            return string.Join(";", parts);
+        }
+
         // The values away from the defaults, as name=value pairs.
         private static string Kept()
         {
@@ -191,18 +424,27 @@ namespace RealisticFiring.Visuals
         /// <summary>The engine whose stack the test sets: the nearest plume when the stack test was turned on.</summary>
         public static ChimneyPlume Target => target != null && target.Active ? target : null;
 
+        /// <summary>The engine the stack test was last aimed at, gone or not.</summary>
+        internal static ChimneyPlume Aimed => target;
+
+        /// <summary>Aims the stack test at <paramref name="plume"/> (the capture run's engine).</summary>
+        internal static void Aim(ChimneyPlume plume) => target = plume;
+
+        // The test bed's settings drive the plume while its window is open or a capture runs.
+        private static bool Driving => Open || PlumeCapture.Running;
+
         /// <summary>The stack test for <paramref name="plume"/>, or null when its own fire and engine drive it.</summary>
-        public static StackTest StackFor(ChimneyPlume plume) => Open && StackOn && plume != null && plume == Target ? Stack : null;
+        public static StackTest StackFor(ChimneyPlume plume) => Driving && StackOn && plume != null && plume == Target ? Stack : null;
 
         /// <summary>The test's air, or null when the game's weather drives the plume.</summary>
-        public static PlumeAir? Air => Open && WeatherOn ? new PlumeAir(Temperature, Humidity) : (PlumeAir?)null;
+        public static PlumeAir? Air => Driving && WeatherOn ? new PlumeAir(Temperature, Humidity) : (PlumeAir?)null;
 
         /// <summary>The test's wind, m/s in the world, when the weather test is on.</summary>
         public static Vector3? Wind
         {
             get
             {
-                if (!(Open && WeatherOn))
+                if (!(Driving && WeatherOn))
                     return null;
                 var (x, z) = PlumeWind.Toward(WindToward);
                 return new Vector3(x, 0f, z) * WindSpeed;
@@ -246,6 +488,9 @@ namespace RealisticFiring.Visuals
             new StackTest { Name = "Working light, 50 km/h", Heat = 0.35f, Soot = 0.05f, Flow = 0.3f, Beats = 12.6f, Exhaust = 2.5f, Speed = 50f },
             new StackTest { Name = "Starting a train", Heat = 0.8f, Soot = 0.12f, Flow = 0.7f, Beats = 2.5f, Exhaust = 7f, Speed = 10f },
             new StackTest { Name = "Slogging up a grade", Heat = 1f, Soot = 0.15f, Flow = 0.9f, Beats = 5f, Exhaust = 11f, Speed = 20f },
+            // Photo 19: a K-36 hard at the foot of a 4 % grade on a smoky fire,
+            // 15 to 25 km/h with a following breeze (the air past it about 10).
+            new StackTest { Name = "Hard and smoky (19)", Heat = 1f, Soot = 0.6f, Flow = 0.9f, Beats = 4f, Exhaust = 11f, Speed = 10f },
             new StackTest { Name = "Fast running, 90 km/h", Heat = 0.6f, Soot = 0.05f, Flow = 0.55f, Beats = 22f, Exhaust = 3f, Speed = 90f },
             new StackTest { Name = "Drifting, 60 km/h", Heat = 0.2f, Soot = 0.02f, Beats = 15f, Exhaust = 0.5f, Speed = 60f, AirPerSteam = 20f },
             new StackTest { Name = "Cold start, wet cylinders", Heat = 0.5f, Soot = 0.1f, Flow = 0.6f, Beats = 1.5f, Exhaust = 6f, Speed = 3f, Wetness = 0.15f },
@@ -253,6 +498,28 @@ namespace RealisticFiring.Visuals
 
         // Declared after its presets: static fields start in order.
         public static StackTest Stack = StackPresets[7].Copy();
+
+        /// <summary>The weather preset named <paramref name="name"/> or starting so.</summary>
+        internal static bool WeatherNamed(string name, out float temperature, out float humidity)
+        {
+            var found = Find(WeatherPresets, p => p.Name, name);
+            temperature = found >= 0 ? WeatherPresets[found].Temperature : 0f;
+            humidity = found >= 0 ? WeatherPresets[found].Humidity : 0f;
+            return found >= 0;
+        }
+
+        /// <summary>A copy of the stack preset named <paramref name="name"/> or starting so, or null.</summary>
+        internal static StackTest StackNamed(string name)
+        {
+            var found = Find(StackPresets, p => p.Name, name);
+            return found >= 0 ? StackPresets[found].Copy() : null;
+        }
+
+        private static int Find<T>(T[] presets, Func<T, string> named, string name)
+        {
+            var found = Array.FindIndex(presets, p => string.Equals(named(p), name, StringComparison.OrdinalIgnoreCase));
+            return found >= 0 || name == null ? found : Array.FindIndex(presets, p => named(p).StartsWith(name, StringComparison.OrdinalIgnoreCase));
+        }
 
 
         private static readonly PlumeTuning DefaultTuning = new PlumeTuning();
@@ -266,7 +533,7 @@ namespace RealisticFiring.Visuals
         public static void Draw()
         {
             SaveIfChanged();
-            if (!Open)
+            if (!Open || PlumeCapture.Running)
                 return;
             var k = OverlayStyle.Scale;
             var matrix = GUI.matrix;
@@ -362,6 +629,7 @@ namespace RealisticFiring.Visuals
         {
             Header("Steam and smoke");
             Slider("Flue gas mixing into the steam", () => Tuning.FlueGasMixing, v => Tuning.FlueGasMixing = v, 0f, 1.5f, "F2");
+            Slider("Flue gas mixing into the blower's jet", () => Tuning.BlowerFlueGasMixing, v => Tuning.BlowerFlueGasMixing = v, 0f, 1.5f, "F2");
             Slider("Steam mixing into the air, ×", () => Tuning.SteamMixing, v => Tuning.SteamMixing = v, 0.25f, 10f, "F2");
             Slider("White forming above the stack, ×", () => Tuning.SteamForming, v => Tuning.SteamForming = v, 0.1f, 10f, "F2");
             Slider("Steam opacity (tuned air)", () => Tuning.SteamOpacity, v => Tuning.SteamOpacity = v, 0.2f, 0.95f, "F2");
@@ -370,6 +638,9 @@ namespace RealisticFiring.Visuals
             Slider("Puff size, ×", () => Tuning.PuffSize, v => Tuning.PuffSize = v, 0.4f, 2.5f, "F2");
             Slider("Jet length, m", () => Tuning.JetLength, v => Tuning.JetLength = v, 1f, 8f, "F1");
             Slider("Buoyancy, ×", () => Tuning.Buoyancy, v => Tuning.Buoyancy = v, 0.2f, 3f, "F2");
+            Slider("Trail spreading, ×", () => Tuning.TrailSpread, v => Tuning.TrailSpread = v, 0.25f, 5f, "F2");
+            Slider("Soot darkening curve", () => Tuning.SootCurve, v => Tuning.SootCurve = v, 0.5f, 3f, "F2");
+            Slider("Black smoke opacity", () => Tuning.SootOpacity, v => Tuning.SootOpacity = v, 0.3f, 0.98f, "F2");
             Slider("Wake: share of train speed", () => Tuning.WakeCarry, v => Tuning.WakeCarry = v, 0f, 0.6f, "F2");
             Slider("Wake: falls away over, m", () => Tuning.WakeDepth, v => Tuning.WakeDepth = v, 0.2f, 6f, "F1");
             Header("Look");
@@ -378,8 +649,86 @@ namespace RealisticFiring.Visuals
             Kept("Spread past the neck, m/m", ref Look.NeckSpread, 0f, 0.6f, "F2");
             Kept("Jet narrowing while fast", ref Look.JetWidth, 0.2f, 1f, "F2");
             Kept("Eddies, ×", ref Look.Eddies, 0f, 3f, "F2");
-            LookSlider("Plume light, ×", ref Look.Light, 0.8f, 2.5f, "F2");
+            Kept("Particle width, × plume's", ref Look.FillWidth, 0.3f, 1.5f, "F2");
+            Kept("Dense smoke's particle width, × plume's", ref Look.SmokeFillWidth, 0.3f, 1.5f, "F2");
+            Kept("Drift across the plume", ref Look.Disperse, 0f, 1f, "F2");
+            Kept("Smoke's opacity shared by overlapping particles", ref Look.Overlap, 0f, 1.5f, "F2");
+            Kept("Smoke drawn as steam from, opacity at the lip", ref Look.SmokeAsSteamFrom, 0f, 1f, "F2");
+            Kept("Wholly as steam by", ref Look.SmokeAsSteamTo, 0f, 1f, "F2");
+            Kept("Wisps no wider than, m", ref Look.WispLargestFrom, 10f, 500f, "F0");
+            Kept("Wholly puffs from, m", ref Look.WispLargestTo, 10f, 800f, "F0");
+            LookSlider("Plume light, ×", ref Look.Light, 0.4f, 3f, "F2");
             LookSlider("Fraying", ref Look.Fray, 0f, 1f, "F2");
+            LookSlider("Sky light, ×", ref Look.SkyLight, 0f, 6f, "F2");
+            LookSlider("Sun light, ×", ref Look.SunLight, 0f, 3f, "F2");
+            LookSlider("Brightest light", ref Look.MaxLight, 0.5f, 5f, "F2");
+            LookSlider("Sun wrapping around", ref Look.Wrap, 0f, 1f, "F2");
+            LookSlider("Surface relief", ref Look.Relief, 0f, 2f, "F2");
+            LookSlider("Roundness", ref Look.Bulge, 0f, 1f, "F2");
+            LookSlider("Thick smoke's own shadow", ref Look.SelfShadow, 0f, 1f, "F2");
+            LookSlider("Sun through thin smoke", ref Look.Scatter, 0f, 3f, "F2");
+            LookSlider("Light greyed", ref Look.LightGrey, 0f, 1f, "F2");
+            LookSlider("Lit as the plume's surface", ref Look.PlumeShape, 0f, 3f, "F2");
+            Kept("Beats leave as clusters", ref Look.BeatCluster, 0f, 1f, "F2");
+            LookSlider("Billows where thick", ref Look.Billow, 0f, 1f, "F2");
+            LookSlider("Billows from opacity", ref Look.BillowFrom, 0f, 1f, "F2");
+            LookSlider("Billows fully at opacity", ref Look.BillowFull, 0f, 1f, "F2");
+            LookSlider("Billows roll up over, s", ref Look.BillowAge, 0f, 3f, "F2");
+            LookSlider("Flat-lit, with a terminator", ref Look.Flat, 0f, 1f, "F2");
+            LookSlider("Terminator's softness", ref Look.Terminator, 0.02f, 1f, "F2");
+            LookSlider("Sun diffused into the shade", ref Look.ShadeLight, 0f, 1f, "F2");
+            LookSlider("Shadowed by the plume", ref Look.SunShadow, 0f, 1f, "F2");
+            LookSlider("Plume's shadow density, ×", ref Look.ShadowDensity, 0f, 5f, "F2");
+            LookSlider("Lit as one volume", ref Look.Volume, 0f, 1f, "F2");
+            LookSlider("The volume's shape in the light", ref Look.VolumeShape, 0f, 3f, "F2");
+            LookSlider("The volume's shadow density, ×", ref Look.VolumeDensity, 0f, 2f, "F3");
+            LookSlider("Rolling: loops a second off the jet", ref Look.RollRate, 0f, 3f, "F2");
+            LookSlider("Rolling: halves by, s", ref Look.RollSlows, 0f, 20f, "F1");
+            LookSlider("Rolling: far side shaded", ref Look.SixPlume, 0f, 1f, "F2");
+            LookSlider("Rolling: sun into the shade", ref Look.RollShade, 0f, 1f, "F2");
+            LookSlider("Rolling: thickness taken as none below", ref Look.ThickFloor, 0f, 0.1f, "F3");
+            LookSlider("Rolling: the shade's light from the sky", ref Look.ShadeSky, 0f, 1f, "F2");
+            LookSlider("Rolling: wholly a wisp at or below", ref Look.WispBelow, 0f, 1f, "F2");
+            LookSlider("Rolling: wholly a puff at or above", ref Look.WispAbove, 0f, 1f, "F2");
+            LookSlider("Rolling: a thinning wisp grows by, × fray (1.12 as the puffs)", ref Look.WispFrayEdge, 0f, 1.5f, "F2");
+            LookSlider("Rolling: wisps from, share of life", ref Look.WispAgeFrom, 0f, 1f, "F2");
+            LookSlider("Rolling: wholly wisps by", ref Look.WispAgeTo, 0f, 1f, "F2");
+            LookSlider("Rolling: wisps' frames blended", ref Look.WispBlend, 0f, 1f, "F2");
+            LookSlider("Rolling: wisps play the whole sheet", ref Look.WispSheet, 0f, 1f, "F0");
+            LookSlider("Rolling: wisps each keep their own row", ref Look.WispCoherence, 0f, 1f, "F0");
+            LookSlider("Rolling: so kept, each holds one frame", ref Look.WispHold, 0f, 1f, "F0");
+            LookSlider("Rolling: strands fade out from, share of reach", ref Look.WispFadeFrom, 0f, 1f, "F2");
+            LookSlider("Rolling: a light beat's wisps from", ref Look.ThinWispAgeFrom, 0f, 1f, "F2");
+            LookSlider("Rolling: a light beat's wholly wisps by", ref Look.ThinWispAgeTo, 0f, 1f, "F2");
+            LookSlider("Rolling: puffs longer from beat strength", ref Look.LongPuffsFrom, 0f, 1f, "F2");
+            LookSlider("Rolling: longest by", ref Look.LongPuffsBy, 0.01f, 1f, "F2");
+            LookSlider("Rolling: custom data stays with its particle", ref Look.StableParticleData, 0f, 1f, "F0");
+            LookSlider("Rolling: wisps as 1.13 drew them", ref Look.WispBaked, 0f, 1f, "F0");
+            LookSlider("Rolling: wisps at their own turn", ref Look.WispTurn, 0f, 1f, "F0");
+            Kept("Rolling: wisps' most spin, rad/s", ref Look.WispSpin, 0f, 1f, "F2");
+            Kept("Rolling: their spin halved by, s (0 steady)", ref Look.WispSpinEase, 0f, 8f, "F1");
+            LookSlider("Rolling: their light (1.13's plume light)", ref Look.WispBakedLight, 0f, 3f, "F2");
+            LookSlider("Rolling: those wisps lit as the puffs", ref Look.WispPuffLit, 0f, 1f, "F0");
+            LookSlider("Rolling: so lit, their share of the puffs' light", ref Look.WispPuffLight, 0f, 2f, "F2");
+            Kept("Rolling: wisps' steam shared by overlapping particles", ref Look.WispShare, 0f, 1f, "F2");
+            LookSlider("Rolling: wisps' relief", ref Look.WispRelief, 0f, 4f, "F2");
+            LookSlider("Rolling: wisps' roundness", ref Look.WispBulge, 0f, 1f, "F2");
+            LookSlider("Rolling: sun through thin wisps", ref Look.WispScatter, 0f, 3f, "F2");
+            LookSlider("Rolling: sun on the wisps", ref Look.WispSunLight, 0f, 2f, "F2");
+            LookSlider("Rolling: a puff's edge frays", ref Look.Fringe, 0f, 1f, "F2");
+            LookSlider("Rolling: its edge found across the plume", ref Look.ShapeAcross, 0f, 1f, "F0");
+            LookSlider("Rolling: its edge eases over, s (0 at once)", ref Look.ShapeSmoothing, 0f, 3f, "F2");
+            LookSlider("Rolling: its edge, below thickness", ref Look.FringeCore, 0.01f, 1f, "F2");
+            LookSlider("Rolling: upright, facing the camera's place", ref Look.Upright, 0f, 1f, "F0");
+            LookSlider("Rolling: quad, × the particle", ref Look.Grow, 1f, 2f, "F2");
+            LookSlider("Rolling: wisp's reach, × half-width", ref Look.WispReach, 0.5f, 2f, "F2");
+            LookSlider("Rolling: fringe's strands' opacity, ×", ref Look.FringeShare, 0f, 1f, "F2");
+            LookSlider("Rolling: black smoke's reflectance", ref Look.SootAlbedo, 0f, 0.5f, "F2");
+            Kept("Rise shown, × the plume's", ref Look.RiseShown, 0.2f, 1.5f, "F2");
+            LookSlider("Shown from, m from the camera", ref Look.NearFadeFrom, 0f, 10f, "F1");
+            LookSlider("Fully shown from, m", ref Look.NearFadeTo, 0f, 20f, "F1");
+            LookSlider("Night: sky light, ×", ref Look.NightSkyLight, 0f, 6f, "F2");
+            LookSlider("Night: light greyed", ref Look.NightGrey, 0f, 1f, "F2");
             Header("Heat shimmer");
             Slider("Shimmer, ×", () => Tuning.Shimmer, v => Tuning.Shimmer = v, 0f, 3f, "F2");
             LookSlider("Shimmer bend, share of view", ref Look.ShimmerStrength, 0f, 0.06f, "F3");

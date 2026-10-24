@@ -54,6 +54,9 @@ namespace RealisticFiring
         [Draw("Feed pump's sound, volume × (0 off)", DrawType.Slider, Min = 0, Max = 2, Precision = 1)]
         public float FeedPumpVolume = 1f;
 
+        [Draw("Steam blowing off: a melted fusible plug, an injector's overflow (and its spilled water), a shed's open steam hose; volume × (0 off)", DrawType.Slider, Min = 0, Max = 2, Precision = 1)]
+        public float SteamVentVolume = 1f;
+
         [Draw("Realistic chimney smoke on locomotives with a realistic firebox (restart required)")]
         public bool RealisticSmoke = true;
 

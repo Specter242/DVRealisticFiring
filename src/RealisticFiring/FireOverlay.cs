@@ -306,7 +306,7 @@ namespace RealisticFiring
                         break;
                     }
                     var valve = oil.Feed != null ? oil.Feed.FiringValve : 0f;
-                    c.Rows.Add(new Row { Label = "Firing valve", Value = $"{P0(valve)} · {fire.FeedRate:F2} kg/s" });
+                    c.Rows.Add(new Row { Label = "Firing valve", Value = $"{P0(valve)}{(oil.Stop.In ? $" · stop {P0(oil.Stop.At)}" : "")} · {fire.FeedRate:F2} kg/s" });
                     c.Rows.Add(new Row { Label = "Atomizer", Value = $"{P0(oil.AtomizerValve)} · {fire.Atomizing:F1}× need", Level = fire.Atomizing < 1f ? AdviceLevel.Act : fire.Atomizing > 2.2f ? AdviceLevel.Watch : AdviceLevel.Ok });
                     c.Rows.Add(new Row { Label = "Oil", Value = $"{fire.OilTemperature:F0} °C · heater {P0(oil.HeaterValve)}", Level = fire.OilTemperature < OilFire.WarmOil || fire.OilTemperature > 80f ? AdviceLevel.Watch : AdviceLevel.Ok });
                     c.Rows.Add(new Row { Label = "Brick", Value = $"{fire.BrickTemperature:F0} °C" });

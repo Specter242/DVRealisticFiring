@@ -15,6 +15,11 @@ out="$repo/fx/build"
 mkdir -p "$out"
 python3 -I "$repo/fx/textures/make_smoke_textures.py" "$project/Assets/RealisticFiring/Textures"
 python3 -I "$repo/fx/textures/make_firebox_textures.py" "$project/Assets/RealisticFiring/Textures"
+# The rolling steam takes a few minutes: only when its script is newer.
+roll="$project/Assets/RealisticFiring/Textures/smoke_roll_a.png"
+if [[ ! -f "$roll" || "$repo/fx/textures/make_rolling_steam.py" -nt "$roll" ]]; then
+    python3 -I "$repo/fx/textures/make_rolling_steam.py" "$project/Assets/RealisticFiring/Textures"
+fi
 
 if ! "$unity" -batchmode -nographics -quit -projectPath "$project" \
         -executeMethod RealisticFiringFX.PlumeBuilder.BuildFromCommandLine \

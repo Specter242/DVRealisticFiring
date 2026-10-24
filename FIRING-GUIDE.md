@@ -178,6 +178,9 @@ and use the cab's blower (the 8F has no fitting).
 - **Lead the throttle:** raise the fire just before you open up, cut it just
   after you shut off. A light fire on cold brick blows out if you slip the
   drivers or open the throttle suddenly.
+- **Set the stop** for the drifting fire: with the firing valve where the
+  fire holds lit with the throttle shut, click it. Then you can cut the fire
+  hard to the stop without putting it out. Click again to take it out.
 - **Sand the flues** when steaming falls off after smoking: click the sand
   box on the cab floor (by the fire door, fireman's side) with the empty
   shovel to load a quart of sand, open the peep hole, and throw it in while

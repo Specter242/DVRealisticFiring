@@ -101,10 +101,11 @@ namespace RealisticFiring.Shed
             }
             if (hiss != null)
             {
-                hiss.volume = LoudestHiss * share;
-                if (share > 0.01f && !hiss.isPlaying)
+                var volume = LoudestHiss * share * Mathf.Max(0f, Main.Settings.SteamVentVolume);
+                hiss.volume = volume;
+                if (volume > 0.01f && !hiss.isPlaying)
                     hiss.Play();
-                else if (share <= 0.01f && hiss.isPlaying)
+                else if (volume <= 0.01f && hiss.isPlaying)
                     hiss.Stop();
             }
         }

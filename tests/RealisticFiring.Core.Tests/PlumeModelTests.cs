@@ -17,6 +17,18 @@ namespace RealisticFiring.Core.Tests;
     private static float Brightness(PlumeColor c) => (c.R + c.G + c.B) / 3f;
 
     [Fact]
+    public void TheBlowersStreamTakesItsOwnWhite()
+    {
+        // Standing on the blower in air that keeps the mixed stack clear but
+        // lets the blower's jet show white: its stream is the jet's.
+        var standing = Working(0f, smoke: 0f, flow: 0.1f) with { SteamWhiteness = 0.02f, BlowerWhiteness = 1f };
+        var clear = standing with { BlowerWhiteness = 0.02f };
+        Assert.True(PlumeModel.Between(Tuning, standing).Color.A > PlumeModel.Between(Tuning, clear).Color.A + 0.2f);
+        // Unset, the blower's white is the exhaust's.
+        Assert.Equal(0.02f, (Working(0f, flow: 0.1f) with { SteamWhiteness = 0.02f }).BlowerWhiteness);
+    }
+
+    [Fact]
     public void HardWorkThrowsPuffsHigh()
     {
         var drifting = PlumeModel.ForBeat(Tuning, Working(1f));

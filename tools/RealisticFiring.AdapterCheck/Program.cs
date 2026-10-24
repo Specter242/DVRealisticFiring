@@ -1187,6 +1187,19 @@ namespace RealisticFiring.AdapterCheck
             Check(!cabOnly && valved.Model.OnSteamLine && Math.Abs(valved.SteamLineOpening - 0.5f) < 1e-4f,
                 $"the cab's shop steam valve alone puts no line on the burner; a stand's line does, as far as its valve is open ({valved.SteamLineOpening:P0})");
             RealisticOilFirebox.HouseLineOf = (car, exhaust) => exhaust != null ? RealisticFiring.Shed.ShedConnections.BlowerLine(exhaust) : 0f;
+
+            // The firing valve's stop: joined to its firebox, the feed never
+            // gives the oil less than the stop, and the stop saves.
+            var stopped = new RealisticOilFirebox(fireboxDef, null);
+            feed.Join(stopped);
+            valve.Value = 0f;
+            stopped.Stop.Toggle(0.2f);
+            var held = feed.FiringValve;
+            var stopLoaded = new RealisticOilFirebox(fireboxDef, null);
+            stopLoaded.SetSaveStateData(stopped.GetSaveStateData());
+            stopped.Stop.Toggle(0f);
+            Check(stopped.Feed == feed && Math.Abs(held - 0.2f) < 1e-4f && Math.Abs(stopLoaded.Stop.At - 0.2f) < 1e-4f && feed.FiringValve == 0f,
+                $"with the firing valve's stop in, the lever shut gives {held:P0}, the stop saves and loads ({stopLoaded.Stop.At:P0}), and out it shuts");
         }
 
         // What a multiplayer host sends clients' views of a loco: captured from
