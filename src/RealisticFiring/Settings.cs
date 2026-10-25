@@ -125,6 +125,9 @@ namespace RealisticFiring
         [Draw("Show each grate zone's coal inside the firebox")]
         public bool ShowZonedCoalBed = true;
 
+        [Draw("Tilt the VR fire overlay, degrees", DrawType.Slider, Min = 0, Max = 60, Precision = 0)]
+        public float VrOverlayTilt = 30f;
+
         [Draw("Put the stoker's jet valves in the cab (takes effect when the cab next loads)")]
         public bool ShowStokerJetValves = true;
 
@@ -232,6 +235,7 @@ namespace RealisticFiring
         public void OnChange()
         {
             Core.FireTuning.Default.ClinkerTendency = ClinkerTendency;
+            Visuals.VrOverlayFrame.ApplyTilt(VrOverlayTilt);
         }
 
         // Change() also caches the key for UMM's new-input-system path.

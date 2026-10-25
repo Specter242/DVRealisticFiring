@@ -1,9 +1,11 @@
 using System.Collections.Generic;
 using System.Linq;
+using DV;
 using RealisticFiring.Core;
 using RealisticFiring.Sim;
 using RealisticFiring.Visuals;
 using UnityEngine;
+using UnityEngine.XR;
 
 namespace RealisticFiring
 {
@@ -12,15 +14,14 @@ namespace RealisticFiring
         private const int WindowId = 0x5246_4952; // "RFIR"
 
         // Laid out for a 1080-line screen and scaled with its height.
-        private const float Width = 540f;
-        private const float Height = 462f;
-        private const float Pad = 16f;
+        private const float Width = OverlayFrame.Width;
+        private const float Height = OverlayFrame.Height;
+        private const float Pad = OverlayFrame.Pad;
         private const float RefreshSeconds = 1f;
 
-        public const int Pages = 3;
-        private static readonly string[] PageNames = { "FIRE", "WATER", "ENGINE" };
+        public const int Pages = OverlayTabs.Count;
 
-        private struct Gauge
+        internal struct Gauge
         {
             public string Key, Label, Text;
             public float Value;
@@ -33,7 +34,7 @@ namespace RealisticFiring
             public float PlateWidth, TextWidth;
         }
 
-        private struct Row
+        internal struct Row
         {
             public string Label, Value;
             public AdviceLevel? Level;
@@ -42,7 +43,7 @@ namespace RealisticFiring
         }
 
         // What the card shows, read once a second.
-        private sealed class Card
+        internal sealed class Card
         {
             public string Loco;
             public bool Oil;
@@ -55,6 +56,7 @@ namespace RealisticFiring
         }
 
         private Vector2 position = new Vector2(24f, 96f);
+        private readonly VrOverlayFrame vrOverlay = new VrOverlayFrame();
         private Card card;
         private object readFor;
         private int readPage = -1;
@@ -79,12 +81,33 @@ namespace RealisticFiring
                 settings.ShowOverlay = false;
         }
 
+        public static void Cycle(Settings settings)
+        {
+            if (!settings.ShowOverlay)
+            {
+                settings.ShowOverlay = true;
+                settings.OverlayPage = 0;
+            }
+            else if (settings.OverlayPage < Pages - 1)
+                settings.OverlayPage++;
+            else
+                settings.ShowOverlay = false;
+        }
+
         public void Draw(RealisticFirebox firebox, float time)
         {
             shownCoal = firebox;
             Styles();
             if (Stale(firebox))
                 card = Measure(Read(firebox));
+            if (XRSettings.enabled)
+            {
+                var aim = firebox.HoverAim;
+                var aimed = aim.HasValue && aim.Value.IsLiveAt(time) ? (int)aim.Value.Zone : -1;
+                vrOverlay.Show(PlayerManager.ActiveCamera != null ? PlayerManager.ActiveCamera : Camera.main, card, Page, aimed);
+                return;
+            }
+            vrOverlay.Hide();
             Show();
         }
 
@@ -94,8 +117,20 @@ namespace RealisticFiring
             Styles();
             if (Stale(oil))
                 card = Measure(Read(oil));
+            if (XRSettings.enabled)
+            {
+                vrOverlay.Show(PlayerManager.ActiveCamera != null ? PlayerManager.ActiveCamera : Camera.main, card, Page, -1);
+                return;
+            }
+            vrOverlay.Hide();
             Show();
         }
+
+        public void HideVr() => vrOverlay.Hide();
+
+        public void PollVrInput() => vrOverlay.PollVrInput();
+
+        internal static void SelectPage(int page) => Main.Settings.OverlayPage = Mathf.Clamp(page, 0, Pages - 1);
 
         // The dials' faces and the texts' widths, once per reading.
         private Card Measure(Card c)
@@ -468,17 +503,17 @@ namespace RealisticFiring
             // The page plates; Alt+click one to turn to it.
             for (var i = 0; i < Pages; i++)
             {
-                var name = i == 0 && c.Oil ? "BURNER" : PageNames[i];
-                if (GUI.Button(new Rect(Pad + i * 102f, 12f, 96f, 26f), name, i == Page ? plateOn : plateOff) && i != Page)
+                var name = OverlayTabs.Name(i, c.Oil);
+                if (GUI.Button(new Rect(Pad + i * (OverlayTabs.Width + OverlayTabs.Gap), OverlayFrame.HeaderTop, OverlayTabs.Width, OverlayFrame.TabHeight), name, i == Page ? plateOn : plateOff) && i != Page)
                     Main.Settings.OverlayPage = i;
             }
-            GUI.Label(new Rect(Width - Pad - 200f, 12f, 200f, 26f), c.Loco, loco);
+            GUI.Label(new Rect(Width - Pad - OverlayFrame.LocoWidth, OverlayFrame.HeaderTop, OverlayFrame.LocoWidth, OverlayFrame.TabHeight), c.Loco, loco);
 
-            var cell = (Width - 2f * Pad - 18f) / 4f;
+            var cell = (Width - 2f * Pad - 3f * OverlayFrame.GaugeGap) / 4f;
             for (var i = 0; i < 4; i++)
-                DrawGauge(c.Gauges[i], Pad + i * (cell + 6f), 46f, cell);
+                DrawGauge(c.Gauges[i], Pad + i * (cell + OverlayFrame.GaugeGap), OverlayFrame.GaugeTop, cell);
 
-            var body = new Rect(Pad, 180f, Width - 2f * Pad, 196f);
+            var body = new Rect(Pad, OverlayFrame.BodyTop, Width - 2f * Pad, OverlayFrame.BodyHeight);
             if (c.Steps != null)
                 DrawSteps(c.Steps, body);
             else if (c.ZoneCoal != null)
@@ -489,7 +524,7 @@ namespace RealisticFiring
             else
                 DrawRows(c.Rows, body, Mathf.Min(32f, body.height / Mathf.Max(1, c.Rows.Count)));
 
-            DrawNext(c.Advice, new Rect(Pad, 388f, Width - 2f * Pad, 64f));
+            DrawNext(c.Advice, new Rect(Pad, OverlayFrame.NextTop, Width - 2f * Pad, OverlayFrame.NextHeight));
 
             // Dragged by its head, outside the plates.
             GUI.DragWindow(new Rect(Pad + 3f * 102f, 0f, Width - Pad - 3f * 102f, 42f));
@@ -497,20 +532,20 @@ namespace RealisticFiring
 
         private void DrawGauge(Gauge g, float x, float y, float width)
         {
-            const float dialWidth = 112f;
+            const float dialWidth = OverlayFrame.GaugeDialWidth;
             var dialHeight = dialWidth * OverlayArt.DialHeight / OverlayArt.DialWidth;
             if (g.Face != null)
                 GUI.DrawTexture(new Rect(x + (width - dialWidth) / 2f, y, dialWidth, dialHeight), g.Face);
-            GUI.Box(new Rect(x + (width - g.PlateWidth) / 2f, y + 78f, g.PlateWidth, 20f), g.Label, gaugePlate);
+            GUI.Box(new Rect(x + (width - g.PlateWidth) / 2f, y + OverlayFrame.GaugePlateTop, g.PlateWidth, OverlayFrame.GaugePlateHeight), g.Label, gaugePlate);
             var textWidth = g.TextWidth;
             var total = 12f + 6f + textWidth;
             var start = x + (width - total) / 2f;
-            Mark(g.Level, new Rect(start, y + 107f, 11f, 11f));
-            GUI.Label(new Rect(start + 18f, y + 101f, textWidth + 2f, 24f), g.Text, gaugeValue);
+            Mark(g.Level, new Rect(start, y + OverlayFrame.GaugeMarkTop, 11f, 11f));
+            GUI.Label(new Rect(start + 18f, y + OverlayFrame.GaugeValueTop, textWidth + 2f, OverlayFrame.GaugeValueHeight), g.Text, gaugeValue);
             if (g.Smoke.HasValue)
             {
                 // The smoke's color, edged so black still shows on the iron.
-                var pill = new Rect(x + (width - 72f) / 2f, y + 127f, 72f, 7f);
+                var pill = new Rect(x + (width - 72f) / 2f, y + OverlayFrame.GaugeSmokeTop, 72f, 7f);
                 Fill(Grow(pill, 1f), new Color(1f, 1f, 1f, 0.3f));
                 Fill(pill, g.Smoke.Value);
             }

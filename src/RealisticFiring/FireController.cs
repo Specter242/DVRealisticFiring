@@ -62,6 +62,7 @@ namespace RealisticFiring
                        "some of it may misbehave. Please send the Unity Mod Manager log with a bug report");
             }
             HandleKeys();
+            overlay.PollVrInput();
             Visuals.StokerCab.EnsureBuilt();
             Diagnostics.ShedSurvey.TryRun();
             Diagnostics.ShedSurvey.ProbeRoofs();
@@ -554,7 +555,12 @@ namespace RealisticFiring
         {
             // Nothing of the mod's over the capture run's shots.
             if (Visuals.PlumeCapture.Running)
+            {
+                overlay.HideVr();
                 return;
+            }
+            if (!Main.Settings.ShowOverlay)
+                overlay.HideVr();
             if (notice != null && Time.time - noticeTime <= NoticeTime)
                 DrawLabel(notice, NoticeOffset, new Color(1f, 0.85f, 0.5f));
             if (FiremanRig.TryGetTended(PlayerManager.Car, out var fireman))
@@ -565,10 +571,14 @@ namespace RealisticFiring
             {
                 if (Main.Settings.ShowOverlay && RealisticOilFirebox.TryGetTended(PlayerManager.Car, out var oil))
                     overlay.DrawOil(oil);
+                else
+                    overlay.HideVr();
                 return;
             }
             if (Main.Settings.ShowOverlay)
                 overlay.Draw(firebox, Time.time);
+            else
+                overlay.HideVr();
             if (Main.Settings.ShowAimLabel && firebox.HoverAim is DoorAimSample aim && aim.IsLiveAt(Time.time)
                 && (!aim.Raking || firebox.DoorOpening >= ShovelNonPhysicalCoal.REQUIRED_DOOR_OPENED_PERCENTAGE_NON_VR))
                 DrawLabel((aim.Raking ? "Rake → " : "Shovel → ") + GrateLayout.Describe(aim.Zone), AimLabelOffset, new Color(0.55f, 0.8f, 1f));
