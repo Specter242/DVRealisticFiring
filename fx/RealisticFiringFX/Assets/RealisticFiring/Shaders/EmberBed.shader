@@ -2,8 +2,10 @@
 // through the gaps between the dark lumps on top. The mod writes the same
 // state in the vertex color as for the coal (R heat, G green coal, B ash,
 // A clinker); the embers glow by heat, mottled by the coal texture's lump
-// hotness and a slow wavering noise, red-orange to orange, a little yellow
-// at the hottest. UV0 is the bed's frame (across, along, 0..1).
+// hotness and a slow wavering noise, in the fire's colors as the eye sees
+// them (FireColor.cginc): red-orange, orange, yellow at the hottest, never
+// white (a ramp of its own went white under the lumps). UV0 is the bed's
+// frame (across, along, 0..1).
 Shader "RealisticFiring/EmberBed"
 {
     Properties
@@ -11,7 +13,7 @@ Shader "RealisticFiring/EmberBed"
         _CoalTex ("Coal lumps (R hotness, G height, B grain)", 2D) = "white" {}
         _NoiseTex ("Fire noise (R broad, G fine)", 2D) = "gray" {}
         _Tiling ("Lumps per bed width", Float) = 2.0
-        _GlowStrength ("Glow strength", Range(0, 12)) = 1.5
+        _GlowStrength ("Glow strength", Range(0, 12)) = 0.7
         _FlickerSpeed ("Flicker speed", Range(0, 4)) = 0.6
         _Pulse ("Exhaust beat pulse", Range(0, 1)) = 0
     }
@@ -34,6 +36,7 @@ Shader "RealisticFiring/EmberBed"
             // HLSL, not CG: CG includes these before the define above.
             #include "HLSLSupport.cginc"
             #include "UnityCG.cginc"
+            #include "Assets/RealisticFiring/Shaders/FireColor.cginc"
 
             sampler2D _CoalTex;
             sampler2D _NoiseTex;
@@ -67,17 +70,6 @@ Shader "RealisticFiring/EmberBed"
                 return o;
             }
 
-            // Red-orange through a working fire, then quickly yellow and
-            // nearly white as it is forced to its hottest.
-            half3 EmberColor(half heat)
-            {
-                half3 c = lerp(half3(0.12, 0.01, 0.0), half3(0.75, 0.12, 0.02), saturate(heat * 2.5));
-                c = lerp(c, half3(1.0, 0.33, 0.05), saturate(heat * 2.5 - 1.0));
-                c = lerp(c, half3(1.0, 0.55, 0.16), saturate(heat * 2.5 - 1.6));
-                c = lerp(c, half3(1.0, 0.78, 0.45), saturate((heat - 0.88) / 0.07));
-                return lerp(c, half3(1.0, 0.95, 0.85), saturate((heat - 0.95) / 0.05));
-            }
-
             fixed4 frag(v2f i) : SV_Target
             {
                 half heat = i.color.r;
@@ -89,14 +81,14 @@ Shader "RealisticFiring/EmberBed"
                 half fine = tex2D(_NoiseTex, uv * 0.8 - float2(t * 0.11, t * 0.03)).g;
                 // Embers glow even under a slow fire; ash dulls them.
                 half glowHeat = saturate((0.25 + 0.75 * heat) * (0.85 + 0.3 * hot) * (0.9 + 0.2 * fine));
-                half3 c = EmberColor(glowHeat) * (0.45 + 0.9 * broad) * (1.0 - 0.7 * ash);
-                // Brightness climbs steeply as the fire is forced.
-                half forced = heat * heat * heat;
-                c *= _GlowStrength * (0.3 + 1.0 * heat + 3.0 * forced * forced) * (1.0 + 0.5 * _Pulse);
+                half3 c = FireColor(glowHeat) * (0.45 + 0.9 * broad) * (1.0 - 0.7 * ash);
+                // The ramp brightens with the heat itself; a little more as it
+                // is forced, and with each beat.
+                c *= _GlowStrength * (0.6 + 0.4 * heat * heat) * (1.0 + 0.5 * _Pulse);
                 // Nothing glows where nothing burns: a dead zone is black, while
                 // a slow fire (heat 0.2 and up) keeps its full glow.
                 c *= saturate(heat * 20.0);
-                fixed4 col = fixed4(c, 1.0);
+                fixed4 col = fixed4(FireExposed(c), 1.0);
                 UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;
             }

@@ -12,15 +12,20 @@ namespace RealisticFiring.Diagnostics
         Injector,
         ChimneyPlume,
         CoalBed,
+        FireboxVolume,
+        FireboxLighting,
+        CoalLumps,
         Overflow,
         Controller,
         Gui,
     }
 
     /// <summary>
-    /// Wall-clock time the mod's own code takes, per section, against the
-    /// frame rate, for the status log. Timing costs well under a microsecond
-    /// a call.
+    /// Wall-clock time the mod's own code takes on the main thread, per
+    /// timed section, against the frame rate, for the status log. Timing
+    /// costs well under a microsecond a call. Not in it: the plume volume's
+    /// worker thread, the GPU's drawing, and any part not timed (the sum was
+    /// once labeled the whole mod's; performance review, 2026-10-25).
     /// </summary>
     internal static class PerfMeter
     {
@@ -57,7 +62,7 @@ namespace RealisticFiring.Diagnostics
                 .Select(i => $"{(PerfSection)i} {Elapsed[i] * perFrame:F2}"));
             var steps = frames > 0 ? (float)physicsSteps / frames : 0f;
             var text = $"frame rate {(seconds > 0f ? frames / seconds : 0f):F0} fps over {seconds:F0} s, {steps:F1} physics steps a frame; " +
-                       $"mod {total:F2} ms a frame ({parts})";
+                       $"the mod's timed parts {total:F2} ms a frame on the main thread ({parts}; not the worker or the GPU)";
             System.Array.Clear(Elapsed, 0, Elapsed.Length);
             frames = 0;
             physicsSteps = 0;

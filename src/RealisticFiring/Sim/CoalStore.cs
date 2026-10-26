@@ -1,5 +1,5 @@
-using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using DV.JObjectExtstensions;
 using LocoSim.Definitions;
 using LocoSim.Implementations;
@@ -14,8 +14,17 @@ namespace RealisticFiring.Sim
     {
         public const string MoistureKey = "rfCoalMoisture";
 
-        private static readonly Dictionary<ResourceContainer, CoalStore> ByContainer = new Dictionary<ResourceContainer, CoalStore>();
-        private static readonly Dictionary<ResourceContainer, float> PendingMoisture = new Dictionary<ResourceContainer, float>();
+        // Held weakly: a container is a simulation object, never Unity's
+        // null, so a car's container gone with it was never let go (200 of
+        // 200 kept after a full collection; performance review, 2026-10-25).
+        private static readonly ConditionalWeakTable<ResourceContainer, CoalStore> ByContainer = new ConditionalWeakTable<ResourceContainer, CoalStore>();
+        private static readonly ConditionalWeakTable<ResourceContainer, SavedMoisture> PendingMoisture = new ConditionalWeakTable<ResourceContainer, SavedMoisture>();
+
+        // A save's water for a container whose store isn't made yet.
+        private sealed class SavedMoisture
+        {
+            public float Value;
+        }
 
         /// <summary>
         /// Covers over the coal, by their control's port on the car carrying
@@ -57,19 +66,7 @@ namespace RealisticFiring.Sim
             var container = Container(pileCar);
             if (container == null)
                 return null;
-            if (!ByContainer.TryGetValue(container, out var store))
-            {
-                foreach (var stale in ByContainer.Keys.Where(c => c == null).ToList())
-                    ByContainer.Remove(stale);
-                store = new CoalStore(container, Cover(pileCar));
-                ByContainer[container] = store;
-                if (PendingMoisture.TryGetValue(container, out var saved))
-                {
-                    PendingMoisture.Remove(container);
-                    store.Water.Restore(saved);
-                }
-            }
-            return store;
+            return ByContainer.TryGetValue(container, out var store) ? store : Made(container, Cover(pileCar));
         }
 
         /// <summary>
@@ -103,18 +100,22 @@ namespace RealisticFiring.Sim
             if (ByContainer.TryGetValue(container, out var store))
                 store.Water.Restore(saved.Value);
             else
-                PendingMoisture[container] = saved.Value;
+                PendingMoisture.GetOrCreateValue(container).Value = saved.Value;
         }
 
         /// <summary>Gives <paramref name="container"/> a store directly, for checks outside the game.</summary>
-        internal static CoalStore Create(ResourceContainer container, Port cover = null)
+        internal static CoalStore Create(ResourceContainer container, Port cover = null) => Made(container, cover);
+
+        // A container's store made, in place of any it had, with its save's water.
+        private static CoalStore Made(ResourceContainer container, Port cover)
         {
             var store = new CoalStore(container, cover);
-            ByContainer[container] = store;
+            ByContainer.Remove(container);
+            ByContainer.Add(container, store);
             if (PendingMoisture.TryGetValue(container, out var saved))
             {
                 PendingMoisture.Remove(container);
-                store.Water.Restore(saved);
+                store.Water.Restore(saved.Value);
             }
             return store;
         }

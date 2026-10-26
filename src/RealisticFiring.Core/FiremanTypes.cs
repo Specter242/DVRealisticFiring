@@ -126,6 +126,13 @@ namespace RealisticFiring.Core
         /// </summary>
         public float StartupMultiplier;
 
+        /// <summary>
+        /// Steam the auxiliaries take from the boiler, kg/s, as he hears them
+        /// or set them: the air pump pounding, the dynamo, the blower as he has
+        /// it open. Standing, they are the steam he fires for.
+        /// </summary>
+        public float AuxiliarySteam;
+
         /// <summary>The water in the glass, 0 at the crown sheet to 1 at the steam outlet.</summary>
         public float Glass;
 

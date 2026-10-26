@@ -21,8 +21,8 @@ namespace RealisticFiring.Patches
 
         private static void Postfix(ShovelNonPhysicalCoal __instance, ICoalPile coalPile, ref float __result)
         {
-            var shovelfulMass = Main.Settings.ShovelfulMass;
-            if (shovelfulMass <= 0f || !(coalPile is Component pile) || pile == null)
+            var shovelfulMass = Main.Settings.Shovelful;
+            if (!(coalPile is Component pile) || pile == null)
                 return;
             var car = TrainCar.Resolve(pile.gameObject);
             if (!FireboxRegistry.TryGetTended(car, out var firebox))
@@ -56,8 +56,8 @@ namespace RealisticFiring.Patches
     {
         private static bool Prefix(CoalPileSimController __instance, FireboxSimController fireboxController, byte chunkCount)
         {
-            var shovelfulMass = Main.Settings.ShovelfulMass;
-            if (shovelfulMass <= 0f || fireboxController == null
+            var shovelfulMass = Main.Settings.Shovelful;
+            if (fireboxController == null
                 || !FireboxRegistry.TryGet(TrainCar.Resolve(fireboxController.gameObject), out _))
                 return true;
 

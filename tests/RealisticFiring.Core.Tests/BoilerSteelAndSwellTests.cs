@@ -35,13 +35,40 @@ public class BoilerSteelAndSwellTests
     public void The_steel_follows_the_water_and_gives_its_heat_back()
     {
         var steel = new BoilerMetal(10000f, 190f);
+        var water = 10000f * BoilerMetal.WaterHeat;
         var given = 0f;
         for (var t = 0f; t < 5f * BoilerMetal.FollowTime; t += Dt)
-            given += steel.Exchange(Dt, 180f);
+            given += steel.Exchange(Dt, 180f, water);
         Assert.InRange(steel.Temperature, 180f, 180.1f);
         Assert.Equal(steel.HeatCapacity * 10f, given, steel.HeatCapacity * 10f * 0.01f);
-        var taken = steel.Exchange(1f, 200f);
+        var taken = steel.Exchange(1f, 200f, water);
         Assert.True(taken < 0f);
+    }
+
+    // A hot boiler blown dry and filled from the shed's hose: the first
+    // kilograms beside the hot steel warm to it and no further (2026-10-26:
+    // they swung thousands of degrees each step and burst the boiler).
+    [Fact]
+    public void A_little_water_beside_hot_steel_warms_to_it_and_no_further()
+    {
+        var steel = new BoilerMetal(12000f, 192f);
+        var mass = 0f;
+        var temperature = 0f;
+        var lowest = float.MaxValue;
+        var highest = float.MinValue;
+        for (var t = 0f; t < 2f; t += Dt)
+        {
+            const float fed = 15f * 0.1f * Dt;
+            temperature = (mass * temperature + fed * 82f) / (mass + fed);
+            mass += fed;
+            var capacity = mass * BoilerMetal.WaterHeat;
+            temperature += steel.Exchange(Dt, temperature, capacity) / capacity;
+            lowest = Math.Min(lowest, temperature);
+            highest = Math.Max(highest, temperature);
+        }
+        Assert.InRange(lowest, 82f, 192.01f);
+        Assert.InRange(highest, 82f, 192.01f);
+        Assert.InRange(steel.Temperature, 191.9f, 192f);
     }
 
     [Fact]

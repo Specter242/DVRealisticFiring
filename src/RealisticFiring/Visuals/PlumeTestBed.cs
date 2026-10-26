@@ -134,6 +134,14 @@ namespace RealisticFiring.Visuals
         public float HideHeat = 0f;
 
         /// <summary>
+        /// Development: the smoke at half resolution laid over the scene as
+        /// 1, a magenta tint over the whole screen; 2, its coverage in red;
+        /// 3, the scene's depth in green and the half-size depth in blue,
+        /// each a hundredth per meter (<see cref="PlumeOffscreen"/>); 0 off.
+        /// </summary>
+        public float OffscreenDebug = 0f;
+
+        /// <summary>
         /// Rolling steam: the share of the sun's light scattered into a puff's
         /// shade that takes the sky's color rather than the sun's, 0 to 1
         /// (none drew a dawn's whole plume peach; 0.6 tinted a day's plume blue-gray).
@@ -149,6 +157,10 @@ namespace RealisticFiring.Visuals
 
  public float WispAgeFrom = 0.2f;
         public float WispAgeTo = 0.45f;
+        // Limit the rounded trail at speed; 0 retains the stationary handoff.
+        public float PuffTrail = 10f;
+        // Development comparison with the old, mismatched steam priorities.
+        public float MatchSteamOrder = 1f;
 
         /// <summary>
         /// Rolling steam: how far a wisp blends to its next frame, 0 to 1 (0:

@@ -278,13 +278,7 @@ namespace RealisticFiring.Sim
                 return true;
             if (car == null)
                 return false;
-            foreach (var coupler in new[] { car.frontCoupler, car.rearCoupler })
-            {
-                var neighbor = coupler != null && coupler.coupledTo != null ? coupler.coupledTo.train : null;
-                if (TryGet(neighbor, out rig))
-                    return true;
-            }
-            return false;
+            return TryGet(car.frontCoupler.CoupledCar(), out rig) || TryGet(car.rearCoupler.CoupledCar(), out rig);
         }
 
         /// <summary>
@@ -342,7 +336,7 @@ namespace RealisticFiring.Sim
             }
             if (vessel != null && vessel.mass > 0f)
             {
-                vessel.AddEnergy(Steel.Exchange(delta, vessel.waterTemp));
+                vessel.AddEnergy(Steel.Exchange(delta, vessel.waterTemp, vessel.mass * BoilerMetal.WaterHeat));
                 // What soot and scale keep from the water goes up the stack.
                 var lost = FoulingLoss;
                 if (lost > 0f && delta > 0f)

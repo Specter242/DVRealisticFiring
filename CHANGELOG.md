@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.15.0 (2026-10-26)
+
+- The firebox uses a volume for flames and smoke, a simulated airflow, and a heap of coal lumps. Flame sources follow gas burning over each grate zone; the bed and walls share the fire's palette. Small flames keep their roots and vary in height, with sharp edges and moving folds.
+- A shut door retains a reduced fire render (24 ray steps, airflow and source uploads at 4 Hz), while the Unity point, fill, and bounce lights share the fire sources' radiance. Daylight reaches a cold box through the calibrated open firehole.
+- Stoker steam uses five pressure-driven, continuously animated streams in one mesh (`StokerJetStream`, `StokerJet.shader`). Coal lumps, burning fines, and dust retain their separate effects.
+- `SmokeQuality` lowers plume resolution and particle count; VR and forward rendering use fewer particles. The plume composes with nearby steam, and its billows hand off to wisps earlier at speed.
+- The bed's mesh, relief, and coal-lump uploads wait while unseen; nearby shut doors keep their fire render and per-frame motion controls, with reduced source/airflow updates. The fire step, tended-car lookup, and offscreen plume enumeration avoid recurring allocations. Plume-owned materials are destroyed with their plumes, and coal stores use weak keys.
+- Gear B keys control the 2901's atomizer. The S060's injector has the next larger capacity and a wider turn-down range.
+- Shovelfuls always use the selected real mass; old stock-size settings reset to 3 kg. Extinguishing or dumping clears the fire's ignition state.
+- The fireman accounts for auxiliary steam demand while standing. A hot boiler blown dry no longer bursts during an unpressurized refill. VR hands can take shed hose couplings without their stand attachment fighting the grab.
+
 ## 1.14.0 (2026-10-24)
 
 - The 2901's firing valve takes a stop (`FiringValveStop`, `FiringValveStopClick`): a click sets it where the valve stands and the oil never drops under it (`OilFeed.FiringValve`); another click takes it out. The fireman works above it and takes it out to shut the valve. Saved with the oil firebox (`rfValveStop`); in multiplayer each machine keeps its own, and a client's feed joins its firebox whichever is built first.

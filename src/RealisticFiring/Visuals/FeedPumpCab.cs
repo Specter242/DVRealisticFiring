@@ -15,9 +15,11 @@ namespace RealisticFiring.Visuals
     /// <summary>
     /// The feed pump's cab controls, on the fireman's side as on the
     /// prototypes: its operating valve and gauge beside the stoker manifold
-    /// (a Worthington's cold-pump gauge, an Elesco's delivery gauge); or, in a
-    /// cab with an injector lever each side, the fireman's lever becomes the
-    /// pump's valve and the engineer's stays the injector, as on the NYC.
+    /// (a Worthington's cold-pump gauge, an Elesco's delivery gauge); on a
+    /// hand-fired engine, with no manifold, on the backhead by its injector
+    /// lever; or, in a cab with an injector lever each side, the fireman's
+    /// lever becomes the pump's valve and the engineer's stays the injector,
+    /// as on the NYC.
     /// </summary>
     internal static class FeedPumpCab
     {
@@ -72,6 +74,99 @@ namespace RealisticFiring.Visuals
         // Whether a livery's wall gauge is seated (by the bench or the table).
         private static bool LeverGaugeSeated(string livery) => DevLeverGaugeSeats.ContainsKey(livery) || LeverGaugeSeats.ContainsKey(livery);
 
+        // A hand-fired engine with a feed pump has no stoker manifold to carry
+        // its valve and gauge: they stand on the backhead in a frame of their
+        // own (x right, y up, z into the backhead), the valve where its spot
+        // gives it in the car's frame, or, unseated, this far from the cab's
+        // injector lever toward the cab's middle and down, m, the gauge above
+        // it. Where each was built, for the seating bench to start from.
+        internal const string BackheadRoot = "[RealisticFiring feed pump]";
+        private static readonly Vector2 BackheadFromLever = new Vector2(0.25f, -0.15f);
+        private static readonly Vector2 BackheadGauge = new Vector2(0f, 0.12f);
+        private static readonly Dictionary<string, Spot> BuiltOnBackhead = new Dictionary<string, Spot>();
+
+        // A spot that gives the valve in the car's frame, from the bench or the table.
+        private static Spot? SeatedInCar(string livery) =>
+            DevSpots.TryGetValue(livery, out var dev) && dev.ValveInCar.HasValue ? dev
+            : Spots.TryGetValue(livery, out var seated) && seated.ValveInCar.HasValue ? seated
+            : (Spot?)null;
+
+        /// <summary>Where a backhead pump valve and gauge stand for <paramref name="livery"/>: seated, or as last built.</summary>
+        internal static Spot BackheadSpotFor(string livery) =>
+            SeatedInCar(livery) ?? (BuiltOnBackhead.TryGetValue(livery, out var built) ? built : new Spot(Vector2.zero, BackheadGauge, Vector3.zero));
+
+        /// <summary>
+        /// Builds the pump's valve and gauge on the backhead of a hand-fired
+        /// cab, whose engine has no stoker jets and so no manifold to carry
+        /// them, by its injector lever. Returns a line for the log, or null.
+        /// </summary>
+        public static string AttachOnBackhead(TrainCar car, Transform interior)
+        {
+            if (car == null || interior == null || interior.Find(BackheadRoot) != null || !InjectorRig.TryGet(car, out var rig) || rig.Pump == null
+                || !FeedwaterFit.TryGet(car.carLivery.id, out var fit) || fit.OnInjectorLever)
+                return null;
+            var flow = car.SimController != null ? car.SimController.SimulationFlow : null;
+            if (flow == null || flow.OrderedSimComps.Any(c => c != null && c.id == StokerJetControls.Master.Id))
+                return null;
+            float Across(Component c) => car.transform.InverseTransformPoint(c.transform.position).x;
+            var lever = interior.GetComponentsInChildren<InteractablePortFeeder>(true)
+                .Where(f => f.portId == rig.LeverPortId)
+                .OrderBy(Across)
+                .FirstOrDefault();
+            if (lever == null)
+                return "no injector lever in the cab to place the feed pump's valve by";
+            if (!DV.Globals.G.Types.TryGetLivery(StokerCab.SourceLivery, out var source) || source.interiorPrefab == null)
+                return $"no {StokerCab.SourceLivery} cab to take the feed pump's valve from";
+            var sourceValve = source.interiorPrefab.transform.Find(StokerCab.SourceValve);
+            var sourceControl = sourceValve != null ? sourceValve.Find(StokerCab.SourceControl) : null;
+            if (sourceControl == null)
+                return $"no '{StokerCab.SourceValve}/{StokerCab.SourceControl}' in the {StokerCab.SourceLivery} cab for the feed pump's valve";
+            var sourceLabel = source.interiorPrefab.transform.Find(StokerCab.SourceLabel);
+
+            var id = car.carLivery.id;
+            var seated = SeatedInCar(id);
+            var spot = seated ?? FromLever(car, lever.transform);
+            BuiltOnBackhead[id] = spot;
+            var root = new GameObject(BackheadRoot);
+            root.SetActive(false);
+            root.transform.SetParent(interior, false);
+            var frame = new GameObject("frame").transform;
+            frame.SetParent(root.transform, false);
+            frame.SetPositionAndRotation(car.transform.TransformPoint(spot.ValveInCar.Value), Quaternion.LookRotation(car.transform.forward, car.transform.up));
+            var built = BuildInManifold(car, flow, frame, source.interiorPrefab.transform, sourceValve, sourceControl, sourceLabel, null, spot,
+                $"by the injector lever '{lever.name}'");
+            root.SetActive(true);
+            built.Gauge?.WriteScales();
+            var at = spot.ValveInCar.Value;
+            return built.Note == null ? null
+                : built.Note + $", the valve at ({at.x:F2}, {at.y:F2}, {at.z:F2}) m in the car frame" + (seated.HasValue ? " (seated for the livery)" : "");
+        }
+
+        // The unseated spot: off the lever toward the cab's middle and down, the gauge above.
+        private static Spot FromLever(TrainCar car, Transform lever)
+        {
+            var at = car.transform.InverseTransformPoint(lever.position);
+            var inward = at.x < 0f ? 1f : -1f;
+            return new Spot(Vector2.zero, BackheadGauge, new Vector3(at.x + inward * BackheadFromLever.x, at.y + BackheadFromLever.y, at.z));
+        }
+
+        /// <summary>Rebuilds every loaded backhead pump valve and gauge, as the seating bench moves them.</summary>
+        public static void RebuildOnBackhead()
+        {
+            foreach (var rig in InjectorRig.All)
+            {
+                var car = rig.Car;
+                var interior = car != null && car.loadedInterior != null ? car.loadedInterior.transform : null;
+                var old = interior != null ? interior.Find(BackheadRoot) : null;
+                if (old == null)
+                    continue;
+                Object.DestroyImmediate(old.gameObject);
+                var result = AttachOnBackhead(car, interior);
+                if (result != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{car.LogName()}: {result}");
+            }
+        }
+
         /// <summary>Moves every loaded lever-mounted pump gauge, as the seating bench moves it.</summary>
         public static void RebuildLeverGauges()
         {
@@ -120,18 +215,20 @@ namespace RealisticFiring.Visuals
 
         /// <summary>
         /// Builds the pump's valve (unless the fireman's injector lever works
-        /// it) and gauge in the manifold's frame, which must still be
-        /// inactive. Returns a line for the log and the gauge to write once
-        /// the frame is active, or nulls.
+        /// it) and gauge in the manifold's frame, or <paramref name="at"/> in
+        /// a frame of their own, which must still be inactive. Returns a line
+        /// for the log and the gauge to write once the frame is active, or
+        /// nulls.
         /// </summary>
         public static (string Note, StokerGauges.Built Gauge) BuildInManifold(TrainCar car, SimulationFlow flow, Transform frame, Transform cabPrefab,
-            Transform sourceValve, Transform sourceControl, Transform sourceLabel, Transform plateFacing)
+            Transform sourceValve, Transform sourceControl, Transform sourceLabel, Transform plateFacing, Spot? at = null,
+            string where = "beside the manifold")
         {
             if (car == null || flow == null || !InjectorRig.TryGet(car, out var rig) || rig.Pump == null
                 || !FeedwaterFit.TryGet(car.carLivery.id, out var fit) || !flow.TryGetPort(FeedwaterFit.Valve.PortId, out var port))
                 return (null, null);
 
-            var spot = SpotFor(car.carLivery.id);
+            var spot = at ?? SpotFor(car.carLivery.id);
             var valveAt = spot.Valve;
             var gaugeAt = spot.Gauge;
             if (spot.ValveInCar is Vector3 inCar)
@@ -152,7 +249,8 @@ namespace RealisticFiring.Visuals
                     "feed pump valve", FallbackPanelDepth));
                 var control = StokerCab.PlaceWheel(sourceValve, frame, valvePoint, FeedwaterFit.Valve, port);
                 control.GetComponent<HoverName>().Source = () => Hover(rig);
-                var labelled = plateFacing != null && StokerCab.HangLabel(sourceControl, sourceLabel, plateFacing, frame,
+                // Turned as the manifold's plates are, or, alone, as its own wheel.
+                var labelled = StokerCab.HangLabel(sourceControl, sourceLabel, plateFacing != null ? plateFacing : control, frame,
                     new Vector2(valvePoint.x, valvePoint.y), "FEED PUMP");
                 notes.Add("its operating valve" + (labelled ? " and plate" : ""));
             }
@@ -164,7 +262,7 @@ namespace RealisticFiring.Visuals
             notes.Add(StokerCab.PipeToBackhead(frame, car, new Vector2(gaugePoint.x, gaugePoint.y), GaugeDepth - 0.005f, GaugeLineRadius,
                 GaugeLineFlange, "gauge line", FallbackPanelDepth));
             FeedPumpSounds.Attach(car, rig, fit.Type, frame);
-            return ($"{rig.PumpName} feed pump: " + string.Join(", ", notes) + " beside the manifold", gauge);
+            return ($"{rig.PumpName} feed pump: " + string.Join(", ", notes) + " " + where, gauge);
         }
 
         /// <summary>

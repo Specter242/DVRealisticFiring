@@ -1,11 +1,11 @@
-// The fire bed for Realistic Firing: coal lumps lit by the firebox's light,
-// glowing where the fire burns. The mod writes each vertex's state in its
-// color: R the fire's heat there (0 black, through dull red, orange, and
-// yellow, to 1 white-hot), G how much green coal shows (dark lumps lying on
-// the fire, lit from below at their sides), B ash (grey, a dull glow under
-// it), A clinker (a dark glassy crust). A live fire glows first deep in the
-// gaps between lumps, then over the hottest lumps (each lump has its own
-// hotness), until a white-hot fire glows all over;
+// The fire bed for Realistic Firing: coal lumps lit only by the fire
+// (FireLight.cginc), glowing where the fire burns. The mod writes each
+// vertex's state in its color: R the fire's heat there (0 black, through
+// dull red, orange, and yellow, to 1 white-hot), G how much green coal shows
+// (dark lumps lying on the fire, lit from below at their sides), B ash
+// (grey, a dull glow under it), A clinker (a dark glassy crust). A live fire
+// glows first deep in the gaps between lumps, then over the hottest lumps
+// (each lump has its own hotness), until a white-hot fire glows all over;
 // the glow wavers with a scrolling noise, faster under draft, and jumps with
 // each exhaust beat (_Pulse). UV0 is the bed's own frame (across, along,
 // 0..1), for the shovel's aim. UV3.x is where no coal lies (0 to 1): the
@@ -30,6 +30,9 @@ Shader "RealisticFiring/CoalBedSurface"
         _FlickerSpeed ("Flicker speed", Range(0, 4)) = 0.6
         _AimRect ("Aimed zone (across0, along0, across1, along1)", Vector) = (0, 0, 0, 0)
         _AimColor ("Aim color (alpha = strength)", Color) = (0.25, 0.6, 1, 0)
+        _FireLightScale ("Fire light", Float) = 1
+        _UnderLumps ("Under lumps: the deeper coal between them, whole", Range(0, 1)) = 0
+        _UnderDrop ("Under lumps: how far under the coal's surface it lies (its units)", Float) = 0
     }
 
     SubShader
@@ -38,8 +41,9 @@ Shader "RealisticFiring/CoalBedSurface"
         LOD 200
 
         CGPROGRAM
-        #pragma surface surf Standard fullforwardshadows vertex:vert addshadow
+        #pragma surface surf FireOnly vertex:vert noambient noforwardadd nolightmap nodynlightmap nodirlightmap nometa addshadow
         #pragma target 3.0
+        #include "Assets/RealisticFiring/Shaders/FireLight.cginc"
 
         sampler2D _CoalTex;
         sampler2D _NormalTex;
@@ -56,12 +60,18 @@ Shader "RealisticFiring/CoalBedSurface"
         float _FlickerSpeed;
         float4 _AimRect;
         fixed4 _AimColor;
+        half _FireLightScale;
+        half _UnderLumps;
+        float _UnderDrop;
 
         struct Input
         {
             float2 bed;
             float4 state;
             float bare;
+            float3 worldPos;
+            float3 worldNormal;
+            INTERNAL_DATA
         };
 
         void vert(inout appdata_full v, out Input o)
@@ -70,26 +80,11 @@ Shader "RealisticFiring/CoalBedSurface"
             o.bed = v.texcoord.xy;
             o.state = v.color;
             o.bare = v.texcoord3.x;
+            // Under the lumps, the deeper coal lies under them.
+            v.vertex.y -= _UnderDrop * _UnderLumps;
         }
 
-        // Incandescence as a coal fire shows it: black, dull red, red-orange,
-        // orange, and only at the hottest a yellow-orange (the camera's bloom
-        // whitens the brightest).
-        half3 FireColor(half heat)
-        {
-            half3 dull = half3(0.5, 0.04, 0.01);
-            half3 redOrange = half3(0.92, 0.2, 0.03);
-            half3 orange = half3(1.0, 0.36, 0.06);
-            half3 hottest = half3(1.0, 0.55, 0.15);
-            half3 c = lerp(half3(0, 0, 0), dull, saturate(heat * 4.0));
-            c = lerp(c, redOrange, saturate(heat * 4.0 - 1.0));
-            c = lerp(c, orange, saturate(heat * 4.0 - 2.0));
-            c = lerp(c, hottest, saturate(heat * 4.0 - 3.0));
-            // Forced to its hottest, it goes nearly white.
-            return lerp(c, half3(1.0, 0.92, 0.8), saturate((heat - 0.93) / 0.07));
-        }
-
-        void surf(Input IN, inout SurfaceOutputStandard o)
+        void surf(Input IN, inout SurfaceOutput o)
         {
             half heat = IN.state.r;
             half green = IN.state.g;
@@ -109,8 +104,11 @@ Shader "RealisticFiring/CoalBedSurface"
             // Gaps through the lumps where the fire burns, showing the embers
             // below; green coal, ash, and clinker close them.
             half opening = saturate(heat * 1.4) * (1.0 - 0.4 * fresh) * (1.0 - 0.3 * green) * (1.0 - 0.8 * ash) * (1.0 - clinker);
+            // Under the lumps (CoalLumps) the bed is the deeper coal between
+            // them, whole: its own flat lumps, cut open to the embers, drew as
+            // flat yellow polygons and an orange mosaic between and through them.
             half gapLevel = (0.62 + 0.12 * saturate((heat - 0.7) / 0.3)) * opening;
-            clip(height - gapLevel);
+            clip(height - gapLevel * (1.0 - _UnderLumps) + _UnderLumps);
 
             // An empty grate: its bars, with the gaps between them open, where
             // no ash covers them.
@@ -132,22 +130,32 @@ Shader "RealisticFiring/CoalBedSurface"
             albedo = lerp(albedo, _GrateColor.rgb * (0.85 + 0.3 * grain), bars);
             o.Albedo = albedo;
             o.Normal = normalize(lerp(o.Normal, half3(0, 0, 1), bars));
-            o.Smoothness = lerp(lerp(lerp(0.4, 0.1, ash), 0.75, clinker) * (0.6 + 0.4 * height), 0.3, bars);
-            o.Metallic = 0.0;
 
             // The lumps on top stay dark, lit from below at their edges by the
             // embers in the gaps, until the fire is hot enough to light them
             // too: the hottest lumps first, and all of them when it is forced.
             // Green lumps stay black on top, their sides lit by the fire below.
             half edges = saturate((gapLevel + 0.22 - height) / 0.22) * saturate(heat * 2.0);
-            half crowns = saturate((heat - 0.55) / 0.35) * (0.45 + 0.55 * saturate(hot + (heat - 0.9) * 6.0));
+            // The lumps' tops glow less than the gaps between them, even forced:
+            // dark caps over bright gaps, as the footage shows.
+            half crowns = 0.4 * saturate((heat - 0.55) / 0.35) * (0.45 + 0.55 * saturate(hot + (heat - 0.9) * 6.0));
             half sides = saturate((0.78 - height) / 0.3) * saturate(heat * 1.5);
             half mask = max(max(edges, crowns) * (1.0 - fresh), 0.7 * sides * fresh);
+            // Under the lumps, the deeper coal glows evenly, mottled softly by
+            // its own lumps (the texture's hotness, blurred) and the wavering
+            // noise, dimmer under green coal.
+            half deep = tex2Dbias(_CoalTex, float4(uv, 0, 3)).r;
+            half soft = (0.35 + 0.5 * deep + 0.4 * broad * fine) * (1.0 - 0.6 * green);
+            mask = lerp(mask, soft, _UnderLumps);
             half local = saturate(heat * (0.75 + 0.25 * hot) * (1.05 - 0.2 * height) + 0.15 * saturate((heat - 0.9) / 0.1));
             half lit = (1.0 - 0.6 * ash) * (1.0 - 0.85 * clinker);
             half forced = heat * heat * heat;
-            half3 glow = FireColor(local * (1.0 - 0.4 * fresh)) * mask * lit * waver * (0.4 + 1.6 * heat + 3.0 * forced * forced);
+            half3 glow = FireColor(local * (1.0 - 0.4 * fresh)) * mask * lit * waver * (0.4 + 1.2 * heat + 0.8 * forced * forced);
             o.Emission = glow * _GlowStrength * (1.0 + 0.6 * _Pulse) * step(0.001, heat) * (1.0 - saturate(IN.bare * 2.0));
+
+            // The fire's light on the coal, the ash, and the bars: no other light reaches them.
+            half3 n = normalize(WorldNormalVector(IN, o.Normal));
+            o.Emission = FireSeen(o.Emission + FireLit(albedo, FireLight(IN.worldPos, n) * _FireLightScale + DoorLight(IN.worldPos, n)));
 
             // The zone a loaded shovel is aimed at.
             float2 inside = step(_AimRect.xy, IN.bed) * step(IN.bed, _AimRect.zw);

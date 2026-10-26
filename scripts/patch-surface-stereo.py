@@ -7,7 +7,7 @@ switch stereo on. So the mod ships the code Unity generates for each
 surface shader (fx Assets/Editor/SurfaceExport.cs writes it out), with a
 variant on the mod's keyword RF_SINGLE_PASS_STEREO that defines Unity's
 UNITY_SINGLE_PASS_STEREO before those includes, in the passes drawn for
-the eyes (forward base, forward add, deferred). The shadow caster and meta
+the eyes (forward base, forward add where there is one, deferred). The shadow caster and meta
 passes stay as they are: shadow maps are drawn from the lights, not the
 eyes. Each program becomes HLSL, not CG: Unity includes the stereo
 switches at the top of a CG program, before the define. The mod turns the
@@ -50,18 +50,22 @@ def main():
     text = re.sub(r"^ENDCG$", "ENDHLSL", text, flags=re.M)
 
     passes = text.split("\tPass {")
-    patched = 0
+    found = set()
     for i in range(1, len(passes)):
         tags = passes[i][:400]
-        if not any(f'"LightMode" = {mode}' in tags for mode in EYE_PASSES):
+        mode = next((mode for mode in EYE_PASSES if f'"LightMode" = {mode}' in tags), None)
+        if mode is None:
             continue
         marker = '#include "HLSLSupport.cginc"\n'
         if passes[i].count(marker) != 1:
             sys.exit(f"pass {i}: expected one HLSLSupport include")
         passes[i] = passes[i].replace(marker, STEREO + marker, 1)
-        patched += 1
-    if patched != 3:
-        sys.exit(f"patched {patched} passes, expected 3")
+        found.add(mode)
+    patched = len(found)
+    # Every eye pass the shader has; a shader lit only by its own light
+    # (noforwardadd: the fire-lit firebox) has no forward add.
+    if '"ForwardBase"' not in found or '"Deferred"' not in found:
+        sys.exit(f"patched {sorted(found)}: expected the forward base and deferred passes")
     open(output, "w", encoding="utf-8").write("\tPass {".join(passes))
     print(f"wrote {output}: {name}, stereo in {patched} passes")
 

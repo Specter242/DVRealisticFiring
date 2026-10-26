@@ -13,7 +13,8 @@ internal sealed class Footplate
     public const float Dt = 0.05f;
 
     // Heat to raise the boiler a bar, in J: about 10 t of water at 4 °C a bar.
-    private const float HeatPerBar = 1.6e8f;
+    private readonly float HeatPerBar;
+    private readonly bool saturationCurve;
 
     // Heat the boiler loses through its lagging, in W per °C over the air's 20.
     private const float LossPerDegree = 1000f;
@@ -22,10 +23,10 @@ internal sealed class Footplate
     private const float Latent = 1.95e6f;
 
     // Draft: air through a still fire, and per kg of exhaust and blower steam, in kg/s.
-    private const float PassiveAir = 0.5f;
+    private readonly float PassiveAir;
     private const float Entrainment = 3.5f;
 
-    private const float BlowerSteam = 0.5f;
+    private readonly float BlowerSteam;
     private const float BlowdownRate = 20f;
     private const float FeedPpm = 350f;
 
@@ -46,14 +47,23 @@ internal sealed class Footplate
     public static FireboxParameters S282 => new FireboxParameters(150f, 120f, 0.5f, 10f, 5f, 15f);
 
     public Footplate(FiremanMode mode = FiremanMode.Road, float coal = 40f, float pressure = 14.5f, float glass = 0.55f,
-        float injectorDelivery = 4f, float stokerFeed = 0f, float pumpFeed = 0f)
+        float injectorDelivery = 4f, float stokerFeed = 0f, float pumpFeed = 0f, FootplateEngine? engine = null)
     {
+        engine ??= FootplateEngine.S282Like;
+        HeatPerBar = engine.HeatPerBar;
+        saturationCurve = engine.SaturationCurve;
+        PassiveAir = engine.PassiveAir;
+        BlowerSteam = engine.BlowerSteam;
+        SafetyValve = engine.SafetyValve;
         if (stokerFeed > 0f)
             Stoker = new Stoker(new StokerSpec(S282, stokerFeed) { MeanCoalBetweenJams = 0f }, S282, new Random(1));
         if (pumpFeed > 0f)
             Pump = new FeedPump(new FeedPumpSpec(FeedHeaterType.Open, pumpFeed));
         Injector = new Injector(new InjectorSpec(injectorDelivery, 15f));
-        Fire = FireTestKit.BurningFire(S282, coal, FireTestKit.CleanCoal);
+        Fire = FireTestKit.BurningFire(engine.Firebox, coal, FireTestKit.CleanCoal);
+        if (engine.Character != null)
+            Fire.Character = engine.Character;
+        Fire.GrateArea = engine.GrateArea;
         Shovel = new ShovelDelivery(Fire.Parameters);
         Fireman.Mode = mode;
         Pressure = pressure;
@@ -77,7 +87,7 @@ internal sealed class Footplate
     public AutoFireman Fireman { get; } = new AutoFireman();
 
     public float Pressure;
-    public float SafetyValve = 15f;
+    public float SafetyValve;
 
     /// <summary>Where the boiler would burst; 0, not known.</summary>
     public float BurstPressure;
@@ -113,6 +123,17 @@ internal sealed class Footplate
     /// <summary>The game's Steam Startup speedup on the fire (1 none).</summary>
     public float StartupMultiplier = 1f;
 
+    /// <summary>
+    /// The game's Steam Startup setting (1 at 100 %, 25 at 2,500 %); when set,
+    /// <see cref="StartupMultiplier"/> follows the pressure and standing each
+    /// tick as the game computes it: up to 25 over the setting at 1 bar,
+    /// none at the firebox's start-up pressure or moving.
+    /// </summary>
+    public float? SteamStartup;
+
+    /// <summary>The firebox's start-up pressure, absolute bar.</summary>
+    public float StartupMaxPressure = 13f;
+
     /// <summary>Standing with the reverser set and the brakes off.</summary>
     public bool StartComing;
 
@@ -138,7 +159,10 @@ internal sealed class Footplate
     // The draft as the mod fits it: the blower's steam entrains more air a kg than the exhaust's.
     public SteamDraft Draft => new SteamDraft(BlowerSteam, PassiveAir, Entrainment, SafetyValve);
     public float BlowerFlow => Draft.BlowerSteam(Pressure, Blower);
-    public float Air => Draft.Air(EngineSteam, BlowerFlow, Damper);
+    public float Air => Draft.Air(EngineSteam + AirPumpSteam, BlowerFlow, Damper);
+
+    /// <summary>Steam an air pump takes, kg/s, its exhaust up the stack with the engine's.</summary>
+    public float AirPumpSteam;
     public float Time { get; private set; }
 
     // What happened.
@@ -156,6 +180,7 @@ internal sealed class Footplate
         Pressure = Pressure,
         SafetyValve = SafetyValve,
         BurstPressure = BurstPressure,
+        AuxiliarySteam = AirPumpSteam + BlowerFlow,
         Standing = Standing,
         Braking = Braking,
         Throttle = Throttle ?? (EngineSteam > 0.05f ? 0.6f : 0f),
@@ -204,6 +229,11 @@ internal sealed class Footplate
     private void Tick()
     {
         Time += Dt;
+        if (SteamStartup is float setting)
+        {
+            var t = Math.Clamp((StartupMaxPressure - Pressure) / (StartupMaxPressure - 1f), 0f, 1f) * (Standing ? 1f : 0f);
+            StartupMultiplier = 1f + (25f / setting - 1f) * t;
+        }
         var actions = Fireman.Step(Dt, Fire, Readings);
         Last = actions;
         if (Fireman.Mode != FiremanMode.Off)
@@ -293,14 +323,17 @@ internal sealed class Footplate
             stokerSteam += PumpFlow.SteamUsed;
         }
 
-        var steamOut = EngineSteam + BlowerFlow + flow.SteamUsed + stokerSteam;
+        var steamOut = EngineSteam + AirPumpSteam + BlowerFlow + flow.SteamUsed + stokerSteam;
         var blown = Pressure > 1.5f ? Blowdown * BlowdownRate : 0f;
         var heat = Fire.Heat - LossPerDegree * (saturation - 20f) - steamOut * Latent - flow.WaterIn * 4190f * Math.Max(0f, saturation - flow.FeedTemperature)
                    - pumpWarmth;
-        Pressure += heat / HeatPerBar * Dt;
+        // A boiler raised from low pressure takes more heat a bar there, its
+        // water's boiling point rising steeply (about 100 × p^0.25 °C).
+        var perBar = saturationCurve ? HeatPerBar * MathF.Pow(13f / Math.Max(1f, Pressure), 0.75f) : HeatPerBar;
+        Pressure += heat / perBar * Dt;
         if (Pressure > SafetyValve)
         {
-            BlownOff += (Pressure - SafetyValve) * HeatPerBar / Latent;
+            BlownOff += (Pressure - SafetyValve) * perBar / Latent;
             Pressure = SafetyValve;
         }
         SteamMade += steamOut * Dt;
@@ -323,4 +356,33 @@ internal sealed class Footplate
         }
         return rounds;
     }
+}
+
+/// <summary>An engine's figures for the <see cref="Footplate"/>: its firebox, grate, draft, and boiler.</summary>
+internal sealed record FootplateEngine(FireboxParameters Firebox, float BlowerSteam, float PassiveAir, float HeatPerBar, float SafetyValve)
+{
+    public GrateCharacter? Character { get; init; }
+
+    /// <summary>The grate's area, m²; 0 leaves it unmeasured.</summary>
+    public float GrateArea { get; init; }
+
+    /// <summary>Whether <see cref="HeatPerBar"/> is the figure at 13 bar, rising toward low pressure as water's boiling point does.</summary>
+    public bool SaturationCurve { get; init; }
+
+    /// <summary>The test footplate's S282-like engine.</summary>
+    public static FootplateEngine S282Like => new(Footplate.S282, 0.5f, 0.5f, 1.6e8f, 15f);
+
+    /// <summary>
+    /// Lilla and Cruzer's JK3: its stock 70 kg, 200 s firebox (start-up
+    /// pressure 13 bar), its fitted blower and natural draft (BlowerFit,
+    /// 0.2 and 0.15 kg/s), its measured grate and firebox character, and its
+    /// 15 bar safety valve; a small shunter's boiler, about 4.5 t of water
+    /// and its steel (inferred), 8.9e7 J a bar at 13 bar, 6e8 at 1.
+    /// </summary>
+    public static FootplateEngine Jk3 => new(new FireboxParameters(70f, 200f, 0.5f, 4f, 5f, 15f), 0.2f, 0.15f, 8.9e7f, 15f)
+    {
+        SaturationCurve = true,
+        Character = new GrateCharacter { BackRowDraft = 0.94f, FrontRowDraft = 1.08f, SideDraft = 1.03f, OverFireMixing = 0.85f },
+        GrateArea = 1.430f,
+    };
 }

@@ -356,6 +356,62 @@ public class FireModelTests
     }
 
     [Fact]
+    public void ABurnedOutFireDoesNotLightANewShovelful()
+    {
+        // Driven hard to its last embers, as a fire left to burn out at work
+        // is, and fired onto with the box still hot.
+        var fire = FireTestKit.BurningFire(Stock, 20f);
+        var inputs = FireTestKit.Inputs(2f * HalfLoadAir);
+        for (var t = 0f; t < 600f && fire.CoalMass > 0.03f; t += FireTestKit.Dt)
+            fire.Step(FireTestKit.Dt, inputs);
+        Assert.True(fire.CoalMass <= 0.03f, $"{fire.CoalMass:F3} kg left");
+        Assert.True(fire.Temperature > FireModel.MinFireTemperature, $"the box still hot, {fire.Temperature:F0} C");
+
+        fire.AddCoal(3f, GrateZone.Center);
+        FireTestKit.Run(fire, inputs, 120f);
+
+        Assert.False(fire.FireOn);
+        Assert.Equal(3f, fire.CoalMass, 3);
+        Assert.Equal(0f, fire.Zones.Sum(z => z.Burning));
+    }
+
+    [Fact]
+    public void ADumpedFireDoesNotLightANewShovelful()
+    {
+        var fire = FireTestKit.BurningFire(Stock, HalfLoadCoal);
+        var inputs = FireTestKit.Inputs(HalfLoadAir);
+        FireTestKit.Run(fire, inputs, 30f);
+        for (var t = 0f; t < 120f && fire.CoalMass > 0f; t += FireTestKit.Dt)
+        {
+            fire.Dump(1f, FireTestKit.Dt);
+            fire.Step(FireTestKit.Dt, inputs);
+        }
+        FireTestKit.Run(fire, inputs, 1f);
+        Assert.Equal(0f, fire.CoalMass);
+        Assert.True(fire.Temperature > FireModel.MinFireTemperature, $"the box still hot, {fire.Temperature:F0} C");
+        Assert.False(fire.FireOn);
+
+        fire.AddCoal(3f, GrateZone.Center);
+        FireTestKit.Run(fire, inputs, 60f);
+
+        Assert.False(fire.FireOn);
+        Assert.Equal(3f, fire.CoalMass, 3);
+    }
+
+    [Fact]
+    public void ALighterLightsAFreshShovelfulOnAnEmptyGrate()
+    {
+        var fire = new FireModel(Stock);
+        fire.AddCoal(3f, GrateZone.Center);
+        fire.Ignite();
+
+        FireTestKit.Run(fire, FireTestKit.Inputs(HalfLoadAir), 30f);
+
+        Assert.True(fire.FireOn);
+        Assert.True(fire.Zones.Sum(z => z.Burning) > 0.1f, "the shovelful should be catching");
+    }
+
+    [Fact]
     public void WaterInTheIntakeDrownsTheFire()
     {
         var fire = FireTestKit.BurningFire(Stock, HalfLoadCoal);

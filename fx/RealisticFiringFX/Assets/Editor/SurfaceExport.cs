@@ -19,7 +19,7 @@ namespace RealisticFiringFX
     /// </summary>
     public static class SurfaceExport
     {
-        private static readonly string[] Shaders = { "RealisticFiring/CoalBedSurface", "RealisticFiring/FireIronSurface" };
+        private static readonly string[] Shaders = { "RealisticFiring/CoalBedSurface", "RealisticFiring/FireIronSurface", "RealisticFiring/FireboxWallSurface", "RealisticFiring/CoalLumpsSurface" };
 
         public static void ExportFromCommandLine()
         {

@@ -47,6 +47,12 @@ namespace RealisticFiring.Visuals
         private const float WispMinLife = 0.45f;
         private const float WispMaxLife = 0.8f;
         private const float WispSpeed = 1.6f;
+        // The visible droplets evaporate in the hot firebox. The jets still
+        // consume steam and throw coal; only their condensation is hidden.
+        // One restores the old hot white puffs for developer comparisons.
+        internal static float HotJetSteam = 0f;
+        internal static float JetStreams = 1f;
+        private float steamVisibility;
 
         private const float FineRise = 1.4f;
         private const float WispRise = 0.9f;
@@ -87,6 +93,7 @@ namespace RealisticFiring.Visuals
         private ParticleSystem lumps;
         private ParticleSystem fines;
         private ParticleSystem steam;
+        private StokerJetStream jets;
         private float lumpsDue;
         private float finesDue;
         private readonly float[] wispsDue = new float[JetLanes.Length];
@@ -117,6 +124,9 @@ namespace RealisticFiring.Visuals
             spray.fines = sparks != null ? spray.CreateFines(sparks) : null;
             var smoke = SmokeSystem(bed);
             spray.steam = smoke != null ? spray.CreateSteam(smoke) : null;
+            var jetMaterial = PlumeAssets.StokerJetMaterial;
+            if (jetMaterial != null)
+                spray.jets = new StokerJetStream(spray.transform, bed.Effects, JetLanes.Length, jetMaterial);
         }
 
         private ParticleSystem NewSystem(string name, int maxParticles)
@@ -339,6 +349,7 @@ namespace RealisticFiring.Visuals
         private void Cull(bool shut)
         {
             culled = shut;
+            jets?.Hide();
             lumpsDue = finesDue = dustDue = 0f;
             for (var j = 0; j < wispsDue.Length; j++)
                 wispsDue[j] = 0f;
@@ -567,20 +578,41 @@ namespace RealisticFiring.Visuals
         // the screw feeds.
         private void Steam(StokerFlow flow, Stoker stoker, float fedRate, float dt)
         {
-            if (steam == null)
-                return;
+            var cold = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(100f, 200f, firebox.Model.Temperature));
+            steamVisibility = Mathf.Lerp(cold, 1f, Mathf.Clamp01(HotJetSteam));
+            var color = SteamColor;
+            color.a *= steamVisibility;
             var full = Mathf.Max(0.1f, stoker.Spec.ManifoldMaxPressure);
+            var streams = JetStreams > 0.5f && jets != null;
+            jets?.Begin();
             for (var j = 0; j < JetLanes.Length; j++)
             {
                 var lane = JetLanes[j];
                 var pressure = JetPressure(flow, lane.Jet);
-                wispsDue[j] = Mathf.Min(wispsDue[j] + Mathf.Clamp01(pressure / full) * WispsAtFull * dt, 2f);
+                var from = InFrame(new Vector3(plateBox.x + lane.Aside * NozzleAside, plateBox.y, plateBox.z));
+                var heading = InFrame(lane.Toward) - from;
+                if (streams)
+                {
+                    // A low fan off the plate, always directed into the box.
+                    var direction = heading.normalized + bedUp * 0.5f;
+                    if (Vector3.Dot(direction, bedAlong) < 0.1f)
+                        direction += bedAlong * (0.1f - Vector3.Dot(direction, bedAlong));
+                    jets.Set(j, from, direction, bedUp, pressure / full, 1f - cold);
+                    wispsDue[j] = 0f;
+                    continue;
+                }
+                wispsDue[j] = steamVisibility > 0f
+                    ? Mathf.Min(wispsDue[j] + Mathf.Clamp01(pressure / full) * WispsAtFull * dt, 2f)
+                    : 0f;
                 if (wispsDue[j] < 1f)
                     continue;
                 wispsDue[j] -= 1f;
-                var from = InFrame(new Vector3(plateBox.x + lane.Aside * NozzleAside, plateBox.y, plateBox.z));
-                Puff(from, InFrame(lane.Toward) - from, SteamColor, Random.Range(0.06f, 0.1f));
+                if (steam != null)
+                    Puff(from, heading, color, Random.Range(0.06f, 0.1f));
             }
+            if (streams) jets.End(); else jets?.Hide();
+            if (steam == null)
+                return;
             dustDue = Mathf.Min(dustDue + Mathf.Clamp01(fedRate / Mathf.Max(0.01f, stoker.Spec.MaxFeedRate)) * DustAtFullFeed * dt, 2f);
             for (; dustDue >= 1f; dustDue -= 1f)
             {
@@ -588,6 +620,11 @@ namespace RealisticFiring.Visuals
                 Puff(from, InFrame(new Vector3(Random.value, 0.5f, 1f)) - from, DustColor, Random.Range(0.04f, 0.07f));
             }
         }
+
+        internal string Describe() => $"stoker speed {firebox.StokerEngineSpeed:F2}, jet pressure {firebox.LastStoker?.ManifoldPressure:F2}, " +
+            $"condensation {steamVisibility:F2}, particles {steam?.particleCount ?? 0}, {jets?.Describe()}";
+
+        private void OnDestroy() => jets?.Destroy();
 
         private void Puff(Vector3 from, Vector3 heading, Color color, float size)
         {

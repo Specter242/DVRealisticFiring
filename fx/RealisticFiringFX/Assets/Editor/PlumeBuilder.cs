@@ -38,6 +38,17 @@ namespace RealisticFiringFX
         private const string FireIronShaderName = "RealisticFiring/FireIron";
         private const string HeatHazeShaderName = "RealisticFiring/HeatHaze";
         public const string FireIronMaterialName = "FireIron";
+        private const string FireboxWallShaderName = "RealisticFiring/FireboxWall";
+        public const string FireboxWallMaterialName = "FireboxWall";
+        private const string FireboxVolumeShaderName = "RealisticFiring/FireboxVolume";
+        public const string FireboxVolumeMaterialName = "FireboxVolume";
+        private const int FireVolumeNoiseSize = 64;
+        private const string CoalLumpsShaderName = "RealisticFiring/CoalLumps";
+        public const string CoalLumpsMaterialName = "FireboxCoalLumps";
+        private const string PlumeCompositeShaderName = "RealisticFiring/PlumeComposite";
+        public const string PlumeCompositeMaterialName = "PlumeComposite";
+        private const string PlumeDepthShaderName = "RealisticFiring/PlumeDepth";
+        public const string PlumeDepthMaterialName = "PlumeDepth";
 
         [MenuItem("Realistic Firing/Build plume bundle")]
         public static void BuildFromMenu() => Build("Build/AssetBundles");
@@ -116,6 +127,10 @@ namespace RealisticFiringFX
             flame.SetFloat("_Intensity", 3.5f);
             var fireboxSmoke = CreateMaterial(FindShader(FireboxSmokeShaderName), "FireboxSmoke", ImportFlipbook("smoke_puff_flipbook.png"));
             fireboxSmoke.SetFloat("_InvFade", 6f);
+            var stokerJet = new Material(FindShader("RealisticFiring/StokerJet")) { name = "StokerJet" };
+            stokerJet.SetTexture("_NoiseTex", coalBed.GetTexture("_NoiseTex"));
+            SaveMaterial(stokerJet);
+            AssetImporter.GetAtPath($"{MaterialsDir}/StokerJet.mat").SetAssetBundleNameAndVariant(BundleName, "");
             var embers = new Material(FindShader(EmberBedShaderName)) { name = "FireboxEmbers" };
             embers.SetTexture("_CoalTex", coalBed.GetTexture("_CoalTex"));
             embers.SetTexture("_NoiseTex", coalBed.GetTexture("_NoiseTex"));
@@ -131,6 +146,34 @@ namespace RealisticFiringFX
             fireIron.SetTexture("_BumpMap", ImportNormal("fire_iron_normal.png"));
             SaveMaterial(fireIron);
             AssetImporter.GetAtPath($"{MaterialsDir}/{FireIronMaterialName}.mat").SetAssetBundleNameAndVariant(BundleName, "");
+
+            // The firebox's walls, lit only by the fire; the mod gives each
+            // a copy with its shell's texture.
+            var wall = new Material(FindShader(FireboxWallShaderName)) { name = FireboxWallMaterialName };
+            SaveMaterial(wall);
+            AssetImporter.GetAtPath($"{MaterialsDir}/{FireboxWallMaterialName}.mat").SetAssetBundleNameAndVariant(BundleName, "");
+
+            // The firebox's flames and smoke as one volume over the coal; the
+            // mod gives each firebox a copy.
+            var volume = new Material(FindShader(FireboxVolumeShaderName)) { name = FireboxVolumeMaterialName };
+            volume.SetTexture("_Noise", ImportVolume("fire_volume_noise.bytes", FireVolumeNoiseSize));
+            SaveMaterial(volume);
+            AssetImporter.GetAtPath($"{MaterialsDir}/{FireboxVolumeMaterialName}.mat").SetAssetBundleNameAndVariant(BundleName, "");
+
+            // The coal on the grate as lumps; the mod builds their mesh.
+            var coalLumps = new Material(FindShader(CoalLumpsShaderName)) { name = CoalLumpsMaterialName };
+            coalLumps.SetTexture("_Noise", volume.GetTexture("_Noise"));
+            SaveMaterial(coalLumps);
+            AssetImporter.GetAtPath($"{MaterialsDir}/{CoalLumpsMaterialName}.mat").SetAssetBundleNameAndVariant(BundleName, "");
+
+            // The chimney's smoke drawn at half resolution: the scene's depth
+            // laid at that size, and the smoke laid over the scene.
+            var depth = new Material(FindShader(PlumeDepthShaderName)) { name = PlumeDepthMaterialName };
+            SaveMaterial(depth);
+            AssetImporter.GetAtPath($"{MaterialsDir}/{PlumeDepthMaterialName}.mat").SetAssetBundleNameAndVariant(BundleName, "");
+            var composite = new Material(FindShader(PlumeCompositeShaderName)) { name = PlumeCompositeMaterialName };
+            SaveMaterial(composite);
+            AssetImporter.GetAtPath($"{MaterialsDir}/{PlumeCompositeMaterialName}.mat").SetAssetBundleNameAndVariant(BundleName, "");
             foreach (var icon in new[] { "fire_iron_icon.png", "fire_iron_icon_dropped.png" })
                 ImportIcon(icon).SetAssetBundleNameAndVariant(BundleName, "");
 
@@ -254,6 +297,34 @@ namespace RealisticFiringFX
             importer.textureCompression = TextureImporterCompression.CompressedHQ;
             importer.SaveAndReimport();
             return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        }
+
+        // A tiling 3D data texture from raw RGBA8 texels (x fastest, then y,
+        // then z): linear, repeating, filtered, saved as an asset of its own.
+        private static Texture3D ImportVolume(string file, int size)
+        {
+            var path = $"{TexturesDir}/{file}";
+            AssetDatabase.ImportAsset(path);
+            var raw = AssetDatabase.LoadAssetAtPath<TextAsset>(path)
+                      ?? throw new FileNotFoundException($"Missing {path}; run fx/textures/make_fire_volume.py");
+            var bytes = raw.bytes;
+            if (bytes.Length != size * size * size * 4)
+                throw new InvalidOperationException($"{path} has {bytes.Length} bytes, not {size}^3 RGBA texels");
+            var pixels = new Color32[size * size * size];
+            for (var i = 0; i < pixels.Length; i++)
+                pixels[i] = new Color32(bytes[4 * i], bytes[4 * i + 1], bytes[4 * i + 2], bytes[4 * i + 3]);
+            var texture = new Texture3D(size, size, size, TextureFormat.RGBA32, false)
+            {
+                name = Path.GetFileNameWithoutExtension(file),
+                wrapMode = TextureWrapMode.Repeat,
+                filterMode = FilterMode.Bilinear,
+            };
+            texture.SetPixels32(pixels);
+            texture.Apply(false);
+            var assetPath = $"{TexturesDir}/{texture.name}.asset";
+            AssetDatabase.DeleteAsset(assetPath);
+            AssetDatabase.CreateAsset(texture, assetPath);
+            return AssetDatabase.LoadAssetAtPath<Texture3D>(assetPath);
         }
 
         // An inventory icon: full resolution, sharp, with transparency.

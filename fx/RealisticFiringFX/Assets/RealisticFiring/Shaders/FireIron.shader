@@ -22,10 +22,10 @@ Shader "RealisticFiring/FireIron"
         Tags { "RenderType"="Opaque" }
         LOD 200
 
-        
+
 	// ------------------------------------------------------------
 	// Surface shader code generated out of a CGPROGRAM block:
-	
+
 
 	// ---- forward rendering base pass:
 	Pass {
@@ -125,7 +125,7 @@ HLSLPROGRAM
             half hot = saturate(_Heat * 1.25 - fromTip);
             o.Emission = IronGlow(hot) * hot * 3.0;
         }
-        
+
 
 // vertex-to-fragment interpolation data
 // no lightmaps:
@@ -431,7 +431,7 @@ fixed4 frag_surf (v2f_surf IN) : SV_Target {
             half hot = saturate(_Heat * 1.25 - fromTip);
             o.Emission = IronGlow(hot) * hot * 3.0;
         }
-        
+
 
 // vertex-to-fragment interpolation data
 // no lightmaps:
@@ -768,7 +768,7 @@ HLSLPROGRAM
             half hot = saturate(_Heat * 1.25 - fromTip);
             o.Emission = IronGlow(hot) * hot * 3.0;
         }
-        
+
 
 // vertex-to-fragment interpolation data
 struct v2f_surf {
@@ -980,7 +980,7 @@ HLSLPROGRAM
             half hot = saturate(_Heat * 1.25 - fromTip);
             o.Emission = IronGlow(hot) * hot * 3.0;
         }
-        
+
 
 // vertex-to-fragment interpolation data
 struct v2f_surf {
@@ -1237,7 +1237,7 @@ fixed3 originalNormal = o.Normal;
             half hot = saturate(_Heat * 1.25 - fromTip);
             o.Emission = IronGlow(hot) * hot * 3.0;
         }
-        
+
 
 // vertex-to-fragment interpolation data
 struct v2f_surf {
@@ -1518,7 +1518,7 @@ HLSLPROGRAM
             half hot = saturate(_Heat * 1.25 - fromTip);
             o.Emission = IronGlow(hot) * hot * 3.0;
         }
-        
+
 
 // vertex-to-fragment interpolation data
 struct v2f_surf {
@@ -1653,7 +1653,7 @@ fixed4 frag_surf (v2f_surf IN) : SV_Target {
             half hot = saturate(_Heat * 1.25 - fromTip);
             o.Emission = IronGlow(hot) * hot * 3.0;
         }
-        
+
 
 // vertex-to-fragment interpolation data
 struct v2f_surf {
@@ -1815,7 +1815,7 @@ HLSLPROGRAM
             half hot = saturate(_Heat * 1.25 - fromTip);
             o.Emission = IronGlow(hot) * hot * 3.0;
         }
-        
+
 #include "UnityMetaPass.cginc"
 
 // vertex-to-fragment interpolation data
@@ -1991,7 +1991,7 @@ fixed4 frag_surf (v2f_surf IN) : SV_Target {
             half hot = saturate(_Heat * 1.25 - fromTip);
             o.Emission = IronGlow(hot) * hot * 3.0;
         }
-        
+
 #include "UnityMetaPass.cginc"
 
 // vertex-to-fragment interpolation data

@@ -220,6 +220,8 @@ namespace RealisticFiring.Core
         private float pumpRest;
         private float sinceGlance;
         private float fillSteam;
+        // The steam he plans for the work and the water, without the auxiliaries'.
+        private float plannedForWork;
         private bool soaking;
         private float brokenRest;
         private bool blowingDown;
@@ -334,7 +336,14 @@ namespace RealisticFiring.Core
             // and fire for it, on level road until the safety valve lifted
             // (S282 in game, 2026-10-10: the fire short of air at 23 % work).
             var forWork = Plan(r, most, full, startComing);
-            PlannedSteam = forWork + fillSteam;
+            // With no work to fire for, he fires for the steam the auxiliaries
+            // take, as he hears them or set them: standing he fired by the gauge
+            // alone, so the air pump and the blower held a JK3 a bar and a half
+            // short of his pressure (Mourningstar96, Nexus, 2026-10-23: stuck at
+            // 11.7 bar). Not on top of the work: the blower he opens to build
+            // for a start counted again built the fire a quarter heavier.
+            plannedForWork = forWork + fillSteam;
+            PlannedSteam = Math.Max(forWork, Math.Max(0f, r.AuxiliarySteam)) + fillSteam;
             return new Judgement
             {
                 Most = most,
@@ -407,8 +416,10 @@ namespace RealisticFiring.Core
         /// </summary>
         protected void LearnFromGauge(float dt, FiremanReadings r, Judgement j, bool atMark, bool lifting, bool smoking)
         {
+            // He learns it working: standing, the auxiliaries alone draw too
+            // little for him to read the fire by.
             if (SteadyFor >= SteadyWorkTime && atMark && !lifting && !smoking
-                && PlannedSteam > WorkingShare * j.Most && call == FiremanCall.None && !StopComing)
+                && plannedForWork > WorkingShare * j.Most && call == FiremanCall.None && !StopComing)
             {
                 var foreseen = PressureTarget - r.Pressure - GaugeLook * PressureTrend;
                 Trim = Clamp(Trim + TrimRate * foreseen * dt, MinTrim, MaxTrim);

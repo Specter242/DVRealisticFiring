@@ -553,7 +553,7 @@ namespace RealisticFiring
         private void DrawGui()
         {
             // Nothing of the mod's over the capture run's shots.
-            if (Visuals.PlumeCapture.Running)
+            if (Visuals.PlumeCapture.Running || Visuals.FireboxCapture.Running)
                 return;
             if (notice != null && Time.time - noticeTime <= NoticeTime)
                 DrawLabel(notice, NoticeOffset, new Color(1f, 0.85f, 0.5f));

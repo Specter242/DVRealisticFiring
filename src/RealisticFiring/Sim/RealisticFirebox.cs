@@ -487,10 +487,11 @@ namespace RealisticFiring.Sim
             DropGrate(delta);
             AshpanHopper(delta);
 
-            StartupMultiplier = ComputeStartupMultiplier();
+            // The test bed's air burns the fire at its working rate, not a cold boiler's start-up speedup.
+            StartupMultiplier = Visuals.FireboxTestBed.AirSet ? 1f : ComputeStartupMultiplier();
             var consumed = Model.Step(delta, new FireInputs
             {
-                AirFlow = airFlow.Value,
+                AirFlow = Visuals.FireboxTestBed.AirOr(airFlow.Value),
                 IntakeWater = IntakeWater,
                 DoorOpening = DoorOpening,
                 StartupMultiplier = StartupMultiplier,
@@ -697,6 +698,18 @@ namespace RealisticFiring.Sim
                 parameter = 1f;
             }
             return Mathf.Lerp(1f, StartupMultiplierBase / parameter, pressure * standing);
+        }
+
+        /// <summary>
+        /// Lays <paramref name="coal"/> kg evenly over the grate, all of it
+        /// burning: the firebox test bed's capture runs (a development tool),
+        /// for a working fire on a standing engine.
+        /// </summary>
+        internal void LayBurningBed(float coal)
+        {
+            Model.Restore(true, coal);
+            fireOnReadOut.Value = 1f;
+            UpdateCoalLevel();
         }
 
         private void UpdateCoalLevel()

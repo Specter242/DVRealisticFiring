@@ -36,16 +36,28 @@ namespace RealisticFiring.Patches
                     var result = ZonedCoalBed.Attach(__instance, car, firebox);
                     StokerSpray.Attach(__instance.GetComponent<ZonedCoalBed>(), firebox);
                     var flames = FireboxFlames.Attach(__instance, __instance.GetComponent<ZonedCoalBed>(), firebox);
+                    var volume = FireboxVolume.Attach(__instance, __instance.GetComponent<ZonedCoalBed>(), firebox);
+                    var lumps = CoalLumps.Attach(__instance, __instance.GetComponent<ZonedCoalBed>());
+                    var lighting = FireboxLighting.Attach(__instance, __instance.GetComponent<ZonedCoalBed>(), firebox);
                     if (Main.Settings.LogFireboxCreation)
                     {
                         Main.Mod.Logger.Log($"{car.ID}: {result}");
                         if (flames != null)
                             Main.Mod.Logger.Log($"{car.ID}: {flames}");
+                        if (volume != null)
+                            Main.Mod.Logger.Log($"{car.ID}: {volume}");
+                        if (lumps != null)
+                            Main.Mod.Logger.Log($"{car.ID}: {lumps}");
+                        if (lighting != null)
+                            Main.Mod.Logger.Log($"{car.ID}: firebox {lighting}");
                     }
                 }
                 var stokerCab = StokerCab.Attach(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
                 if (stokerCab != null && Main.Settings.LogFireboxCreation)
                     Main.Mod.Logger.Log($"{car.ID}: {stokerCab}");
+                var backheadPump = FeedPumpCab.AttachOnBackhead(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
+                if (backheadPump != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{car.ID}: {backheadPump}");
                 var boosterCab = BoosterCab.Attach(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
                 if (boosterCab != null && Main.Settings.LogFireboxCreation)
                     Main.Mod.Logger.Log($"{car.ID}: {boosterCab}");
