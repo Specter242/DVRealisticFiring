@@ -85,6 +85,7 @@ Shader "RealisticFiring/ChimneySmoke"
         _WispAbove ("Wholly a puff at or above this opacity", Range(0, 1)) = 0.6
         _WispAgeFrom ("Wisps from this share of the flipbook's time", Range(0, 1)) = 0.1
         _WispAgeTo ("Wholly wisps by this share", Range(0, 1)) = 0.3
+        _PuffAgeScale ("Moving train's puff handoff time scale", Range(0, 1)) = 1
         _WispBlend ("Wisps blended to their next frame (0: stepped)", Range(0, 1)) = 0
         _WispSheet ("Wisps play the whole sheet in turn (0: each its own row)", Float) = 1
         _WispCoherence ("Wisps each keep their own row, already ragged at birth", Float) = 0
@@ -106,13 +107,20 @@ Shader "RealisticFiring/ChimneySmoke"
         _FringeRimFrom ("Fringe from this far on the plume's silhouette (the mod's)", Range(0, 1)) = 0.45
         _FringeRimTo ("Wholly fringed by this", Range(0, 1)) = 0.8
         _FringeCore ("Its edge, below this thickness", Range(0.01, 1)) = 0.35
+        // 15 drawn at half resolution (the mod's PlumeOffscreen), its
+        // coverage kept in alpha to lay over the scene after; 14 (RGB) on it.
+        [HideInInspector] _ColorMask ("Channels written", Float) = 14
+        // 1 while it is drawn at half resolution: the camera's own drawing
+        // of it then draws nothing (the particles still built by the game,
+        // which builds none it is not drawing itself).
+        [HideInInspector] _Offscreen ("Drawn only at half resolution", Float) = 0
     }
 
     SubShader
     {
         Tags { "Queue"="Transparent" "IgnoreProjector"="True" "RenderType"="Transparent" "PreviewType"="Plane" }
-        Blend SrcAlpha OneMinusSrcAlpha
-        ColorMask RGB
+        Blend SrcAlpha OneMinusSrcAlpha, One OneMinusSrcAlpha
+        ColorMask [_ColorMask]
         Cull Off
         Lighting Off
         ZWrite Off
@@ -180,6 +188,9 @@ Shader "RealisticFiring/ChimneySmoke"
             float _VolumeBlend;
             float _NearFadeFrom;
             float _NearFadeTo;
+            float _Offscreen;
+            // Set to 1 by the mod's command buffer while it draws the smoke at half resolution.
+            float _PlumeOffscreenPass;
             sampler2D _LightA;
             sampler2D _LightB;
             float _SixWay;
@@ -196,6 +207,7 @@ Shader "RealisticFiring/ChimneySmoke"
             float _WispAbove;
             float _WispAgeFrom;
             float _WispAgeTo;
+            float _PuffAgeScale;
             float _WispBlend;
             float _WispSheet;
             float _WispCoherence;
@@ -302,8 +314,8 @@ Shader "RealisticFiring/ChimneySmoke"
 
 
                 float hard = _SixWay > 0.5 ? saturate(v.texcoord1.x) : 1;
-                float wispFrom = lerp(_ThinWispAgeFrom, _WispAgeFrom, hard);
-                float wispTo = max(wispFrom + 0.01, lerp(_ThinWispAgeTo, _WispAgeTo, hard));
+                float wispFrom = lerp(_ThinWispAgeFrom, _WispAgeFrom, hard) * _PuffAgeScale;
+                float wispTo = max(wispFrom + 0.01, lerp(_ThinWispAgeTo, _WispAgeTo, hard) * _PuffAgeScale);
                 float thinning = _Wisps > 0 ? max(1 - smoothstep(_WispBelow, _WispAbove, v.texcoord1.z),
                                                   smoothstep(wispFrom, wispTo, v.texcoord1.y)) : 0;
                 float stretch = upright ? max(fringed, thinning) : 0;
@@ -471,6 +483,10 @@ Shader "RealisticFiring/ChimneySmoke"
                 }
 
                 UNITY_TRANSFER_FOG(o, o.vertex);
+                // Drawn only at half resolution: elsewhere beyond the screen,
+                // so no pixel is drawn.
+                if (_Offscreen > 0.5 && _PlumeOffscreenPass < 0.5)
+                    o.vertex = float4(2, 2, 2, 1);
                 return o;
             }
 

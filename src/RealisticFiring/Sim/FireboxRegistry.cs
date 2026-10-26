@@ -66,13 +66,7 @@ namespace RealisticFiring.Sim
                 return true;
             if (car == null)
                 return false;
-            foreach (var coupler in new[] { car.frontCoupler, car.rearCoupler })
-            {
-                var neighbor = coupler != null && coupler.coupledTo != null ? coupler.coupledTo.train : null;
-                if (TryGet(neighbor, out firebox))
-                    return true;
-            }
-            return false;
+            return TryGet(car.frontCoupler.CoupledCar(), out firebox) || TryGet(car.rearCoupler.CoupledCar(), out firebox);
         }
 
         private static void PruneDestroyedCars()

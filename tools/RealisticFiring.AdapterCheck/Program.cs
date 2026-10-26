@@ -686,6 +686,25 @@ namespace RealisticFiring.AdapterCheck
                         && typeof(DV.CabControls.VRTK.VRTK_ControlImplBaseInteractableObject).IsSubclassOf(interactable);
             Check(flags && releaseUse && grabbedHand && lever,
                 "the VR independent brake lever can take the trigger while held: VRTK's use flags and event, the game's use on release and its grabbing hand");
+
+            // A shed hose is a copy of a live station hose, stripped of what
+            // the game added as it woke; in VR the plug's control (GizmoVRTK)
+            // added its interactable in the game's own DV.CabControls.VRTK, so
+            // a copy kept the station's, stale and first, beside its own, and
+            // the plug shook in the hand and stayed put (Trainguy611 and
+            // SeanJAnimations, 2026-10-19 to 26). Not run: no VR here.
+            var added = new[]
+            {
+                typeof(DV.CabControls.VRTK.GizmoVRTK), typeof(DV.CabControls.VRTK.VRTK_ControlImplBaseInteractableObject),
+                typeof(VRTK.GrabAttachMechanics.VRTK_ChildOfControllerGrabAttach),
+                typeof(VRTK.SecondaryControllerGrabActions.VRTK_SwapControllerGrabAction), typeof(PluggableObjectKinematicVRFix),
+                typeof(DV.CabControls.NonVR.GizmoNonVR),
+            };
+            var kept = new[] { typeof(PluggableObject), typeof(PropHose), typeof(PlugSocket) };
+            Check(added.All(Shed.ShedHoses.IsRuntimePart) && !kept.Any(Shed.ShedHoses.IsRuntimePart),
+                "a shed hose's copy loses all the plug's VR grab parts the game adds as it wakes, its interactable too, and keeps the hose" +
+                string.Concat(added.Where(t => !Shed.ShedHoses.IsRuntimePart(t)).Select(t => "; kept " + t.Name)
+                    .Concat(kept.Where(Shed.ShedHoses.IsRuntimePart).Select(t => "; lost " + t.Name))));
         }
 
         // The fireman takes the glass's tilt off as the game puts it on: the
@@ -1022,6 +1041,65 @@ namespace RealisticFiring.AdapterCheck
             Check(steeledDrop < 0.95f * bareDrop && flashing > 0.01f && settled < 0.002f,
                 $"drawing 5 kg/s for a minute with no fire the pressure falls {steeledDrop:F2} bar with the steel, {bareDrop:F2} with water alone; " +
                 $"falling, the glass stands {flashing:F3} of the boiler above the water, rising again {settled:F3}");
+
+            // A hot boiler blown down dry and filled from the shed's hot-water
+            // hose doesn't burst: the steel gives the first water in no more
+            // heat than it can take (Progamer0totally and Enchestor, 2026-10-26:
+            // an S282 with no fire or pressure blew up as the hot water went in).
+            var vesselField = typeof(Boiler).GetField("vessel", BindingFlags.Instance | BindingFlags.NonPublic);
+            foreach (var opening in new[] { 1f, 0.1f })
+            {
+                var washed2 = NewBoiler(12000f, 13f);
+                var washedRig2 = BoilerWaterRig.Create(washed2, null, BoilerWaterRig.Guard.None);
+                fireTemperature.Value = 190f;
+                heat.Value = 0f;
+                var peakPressure = 0f;
+                var peakCrown = 0f;
+                var peakWater = 0f;
+                var lowWater = float.MaxValue;
+                var burst = false;
+                void Watch()
+                {
+                    peakPressure = Math.Max(peakPressure, washedRig2.BoilerPressure);
+                    peakCrown = Math.Max(peakCrown, washedRig2.CrownSheetTemperatureNow);
+                    if (washedRig2.MassNow > 0f)
+                    {
+                        peakWater = Math.Max(peakWater, washedRig2.WaterTemperature);
+                        lowWater = Math.Min(lowWater, washedRig2.WaterTemperature);
+                    }
+                    burst |= washedRig2.CrownSheetWouldFail || washedRig2.BoilerPressure > 15f * 1.5f
+                        || float.IsNaN(washedRig2.BoilerPressure) || float.IsInfinity(washedRig2.BoilerPressure);
+                }
+                blowdown.Value = 1f;
+                for (var t = 0f; t < 600f && washedRig2.MassNow > 0f; t += 1f)
+                {
+                    Run(washed2, washedRig2, 1f);
+                    Watch();
+                }
+                blowdown.Value = 0f;
+                var drainedDry = washedRig2.MassNow <= 0f;
+                var steelWhenDry = washedRig2.Steel.Temperature;
+                for (var t = 0f; t < 60f; t += 0.02f)
+                {
+                    const float dt = 0.02f;
+                    washedRig2.BeginTick(dt);
+                    var vessel = (WaterPressureVessel)vesselField.GetValue(washed2);
+                    vessel.AddWater(InjectorRig.HoseRate * opening * dt, InjectorRig.HotWaterTemperature);
+                    washedRig2.AfterFeed();
+                    Call(washed2, "SimulateSteamConsumption", dt);
+                    Call(washed2, "SimulateSafetyValve", dt);
+                    Call(washed2, "SimulateEvaporation", dt);
+                    Call(washed2, "SimulateWaterLevel", dt);
+                    washedRig2.AfterWaterLevel(dt);
+                    washedRig2.SimulateCrownSheet(dt);
+                    Watch();
+                }
+                fireTemperature.Value = 1000f;
+                Check(drainedDry && !burst && peakWater < 250f && lowWater > 0f,
+                    $"a hot boiler blown dry (steel {steelWhenDry:F0} C) and filled from the shed's hot-water hose {opening:P0} open for a minute doesn't burst: " +
+                    $"water {lowWater:F0} to {peakWater:F0} C, crown sheet up to {peakCrown:F0} C, pressure up to {peakPressure:F1} bar" +
+                    (drainedDry ? "" : $" (not drained: {washedRig2.MassNow:F0} kg left)"));
+            }
         }
 
         // An oil burner: the oil firebox has the stock firebox's contract, the
@@ -1969,11 +2047,38 @@ namespace RealisticFiring.AdapterCheck
                 Check(covered.HasCover && door.id == CoalStore.CoverPorts[0] && Math.Abs(dryUnder - CoalMoisture.Delivered) < 0.001f
                       && covered.Moisture > 0.07f,
                     $"the Hudson's shut coal bunker door keeps the rain off ({dryUnder:P1} after an hour's rain), opened it soaks ({covered.Moisture:P1} in a quarter hour)");
+
+                // The containers of cars gone are let go (a container is never
+                // Unity's null; all 200 were kept before, 2026-10-25).
+                var abandoned = AbandonedCoal(NewTender, 200);
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+                var kept = abandoned.Count(w => w.IsAlive);
+                Check(kept <= 2, $"coal stores let the containers of cars gone go: {kept} of {abandoned.Count} kept after a full collection");
             }
             finally
             {
                 harmony.UnpatchAll(harmony.Id);
             }
+        }
+
+        // Containers given stores, a save's water waiting for some, and then
+        // dropped, each known only weakly.
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static List<WeakReference> AbandonedCoal(Func<ResourceContainer> make, int count)
+        {
+            var dropped = new List<WeakReference>();
+            for (var i = 0; i < count; i++)
+            {
+                var container = make();
+                if (i % 2 == 0)
+                    CoalStore.Create(container).Step(0.02f, 0f);
+                else
+                    CoalStore.Load(container, new JObject { [CoalStore.MoistureKey] = 0.05f });
+                dropped.Add(new WeakReference(container));
+            }
+            return dropped;
         }
 
         // A fired engine's safety valves fitted from its prototype, worked by

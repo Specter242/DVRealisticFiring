@@ -4,6 +4,35 @@ namespace RealisticFiring.Core.Tests;
 
  public class PlumeRiseTests
 {
+    [Theory]
+    [InlineData(30f)]
+    [InlineData(60f)]
+    [InlineData(100f)]
+    public void MovingTrainFinishesItsPuffsWithinTenMetres(float kilometresPerHour)
+    {
+        var speed = kilometresPerHour / 3.6f;
+        var scale = PlumeRise.PuffAgeScale(speed, 8f, 0.45f, 10f);
+        Assert.InRange(speed * 8f * 0.45f * scale, 0f, 10.001f);
+        Assert.InRange(scale, 0f, 1f);
+    }
+
+    [Fact]
+    public void StationaryAndWalkingSpeedKeepTheAcceptedPuffTiming()
+    {
+        Assert.Equal(1f, PlumeRise.PuffAgeScale(0f, 8f, 0.45f, 10f));
+        Assert.Equal(1f, PlumeRise.PuffAgeScale(1f, 8f, 0.45f, 10f));
+        Assert.Equal(1f, PlumeRise.PuffAgeScale(20f, 8f, 0.45f, 0f));
+    }
+
+    [Fact]
+    public void HigherSpeedShortensTheHandoffWithoutExtendingTheLightBeat()
+    {
+        var slow = PlumeRise.PuffAgeScale(10f, 8f, 0.45f, 10f);
+        var fast = PlumeRise.PuffAgeScale(20f, 8f, 0.45f, 10f);
+        Assert.True(fast < slow);
+        Assert.InRange(20f * 8f * 0.3f * fast, 0f, 10f);
+    }
+
     // A hard-working engine (its fire in W, its exhaust steam in kg/s) and
     // an idling one, its blower on.
     private static readonly (float Fire, float Steam) Working = (30e6f, 10f);

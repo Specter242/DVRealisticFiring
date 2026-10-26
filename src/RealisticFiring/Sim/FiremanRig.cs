@@ -67,6 +67,10 @@ namespace RealisticFiring.Sim
         private readonly SimController controller;
         private readonly Boiler boiler;
         private readonly List<ReciprocatingSteamEngine> engines;
+        // The auxiliaries he hears: the blast pipe's blower, the air pumps, the dynamo.
+        private readonly SteamExhaust exhaust;
+        private readonly List<SteamCompressor> airPumps;
+        private readonly List<Dynamo> dynamos;
         private readonly RealisticStoker stoker;
         private readonly ResourceContainer sand;
         private readonly FiremanHand door;
@@ -112,7 +116,10 @@ namespace RealisticFiring.Sim
             this.controller = controller;
             this.boiler = boiler;
             this.engines = engines;
+            this.exhaust = exhaust;
             var flow = controller.simFlow;
+            airPumps = flow.OrderedSimComps.OfType<SteamCompressor>().ToList();
+            dynamos = flow.OrderedSimComps.OfType<Dynamo>().ToList();
             var doorId = controller.firebox != null ? controller.firebox.fireboxDoorPortId : null;
             door = new FiremanHand("door", flow.TryGetPort(doorId, out var doorPort, canBeNullOrEmpty: true) ? Control(doorPort) : null, DoorPace);
             // The first cab injector valve: the only one on most locos, the
@@ -262,13 +269,7 @@ namespace RealisticFiring.Sim
                 return true;
             if (car == null)
                 return false;
-            foreach (var coupler in new[] { car.frontCoupler, car.rearCoupler })
-            {
-                var neighbor = coupler != null && coupler.coupledTo != null ? coupler.coupledTo.train : null;
-                if (TryGet(neighbor, out rig))
-                    return true;
-            }
-            return false;
+            return TryGet(car.frontCoupler.CoupledCar(), out rig) || TryGet(car.rearCoupler.CoupledCar(), out rig);
         }
 
         /// <summary>Sets his mode, giving every control back to him.</summary>
@@ -445,6 +446,7 @@ namespace RealisticFiring.Sim
                 Braking = braked,
                 Standing = standing,
                 StartupMultiplier = Firebox != null ? Firebox.StartupMultiplier : 1f,
+                AuxiliarySteam = AuxiliarySteam(),
                 Glass = (level - crown) / (outlet - crown),
                 GlassTilt = tilt,
                 GlassTiltHigh = tiltHigh,
@@ -469,6 +471,29 @@ namespace RealisticFiring.Sim
                 Solids = water != null ? water.Water.Concentration : 0f,
                 ShovelMass = ShovelfulMass(),
             };
+        }
+
+        // The steam the auxiliaries take from the boiler now, kg/s: the air
+        // pumps (he hears them pound), the dynamo, and the blower as he has it
+        // open, only what the boiler gives it (not a shed's blower line).
+        private float AuxiliarySteam()
+        {
+            var steam = 0f;
+            foreach (var pump in airPumps)
+                steam += Mathf.Max(0f, pump.steamConsumptionReadOut.Value);
+            foreach (var dynamo in dynamos)
+                steam += Mathf.Max(0f, dynamo.steamConsumptionReadOut.Value);
+            if (exhaust != null)
+            {
+                if (BlowerFit.TryGet(exhaust, out var draft))
+                {
+                    BlowerFit.NozzleSteam(exhaust, draft, out var fromBoiler);
+                    steam += fromBoiler;
+                }
+                else
+                    steam += BlowerFit.BlowerSteam(exhaust);
+            }
+            return steam;
         }
 
         // The glass's shift from the engine's tilt, in glass shares: now, from
@@ -537,15 +562,9 @@ namespace RealisticFiring.Sim
             };
         }
 
-        private float ShovelfulMass()
-        {
-            var setting = Main.Settings.ShovelfulMass;
-            if (setting > 0f)
-                return Mathf.Max(0.5f, setting);
-            var pile = Pile();
-            var stock = pile != null ? ShovelSize.StandardShovelChunks * pile.CoalChunkMass() / Multiplier : 0f;
-            return stock > 0f && !float.IsInfinity(stock) ? stock : 3f;
-        }
+        // His shovelful, as the player's own (always a real one; the stock
+        // shovel's 36 kg on the S282 at the setting's 0 is gone).
+        private float ShovelfulMass() => Main.Settings.Shovelful;
 
         // Tender coal as it goes on the fire: the pile's mass over the
         // firebox's consumption multiplier, as the game's shovel moves it.

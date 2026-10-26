@@ -89,7 +89,7 @@ namespace RealisticFiring.Multiplayer
                 $"feed pumps {session.FitFeedPumps}",
                 $"oil burners {session.RealisticOilBurners}",
                 $"realistic cylinders {settings.RealisticCylinders}",
-                $"shovelful {settings.ShovelfulMass.ToString("F1", CultureInfo.InvariantCulture)} kg",
+                $"shovelful {settings.Shovelful.ToString("F1", CultureInfo.InvariantCulture)} kg",
             });
         }
 

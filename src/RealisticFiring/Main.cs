@@ -103,6 +103,7 @@ namespace RealisticFiring
             Object.DontDestroyOnLoad(host);
             host.AddComponent<FireController>();
             host.AddComponent<Visuals.PlumeCapture>();
+            host.AddComponent<Visuals.FireboxCapture>();
 
             Sim.FiremanRig.NoteRivals();
             modEntry.Logger.Log(ReplacementEnabled

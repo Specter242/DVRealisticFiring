@@ -23,14 +23,27 @@ namespace RealisticFiring.Core
         /// <summary>Seconds for fresh coal to catch on a well-lit zone.</summary>
         public float IgnitionTime { get; set; } = 30f;
 
+        /// <summary>
+        /// Seconds a lit fire keeps alight with nothing yet burning, as the
+        /// lighter's flame does while the first coal catches. Past it, a fire
+        /// with nothing burning is out, however hot its box.
+        /// </summary>
+        public float LighterTime { get; set; } = 60f;
+
         /// <summary>Burning coal in a zone (kg) that fully supports ignition.</summary>
         public float IgnitionBurningMass { get; set; } = 0.5f;
 
         /// <summary>Weight of neighboring zones' burning coal in ignition support.</summary>
         public float NeighborIgnitionWeight { get; set; } = 0.25f;
 
-        /// <summary>Ignition support a lit fire always has, from embers and kindling.</summary>
-        public float EmberIgnitionSupport { get; set; } = 0.05f;
+ public float EmberIgnitionSupport { get; set; } = 0.05f;
+
+        /// <summary>
+        /// Burning coal on the whole grate (kg) under which the last embers
+        /// die out without lighting fresh coal fired onto them, once the
+        /// lighter has gone.
+        /// </summary>
+        public float DyingEmbers { get; set; } = 0.05f;
 
         /// <summary>Share of igniting coal released as volatile gas that must burn above the bed.</summary>
         public float VolatileFraction { get; set; } = 0.1f;

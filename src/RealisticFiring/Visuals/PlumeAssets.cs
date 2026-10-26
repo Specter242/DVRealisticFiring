@@ -18,6 +18,12 @@ namespace RealisticFiring.Visuals
         public const string OverflowPrefabName = "InjectorOverflowFX";
         public const string FireboxPrefabName = "FireboxFX";
         public const string FireIronMaterialName = "FireIron";
+        public const string FireboxWallMaterialName = "FireboxWall";
+        public const string FireboxVolumeMaterialName = "FireboxVolume";
+        public const string CoalLumpsMaterialName = "FireboxCoalLumps";
+        public const string PlumeCompositeMaterialName = "PlumeComposite";
+        public const string PlumeDepthMaterialName = "PlumeDepth";
+        public const string StokerJetMaterialName = "StokerJet";
         public const string OverlayFontName = "FiraSansCondensed-Medium";
         public const string PlateFontName = "FiraSansCondensed-SemiBold";
 
@@ -26,6 +32,12 @@ namespace RealisticFiring.Visuals
         private static GameObject overflowPrefab;
         private static GameObject fireboxPrefab;
         private static Material fireIronMaterial;
+        private static Material fireboxWallMaterial;
+        private static Material fireboxVolumeMaterial;
+        private static Material coalLumpsMaterial;
+        private static Material plumeCompositeMaterial;
+        private static Material plumeDepthMaterial;
+        private static Material stokerJetMaterial;
         private static Texture2D fireIronIcon;
         private static Texture2D fireIronIconDropped;
         private static Font overlayFont;
@@ -61,7 +73,63 @@ namespace RealisticFiring.Visuals
             }
         }
 
+        /// <summary>The firebox's walls lit only by the fire (copied for each shell), or null without the bundle.</summary>
+        public static Material FireboxWallMaterial
+        {
+            get
+            {
+                Ensure();
+                return fireboxWallMaterial;
+            }
+        }
+
+        /// <summary>The firebox's flames and smoke as one volume (copied for each firebox), or null without the bundle.</summary>
+        public static Material FireboxVolumeMaterial
+        {
+            get
+            {
+                Ensure();
+                return fireboxVolumeMaterial;
+            }
+        }
+
+        /// <summary>The coal on the grate as lumps (copied for each bed), or null without the bundle.</summary>
+        public static Material CoalLumpsMaterial
+        {
+            get
+            {
+                Ensure();
+                return coalLumpsMaterial;
+            }
+        }
+
+        /// <summary>The stoker's continuous steam streams, or null in an older bundle.</summary>
+        public static Material StokerJetMaterial
+        {
+            get { Ensure(); return stokerJetMaterial; }
+        }
+
         /// <summary>The fire iron's inventory icon, and its outline for when it lies dropped; null without the bundle.</summary>
+        /// <summary>Lays the chimney's smoke drawn at half resolution over the scene (<see cref="PlumeOffscreen"/>); null in an older bundle.</summary>
+        public static Material PlumeCompositeMaterial
+        {
+            get
+            {
+                Ensure();
+                return plumeCompositeMaterial;
+            }
+        }
+
+        /// <summary>Lays the scene's depth at half resolution for the chimney's smoke drawn so (<see cref="PlumeOffscreen"/>); null in an older bundle.</summary>
+        public static Material PlumeDepthMaterial
+        {
+            get
+            {
+                Ensure();
+                return plumeDepthMaterial;
+            }
+        }
+
         public static Texture2D FireIronIcon
         {
             get
@@ -120,8 +188,8 @@ namespace RealisticFiring.Visuals
 
         // An asset loaded once and since destroyed: Unity's null for a dead object.
         private static bool Unloaded() =>
-            Lost(prefab) || Lost(overflowPrefab) || Lost(fireboxPrefab) || Lost(fireIronMaterial) || Lost(fireIronIcon) || Lost(fireIronIconDropped)
-            || Lost(overlayFont) || Lost(plateFont);
+            Lost(prefab) || Lost(overflowPrefab) || Lost(fireboxPrefab) || Lost(fireIronMaterial) || Lost(fireboxWallMaterial) || Lost(fireboxVolumeMaterial) || Lost(coalLumpsMaterial) || Lost(plumeCompositeMaterial) || Lost(plumeDepthMaterial) || Lost(fireIronIcon) || Lost(fireIronIconDropped)
+            || Lost(stokerJetMaterial) || Lost(overlayFont) || Lost(plateFont);
 
         private static bool Lost(Object asset) => !ReferenceEquals(asset, null) && asset == null;
 
@@ -129,7 +197,7 @@ namespace RealisticFiring.Visuals
         {
             loaded = true;
             prefab = overflowPrefab = fireboxPrefab = null;
-            fireIronMaterial = null;
+            fireIronMaterial = fireboxWallMaterial = fireboxVolumeMaterial = coalLumpsMaterial = plumeCompositeMaterial = plumeDepthMaterial = stokerJetMaterial = null;
             fireIronIcon = fireIronIconDropped = null;
             overlayFont = plateFont = null;
             var path = Path.Combine(Main.Mod.Path, BundleFile);
@@ -151,6 +219,12 @@ namespace RealisticFiring.Visuals
                 overflowPrefab = Keep(bundle.LoadAsset<GameObject>(OverflowPrefabName));
                 fireboxPrefab = Keep(bundle.LoadAsset<GameObject>(FireboxPrefabName));
                 fireIronMaterial = Keep(bundle.LoadAsset<Material>(FireIronMaterialName));
+                fireboxWallMaterial = Keep(bundle.LoadAsset<Material>(FireboxWallMaterialName));
+                fireboxVolumeMaterial = Keep(bundle.LoadAsset<Material>(FireboxVolumeMaterialName));
+                coalLumpsMaterial = Keep(bundle.LoadAsset<Material>(CoalLumpsMaterialName));
+                plumeCompositeMaterial = Keep(bundle.LoadAsset<Material>(PlumeCompositeMaterialName));
+                plumeDepthMaterial = Keep(bundle.LoadAsset<Material>(PlumeDepthMaterialName));
+                stokerJetMaterial = Keep(bundle.LoadAsset<Material>(StokerJetMaterialName));
                 fireIronIcon = Keep(bundle.LoadAsset<Texture2D>("fire_iron_icon"));
                 fireIronIconDropped = Keep(bundle.LoadAsset<Texture2D>("fire_iron_icon_dropped"));
                 overlayFont = Keep(bundle.LoadAsset<Font>(OverlayFontName));

@@ -46,6 +46,7 @@ namespace RealisticFiring.Core
         private readonly float[] conductance = new float[GrateLayout.ZoneCount];
         private readonly float[] draftWeights = new float[GrateLayout.ZoneCount];
         private readonly float[] volatileRate = new float[GrateLayout.ZoneCount];
+        private readonly float[] overFireGas = new float[GrateLayout.ZoneCount];
         private readonly float[] oxygen = new float[GrateLayout.ZoneCount];
         private readonly float[] target = new float[GrateLayout.ZoneCount];
 
@@ -129,6 +130,14 @@ namespace RealisticFiring.Core
 
         /// <summary>How hard <paramref name="zone"/> burns for its share of the grate: 0 idle, 1 forced.</summary>
         public float ZoneForcing(GrateZone zone) => Smoothing.Clamp01(zones[(int)zone].CombustionRate / ForcedZoneRate);
+
+        /// <summary>
+        /// The gas leaving <paramref name="zone"/>'s bed to burn over it, in kg/s
+        /// before any startup speedup: its fresh coal's volatiles as it catches,
+        /// and the carbon monoxide of its coal burning short of air. A zone's
+        /// tall flames are this gas burning; its coke alone burns short.
+        /// </summary>
+        public float ZoneOverFireGas(GrateZone zone) => overFireGas[(int)zone];
 
         /// <summary>How hard the whole fire burns for its grate: 0 idle, 1 forced.</summary>
         public float FireForcing => Smoothing.Clamp01(ConsumptionRate / (ForcedZoneRate * GrateLayout.ZoneCount));
@@ -259,6 +268,9 @@ namespace RealisticFiring.Core
         /// <summary>Coal not yet caught, in kg.</summary>
         public float FreshMass => Sum(z => z.Fresh);
 
+        /// <summary>The coal burning on the grate, kg: none, and the fire is out once its lighter has gone.</summary>
+        public float BurningMass => Sum(z => z.Burning);
+
         /// <summary>
         /// The water's share of the coal now going on the fire, 0 to 1 (wet
         /// coal; <see cref="CoalMoisture"/>): each kg fired carries the water
@@ -376,9 +388,21 @@ namespace RealisticFiring.Core
         /// <summary>Share of smoke and gas leaving the bed that burns above it, 0 to 1.</summary>
         public float OverFireBurnout { get; private set; } = 1f;
 
-        public void Ignite() => FireOn = true;
+        public void Ignite()
+        {
+            FireOn = true;
+            lighter = tuning.LighterTime;
+        }
 
-        public void Extinguish() => FireOn = false;
+        public void Extinguish()
+        {
+            FireOn = false;
+            lighter = 0f;
+        }
+
+        // Seconds left of the lighter's flame keeping a just-lit fire alight
+        // while nothing burns yet.
+        private float lighter;
 
         /// <summary>
         /// Adds fresh coal aimed at one zone; some spills onto its neighbors.
@@ -396,8 +420,8 @@ namespace RealisticFiring.Core
             var spillPerSide = accepted * tuning.ShovelSpill / 4f;
             var neighbors = GrateLayout.Neighbors(target);
             zones[(int)target].Fresh += accepted - spillPerSide * neighbors.Count;
-            foreach (var neighbor in neighbors)
-                zones[(int)neighbor].Fresh += spillPerSide;
+            for (var k = 0; k < neighbors.Count; k++)
+                zones[(int)neighbors[k]].Fresh += spillPerSide;
             Wet(accepted);
             return accepted;
         }
@@ -681,6 +705,7 @@ namespace RealisticFiring.Core
                     zone.Fresh = coalMass * zoneArea;
             }
             FireOn = fireOn;
+            lighter = fireOn && BurningMass < tuning.DyingEmbers ? tuning.LighterTime : 0f;
             DryWater();
         }
 
@@ -702,6 +727,7 @@ namespace RealisticFiring.Core
                     zones[i].Fresh = mass;
             }
             FireOn = lit;
+            lighter = lit && BurningMass < tuning.DyingEmbers ? tuning.LighterTime : 0f;
             DryWater();
         }
 
@@ -778,6 +804,7 @@ namespace RealisticFiring.Core
                 zones[i].Clinker = data[i * 4 + 3];
             }
             FireOn = fireOn;
+            lighter = fireOn && BurningMass < tuning.DyingEmbers ? tuning.LighterTime : 0f;
             DryWater();
             return true;
         }
@@ -804,6 +831,7 @@ namespace RealisticFiring.Core
                 zones[i].Clinker = data[i * 4 + 3];
             }
             FireOn = fireOn;
+            lighter = fireOn && BurningMass < tuning.DyingEmbers ? tuning.LighterTime : 0f;
             DryWater();
             return true;
         }
@@ -862,6 +890,10 @@ namespace RealisticFiring.Core
                 ignitedToBed += ignited * (1f - tuning.VolatileFraction);
                 volatileRate[i] = ignited * tuning.VolatileFraction / (dt * speedup);
             }
+            lighter = Math.Max(0f, lighter - speedup * dt);
+            if (FireOn && lighter <= 0f && BurningMass <= NegligibleMass)
+                FireOn = false;
+
             // The water on the coal that caught has dried off.
             var dried = Math.Min(FreshWater, caught * waterPerFresh) + flashWater;
             FreshWater = Math.Max(0f, FreshWater - caught * waterPerFresh);
@@ -952,6 +984,7 @@ namespace RealisticFiring.Core
                 completeRate += rate * yield;
                 volatileTotal += gas;
                 unburnedRate += rate * (1f - yield) + gas;
+                overFireGas[i] = rate * (1f - yield) + gas;
                 overFireDemand += StoichiometricAirPerCoal * (rate * (1f - yield) + gas);
                 freePrimaryAir += Math.Max(0f, zone.AirFlow * dryAir - AirPerCoal * rate);
 
@@ -1015,15 +1048,19 @@ namespace RealisticFiring.Core
 
         private float IgnitionSupport(GrateZone zone)
         {
+            // Indexed: enumerating the neighbors boxed an enumerator each time,
+            // 360 bytes a step with fresh coal in all nine zones.
             var neighbors = GrateLayout.Neighbors(zone);
             var neighborBurning = 0f;
-            foreach (var neighbor in neighbors)
-                neighborBurning += zones[(int)neighbor].Burning;
+            for (var k = 0; k < neighbors.Count; k++)
+                neighborBurning += zones[(int)neighbors[k]].Burning;
             neighborBurning /= neighbors.Count;
 
             var support = (zones[(int)zone].Burning + tuning.NeighborIgnitionWeight * neighborBurning)
                           / tuning.IgnitionBurningMass;
-            return Math.Max(tuning.EmberIgnitionSupport, Smoothing.Clamp01(support));
+            if (lighter > 0f)
+                return Math.Max(tuning.EmberIgnitionSupport, Smoothing.Clamp01(support));
+            return BurningMass < tuning.DyingEmbers ? 0f : Smoothing.Clamp01(support);
         }
 
         private bool IsDropGrate(GrateZone zone)

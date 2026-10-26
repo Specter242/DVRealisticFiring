@@ -15,6 +15,18 @@ namespace RealisticFiring.Core
 
  public static class PlumeRise
     {
+        /// <summary>
+        /// How much sooner a puff becomes a wisp so a moving stack leaves no
+        /// more than <paramref name="trailMeters"/> of rounded trail. The
+        /// stationary handoff is a share of its flipbook's playing time.
+        /// </summary>
+        public static float PuffAgeScale(float speed, float playingTime, float endAge, float trailMeters)
+        {
+            if (!(speed > 0f) || !(playingTime > 0f) || !(endAge > 0f) || !(trailMeters > 0f))
+                return 1f;
+            return Math.Min(1f, trailMeters / (speed * playingTime * endAge));
+        }
+
         /// <summary>The share of the fire's heat that leaves by the stack in the flue gas, at about 300 °C.</summary>
         public const float FlueHeatShare = 0.17f;
 

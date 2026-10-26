@@ -71,11 +71,11 @@ public sealed class AssetLifetimeRunner : MonoBehaviour
         var bundlePath = args[Array.IndexOf(args, "-fxBundle") + 1];
         RealisticFiring.Main.Mod.Path = Path.GetDirectoryName(bundlePath);
         var assets = Assets();
-        Require(assets.All(a => a != null), "all six production effects assets load");
+        Require(assets.All(a => a != null), "all production effects assets load");
         Require(!AssetBundle.GetAllLoadedAssetBundles().Any(b => b.name == "realisticfiring_fx"),
             "effects retain their objects without a loaded bundle handle");
         var materials = assets.OfType<GameObject>().SelectMany(p => p.GetComponentsInChildren<Renderer>(true))
-            .SelectMany(r => r.sharedMaterials).Append((Material)assets[3]).Where(m => m != null).Distinct().ToArray();
+            .SelectMany(r => r.sharedMaterials).Concat(assets.OfType<Material>()).Where(m => m != null).Distinct().ToArray();
         var textures = materials.SelectMany(m => m.GetTexturePropertyNames().Select(m.GetTexture)).Where(t => t != null).Distinct().ToArray();
         var shaders = materials.Select(m => m.shader).Distinct().ToArray();
         Require(materials.Length > 0 && textures.Length > 0 && shaders.Length > 0,
@@ -114,6 +114,10 @@ public sealed class AssetLifetimeRunner : MonoBehaviour
         Object.DestroyImmediate(assets[0], true);
         Require(PlumeAssets.Prefab != null && PlumeAssets.Prefab != assets[0],
             "an explicitly destroyed cached prefab is loaded again");
+        var oldJet = PlumeAssets.StokerJetMaterial;
+        Object.DestroyImmediate(oldJet, true);
+        Require(PlumeAssets.StokerJetMaterial != null && PlumeAssets.StokerJetMaterial != oldJet,
+                "an explicitly destroyed cached stoker material is loaded again");
         Reset();
         RealisticFiring.Main.Mod.Path = Path.Combine(Path.GetTempPath(), "rf-missing-" + Guid.NewGuid());
         Require(Assets().All(a => a == null) && Assets().All(a => a == null),
@@ -124,6 +128,9 @@ public sealed class AssetLifetimeRunner : MonoBehaviour
     {
         PlumeAssets.Prefab, PlumeAssets.OverflowPrefab, PlumeAssets.FireboxPrefab,
         PlumeAssets.FireIronMaterial, PlumeAssets.FireIronIcon, PlumeAssets.FireIronIconDropped,
+        PlumeAssets.StokerJetMaterial,
+        PlumeAssets.FireboxWallMaterial, PlumeAssets.FireboxVolumeMaterial, PlumeAssets.CoalLumpsMaterial,
+        PlumeAssets.PlumeCompositeMaterial, PlumeAssets.PlumeDepthMaterial,
     };
 
     private static void Reset()

@@ -184,6 +184,13 @@ namespace RealisticFiring.Sim
         /// <summary>Every oil burner's firebox, by car.</summary>
         public static IEnumerable<RealisticOilFirebox> All => ByCar.Where(pair => pair.Key != null).Select(pair => pair.Value).ToList();
 
+        /// <summary>
+        /// Every oil firebox walked in place, without a copy, for a walk each
+        /// frame (<see cref="All"/>'s copy was garbage every frame): its car
+        /// may be gone (Unity's null), and the walk must not add one.
+        /// </summary>
+        public static Dictionary<TrainCar, RealisticOilFirebox>.ValueCollection InPlace => ByCar.Values;
+
         public static bool TryGet(TrainCar car, out RealisticOilFirebox firebox)
         {
             firebox = null;
@@ -197,13 +204,7 @@ namespace RealisticFiring.Sim
                 return true;
             if (car == null)
                 return false;
-            foreach (var coupler in new[] { car.frontCoupler, car.rearCoupler })
-            {
-                var neighbor = coupler != null && coupler.coupledTo != null ? coupler.coupledTo.train : null;
-                if (TryGet(neighbor, out firebox))
-                    return true;
-            }
-            return false;
+            return TryGet(car.frontCoupler.CoupledCar(), out firebox) || TryGet(car.rearCoupler.CoupledCar(), out firebox);
         }
 
         /// <summary>How hard the draft pulls through the firebox, 0 still to 1 the stock fire's full air.</summary>

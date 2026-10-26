@@ -66,12 +66,24 @@ namespace RealisticFiring
         [Draw("Heat shimmer over the stack (custom smoke effects; restart required)")]
         public bool HeatShimmer = true;
 
+        // Two players' frame rate fell from 60 to 15 with the plume
+        // (Nexus, 2026-10-25); Core.SmokeDetail.
+        [Draw("Smoke quality, for a slower graphics card: Medium draws the chimney's smoke at half resolution, Low with half its particles besides (in VR or with forward rendering, half and a quarter of its particles instead)", DrawType.ToggleGroup)]
+        public Core.SmokeQuality SmokeQuality = Core.SmokeQuality.High;
+
         [Draw("Season for the chimney's steam (the game has none; with DV Seasons running, its season's temperature is used instead): a summer afternoon's dry air shows little white, a damp dawn or the rain plenty, and winter the most", DrawType.ToggleGroup)]
         public Core.SmokeSeason SmokeSeason = Core.SmokeSeason.Summer;
 
         [Header("Shovel")]
-        [Draw("Coal per standard shovelful on supported coal locomotives, kg (0 = the locomotive's stock shovel size)", Min = 0, Precision = 1)]
-        public float ShovelfulMass = 3f;
+        [Draw("Coal per shovelful on supported coal locomotives, kg", Min = MinShovelful, Max = MaxShovelful, Precision = 1)]
+        public float ShovelfulMass = DefaultShovelful;
+
+        internal const float MinShovelful = 1f;
+        internal const float MaxShovelful = 8f;
+        internal const float DefaultShovelful = 3f;
+
+        /// <summary>The coal per shovelful in use, kg: the setting, or 3 where it is out of range.</summary>
+        internal float Shovelful => ShovelfulMass >= MinShovelful && ShovelfulMass <= MaxShovelful ? ShovelfulMass : DefaultShovelful;
 
         [Draw("Aim shovelfuls by where you point in the fire door")]
         public bool AimShovelThroughDoor = true;
@@ -177,6 +189,15 @@ namespace RealisticFiring
         /// <summary>Whether the seating bench's key is bound (a development setup).</summary>
         public bool SeatingBenchEnabled => DevSeatingKey != null && DevSeatingKey.keyCode != KeyCode.None;
 
+        // The firebox test bed, a development tool for the look of the fire
+        // inside the box: its capture runs (and the flames' draft and beats
+        // set by hand) only with this key bound, unbound unless set here (not
+        // in the menu).
+        public KeyBinding DevFireboxTestBedKey = new KeyBinding();
+
+        /// <summary>Whether the firebox test bed's key is bound (a development setup).</summary>
+        public bool FireboxTestBedEnabled => DevFireboxTestBedKey != null && DevFireboxTestBedKey.keyCode != KeyCode.None;
+
         public override void Save(UnityModManager.ModEntry modEntry)
         {
             Save(this, modEntry);
@@ -189,17 +210,22 @@ namespace RealisticFiring
         private const int CurrentKeys = 1;
 
         // Which defaults the settings were saved with: 0 before 1.11.1, 1 the
-        // aiming keypad drawn. Not in the menu.
+        // aiming keypad drawn, 2 the shovelful always a real one. Not in the
+        // menu.
         public int DefaultsVersion;
 
-        private const int CurrentDefaults = 1;
+        private const int CurrentDefaults = 2;
 
  public bool ApplyNewDefaults()
         {
             if (DefaultsVersion >= CurrentDefaults)
                 return false;
+            if (DefaultsVersion < 1)
+                ShowAimKeypad = true;
+            // The stock shovelful at 0 is gone: a saved 0 is a real shovelful again.
+            if (DefaultsVersion < 2 && !(ShovelfulMass >= MinShovelful && ShovelfulMass <= MaxShovelful))
+                ShovelfulMass = DefaultShovelful;
             DefaultsVersion = CurrentDefaults;
-            ShowAimKeypad = true;
             return true;
         }
 

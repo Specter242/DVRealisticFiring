@@ -565,6 +565,38 @@ namespace RealisticFiring.Core.Tests;
         Assert.True(engine.Fire.FireOn);
     }
 
+    // Mourningstar96's JK3 (Nexus 178092915, 2026-10-23): standing on Road
+    // with Steam Startup at 100 %, it stuck at 11.7 bar. Standing he fired
+    // by the gauge alone, so the air pump's and the blower's steam held the
+    // pressure short of his mark (the fire's boost ends at 13 bar).
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(25f)]
+    public void StandingHeFiresForTheAirPumpAndTheBlower(float steamStartup)
+    {
+        var engine = new Footplate(coal: 35f, pressure: 1.05f, injectorDelivery: 2.5f, engine: FootplateEngine.Jk3)
+        {
+            Standing = true,
+            SteamStartup = steamStartup,
+            AirPumpSteam = 0.18f,
+        };
+        var target = AutoFireman.PressureFor(FiremanMode.Road, engine.SafetyValve);
+        var seconds = steamStartup > 1f ? 5400f : 1800f;
+        var late = new List<float>();
+        engine.Run(seconds, e =>
+        {
+            if (e.Time > seconds - 600f)
+                late.Add(e.Pressure);
+        });
+        late.Sort();
+        var held = late[late.Count / 2];
+
+        output.WriteLine($"Steam Startup {100f * steamStartup:F0} %: held {held:F2} bar (target {target:F2}), coal {engine.Fire.CoalMass:F1} kg " +
+                         $"(mark {engine.Fireman.CoalTarget:F1}), blower {engine.Blower:F2}, blown off {engine.BlownOff:F0} kg");
+        Assert.True(held >= target - 0.5f, $"held {held:F2} bar, target {target:F2}");
+        Assert.True(engine.Fire.CoalMass <= 0.4f * engine.Fire.Parameters.MaxCoalCapacity);
+    }
+
     [Fact]
     public void KeepItAliveHoldsAThinFireAtAboutHalfPressure()
     {

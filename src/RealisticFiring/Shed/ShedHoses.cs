@@ -181,18 +181,25 @@ namespace RealisticFiring.Shed
 
         private static void StripRuntimeParts(GameObject copy)
         {
-            bool Added(Component c) =>
-                c is ControlImplBase || c is AGrabHandler || c is CollisionSound
-                || c.GetType().Name == "PluggableObjectKinematicVRFix"
-                || c.GetType().Name.StartsWith("Networked")
-                || (c.GetType().Namespace ?? "").StartsWith("VRTK");
             // Dependents first: a grab handler before the control that needs it.
             for (var pass = 0; pass < 3; pass++)
             {
-                foreach (var part in copy.GetComponentsInChildren<MonoBehaviour>(true).Where(c => c != null && Added(c)).ToList())
+                foreach (var part in copy.GetComponentsInChildren<MonoBehaviour>(true).Where(c => c != null && IsRuntimePart(c.GetType())).ToList())
                     Object.DestroyImmediate(part);
             }
         }
+
+        /// <summary>Whether the game adds a part of <paramref name="type"/> to a hose as it wakes, so a copy must lose it.</summary>
+        internal static bool IsRuntimePart(System.Type type) =>
+            typeof(ControlImplBase).IsAssignableFrom(type) || typeof(AGrabHandler).IsAssignableFrom(type)
+            || typeof(CollisionSound).IsAssignableFrom(type)
+            || type.Name == "PluggableObjectKinematicVRFix"
+            || type.Name.StartsWith("Networked")
+            || IsVrtk(type.Namespace ?? "");
+
+        // VRTK's own namespaces and the game's VRTK parts (DV.CabControls.VRTK).
+        private static bool IsVrtk(string space) =>
+            space == "VRTK" || space.StartsWith("VRTK.") || space.EndsWith(".VRTK") || space.Contains(".VRTK.");
 
         private const float CoilInner = 0.25f;
         private const float CoilOuter = 0.6f;

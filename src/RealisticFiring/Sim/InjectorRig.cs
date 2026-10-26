@@ -120,11 +120,16 @@ namespace RealisticFiring.Sim
             // boils about 7.5 kg/s at full rate, its throttle 6. The game's is 20.
             ["LocoS282A"] = 6f,
             // A small tank engine's: its 16.5 in. cylinders take a No. 7 by
-            // Baldwin's rule, as the Stanier 2-6-2T's "8-mm. cones" (Railway
-            // Gazette, 8 Mar 1935 p.436); its boiler boils about 2 kg/s. Was
-            // the much bigger USRA 0-6-0's No. 11, whose least was more than
-            // this boiler boils. The game's is 5.
-            ["LocoS060"] = 2.1f,
+            // Baldwin's rule, "next size larger with specially large boilers"
+            // (Kneass p.129). The stock fire, 5.3 MW, boils about 2.1 kg/s flat
+            // out, and the throttle and air pump take 2.2; a Sellers No. 8½,
+            // 2,587 gal/h at 200 psi (Swingle p.348), feeds that with room to
+            // spare down to 13 bar. Was a No. 7½, 2.1 kg/s, which fell behind a
+            // hot fire below full pressure (WoodenPlankGames, 2026-10-25: the
+            // glass down 15 % in five minutes at 13 bar), and before that the
+            // USRA 0-6-0's No. 11, whose least was more than this boiler boils.
+            // The game's is 5.
+            ["LocoS060"] = 2.7f,
             // The JK3's two lifting injectors, 2.5 kg/s each (8 to 9 mm): each
             // feeds its small boiler (about 2.1 kg/s) alone, as German practice
             // sized each feed (Röll, 1912, vol. 9 p.98); lifting costs nothing
@@ -154,7 +159,7 @@ namespace RealisticFiring.Sim
             ["A.T.&S.F. 2901-A"] = 12.6f,
         };
 
-        private static readonly HashSet<string> OneLeverForTwo = new HashSet<string> { "LocoS282A" };
+        private static readonly HashSet<string> OneLeverForTwo = new HashSet<string> { "LocoS282A", "LocoS060" };
         private const float OneOfTwoLeast = 0.5f;
 
         private static readonly Dictionary<Boiler, InjectorRig> ByBoiler = new Dictionary<Boiler, InjectorRig>();
@@ -620,13 +625,7 @@ namespace RealisticFiring.Sim
                 return true;
             if (car == null)
                 return false;
-            foreach (var coupler in new[] { car.frontCoupler, car.rearCoupler })
-            {
-                var neighbor = coupler != null && coupler.coupledTo != null ? coupler.coupledTo.train : null;
-                if (TryGet(neighbor, out rig))
-                    return true;
-            }
-            return false;
+            return TryGet(car.frontCoupler.CoupledCar(), out rig) || TryGet(car.rearCoupler.CoupledCar(), out rig);
         }
 
         // The tender coupled behind, or null; a deleted one counts as none.

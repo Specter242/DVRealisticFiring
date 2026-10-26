@@ -20,8 +20,10 @@ namespace RealisticFiring.Visuals
         /// <summary>Plays out every flareback the oil fires have had since the last frame.</summary>
         public static void Update()
         {
-            foreach (var firebox in RealisticOilFirebox.All)
+            foreach (var firebox in RealisticOilFirebox.InPlace)
             {
+                if (firebox.Car == null)
+                    continue;
                 var strength = firebox.PendingFlareback;
                 if (!(strength > 0f))
                     continue;

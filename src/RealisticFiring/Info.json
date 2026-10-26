@@ -2,11 +2,15 @@
   "Id": "RealisticFiring",
   "DisplayName": "Realistic Firing",
   "Author": "Specter242",
-  "Version": "1.14.0",
+  "Version": "1.15.0",
   "ManagerVersion": "0.28.2",
   "AssemblyName": "RealisticFiring.dll",
   "EntryMethod": "RealisticFiring.Main.Load",
-  "LoadAfter": ["DVCustomCarLoader", "Multiplayer", "SkinManagerMod"],
+  "LoadAfter": [
+    "DVCustomCarLoader",
+    "Multiplayer",
+    "SkinManagerMod"
+  ],
   "MultiplayerCompatibility": "All",
   "HomePage": "https://www.nexusmods.com/derailvalley/mods/1755",
   "Repository": "https://raw.githubusercontent.com/Specter242/DVRealisticFiring/main/repository.json"
