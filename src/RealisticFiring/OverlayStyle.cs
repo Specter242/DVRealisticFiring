@@ -30,27 +30,12 @@ namespace RealisticFiring
     {
         public const int Count = 3;
         public const float Width = 96f;
-        public const float Height = 26f;
         public const float Gap = 6f;
-        public const float VrScale = 1.875f;
-        private static Sprite plateOff;
-        private static Sprite plateOn;
 
         public static string Name(int page, bool oil = false) => page == 0 && oil ? "BURNER" : page == 0 ? "FIRE" : page == 1 ? "WATER" : "ENGINE";
         public static Color OffText => OverlayArt.Dim;
         public static Color HoverText => OverlayArt.Soft;
         public static Color OnText => OverlayArt.Cream;
-
-        public static Sprite OffSprite => Plate(ref plateOff, OverlayArt.PlateOff);
-        public static Sprite OnSprite => Plate(ref plateOn, OverlayArt.PlateOn);
-
-        private static Sprite Plate(ref Sprite sprite, Texture2D texture)
-        {
-            if (sprite == null || sprite.texture != texture)
-                sprite = Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), 100f, 0,
-                    SpriteMeshType.FullRect, new Vector4(5f, 5f, 5f, 5f));
-            return sprite;
-        }
     }
 
  internal static class OverlayStyle

@@ -81,19 +81,6 @@ namespace RealisticFiring
                 settings.ShowOverlay = false;
         }
 
-        public static void Cycle(Settings settings)
-        {
-            if (!settings.ShowOverlay)
-            {
-                settings.ShowOverlay = true;
-                settings.OverlayPage = 0;
-            }
-            else if (settings.OverlayPage < Pages - 1)
-                settings.OverlayPage++;
-            else
-                settings.ShowOverlay = false;
-        }
-
         public void Draw(RealisticFirebox firebox, float time)
         {
             shownCoal = firebox;
@@ -129,8 +116,6 @@ namespace RealisticFiring
         public void HideVr() => vrOverlay.Hide();
 
         public void PollVrInput() => vrOverlay.PollVrInput();
-
-        internal static void SelectPage(int page) => Main.Settings.OverlayPage = Mathf.Clamp(page, 0, Pages - 1);
 
         // The dials' faces and the texts' widths, once per reading.
         private Card Measure(Card c)
