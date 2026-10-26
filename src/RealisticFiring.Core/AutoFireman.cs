@@ -148,10 +148,15 @@ namespace RealisticFiring.Core
             // Building for work ahead, a full boiler does not hold him back.
             var error = PressureTarget - r.Pressure;
             var rate = RateFor(p, PlannedSteam * SteamHeat * Trim);
+            var auxiliary = Math.Max(0f, r.AuxiliarySteam);
             var target = rate * p.BurnTime
                          + PressureGain * p.MaxCoalCapacity * (error > 0f ? error : j.Building ? 0f : 2f * error);
+            // Not working, a thin fire, but standing as much more as the
+            // auxiliaries' steam needs: their exhaust and the blower draw it.
+            // Building for a start, the blower he opens is for the fire.
             if (!j.Working)
-                target = Math.Min(target, IdleFire * p.MaxCoalCapacity);
+                target = Math.Min(target, IdleFire * p.MaxCoalCapacity
+                                          + (j.Building ? 0f : RateFor(p, auxiliary * SteamHeat * Trim) * p.BurnTime));
             CoalTarget = Clamp(target, least, MaxFire * p.MaxCoalCapacity);
 
             WaitingOnSmoke = fire.SootDensity > BlackSmoke && coal > least;

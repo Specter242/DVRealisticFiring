@@ -227,6 +227,7 @@ namespace RealisticFiring.Visuals
         /// </summary>
         public float FlipbookAt(ParticleSystem.Particle particle) =>
             nominalLife > 0f ? Mathf.Clamp01((particle.startLifetime - particle.remainingLifetime) / nominalLife) : 1f;
+        internal float PlayingTime => nominalLife;
 
         /// <summary>
         /// Which of the wisp flipbook's eight wisps (its rows) a particle is, 0

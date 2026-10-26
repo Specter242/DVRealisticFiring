@@ -6,7 +6,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using DV;
+using DV.Utils;
+using LocoSim.Implementations;
 using Newtonsoft.Json;
+using RealisticFiring.Core;
 using UnityEngine;
 
 namespace RealisticFiring.Visuals
@@ -51,6 +54,9 @@ namespace RealisticFiring.Visuals
         {
             public string Name;
             public string Tuning;
+
+            /// <summary>The player's smoke quality for it (High, Medium, Low); the player's own when not given.</summary>
+            public string SmokeQuality;
         }
 
         internal sealed class Request
@@ -102,6 +108,9 @@ namespace RealisticFiring.Visuals
 
             /// <summary>A clip's frames' width, pixels (the screen's height kept to it); 0 for the screen's.</summary>
             public int ClipWidth = 1280;
+            public int RenderWidth;
+            public int RenderHeight;
+            public bool DynamoOn;
 
             /// <summary>
             /// Frames timed before each still, their mean and slowest tenth
@@ -112,9 +121,50 @@ namespace RealisticFiring.Visuals
         }
 
         private float nextPoll;
+        private Dynamo testDynamo;
+        private Port testDynamoPressure;
+        private ChimneyPlume testDynamoPlume;
+        private ParticleSystem[] testDynamoSteam = Array.Empty<ParticleSystem>();
+        private readonly ParticleSystem.Particle[] steamParticles = new ParticleSystem.Particle[1024];
+
+        // Exercise the stock dynamo effects even when the loaded boiler is
+        // cold. This fixture is scoped to a capture and never saves its ports.
+        private void DriveDynamo()
+        {
+            if (!Running || testDynamo == null)
+                return;
+            if (testDynamoPressure != null)
+                testDynamoPressure.Value = 9f;
+            testDynamo.dynamoFlowNormalizedReadOut.Value = 1f;
+            testDynamo.steamConsumptionReadOut.Value = testDynamo.steamConsumption;
+        }
+
+        private void LateUpdate()
+        {
+            DriveDynamo();
+            var stack = PlumeTestBed.StackFor(testDynamoPlume);
+            if (!Running || stack == null)
+                return;
+            // The stack test moves the air past a parked engine. Apply the
+            // same moving reference frame to the stock dynamo particles.
+            var move = -Vector3.ProjectOnPlane(testDynamoPlume.Car.transform.forward, Vector3.up).normalized
+                       * (stack.Speed / 3.6f) * Time.deltaTime;
+            foreach (var system in testDynamoSteam)
+            {
+                var main = system.main;
+                var space = main.simulationSpace == ParticleSystemSimulationSpace.World ? null
+                    : main.simulationSpace == ParticleSystemSimulationSpace.Custom ? main.customSimulationSpace : system.transform;
+                var delta = space != null ? space.InverseTransformVector(move) : move;
+                var count = system.GetParticles(steamParticles);
+                for (var i = 0; i < count; i++)
+                    steamParticles[i].position += delta;
+                system.SetParticles(steamParticles, count);
+            }
+        }
 
         private void Update()
         {
+            DriveDynamo();
             if (Running || Time.unscaledTime < nextPoll || Main.Settings == null || !Main.Settings.PlumeTestBedEnabled)
                 return;
             nextPoll = Time.unscaledTime + PollEvery;
@@ -138,6 +188,12 @@ namespace RealisticFiring.Visuals
 
         private IEnumerator Run(Request request)
         {
+            var saves = SingletonBehaviour<SaveGameManager>.Instance;
+            if (saves != null && !saves.disableAutosave)
+            {
+                saves.disableAutosave = true;
+                Main.Mod.Logger.Log("Plume capture: the game's autosave is off for the rest of the session");
+            }
             var weather = Sim.GameWeather.Driver;
             var hourBefore = Kept(weather?.TimeOfDayHours);
             var rainBefore = Kept(weather?.RainValue);
@@ -193,13 +249,45 @@ namespace RealisticFiring.Visuals
                 weather.WeatherPointY.EngageOverride(Mathf.Clamp01(clouds));
             Camera.onPreCull += Hold;
             Camera.onPostRender += Release;
+            var qualityBefore = Main.Settings.SmokeQuality;
+            var widthBefore = Screen.width;
+            var heightBefore = Screen.height;
+            var modeBefore = Screen.fullScreenMode;
+            var resize = request.RenderWidth > 0 && request.RenderHeight > 0;
+            var dynamo = plume.Car.SimController?.SimulationFlow?.OrderedSimComps.OfType<LocoSim.Implementations.Dynamo>().FirstOrDefault();
+            var dynamoPort = dynamo != null
+                ? HarmonyLib.AccessTools.Field(dynamo.dynamoControl.GetType(), "port")?.GetValue(dynamo.dynamoControl) as Port
+                : null;
+            var dynamoBefore = dynamoPort != null ? dynamoPort.Value : 0f;
+            var flowBefore = dynamo?.dynamoFlowNormalizedReadOut.Value ?? 0f;
+            var consumptionBefore = dynamo?.steamConsumptionReadOut.Value ?? 0f;
+            var pressurePort = dynamo != null
+                ? HarmonyLib.AccessTools.Field(dynamo.steamPressure.GetType(), "port")?.GetValue(dynamo.steamPressure) as Port
+                : null;
+            var pressureBefore = pressurePort != null ? pressurePort.Value : 0f;
+            testDynamo = request.DynamoOn ? dynamo : null;
+            testDynamoPressure = request.DynamoOn ? pressurePort : null;
+            testDynamoPlume = request.DynamoOn ? plume : null;
+            testDynamoSteam = request.DynamoOn ? plume.Car.GetComponentsInChildren<ParticleSystem>(true)
+                .Where(p => p.GetComponentsInParent<Transform>(true).Any(t => t.name == "DynamoSteam")).ToArray()
+                : Array.Empty<ParticleSystem>();
             try
             {
+                if (request.DynamoOn)
+                    if (dynamoPort != null)
+                        dynamoPort.Value = 1f;
+                if (resize)
+                {
+                    Screen.SetResolution(request.RenderWidth, request.RenderHeight, modeBefore);
+                    for (var waited = 0f; waited < 5f && (Screen.width != request.RenderWidth || Screen.height != request.RenderHeight); waited += Time.unscaledDeltaTime)
+                        yield return null;
+                }
                 foreach (var variant in request.Variants)
                 foreach (var scene in request.Scenes)
                 {
                     PlumeTestBed.Restore(tuned);
                     PlumeTestBed.Restore(variant.Tuning);
+                    Main.Settings.SmokeQuality = Enum.TryParse(variant.SmokeQuality, true, out SmokeQuality quality) ? quality : qualityBefore;
                     var sceneName = SetScene(scene, weather);
                     if (request.Variants.Length > 1)
                         sceneName = $"{variant.Name ?? variant.Tuning ?? "as tuned"} {sceneName}";
@@ -271,7 +359,7 @@ namespace RealisticFiring.Visuals
                                 File.WriteAllBytes(Path.Combine(folder, file), Frame(0));
                             }
                             shots.Append($"{file}\t{sceneName}\t{(PlumeTestBed.StackOn ? stackName : "engine")}\t{view}\t{PlumeWeather.Describe()}\t" +
-                                         $"{Time.timeScale:0.##}\t{timing}{plume.Readout().Replace('\n', ' ')}\n");
+                                         $"{Time.timeScale:0.##}\t{timing}{plume.Readout().Replace('\n', ' ')}; {plume.SortingReadout()}\n");
                             timing = "";
                         }
                     }
@@ -279,6 +367,24 @@ namespace RealisticFiring.Visuals
             }
             finally
             {
+                testDynamo = null;
+                testDynamoPressure = null;
+                testDynamoPlume = null;
+                testDynamoSteam = Array.Empty<ParticleSystem>();
+                if (request.DynamoOn)
+                {
+                    if (dynamoPort != null)
+                        dynamoPort.Value = dynamoBefore;
+                    if (dynamo != null)
+                    {
+                        dynamo.dynamoFlowNormalizedReadOut.Value = flowBefore;
+                        dynamo.steamConsumptionReadOut.Value = consumptionBefore;
+                    }
+                    if (pressurePort != null)
+                        pressurePort.Value = pressureBefore;
+                }
+                if (resize)
+                    Screen.SetResolution(widthBefore, heightBefore, modeBefore);
                 Time.captureFramerate = 0;
                 if (request.TimeFrames > 0)
                 {
@@ -289,6 +395,7 @@ namespace RealisticFiring.Visuals
                 fov = null;
                 Camera.onPreCull -= Hold;
                 Camera.onPostRender -= Release;
+                Main.Settings.SmokeQuality = qualityBefore;
                 PlumeTestBed.Restore(tuned);
                 bed.Restore();
                 if (weather != null)
@@ -312,7 +419,7 @@ namespace RealisticFiring.Visuals
         // first, so the scaling averages the pixels it drops); 0 as it is. The
         // screenshot's bytes are copied as they are (an sRGB target converted
         // them again: the frames came out washed out).
-        private static byte[] Frame(int width)
+        internal static byte[] Frame(int width)
         {
             var shot = ScreenCapture.CaptureScreenshotAsTexture();
             if (width <= 0 || width >= shot.width)
@@ -451,6 +558,11 @@ namespace RealisticFiring.Visuals
                     at.y = rail + 1.7f;
                     look = stack + Vector3.up * 2.5f - ahead * 3f;
                     break;
+                case "front-above":
+                    at = stack + ahead * 18f + right * 9f;
+                    at.y = rail + 11f;
+                    look = stack + Vector3.up * 2f - ahead * 3f;
+                    break;
                 case "rear":
                     at = stack - ahead * 24f + right * 6f;
                     at.y = rail + 6f;
@@ -542,6 +654,7 @@ namespace RealisticFiring.Visuals
             heldFov = camera.fieldOfView;
             var rotation = turning != 0f ? Quaternion.AngleAxis(turning * (Time.time - turnedFrom), Vector3.up) * pose.rotation : pose.rotation;
             camera.transform.SetPositionAndRotation(pose.position, rotation);
+            ChimneyPlume.SortForCamera(camera);
             if (fov is float degrees)
                 camera.fieldOfView = Mathf.Clamp(degrees, 5f, 120f);
         }
@@ -566,7 +679,7 @@ namespace RealisticFiring.Visuals
                 value.ClearOverride();
         }
 
-        private static string Safe(string text)
+        internal static string Safe(string text)
         {
             var safe = new string(text.Select(c => char.IsLetterOrDigit(c) || c == '.' || c == '-' ? c : '_').ToArray()).Trim('_');
             return safe.Length > 40 ? safe.Substring(0, 40) : safe;

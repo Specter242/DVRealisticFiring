@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using RealisticFiring.Core;
 using RealisticFiring.Diagnostics;
@@ -26,6 +27,7 @@ namespace RealisticFiring.Visuals
         private static readonly int FlickerSpeedId = Shader.PropertyToID("_FlickerSpeed");
         private static readonly int TilingId = Shader.PropertyToID("_Tiling");
         private static readonly int PulseId = Shader.PropertyToID("_Pulse");
+        private static readonly int GlowStrengthId = Shader.PropertyToID("_GlowStrength");
         private static readonly Color AimColor = new Color(0.25f, 0.6f, 1f);
 
         // Height of a zone's coal over the stock pile's, per even share of capacity.
@@ -60,7 +62,9 @@ namespace RealisticFiring.Visuals
         // the coal's depth there.
         private const int GridAcross = 16;
         private const int GridAlong = 32;
-        private const float Relief = 0.3f;
+        // Small: the lumps on it (CoalLumps) give the bed its shape; its own
+        // relief at the grid's coarse spacing drew big facets up close.
+        private const float Relief = 0.06f;
 
         // The glowing embers lie this far under the dark lumps on top, in m.
         private const float EmberDepth = 0.08f;
@@ -76,7 +80,22 @@ namespace RealisticFiring.Visuals
 
         // The bed slopes down to the grate over this share of its length at
         // the door end, where the door looks down on its edge.
-        private const float DoorSlope = 0.07f;
+        internal const float DoorSlope = 0.07f;
+
+        internal static float Lumpiness = 0.3f;
+        internal static float LumpSize = 0.35f;
+        internal static float LumpChange = 0.003f;
+        internal static float HeapShare = 0.6f;
+        internal static float HeapSize = 0.1f;
+        internal static float HeapSlumped = 0.22f;
+        internal static float HeapSlump = 45f;
+        internal static float CoalBulk = 800f;
+        internal static float HeapTallest = 0.08f;
+        private const int ReliefAcross = 24;
+        private const int ReliefAlong = 48;
+        private const int MaxHeaps = 24;
+        private const float HeapLeast = 0.3f;
+        private const float ReliefEvery = 0.1f;
 
         // Under this share of an even share of coal a burning zone is thin:
         // the draft rushes through and it burns white-hot.
@@ -116,6 +135,52 @@ namespace RealisticFiring.Visuals
         private const float MinAxisAlignment = 0.866f;
 
         private readonly float[] heights = new float[GrateLayout.ZoneCount];
+
+        // The relief: its swells (a share of the coal's thickness), its heaps
+        // (a share of the stock pile's height), and how fresh the heaps' coal
+        // is, on a grid across and along the bed; the heaps; and each zone's
+        // fresh and all its coal as last seen, kg.
+        private readonly float[] swells = new float[ReliefAcross * ReliefAlong];
+        private readonly float[] heaped = new float[ReliefAcross * ReliefAlong];
+        private readonly float[] heapFresh = new float[ReliefAcross * ReliefAlong];
+        private readonly Color[] reliefPixels = new Color[ReliefAcross * ReliefAlong];
+        private readonly List<Heap> heaps = new List<Heap>();
+        private readonly float[] lastFresh = new float[GrateLayout.ZoneCount];
+        private readonly float[] lastCoal = new float[GrateLayout.ZoneCount];
+        private bool reliefStarted;
+        private float reliefDue;
+        private float reliefClock;
+        private float bedWidth = 1f;
+        private float bedLength = 1.5f;
+        private float pileHeight = 0.3f;
+        private Texture2D reliefTexture;
+        private readonly System.Random heapRandom = new System.Random(588030);
+
+        private sealed class Heap
+        {
+            public int Zone;
+            public float Across;
+            public float Along;
+            public float Mass;
+            public float Fresh;
+            public float Age;
+        }
+
+        // Each heap's terms for the relief, the same for every cell of it:
+        // worked out in each cell, they were 27,648 spreads an update at the
+        // most heaps (performance review, 2026-10-25).
+        private struct HeapTerms
+        {
+            public float Across;
+            public float Along;
+            // 1 over twice its spread squared, 1/m².
+            public float Narrowing;
+            // Its height at its middle, m.
+            public float Height;
+            public float FreshShare;
+        }
+
+        private readonly HeapTerms[] heapTerms = new HeapTerms[MaxHeaps];
         private readonly float[] heat = new float[GrateLayout.ZoneCount];
         private readonly float[] green = new float[GrateLayout.ZoneCount];
         private readonly float[] cover = new float[GrateLayout.ZoneCount];
@@ -574,10 +639,200 @@ namespace RealisticFiring.Visuals
                 emberRenderer.enabled = hottest > ColdHeat;
             }
 
+            var seen = Seen;
+            UpdateRelief(fire, seen);
+            if (!seen)
+                return;
             if (mesh != null)
                 UpdateMesh(fire, aimed, pulse);
             else
                 UpdateTiles(fire, aimed, pulse);
+        }
+
+        // The drawn work waits while nobody can see the coal: behind a shut
+        // door, or farther off than the firebox's volume is drawn (a loaded
+        // cab's bed rebuilt its mesh and relief behind a shut door;
+        // performance review, 2026-10-25). The heaps land, burn, and slump
+        // all the while, and the bed is remade the moment it can be seen.
+        private const float SeenDoor = 0.01f;
+        private const float SeenWithin = 15f;
+
+        /// <summary>
+        /// Whether the coal can be seen now: its door open (or none) and the
+        /// camera near enough, or a firebox capture running.
+        /// </summary>
+        public bool Seen
+        {
+            get
+            {
+                if (FireboxCapture.KeepsVisible)
+                    return true;
+                if (firebox != null && firebox.HasDoorPort && firebox.DoorOpening <= SeenDoor)
+                    return false;
+                var camera = PlayerManager.ActiveCamera != null ? PlayerManager.ActiveCamera : Camera.main;
+                return camera == null || pivot == null
+                       || (camera.transform.position - pivot.position).sqrMagnitude < SeenWithin * SeenWithin;
+            }
+        }
+
+        // The relief: a heap for each shovelful that has landed, the heaps
+        // slumping and burning down, and the field remade a few times a second.
+        private void UpdateRelief(FireModel fire, bool seen)
+        {
+            var dt = Time.deltaTime;
+            for (var i = 0; i < GrateLayout.ZoneCount; i++)
+            {
+                var zone = fire.Zones[i];
+                if (reliefStarted && zone.Fresh - lastFresh[i] > HeapLeast)
+                    AddHeap(i, zone.Fresh - lastFresh[i]);
+                // A heap burns down with its zone and its coal catches as the
+                // zone's fresh coal does.
+                var burned = reliefStarted && lastCoal[i] > 0f && zone.Coal < lastCoal[i] ? zone.Coal / lastCoal[i] : 1f;
+                var caught = reliefStarted && lastFresh[i] > 0f && zone.Fresh < lastFresh[i] ? zone.Fresh / lastFresh[i] : 1f;
+                foreach (var heap in heaps)
+                {
+                    if (heap.Zone != i)
+                        continue;
+                    heap.Mass *= burned;
+                    heap.Fresh = Mathf.Min(heap.Fresh * caught, heap.Mass);
+                }
+                lastFresh[i] = zone.Fresh;
+                lastCoal[i] = zone.Coal;
+            }
+            if (!reliefStarted)
+            {
+                reliefStarted = true;
+                var width = BedPoint(1f, 0.5f, 0f) - BedPoint(0f, 0.5f, 0f);
+                var length = BedPoint(0.5f, 1f, 0f) - BedPoint(0.5f, 0f, 0f);
+                bedWidth = Mathf.Max(0.3f, width.magnitude);
+                bedLength = Mathf.Max(0.3f, length.magnitude);
+                pileHeight = Mathf.Max(0.05f, (BedPoint(0.5f, 0.5f, 1f) - BedPoint(0.5f, 0.5f, 0f)).magnitude);
+            }
+            heaps.RemoveAll(heap => heap.Mass < 0.1f);
+            foreach (var heap in heaps)
+                heap.Age += dt;
+            reliefClock += dt;
+            reliefDue -= dt;
+            // Unseen, the field waits, to be remade as soon as it is seen.
+            if (!seen)
+            {
+                reliefDue = 0f;
+                return;
+            }
+            if (reliefDue > 0f && reliefTexture != null)
+                return;
+            reliefDue = ReliefEvery;
+            MakeRelief();
+        }
+
+        // A shovelful's heap where it landed: on the aim in its zone, toward
+        // it in a neighbor it spilled into, or anywhere in a zone fired
+        // without one (the stoker, the test bed).
+        private void AddHeap(int zone, float mass)
+        {
+            var column = GrateLayout.Column((GrateZone)zone);
+            var row = GrateLayout.Row((GrateZone)zone);
+            var across = (column + 0.5f) / GrateLayout.Columns;
+            var along = (row + 0.5f) / GrateLayout.Rows;
+            var aim = firebox.LastDeliveryAim;
+            float Jitter(float reach) => ((float)heapRandom.NextDouble() * 2f - 1f) * reach;
+            if (aim.HasValue && Time.time - aim.Value.Time < 3f && (int)aim.Value.Zone == zone)
+            {
+                // A shovelful scatters as it lands.
+                across = aim.Value.Across + Jitter(0.08f);
+                along = aim.Value.Depth + Jitter(0.08f);
+            }
+            else if (aim.HasValue && Time.time - aim.Value.Time < 3f)
+            {
+                across = Mathf.Lerp(across, aim.Value.Across, 0.4f);
+                along = Mathf.Lerp(along, aim.Value.Depth, 0.4f);
+            }
+            else
+            {
+                across += Jitter(0.3f / GrateLayout.Columns);
+                along += Jitter(0.3f / GrateLayout.Rows);
+            }
+            if (heaps.Count >= MaxHeaps)
+                heaps.RemoveAt(0);
+            heaps.Add(new Heap { Zone = zone, Across = Mathf.Clamp01(across), Along = Mathf.Clamp01(along), Mass = mass, Fresh = mass });
+        }
+
+        private void MakeRelief()
+        {
+            var big = Mathf.Max(0.05f, LumpSize);
+            var tallest = Mathf.Max(0.01f, HeapTallest);
+            var drift = reliefClock * LumpChange;
+            var heapCount = Mathf.Min(heaps.Count, heapTerms.Length);
+            for (var h = 0; h < heapCount; h++)
+            {
+                var heap = heaps[h];
+                var spread = Mathf.Lerp(HeapSize, HeapSlumped, 1f - Mathf.Exp(-heap.Age / Mathf.Max(1f, HeapSlump)));
+                heapTerms[h] = new HeapTerms
+                {
+                    Across = heap.Across,
+                    Along = heap.Along,
+                    Narrowing = 1f / (2f * spread * spread),
+                    Height = HeapShare * heap.Mass / Mathf.Max(100f, CoalBulk) / (2f * Mathf.PI * spread * spread),
+                    FreshShare = heap.Fresh / Mathf.Max(heap.Mass, 1e-3f),
+                };
+            }
+            for (var j = 0; j < ReliefAlong; j++)
+            {
+                var along = (j + 0.5f) / ReliefAlong;
+                for (var i = 0; i < ReliefAcross; i++)
+                {
+                    var across = (i + 0.5f) / ReliefAcross;
+                    var x = across * bedWidth;
+                    var z = along * bedLength;
+                    var noise = 0.65f * Mathf.PerlinNoise(x / big + 13.7f, z / big + drift)
+                                + 0.35f * Mathf.PerlinNoise(x * 2f / big + 41.3f, z * 2f / big - drift);
+                    var k = j * ReliefAcross + i;
+                    swells[k] = Lumpiness * Mathf.Clamp(4f * (noise - 0.5f), -1f, 1f);
+                    var up = 0f;
+                    var fresh = 0f;
+                    for (var h = 0; h < heapCount; h++)
+                    {
+                        var dx = (across - heapTerms[h].Across) * bedWidth;
+                        var dz = (along - heapTerms[h].Along) * bedLength;
+                        var d2 = (dx * dx + dz * dz) * heapTerms[h].Narrowing;
+                        if (d2 > 9f)
+                            continue;
+                        var bump = Mathf.Exp(-d2);
+                        up += heapTerms[h].Height * bump;
+                        fresh = Mathf.Max(fresh, bump * heapTerms[h].FreshShare);
+                    }
+                    // m, softly no taller than the tallest, as a share of the pile's height.
+                    up = tallest * (float)System.Math.Tanh(up / tallest) / pileHeight;
+                    heaped[k] = up;
+                    heapFresh[k] = fresh;
+                    reliefPixels[k] = new Color(swells[k], up, fresh, 0f);
+                }
+            }
+            if (reliefTexture == null)
+            {
+                reliefTexture = new Texture2D(ReliefAcross, ReliefAlong, TextureFormat.RGBAHalf, false, true)
+                {
+                    name = "RealisticFiring bed relief",
+                    wrapMode = TextureWrapMode.Clamp,
+                    filterMode = FilterMode.Bilinear,
+                };
+            }
+            reliefTexture.SetPixels(reliefPixels);
+            reliefTexture.Apply(false);
+        }
+
+        // A relief grid's value at (across, along), bilinear between its
+        // cells' middles as a shader reads it.
+        private static float Grid(float[] grid, float across, float along)
+        {
+            var x = Mathf.Clamp(across * ReliefAcross - 0.5f, 0f, ReliefAcross - 1f);
+            var z = Mathf.Clamp(along * ReliefAlong - 0.5f, 0f, ReliefAlong - 1f);
+            var i0 = Mathf.Min((int)x, ReliefAcross - 2);
+            var j0 = Mathf.Min((int)z, ReliefAlong - 2);
+            var fx = x - i0;
+            var fz = z - j0;
+            float V(int i, int j) => grid[j * ReliefAcross + i];
+            return Mathf.Lerp(Mathf.Lerp(V(i0, j0), V(i0 + 1, j0), fx), Mathf.Lerp(V(i0, j0 + 1), V(i0 + 1, j0 + 1), fx), fz);
         }
 
         private void UpdateMesh(FireModel fire, GrateZone? aimed, float pulse)
@@ -597,7 +852,10 @@ namespace RealisticFiring.Visuals
                         Mathf.Lerp(bed.min.y, bed.max.y, up),
                         Mathf.Lerp(bed.min.z, bed.max.z, along));
                     var glow = Sample(heat, across, along) * (0.85f + 0.3f * glowJitter[index]);
-                    colors[index] = new Color(Mathf.Clamp01(glow), Sample(cover, across, along), Sample(ash, across, along), Sample(clinker, across, along));
+                    // A fresh heap lies black as its zone's green coal does.
+                    var forced = Sample(forcing, across, along);
+                    var heapCover = Grid(heapFresh, across, along) * (1f - (1f - ForcedGreenShows) * forced * forced);
+                    colors[index] = new Color(Mathf.Clamp01(glow), Mathf.Max(Sample(cover, across, along), heapCover), Sample(ash, across, along), Sample(clinker, across, along));
                     bare[index] = new Vector2(Sample(empty, across, along), 0f);
                 }
             }
@@ -631,6 +889,7 @@ namespace RealisticFiring.Visuals
                 emberProperties.SetFloat(TilingId, LumpsAcross);
                 emberProperties.SetFloat(FlickerSpeedId, properties.GetFloat(FlickerSpeedId));
                 emberProperties.SetFloat(PulseId, flames != null ? flames.Pulse : 0f);
+                emberProperties.SetFloat(GlowStrengthId, FireboxLighting.EmberGlow);
                 emberRenderer.SetPropertyBlock(emberProperties);
             }
             if (aimed is GrateZone zone)
@@ -731,7 +990,24 @@ namespace RealisticFiring.Visuals
         /// over a thinner neighbor or sink into a thicker one.
         /// </summary>
         public float SurfaceHeight(float across, float along) =>
+            Mathf.Max(0f, Sample(heights, across, along) * Mathf.Max(0.2f, 1f + Grid(swells, across, along)) + Grid(heaped, across, along))
+            * Mathf.SmoothStep(0f, 1f, along / DoorSlope);
+
+        /// <summary>
+        /// The bed's surface without its relief: the zones' heights blended
+        /// and tapered at the door. What a shader adds the relief to
+        /// (<see cref="ReliefTexture"/>).
+        /// </summary>
+        public float SmoothHeight(float across, float along) =>
             Sample(heights, across, along) * Mathf.SmoothStep(0f, 1f, along / DoorSlope);
+
+        /// <summary>
+        /// The bed's relief for shaders, across and along the bed: R its
+        /// swells, a share of the coal's thickness; G its heaps, a share of
+        /// the stock pile's height; B how fresh the heaps' coal is, 0 to 1.
+        /// A surface is (smooth height × (1 + R) + G), tapered at the door.
+        /// </summary>
+        internal Texture2D ReliefTexture => reliefTexture;
 
         /// <summary>Whether the bed has been built and placed.</summary>
         public bool Ready => pivot != null;
@@ -775,6 +1051,18 @@ namespace RealisticFiring.Visuals
         /// <summary>The stock coal pile the bed stands in for (hidden while the bed shows).</summary>
         public Renderer StockCoal => stockCoal;
 
+        /// <summary>The bed's box in its own units (its mesh's frame), across, up, along.</summary>
+        internal Bounds BedBox => bed;
+
+        /// <summary>The bed mesh's scale under the effects, its units to the pivot's.</summary>
+        internal Vector3 FullScale => fullScale;
+
+        /// <summary>How much of each zone shows grey ash, 0 to 1.</summary>
+        public float ZoneAsh(GrateZone zone) => ash[(int)zone];
+
+        /// <summary>The continuous bed's renderer, or null (the nine stock piles without the bundle).</summary>
+        internal MeshRenderer BedRenderer => bedRenderer;
+
         /// <summary>The firebox's effects (flames and smoke live under it), or null without the bundle.</summary>
         public Transform Effects => effects;
 
@@ -817,6 +1105,8 @@ namespace RealisticFiring.Visuals
 
         private void OnDestroy()
         {
+            if (reliefTexture != null)
+                Destroy(reliefTexture);
             if (firebox != null && ByFirebox.TryGetValue(firebox, out var listed) && listed == this)
                 ByFirebox.Remove(firebox);
             foreach (var material in tileMaterials)

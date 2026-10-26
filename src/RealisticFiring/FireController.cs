@@ -554,7 +554,7 @@ namespace RealisticFiring
         private void DrawGui()
         {
             // Nothing of the mod's over the capture run's shots.
-            if (Visuals.PlumeCapture.Running)
+            if (Visuals.PlumeCapture.Running || Visuals.FireboxCapture.Running)
             {
                 overlay.HideVr();
                 return;

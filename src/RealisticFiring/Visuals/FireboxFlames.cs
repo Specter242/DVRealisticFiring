@@ -71,19 +71,32 @@ namespace RealisticFiring.Visuals
         // Air through the grate at the stock fire's most, per kg/s of coal it burns.
         private const float AirPerCoal = 13.9f;
 
-        // Firebox smoke is lit by the fire under it: a warm grey-brown,
-        // brighter over a brighter fire.
-        private static readonly Color SmokeColor = new Color(0.42f, 0.33f, 0.25f, 0.95f);
-        private const float SmokeUnlit = 0.3f;
+        // Firebox smoke is lit by the fire under it: a thin amber veil over
+        // the flames, as the footage shows, brighter over a brighter fire and
+        // dark over a dull one, with the box dark behind it (FireboxLighting).
+        private static readonly Color SmokeColor = new Color(0.55f, 0.28f, 0.1f, 0.55f);
+        private const float SmokeUnlit = 0.15f;
 
         // A shovelful of green coal on a hot fire smokes the box out: its dust
         // as it lands, this many puffs per kg, then its gas, thick and dark,
         // anywhere in the box's height over and around the zone, filling the
         // firebox until it catches and the draft clears it.
-        private const float DustPerKg = 5f;
+        // The dust is thin, and red in the fire's light: a dense grey cloud of
+        // it over the flames drew as a khaki ball (dimming yellow flames
+        // evenly turns them olive; the red it gives back keeps them orange).
+        private const float DustPerKg = 2f;
         private static readonly Color SmokeOutColor = new Color(0.2f, 0.17f, 0.15f, 1f);
-        private static readonly Color DustColor = new Color(0.17f, 0.16f, 0.15f, 0.9f);
+        private static readonly Color DustColor = new Color(0.45f, 0.1f, 0.03f, 0.6f);
         private const int MinSmokeParticles = 1500;
+
+        internal static float DoorSmokePerSecond = 36f;
+        internal static float ClosedGlow = 0.15f;
+        internal static float FireColorLights = 1f;
+        private const float DoorSmokeDraft = 0.12f;
+        // The unlit shader writes linear color: .05 became a pale grey after
+        // display conversion, especially as isolated puffs against a dull box.
+        private static readonly Color DoorSmokeColor = new Color(0.006f, 0.005f, 0.004f, 0.6f);
+        private static readonly Color DoorSmokeWarmth = new Color(0.012f, 0.004f, 0.001f, 0f);
 
         // A shovelful smothers the flames over its zone until its gas
         // catches: with this much charge left, in kg, they burn at the share
@@ -132,9 +145,50 @@ namespace RealisticFiring.Visuals
 
         private RealisticFirebox firebox;
         private ZonedCoalBed bed;
+
+        // The test bed's laid beats on this fire, run to here.
+        private float testBeatClock;
+        private ParticleSystemRenderer smokeRenderer;
+
+        // Each zone's flames this frame: how hard they burn, and their height, m.
+        private readonly float[] zoneBurn = new float[GrateLayout.ZoneCount];
+        private readonly float[] zoneShown = new float[GrateLayout.ZoneCount];
+        private readonly float[] zoneFlameHeight = new float[GrateLayout.ZoneCount];
+
+        /// <summary>How hard a zone's flames burn this frame, 0 to 1 (none on dead coal or ash).</summary>
+        public float ZoneFlame(GrateZone zone) => zoneBurn[(int)zone];
+
+        /// <summary>
+        /// How much of its flame a zone shows this frame, 0 to 1: none on dead
+        /// coal or ash, less while a fresh round's smoke-out smothers it.
+        /// </summary>
+        public float ZoneFlameShown(GrateZone zone) => zoneShown[(int)zone];
+
+        /// <summary>How tall a zone's flames stand this frame, m, on average.</summary>
+        public float ZoneFlameHeight(GrateZone zone) => zoneFlameHeight[(int)zone];
+
+        /// <summary>
+        /// Whether the firebox's volume (<see cref="FireboxVolume"/>) draws the
+        /// flames and the gas this frame: the cards stay hidden and the gas
+        /// and smoke-out are not emitted as particles (the dust and a
+        /// plug's steam still are).
+        /// </summary>
+        internal bool VolumeDraws { get; set; }
+
+        /// <summary>The draft through the fire this frame, 0 to 1 (the test bed's when set).</summary>
+        internal float Draft { get; private set; }
+
+        /// <summary>The space the box's smoke lives in (it follows the grate's slope), or null.</summary>
+        internal Transform SmokeSpace => smoke != null ? smoke.transform : null;
+
+        /// <summary>The box in <see cref="SmokeSpace"/>: the grate up to the crown, the door to the tube plate.</summary>
+        internal Bounds SmokeBox => smokeBox;
         private Fire fire;
         private ParticleSystem oldFlames;
         private ParticleSystem smoke;
+        private ParticleSystem doorSmoke;
+        private bool doorSmokeTried;
+        private float doorSmokeDue;
         private Renderer[] stockFlames = new Renderer[0];
         private int stockFlameChildren = -1;
 
@@ -144,6 +198,9 @@ namespace RealisticFiring.Visuals
         private readonly float[] smokeOutDue = new float[GrateLayout.ZoneCount];
         private bool dustDrained;
         private Color lightColor = Color.white;
+        private Color fillColor = Color.white;
+        private Color bounceColor = Color.white;
+        private FireboxLighting fireLighting;
         private ExhaustBeatCounter beats;
         private Port crank;
         private Port exhaustPressure;
@@ -179,6 +236,10 @@ namespace RealisticFiring.Visuals
             flames.smoke = bed.Effects.Find("Smoke")?.GetComponent<ParticleSystem>();
             if (fire.fireLight != null)
                 flames.lightColor = fire.fireLight.color;
+            if (fire.fillLight != null)
+                flames.fillColor = fire.fillLight.color;
+            if (fire.bounceLight != null)
+                flames.bounceColor = fire.bounceLight.color;
             var flow = firebox.Car != null && firebox.Car.SimController != null ? firebox.Car.SimController.SimulationFlow : null;
             var engine = flow != null ? flow.OrderedSimComps.OfType<ReciprocatingSteamEngine>().FirstOrDefault() : null;
             if (engine != null)
@@ -195,6 +256,7 @@ namespace RealisticFiring.Visuals
             // The flames and the smoke are each one renderer, sorted as a whole;
             // the smoke goes over the flames, so smoke in view hides them.
             var smokeRenderer = flames.smoke.GetComponent<ParticleSystemRenderer>();
+            flames.smokeRenderer = smokeRenderer;
             if (smokeRenderer != null && flames.cardRenderer != null)
             {
                 smokeRenderer.sortingLayerID = flames.cardRenderer.sortingLayerID;
@@ -366,7 +428,9 @@ namespace RealisticFiring.Visuals
             if (oldFlames != null && oldFlames.isPlaying)
                 oldFlames.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
             if (cardRenderer != null)
-                cardRenderer.enabled = shown;
+                cardRenderer.enabled = shown && !VolumeDraws && !FireboxTestBed.HidingFlames;
+            if (smokeRenderer != null)
+                smokeRenderer.enabled = shown && !FireboxTestBed.HidingSmoke;
             var model = firebox.Model;
             if (smoke != null && shown)
                 BlowSteam(Time.deltaTime);
@@ -380,7 +444,8 @@ namespace RealisticFiring.Visuals
             }
 
             var dt = Time.deltaTime;
-            var draft = Mathf.Clamp01(model.PrimaryAirFlow / Mathf.Max(1e-3f, model.Parameters.MaxCombustionRate * AirPerCoal));
+            var draft = FireboxTestBed.DraftOr(Mathf.Clamp01(model.PrimaryAirFlow / Mathf.Max(1e-3f, model.Parameters.MaxCombustionRate * AirPerCoal)));
+            Draft = draft;
 
             // The exhaust beats: each one a surge through the fire.
             Pulse *= Mathf.Exp(-dt / PulseDecay);
@@ -390,6 +455,8 @@ namespace RealisticFiring.Visuals
                 if (beat > 0.02f)
                     Pulse = Mathf.Max(Pulse, beat);
             }
+            if (FireboxTestBed.Beat(ref testBeatClock, dt))
+                Pulse = Mathf.Max(Pulse, Mathf.Clamp01(FireboxTestBed.BeatStrength));
 
             var hottest = 0f;
             var meanHeat = 0f;
@@ -415,7 +482,10 @@ namespace RealisticFiring.Visuals
                     EmitSmoke(zone, draft, SmokeKind.Dust);
 
                 // Green coal's gas and the fire's own smoke rise over the zone;
-                // a shovelful's gas fills the box before it catches.
+                // a shovelful's gas fills the box before it catches. The
+                // volume draws them where it is on.
+                if (VolumeDraws)
+                    continue;
                 smokeDue[i] = Mathf.Min(smokeDue[i] + dt * source.GasRate(zone), MaxPerFrame);
                 for (; smokeDue[i] >= 1f; smokeDue[i] -= 1f)
                     EmitSmoke(zone, draft, SmokeKind.Gas);
@@ -427,6 +497,7 @@ namespace RealisticFiring.Visuals
                 Confine(draft, dt);
             glowLevel = meanHeat;
             UpdateCards(model, draft, true);
+            SpillAtDoor(draft, dt);
             EnsureDepth();
             Diagnose(model);
             Light(meanHeat, hottest);
@@ -471,20 +542,33 @@ namespace RealisticFiring.Visuals
                                 (camera != null ? $"camera {camera.actualRenderingPath}, depth texture {camera.depthTextureMode}" : "no main camera"));
         }
 
-        // Each card stands on its zone's coal, as tall and bright as the zone burns.
+        // Each zone's flames, as the cards and the volume draw them; and each
+        // card on its zone's coal, as tall and bright as the zone burns, only
+        // while the cards are drawn (the volume uses the zones' alone).
         private void UpdateCards(FireModel model, float draft, bool lit)
         {
             if (cards == null)
                 return;
+            for (var i = 0; i < zoneBurn.Length; i++)
+            {
+                var zone = (GrateZone)i;
+                var state = model.Zones[i];
+                var smothered = SmotherDim * Mathf.Clamp01(firebox.Smoke.Charge(zone) / SmotherCharge);
+                var shown = lit && state.Coal >= 0.2f ? 1f - smothered : 0f;
+                var burn = bed.ZoneForcing(zone) * shown;
+                var cool = 1f - bed.ZoneHeat(zone);
+                zoneBurn[i] = burn;
+                zoneShown[i] = shown;
+                zoneFlameHeight[i] = burn > 0.01f ? CardBase + CardCool * cool + CardGreen * bed.ZoneCover(zone) : 0f;
+            }
+            if (cardRenderer == null || !cardRenderer.enabled)
+                return;
             for (var c = 0; c < cardSpots.Length; c++)
             {
                 var zone = (GrateZone)(c / CardsPerZone);
-                var state = model.Zones[(int)zone];
-                var smothered = SmotherDim * Mathf.Clamp01(firebox.Smoke.Charge(zone) / SmotherCharge);
-                var burn = lit && state.Coal >= 0.2f ? bed.ZoneForcing(zone) * (1f - smothered) : 0f;
+                var burn = zoneBurn[(int)zone];
                 var green = bed.ZoneCover(zone);
-                var cool = 1f - bed.ZoneHeat(zone);
-                var height = burn > 0.01f ? (CardBase + CardCool * cool + CardGreen * green) * (0.75f + 0.5f * cardSeeds[c]) : 0f;
+                var height = zoneFlameHeight[(int)zone] * (0.75f + 0.5f * cardSeeds[c]);
                 var root = bed.Effects.InverseTransformPoint(bed.BedPoint(cardSpots[c].x, cardSpots[c].y, bed.SurfaceHeight(cardSpots[c].x, cardSpots[c].y) * 0.9f));
                 var color = new Color(burn, green, cardSeeds[c], Mathf.Clamp01(height));
                 for (var k = 0; k < 4; k++)
@@ -622,8 +706,8 @@ namespace RealisticFiring.Visuals
                     // Thrown out across the bed from where the coal lands.
                     var outward = Random.insideUnitCircle.normalized * Random.Range(0.4f, 1f);
                     velocity = new Vector3(outward.x, Random.Range(0.1f, 0.3f), outward.y);
-                    lifetime = Random.Range(1.5f, 2.5f);
-                    size = Random.Range(0.4f, 0.7f);
+                    lifetime = Random.Range(0.8f, 1.5f);
+                    size = Random.Range(0.3f, 0.5f);
                     break;
                 default:
                     color = Lit(SmokeColor, Mathf.Lerp(SmokeUnlit, 1.1f, glow));
@@ -644,11 +728,191 @@ namespace RealisticFiring.Visuals
             }, 1);
         }
 
+        // The box's smoke out of the open door: as thick as the box is smoky
+        // (the fire's smoke model, which runs whether or not the box is seen),
+        // as calm as the draft, as wide as the door is open.
+        private void SpillAtDoor(float draft, float dt)
+        {
+            var car = firebox.Car;
+            if (smoke == null || car == null || !firebox.HasDoorPort || firebox.DoorOpening < 0.05f)
+                return;
+            var livery = car.carLivery != null ? car.carLivery.id : null;
+            if (livery == null || !FireholeOpening.TryHole(livery, out var hole))
+                return;
+            var source = firebox.Smoke;
+            var smoky = Mathf.Clamp01((FireboxVolume.GasSmoke * source.TotalGasRate / FireboxSmoke.SmokePerZone
+                                       + FireboxVolume.SmokeOutPerKg * source.TotalCharge) / GrateLayout.ZoneCount);
+            var calm = 1f - Mathf.SmoothStep(0f, 1f, draft / DoorSmokeDraft);
+            if (smoky * calm < 0.001f)
+                return;
+            // Keep a continuous stream. Scale opacity by its smoke supply,
+            // rather than emitting rare opaque balls at a low supply; the
+            // rate times opacity remains proportional to the same smoke.
+            doorSmokeDue = Mathf.Min(doorSmokeDue + dt * DoorSmokePerSecond * firebox.DoorOpening, MaxPerFrame);
+            if (doorSmokeDue < 1f || !EnsureDoorSmoke(car))
+                return;
+            var frame = car.transform;
+            var glow = Mathf.Clamp01(glowLevel * 1.6f);
+            var light = Mathf.Lerp(0.15f, 1f, PlumeWeather.Daylight);
+            for (; doorSmokeDue >= 1f; doorSmokeDue -= 1f)
+            {
+                var at = new Vector3(hole.Middle + Random.Range(-0.4f, 0.4f) * hole.Width,
+                    hole.Foot + hole.Height * Random.Range(0.55f, 0.95f), hole.Plane - 0.04f);
+                var heading = new Vector3(Random.Range(-0.08f, 0.08f), Random.Range(0.12f, 0.3f), -Random.Range(0.08f, 0.25f));
+                var color = DoorSmokeColor * light + DoorSmokeWarmth * glow;
+                color.a = DoorSmokeColor.a * smoky * calm * Random.Range(0.7f, 1f);
+                doorSmoke.Emit(new ParticleSystem.EmitParams
+                {
+                    position = frame.TransformPoint(at),
+                    velocity = frame.TransformDirection(heading),
+                    startLifetime = Random.Range(3f, 5.5f),
+                    startSize = Random.Range(0.2f, 0.4f),
+                    startColor = color,
+                    applyShapeToPosition = false,
+                }, 1);
+            }
+        }
+
+        // The door's smoke: the box's own particles, copied to the cab, left
+        // where they drift in the world and not kept in the box.
+        private bool EnsureDoorSmoke(TrainCar car)
+        {
+            if (doorSmoke != null || doorSmokeTried)
+                return doorSmoke != null;
+            doorSmokeTried = true;
+            var copy = Instantiate(smoke.gameObject, car.transform, false);
+            copy.name = "RealisticFiring door smoke";
+            copy.transform.localPosition = Vector3.zero;
+            copy.transform.localRotation = Quaternion.identity;
+            copy.transform.localScale = Vector3.one;
+            doorSmoke = copy.GetComponent<ParticleSystem>();
+            if (doorSmoke == null)
+                return false;
+            doorSmoke.Clear();
+            var main = doorSmoke.main;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.scalingMode = ParticleSystemScalingMode.Local;
+            main.maxParticles = 400;
+            main.startRotation = new ParticleSystem.MinMaxCurve(0f, 2f * Mathf.PI);
+            var emission = doorSmoke.emission;
+            emission.enabled = false;
+            // Spreading as it rises, two and a half times its size by the end.
+            var size = doorSmoke.sizeOverLifetime;
+            size.enabled = true;
+            size.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0f, 0.7f), new Keyframe(1f, 2.5f)));
+            // In softly, out slowly.
+            var fade = doorSmoke.colorOverLifetime;
+            fade.enabled = true;
+            var gradient = new Gradient();
+            gradient.SetKeys(
+                new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(new Color(0.85f, 0.85f, 0.85f), 1f) },
+                new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(1f, 0.15f), new GradientAlphaKey(0.6f, 0.6f), new GradientAlphaKey(0f, 1f) });
+            fade.color = gradient;
+            // Turning slowly, and churned by the air it meets.
+            var turn = doorSmoke.rotationOverLifetime;
+            turn.enabled = true;
+            turn.z = new ParticleSystem.MinMaxCurve(-0.5f, 0.5f);
+            var churn = doorSmoke.noise;
+            churn.enabled = true;
+            churn.strength = 0.12f;
+            churn.frequency = 0.6f;
+            churn.scrollSpeed = 0.25f;
+            churn.damping = true;
+            doorSmoke.Play();
+            return true;
+        }
+
         private static Color Lit(Color color, float light) =>
             new Color(color.r * light, color.g * light, color.b * light, color.a * Random.Range(0.85f, 1f));
 
-        // The firebox light takes the fire's color: dull red, red-orange, orange; wavers, and jumps with each beat.
+        // Capture-only diagnostics, including particles left outside the volume.
+        internal string DescribeParticles()
+        {
+            string Describe(ParticleSystem system)
+            {
+                if (system == null)
+                    return "none";
+                var particles = new ParticleSystem.Particle[system.particleCount];
+                var count = system.GetParticles(particles);
+                var color = Color.clear;
+                foreach (var particle in particles)
+                    color += (Color)particle.GetCurrentColor(system);
+                if (count > 0)
+                    color /= count;
+                var renderer = system.GetComponent<ParticleSystemRenderer>();
+                return $"{count}, rgba {color.r:F3}/{color.g:F3}/{color.b:F3}/{color.a:F3}, {renderer?.sharedMaterial?.shader?.name}";
+            }
+            return $"particles in box ({Describe(smoke)}), at door ({Describe(doorSmoke)}); plug vent {boilerWater?.PlugVent ?? 0f:F3}";
+        }
+
+        // Every light uses the fire's own palette, including the fill inside
+        // a shut firebox and the bounce reaching the cab through its gaps.
         private void Light(float meanHeat, float hottest)
+        {
+            if (fire == null)
+                return;
+            if (FireColorLights < 0.5f)
+            {
+                RestoreLightColors();
+                LegacyLight(meanHeat, hottest);
+                return;
+            }
+            if (!Main.Settings.ShowZonedCoalBed)
+            {
+                RestoreLightColors();
+                return;
+            }
+            if (!firebox.Model.FireOn)
+            {
+                SetLight(fire.fireLight, lightColor, 0f, false);
+                SetLight(fire.fillLight, fillColor, 0f, false);
+                SetLight(fire.bounceLight, bounceColor, 0f, false);
+                return;
+            }
+            if (fireLighting == null)
+                fireLighting = fire.GetComponent<FireboxLighting>();
+            var heat = Mathf.Clamp01(0.5f * (meanHeat + hottest));
+            var radiance = fireLighting != null ? fireLighting.FireRadiance : FireColors.Flame(heat);
+            if (radiance.maxColorComponent <= 1e-5f)
+                radiance = FireColors.Flame(heat);
+            var peak = Mathf.Max(1e-5f, radiance.maxColorComponent);
+            var color = new Color(radiance.r / peak, radiance.g / peak, radiance.b / peak, 1f);
+            // The shaders' emission is linear; Unity's light color is authored
+            // in display space and converted back for the linear scene.
+            if (QualitySettings.activeColorSpace == ColorSpace.Linear)
+                color = color.gamma;
+            var opening = firebox.HasDoorPort ? firebox.DoorOpening : 1f;
+            var throughDoor = Mathf.Lerp(ClosedGlow, 1f, Mathf.Clamp01(fire.fireboxDoorCurve.Evaluate(opening)));
+            var activity = Mathf.Clamp01(0.4f * heat + 0.6f * firebox.Model.FireForcing);
+            var intensity = Mathf.Lerp(fire.minFireIntensity, fire.maxFireIntensity, activity);
+            var flicker = (0.94f + 0.12f * Mathf.PerlinNoise(Time.time * 6f, 0.37f)) * (1f + 0.04f * Pulse);
+            var pointTransmission = fire.fireLight != null && fire.fireLight.shadows != LightShadows.None ? 1f : throughDoor;
+            SetLight(fire.fireLight, color, intensity * pointTransmission * flicker, true);
+            SetLight(fire.fillLight, color, intensity * fire.fillLightMultiplier, true);
+            SetLight(fire.bounceLight, color, intensity * throughDoor * fire.bounceLightMultiplier, true);
+        }
+
+        private static void SetLight(Light light, Color color, float intensity, bool enabled)
+        {
+            if (light == null)
+                return;
+            light.color = color;
+            light.intensity = intensity;
+            if (light.enabled != enabled)
+                light.enabled = enabled;
+        }
+
+        private void RestoreLightColors()
+        {
+            if (fire == null)
+                return;
+            if (fire.fireLight != null) fire.fireLight.color = lightColor;
+            if (fire.fillLight != null) fire.fillLight.color = fillColor;
+            if (fire.bounceLight != null) fire.bounceLight.color = bounceColor;
+        }
+
+        // Developer comparison with the earlier main-light-only correction.
+        private void LegacyLight(float meanHeat, float hottest)
         {
             if (fire == null || fire.fireLight == null)
                 return;
@@ -659,10 +923,26 @@ namespace RealisticFiring.Visuals
             }
             var heat = Mathf.Clamp01(0.5f * (meanHeat + hottest));
             var color = heat < 0.5f
-                ? Color.Lerp(new Color(1f, 0.3f, 0.08f), new Color(1f, 0.45f, 0.15f), heat * 2f)
-                : Color.Lerp(new Color(1f, 0.45f, 0.15f), new Color(1f, 0.62f, 0.3f), heat * 2f - 1f);
+                ? Color.Lerp(new Color(1f, 0.06f, 0.005f), new Color(1f, 0.35f, 0.08f), heat * 2f)
+                : Color.Lerp(new Color(1f, 0.35f, 0.08f), new Color(1f, 0.62f, 0.3f), heat * 2f - 1f);
             fire.fireLight.color = color;
-            fire.fireLight.intensity *= (0.85f + 0.3f * Mathf.PerlinNoise(Time.time * 6f, 0.37f)) * (1f + 0.5f * Pulse);
+            // It lights the whole cab: a flicker kept to a few percent, the
+            // beats to less, since a cab flashing four or five times a second
+            // is over WCAG's three flashes (the box's own light is FireboxLighting's).
+            var opening = firebox.HasDoorPort ? firebox.DoorOpening : 1f;
+            var throughDoor = Mathf.Lerp(ClosedGlow, 1f, Mathf.Clamp01(fire.fireboxDoorCurve.Evaluate(opening)));
+            // The retained glow is still the fire's: hot coal keeps some light
+            // at a low rate, and harder firing raises it. The door controls only
+            // how much gets into the cab, not whether the fire has any light.
+            var activity = Mathf.Clamp01(0.4f * heat + 0.6f * firebox.Model.FireForcing);
+            var intensity = Mathf.Lerp(fire.minFireIntensity, fire.maxFireIntensity, activity);
+            var flicker = (0.94f + 0.12f * Mathf.PerlinNoise(Time.time * 6f, 0.37f)) * (1f + 0.04f * Pulse);
+            // Stock unshadowed lights follow the door all the way to black.
+            // Retain a small warm glow at its seams, without letting repeated
+            // multiplications of the old intensity dim the light over time.
+            fire.fireLight.intensity = intensity * (fire.fireLight.shadows != LightShadows.None ? 1f : throughDoor) * flicker;
+            if (fire.bounceLight != null)
+                fire.bounceLight.intensity = intensity * throughDoor * fire.bounceLightMultiplier;
         }
 
         // The game's sparks, kept off: gathered again as their object's
@@ -696,10 +976,11 @@ namespace RealisticFiring.Visuals
                     renderer.enabled = true;
             }
 
-            if (fire != null && fire.fireLight != null)
-                fire.fireLight.color = lightColor;
+            RestoreLightColors();
             if (cards != null)
                 Destroy(cards);
+            if (doorSmoke != null)
+                Destroy(doorSmoke.gameObject);
         }
     }
 }

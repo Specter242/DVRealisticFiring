@@ -85,6 +85,7 @@ Shader "RealisticFiring/ChimneySmoke"
         _WispAbove ("Wholly a puff at or above this opacity", Range(0, 1)) = 0.6
         _WispAgeFrom ("Wisps from this share of the flipbook's time", Range(0, 1)) = 0.1
         _WispAgeTo ("Wholly wisps by this share", Range(0, 1)) = 0.3
+        _PuffAgeScale ("Moving train's puff handoff time scale", Range(0, 1)) = 1
         _WispBlend ("Wisps blended to their next frame (0: stepped)", Range(0, 1)) = 0
         _WispSheet ("Wisps play the whole sheet in turn (0: each its own row)", Float) = 1
         _WispCoherence ("Wisps each keep their own row, already ragged at birth", Float) = 0
@@ -106,13 +107,20 @@ Shader "RealisticFiring/ChimneySmoke"
         _FringeRimFrom ("Fringe from this far on the plume's silhouette (the mod's)", Range(0, 1)) = 0.45
         _FringeRimTo ("Wholly fringed by this", Range(0, 1)) = 0.8
         _FringeCore ("Its edge, below this thickness", Range(0.01, 1)) = 0.35
+        // 15 drawn at half resolution (the mod's PlumeOffscreen), its
+        // coverage kept in alpha to lay over the scene after; 14 (RGB) on it.
+        [HideInInspector] _ColorMask ("Channels written", Float) = 14
+        // 1 while it is drawn at half resolution: the camera's own drawing
+        // of it then draws nothing (the particles still built by the game,
+        // which builds none it is not drawing itself).
+        [HideInInspector] _Offscreen ("Drawn only at half resolution", Float) = 0
     }
 
     SubShader
     {
         Tags { "Queue"="Transparent" "IgnoreProjector"="True" "RenderType"="Transparent" "PreviewType"="Plane" }
-        Blend SrcAlpha OneMinusSrcAlpha
-        ColorMask RGB
+        Blend SrcAlpha OneMinusSrcAlpha, One OneMinusSrcAlpha
+        ColorMask [_ColorMask]
         Cull Off
         Lighting Off
         ZWrite Off
@@ -180,6 +188,9 @@ Shader "RealisticFiring/ChimneySmoke"
             float _VolumeBlend;
             float _NearFadeFrom;
             float _NearFadeTo;
+            float _Offscreen;
+            // Set to 1 by the mod's command buffer while it draws the smoke at half resolution.
+            float _PlumeOffscreenPass;
             sampler2D _LightA;
             sampler2D _LightB;
             float _SixWay;
@@ -196,6 +207,7 @@ Shader "RealisticFiring/ChimneySmoke"
             float _WispAbove;
             float _WispAgeFrom;
             float _WispAgeTo;
+            float _PuffAgeScale;
             float _WispBlend;
             float _WispSheet;
             float _WispCoherence;
@@ -280,12 +292,12 @@ Shader "RealisticFiring/ChimneySmoke"
                 v2f o;
                 UNITY_SETUP_INSTANCE_ID(v);
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
-                // Rolling steam: each quad rebuilt about its particle's
-                // middle, facing the camera's place and upright to the world
-                // (and _Grow larger, room for its wisp's strands). Facing the
-                // camera's own frame, as Unity draws them, each turned with
-                // the camera, so a view turned while looking up at the plume
-                // spun every puff (owner, 2026-10-22).
+
+
+
+
+
+
                 float4 objPos = v.vertex;
                 float2 corner = v.texcoord.xy - 0.5;
                 bool upright = _SixWay > 0.5 && _Upright > 0.5;
@@ -293,17 +305,17 @@ Shader "RealisticFiring/ChimneySmoke"
                 // silhouette, or turning to a wisp (grown every one, the plume
                 // cost a third more).
                 float fringed = smoothstep(_FringeRimFrom, _FringeRimTo, v.texcoord1.w);
-                // A wisp as it thins, and past the puffs' rolling stretch off
-                // the stack by its age (owner, 2026-10-22: the puffs are an
-                // area between the stack and the wisps, which dense steam
-                // far down the trail, still a puff, had drawn as a haze).
-                // A light beat's puffs as early as before, a hard one's
-                // longer (owner, 2026-10-23: the light firing went less
-                // transparent as the puffs lasted longer): how hard its beat
-                // was, the rolling steam's first custom data, z.
+
+
+
+
+
+
+
+
                 float hard = _SixWay > 0.5 ? saturate(v.texcoord1.x) : 1;
-                float wispFrom = lerp(_ThinWispAgeFrom, _WispAgeFrom, hard);
-                float wispTo = max(wispFrom + 0.01, lerp(_ThinWispAgeTo, _WispAgeTo, hard));
+                float wispFrom = lerp(_ThinWispAgeFrom, _WispAgeFrom, hard) * _PuffAgeScale;
+                float wispTo = max(wispFrom + 0.01, lerp(_ThinWispAgeTo, _WispAgeTo, hard) * _PuffAgeScale);
                 float thinning = _Wisps > 0 ? max(1 - smoothstep(_WispBelow, _WispAbove, v.texcoord1.z),
                                                   smoothstep(wispFrom, wispTo, v.texcoord1.y)) : 0;
                 float stretch = upright ? max(fringed, thinning) : 0;
@@ -396,22 +408,22 @@ Shader "RealisticFiring/ChimneySmoke"
                     o.binormal.w = below.b;
                     if (_Wisps > 0)
                     {
-                        // The wisp: the plume's own wisp flipbook (eight rows
-                        // of eight frames), as the plume drew before its puffs
-                        // rolled (owner, 2026-10-22: smoke and steam dissipate
-                        // in an irregular, fingery web; turned along the trail,
-                        // every wisp's strands lay one way, streaks, and from
-                        // below spikes). Each at the particle's own turn (its
-                        // rotation and slow spin, which Unity gives in its
-                        // tangent against the camera's axes) in its upright
-                        // square, so the wisps lie every way, and _WispReach of
-                        // its half-width, past its puff's lobes (0.77). Its
-                        // wisp one of the sheet's rows, each a wisp over its
-                        // life (the mod's first custom data, x; played as one
-                        // sequence, every particle was the same wisp, crossing
-                        // to the next as it aged, its strands smeared), its
-                        // frame by its age over the flipbook's playing time,
-                        // as the flipbook played, the last held (w).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
                         float3 spun = UnityObjectToWorldDir(v.tangent.xyz);
                         float2 turn = float2(dot(spun, UNITY_MATRIX_V[0].xyz), dot(spun, UNITY_MATRIX_V[1].xyz));
                         turn = dot(turn, turn) > 1e-6 ? normalize(turn) : float2(1, 0);
@@ -440,10 +452,10 @@ Shader "RealisticFiring/ChimneySmoke"
                             // its fringe ragged from the first (Sol, 2026-10-23).
                             float phase = saturate(frac(v.texcoord.z) / 0.49);
                             at = lerp(2 + 4 * phase, 7, saturate(v.texcoord1.y));
-                            // Or held at one frame: blended on to the next,
-                            // a strand in only one of the two halved and
-                            // went under the fray's cut, its faint wisps
-                            // fading out and in (owner, 2026-10-23).
+
+
+
+
                             if (_WispHold > 0.5)
                                 at = floor(2 + 5.99 * phase);
                             first = min(floor(at), 7);
@@ -471,6 +483,10 @@ Shader "RealisticFiring/ChimneySmoke"
                 }
 
                 UNITY_TRANSFER_FOG(o, o.vertex);
+                // Drawn only at half resolution: elsewhere beyond the screen,
+                // so no pixel is drawn.
+                if (_Offscreen > 0.5 && _PlumeOffscreenPass < 0.5)
+                    o.vertex = float4(2, 2, 2, 1);
                 return o;
             }
 
@@ -484,15 +500,15 @@ Shader "RealisticFiring/ChimneySmoke"
                 return 0.5 * log2(max(max(dot(dx, dx), dot(dy, dy)), 1e-8));
             }
 
-            // A flipbook's surface lit (RG its normal, B its thickness; A its
-            // density): its normal and a soft ball under it (across: where in
-            // its frame, -1 to 1), turned to the view by right, up, and
-            // toward, and leant out by outward (the plume's); the sun wrapped
-            // round it or flat-lit to a terminator, the far side of thick
-            // smoke in its own shadow, thin smoke glowing with the sun behind
-            // it; the sky by the way it faces. The wisps' light, lit six ways
-            // or not (owner, 2026-10-22: their relief lit so is the fingery
-            // web in which smoke and steam dissipate; lit evenly, they hazed).
+
+
+
+
+
+
+
+
+
             half3 SurfaceLight(half4 tex, half2 across, half3 right, half3 up, half3 toward, half3 outward, half alpha, half sunReach,
                                half relief, half bulge, half flat, half scatter, half sunStrength)
             {
@@ -552,11 +568,11 @@ Shader "RealisticFiring/ChimneySmoke"
                     if (readPuff)
                         b = lerp(tex2Dlod(_LightB, float4(i.texcoord.xy, 0, level)), tex2Dlod(_LightB, float4(i.texcoord.zw, 0, level)), blend);
                     half rootPuff = saturate((b.a - _ThickFloor) / (1 - _ThickFloor));
-                    // A puff's thin edge frays into its wisp's strands, steam
-                    // and smoke alike (owner, 2026-10-22: the puffs should
-                    // fringe), its thick lobes kept: on the plume's silhouette
-                    // (the mod's), where they reach into the clear; over its
-                    // faces turned toward the view they veiled its lobes.
+
+
+
+
+
                     half atEdge = i.local.z;
                     // Only a puff frays so: a wisp is its own strands (on the
                     // silhouette, its own wisp added again over it, 0.5
@@ -568,9 +584,9 @@ Shader "RealisticFiring/ChimneySmoke"
                         discard;
                     if (readWisp)
                     {
-                        // As 1.13 drew them, the same wisps with their relief
-                        // baked in (owner, 2026-10-23: its crinkled wisps
-                        // were far better).
+
+
+
                         if (_WispBaked > 0.5)
                         {
                             bw = tex2Dlod(_WispTex, float4(i.wispUV.xy, 0, wispLevel));
@@ -583,10 +599,10 @@ Shader "RealisticFiring/ChimneySmoke"
                             if (i.world.w > 0.001)
                                 bw = lerp(bw, tex2Dlod(_MainTex, float4(i.wispUV.zw, 0, wispLevel)), i.world.w);
                         }
-                        // Its strands thin out toward its reach and end at
-                        // their own edges: cut there, a strand ended in an
-                        // arc as wide as the particle, a hard edge round
-                        // the big puffs (owner, 2026-10-23: jagged).
+
+
+
+
                         if (_WispFadeFrom < 0.999)
                             bw.a *= 1 - smoothstep(_WispFadeFrom * wispOut, wispOut, puffOut);
                     }
@@ -669,10 +685,10 @@ Shader "RealisticFiring/ChimneySmoke"
                     half3 sky = (skyAbove * lerp(allRound, fromAbove, 0.5)
                                  + half3(i.normal.w, i.tangent.w, i.binormal.w) * fromBelow * 0.5) * _SkyStrength;
                     half3 light = min(sky + sun, _MaxLight);
-                    // The wisp lit as the plume's wisps were before its puffs
-                    // rolled (owner, 2026-10-21: lit flat, as one volume, they
-                    // looked like simple sprites; the wispy ones looked
-                    // better), in its turned frame.
+
+
+
+
                     if (mixWisp > 0.001)
                     {
                         half2 turn = i.onsetShade.xy;
@@ -788,10 +804,10 @@ Shader "RealisticFiring/ChimneySmoke"
                 half cut = _Fray * (1 - i.color.a);
                 half strands = saturate((tex.a - cut) / max(1 - cut, 0.05));
                 col.a = strands * pow(i.color.a, 1 - _Fray);
-                // Dark smoke draws no jet streaks: its puffs, opaque, carry it
-                // from the lip, where the streaks, soft and half clear, drew a
-                // brown puff between the stack and the black plume (owner,
-                // 2026-10-22).
+
+
+
+
                 half darkSmoke = 1 - smoothstep(0.2, 0.45, dot(i.color.rgb, half3(0.299, 0.587, 0.114)));
                 col.a *= 1 - darkSmoke;
 

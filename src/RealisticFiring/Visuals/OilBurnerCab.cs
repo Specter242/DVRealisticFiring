@@ -42,6 +42,11 @@ namespace RealisticFiring.Visuals
         };
 
         private const int AtomizerNotches = 41;
+
+        // The atomizer turns on the game's Gear B keys, beside the firing
+        // valve, which the 2901's own controls put on Gear A (Awaymode, Nexus,
+        // 2026-10-23: "Maybe the atomizer could be Gear B?").
+        private const string AtomizerKeys = "GearBIncrement";
         private const int FiringValveNotches = 41;
 
         // The peep hole's sand target stands this far toward the cab from the
@@ -170,6 +175,11 @@ namespace RealisticFiring.Visuals
                     if (valve == OilBurnerFit.Atomizer)
                         rotary.notches = AtomizerNotches;
                 }
+                // Its keys open it as the S282's blower keys open the valve it is copied from.
+                if (valve == OilBurnerFit.Atomizer)
+                    notes.Add("atomizer " + CabKeys.Bind(interior, control, AtomizerKeys,
+                        sourceControl.GetComponent<DV.KeyboardInput.MouseScrollKeyboardInput>() is DV.KeyboardInput.MouseScrollKeyboardInput blowerKeys
+                        && blowerKeys.scrollAction != null && blowerKeys.scrollAction.flip));
             }
             if (firing != null)
                 FiringValvePassThrough.Attach(root, firing, placed);

@@ -79,6 +79,9 @@ namespace RealisticFiring.Visuals
         // and gauge: one rebuild for all three.
         private static readonly Action<TrainCar> RebuildManifold = car => StokerCab.RebuildLoaded();
 
+        // A hand-fired cab's feed pump valve and gauge stand on the backhead alone.
+        private static bool OnBackhead(TrainCar car) => InCab(car, FeedPumpCab.BackheadRoot);
+
         private static readonly Part[] Parts =
         {
             new Part
@@ -119,16 +122,16 @@ namespace RealisticFiring.Visuals
             },
             new Part
             {
-                Title = "Feed pump valve and gauge beside the manifold",
+                Title = "Feed pump valve and gauge beside the manifold (or on a hand-fired cab's backhead)",
                 Table = "FeedPumpCab.Spots",
-                Present = car => InjectorRig.TryGet(car, out var rig) && rig.Pump != null && InCab(car, StokerCab.RootName),
+                Present = car => InjectorRig.TryGet(car, out var rig) && rig.Pump != null && (InCab(car, StokerCab.RootName) || OnBackhead(car)),
                 Read = (part, car, id) =>
                 {
-                    var spot = FeedPumpCab.SpotFor(id);
+                    var spot = OnBackhead(car) ? FeedPumpCab.BackheadSpotFor(id) : FeedPumpCab.SpotFor(id);
                     if (spot.ValveInCar is Vector3 inCar)
                     {
                         part.Labels = new[] { "Valve across, m (car frame, + right)", "Valve up, m (car frame)", "Valve along, m (car frame, + forward)",
-                            "Gauge from the valve across, m (manifold frame)", "Gauge from the valve up, m" };
+                            "Gauge from the valve across, m (its frame)", "Gauge from the valve up, m" };
                         part.Spans = new[] { 0.5f, 0.5f, 0.5f, 0.3f, 0.3f };
                         part.Values = new[] { inCar.x, inCar.y, inCar.z, spot.Gauge.x, spot.Gauge.y };
                     }
@@ -145,7 +148,11 @@ namespace RealisticFiring.Visuals
                     ? new FeedPumpCab.Spot(Vector2.zero, new Vector2(v[3], v[4]), new Vector3(v[0], v[1], v[2]))
                     : new FeedPumpCab.Spot(new Vector2(v[0], v[1]), new Vector2(v[2], v[3])),
                 Clear = id => FeedPumpCab.DevSpots.Remove(id),
-                Rebuild = RebuildManifold,
+                Rebuild = car =>
+                {
+                    StokerCab.RebuildLoaded();
+                    FeedPumpCab.RebuildOnBackhead();
+                },
                 Line = (id, v) => v.Length == 5
                     ? $"[\"{id}\"] = new Spot(Vector2.zero, new Vector2({M(v[3])}, {M(v[4])}), new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])})),"
                     : $"[\"{id}\"] = new Spot(new Vector2({M(v[0])}, {M(v[1])}), new Vector2({M(v[2])}, {M(v[3])})),",
