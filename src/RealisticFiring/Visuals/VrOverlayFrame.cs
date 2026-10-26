@@ -12,8 +12,33 @@ namespace RealisticFiring.Visuals
     {
         private const float Scale = 0.001f;
         private const float GaugeDialWidth = OverlayFrame.GaugeDialWidth;
+        private const int RowCapacity = 8;
+        private const int StepCapacity = FiringAdvice.LightingSteps;
+        private const int TextDensity = 2;
+        private const string Glyphs = " 0123456789.,:;%/+-()°·×—'’!?&ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+        private static readonly FireOverlay.Row[] NoRows = new FireOverlay.Row[0];
+        private static readonly LightingStep[] NoSteps = new LightingStep[0];
         private static readonly Dictionary<int, Sprite> Sprites = new Dictionary<int, Sprite>();
+        private static Font fallbackFont;
         private static VrOverlayFrame activeFrame;
+
+        private sealed class GrateTile
+        {
+            public Image Fill, Aim, ThinOuter, ThinInner, Clinker, ThinMark;
+            public Text Coal;
+        }
+
+        private sealed class RowView
+        {
+            public Text Label, Value;
+            public Image Mark, MeterBack, MeterFill, MeterMark, Rule;
+        }
+
+        private sealed class StepView
+        {
+            public Image Dot, Check;
+            public Text Number, Title, How;
+        }
 
         private GameObject root;
         private Canvas canvas;
@@ -23,8 +48,13 @@ namespace RealisticFiring.Visuals
         private Text[] gaugeValues;
         private Image[] gaugeMarks;
         private Image[] gaugeSmokes;
+        private Image[] gaugeSmokeEdges;
         private Image[] tabs;
         private Text[] tabNames;
+        private GrateTile[] grateTiles;
+        private RowView[] rowViews;
+        private StepView[] stepViews;
+        private Text grateFront, grateDoor;
         private Text loco;
         private Transform body;
         private Image adviceFill;
@@ -32,37 +62,87 @@ namespace RealisticFiring.Visuals
         private Image adviceMark;
         private Text adviceText;
         private FireOverlay.Card shownCard;
+        private FireOverlay.Card failedCard;
         private int shownPage = -1;
         private bool shownOil;
+        private bool builtWithFallback;
+        private string fittedAdvice;
         private bool leftClickWasPressed;
+        private GameObject leftHand;
+        private GameObject attachedHand;
+        private bool rootActive;
+        private bool grateShown;
+        private int stage;
+        private int stageFrame;
+        private InputDevice leftDevice;
         private int shownAim = -2;
 
         public void Show(Camera camera, FireOverlay.Card card, int page, int aimedZone)
         {
-            var leftHand = VRTK_DeviceFinder.GetControllerLeftHand();
+            if (leftHand == null)
+                leftHand = VRTK_DeviceFinder.GetControllerLeftHand();
             if (camera == null || leftHand == null || card == null)
             {
                 Hide();
                 return;
             }
-            EnsureBuilt(camera);
-            if (root.transform.parent != leftHand.transform)
-                Attach(leftHand.transform, camera);
-            if (!root.activeSelf)
-                root.SetActive(true);
-            var freshCard = !ReferenceEquals(card, shownCard);
-            if (freshCard)
+            if (ReferenceEquals(card, failedCard))
+                return;
+            var freshCard = false;
+            try
             {
-                shownCard = card;
-                RenderGauges(card);
-                RenderAdvice(card.Advice);
-                loco.text = card.Loco;
+                EnsureBuilt(camera);
+                if (stage < 2)
+                {
+                    // Build, font warm-up and first render each get their own frame.
+                    var frame = Time.frameCount;
+                    if (frame == stageFrame)
+                        return;
+                    stageFrame = frame;
+                    if (stage == 0)
+                    {
+                        WarmFonts();
+                        stage = 1;
+                        return;
+                    }
+                    stage = 2;
+                }
+                if (!ReferenceEquals(attachedHand, leftHand))
+                {
+                    Attach(leftHand.transform, camera);
+                    attachedHand = leftHand;
+                }
+                freshCard = !ReferenceEquals(card, shownCard);
+                if (freshCard)
+                {
+                    RenderGauges(card);
+                    RenderBody(card, aimedZone);
+                }
+                else if (shownAim != aimedZone)
+                    UpdateAim(card, shownAim, aimedZone);
+                // Pooled parts are set while inactive; the advice fit needs the active canvas's scale.
+                if (!rootActive)
+                {
+                    root.SetActive(true);
+                    rootActive = true;
+                }
+                if (freshCard)
+                {
+                    RenderAdvice(card.Advice);
+                    loco.text = card.Loco;
+                }
             }
-            if (freshCard || shownAim != aimedZone)
+            catch
             {
-                shownAim = aimedZone;
-                RenderBody(card, aimedZone);
+                failedCard = card;
+                Hide();
+                throw;
             }
+            shownCard = card;
+            shownAim = aimedZone;
+            // A page or oil change always arrives as a new card.
+            if (!freshCard)
+                return;
             if (shownPage != page)
             {
                 shownPage = page;
@@ -82,19 +162,30 @@ namespace RealisticFiring.Visuals
 
         public void PollVrInput()
         {
-            var device = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
-            var pressed = device.isValid
-                          && device.TryGetFeatureValue(CommonUsages.primary2DAxisClick, out var clicked)
-                          && clicked;
-            if (XRSettings.enabled && pressed && !leftClickWasPressed)
-                FireOverlay.Cycle(Main.Settings);
-            leftClickWasPressed = pressed;
+            if (VRManager.IsVREnabled()) {
+                var valid = leftDevice.isValid;
+                if (!valid)
+                {
+                    leftDevice = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
+                    valid = leftDevice.isValid;
+                }
+                var pressed = valid
+                              && leftDevice.TryGetFeatureValue(CommonUsages.primary2DAxisClick, out var clicked)
+                              && clicked;
+                if (pressed && !leftClickWasPressed && XRSettings.enabled
+                    && (FireboxRegistry.TryGetTended(PlayerManager.Car, out _) || RealisticOilFirebox.TryGetTended(PlayerManager.Car, out _)))
+                    FireOverlay.Step(Main.Settings);
+                leftClickWasPressed = pressed;
+            }
         }
 
         public void Hide()
         {
-            if (root != null && root.activeSelf)
+            if (root != null && rootActive)
+            {
                 root.SetActive(false);
+                rootActive = false;
+            }
         }
 
         public static void ApplyTilt(float degrees)
@@ -105,9 +196,30 @@ namespace RealisticFiring.Visuals
 
         private void EnsureBuilt(Camera camera)
         {
+            if (root != null && builtWithFallback && OverlayStyle.Font != null && OverlayStyle.PlateFont != null)
+            {
+                root.SetActive(false);
+                Object.Destroy(root);
+                root = null;
+            }
             if (root != null)
                 return;
             root = new GameObject("RealisticFiring VR overlay", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(Image));
+            root.SetActive(false);
+            try
+            {
+                Build(camera);
+            }
+            catch
+            {
+                Object.Destroy(root);
+                root = null;
+                throw;
+            }
+        }
+
+        private void Build(Camera camera)
+        {
             activeFrame = this;
             canvas = root.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.WorldSpace;
@@ -126,6 +238,20 @@ namespace RealisticFiring.Visuals
             var scaler = root.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
             scaler.scaleFactor = 1f;
+            scaler.dynamicPixelsPerUnit = TextDensity;
+
+            shownCard = null;
+            shownPage = -1;
+            shownOil = false;
+            shownAim = -2;
+            attachedHand = null;
+            rootActive = false;
+            // Pooled objects start active, so the first UpdateGrate must hide them.
+            grateShown = true;
+            stage = 0;
+            stageFrame = Time.frameCount;
+            fittedAdvice = null;
+            builtWithFallback = OverlayStyle.Font == null || OverlayStyle.PlateFont == null;
 
             AddImage("Rivet left", root.transform, 7f, 7f, 6f, 6f, OverlayArt.Rivet, Color.white, 0f);
             AddImage("Rivet right", root.transform, OverlayFrame.Width - 13f, 7f, 6f, 6f, OverlayArt.Rivet, Color.white, 0f);
@@ -150,6 +276,7 @@ namespace RealisticFiring.Visuals
             gaugeValues = new Text[4];
             gaugeMarks = new Image[4];
             gaugeSmokes = new Image[4];
+            gaugeSmokeEdges = new Image[4];
             var cell = (OverlayFrame.Width - 2f * OverlayFrame.Pad - 3f * OverlayFrame.GaugeGap) / 4f;
             for (var i = 0; i < 4; i++)
                 BuildGauge(i, OverlayFrame.Pad + i * (cell + OverlayFrame.GaugeGap), OverlayFrame.GaugeTop, cell);
@@ -158,8 +285,24 @@ namespace RealisticFiring.Visuals
             body.SetParent(root.transform, false);
             Place(body as RectTransform, OverlayFrame.Pad, OverlayFrame.BodyTop,
                 OverlayFrame.Width - 2f * OverlayFrame.Pad, OverlayFrame.BodyHeight);
+            // Pooled objects start active; the first RenderBody sets every one of them.
+            BuildBody();
             BuildAdvice();
-            root.SetActive(false);
+        }
+
+        // A new glyph size grows the font atlas and rebuilds the whole canvas, so request them once, up front.
+        private void WarmFonts()
+        {
+            var warmed = new HashSet<long>();
+            foreach (var text in root.GetComponentsInChildren<Text>(true))
+            {
+                if (text.font == null)
+                    continue;
+                var from = text == adviceText ? 14 : text.fontSize;
+                for (var size = from; size <= text.fontSize; size++)
+                    if (warmed.Add(((long)text.font.GetInstanceID() << 8) | (long)size))
+                        text.font.RequestCharactersInTexture(Glyphs, size * TextDensity, text.fontStyle);
+            }
         }
 
         private void BuildGauge(int index, float x, float y, float width)
@@ -175,11 +318,11 @@ namespace RealisticFiring.Visuals
                 new Rect(x, y + OverlayFrame.GaugeValueTop, width, OverlayFrame.GaugeValueHeight), "", OverlayStyle.Font, 18, OverlayArt.Cream, TextAnchor.MiddleCenter);
             gaugeMarks[index] = AddImage("Gauge mark " + index, root.transform, x, y + OverlayFrame.GaugeMarkTop, 11f, 11f,
                 OverlayArt.Mark(AdviceLevel.Ok), OverlayArt.Soft, 0f);
+            gaugeSmokeEdges[index] = AddImage("Gauge smoke edge " + index, root.transform,
+                x + (width - 74f) / 2f, y + OverlayFrame.GaugeSmokeTop - 1f, 74f, 9f, OverlayArt.White,
+                new Color(1f, 1f, 1f, 0.3f), 0f);
             gaugeSmokes[index] = AddImage("Gauge smoke " + index, root.transform,
                 x + (width - 72f) / 2f, y + OverlayFrame.GaugeSmokeTop, 72f, 7f, OverlayArt.White, Color.clear, 0f);
-            AddImage("Gauge smoke edge " + index, root.transform,
-                x + (width - 74f) / 2f, y + OverlayFrame.GaugeSmokeTop - 1f, 74f, 9f, OverlayArt.White,
-                new Color(1f, 1f, 1f, 0.3f), 0f).transform.SetAsFirstSibling();
         }
 
         private void RenderGauges(FireOverlay.Card card)
@@ -191,140 +334,302 @@ namespace RealisticFiring.Visuals
                 gaugeFaces[i].sprite = Sprite(gauge.Face, 0f);
                 gaugeLabels[i].text = gauge.Label;
                 var plateWidth = Mathf.Min(cell, Mathf.Max(40f, gauge.PlateWidth));
-                gaugePlates[i].rectTransform.sizeDelta = new Vector2(plateWidth, OverlayFrame.GaugePlateHeight);
-                gaugePlates[i].rectTransform.anchoredPosition = new Vector2(
-                    OverlayFrame.Pad + i * (cell + OverlayFrame.GaugeGap) + (cell - plateWidth) / 2f,
-                    -(OverlayFrame.GaugeTop + OverlayFrame.GaugePlateTop));
-                gaugeLabels[i].rectTransform.sizeDelta = new Vector2(plateWidth, OverlayFrame.GaugePlateHeight);
-                gaugeLabels[i].rectTransform.anchoredPosition = gaugePlates[i].rectTransform.anchoredPosition;
+                var plateX = OverlayFrame.Pad + i * (cell + OverlayFrame.GaugeGap) + (cell - plateWidth) / 2f;
+                Move(gaugePlates[i].rectTransform, plateX, OverlayFrame.GaugeTop + OverlayFrame.GaugePlateTop,
+                    plateWidth, OverlayFrame.GaugePlateHeight);
+                Move(gaugeLabels[i].rectTransform, plateX, OverlayFrame.GaugeTop + OverlayFrame.GaugePlateTop,
+                    plateWidth, OverlayFrame.GaugePlateHeight);
                 gaugeValues[i].text = gauge.Text;
                 var total = 12f + 6f + gauge.TextWidth;
                 var start = OverlayFrame.Pad + i * (cell + OverlayFrame.GaugeGap) + (cell - total) / 2f;
-                gaugeMarks[i].rectTransform.anchoredPosition = new Vector2(start, -(OverlayFrame.GaugeTop + OverlayFrame.GaugeMarkTop));
+                SetPos(gaugeMarks[i].rectTransform, start, OverlayFrame.GaugeTop + OverlayFrame.GaugeMarkTop);
                 gaugeMarks[i].sprite = Sprite(OverlayArt.Mark(gauge.Level), 0f);
                 gaugeMarks[i].color = OverlayArt.LevelColor(gauge.Level);
-                gaugeValues[i].rectTransform.anchoredPosition = new Vector2(start + 18f, -(OverlayFrame.GaugeTop + OverlayFrame.GaugeValueTop));
-                gaugeValues[i].rectTransform.sizeDelta = new Vector2(gauge.TextWidth + 4f, OverlayFrame.GaugeValueHeight);
+                Move(gaugeValues[i].rectTransform, start + 18f, OverlayFrame.GaugeTop + OverlayFrame.GaugeValueTop,
+                    gauge.TextWidth + 4f, OverlayFrame.GaugeValueHeight);
                 gaugeValues[i].alignment = TextAnchor.MiddleLeft;
-                gaugeSmokes[i].gameObject.SetActive(gauge.Smoke.HasValue);
-                if (gauge.Smoke.HasValue)
+                var showSmoke = i == 1 && gauge.Smoke.HasValue;
+                SetActive(gaugeSmokes[i], showSmoke);
+                SetActive(gaugeSmokeEdges[i], showSmoke);
+                if (showSmoke)
                     gaugeSmokes[i].color = gauge.Smoke.Value;
             }
         }
 
         private void RenderBody(FireOverlay.Card card, int aimedZone)
         {
-            ClearChildren(body);
-            if (card.Steps != null)
-                DrawSteps(card.Steps);
-            else if (card.ZoneCoal != null)
-            {
-                DrawGrate(card, aimedZone);
-                DrawRows(card.Rows, 222f, 0f, OverlayFrame.Width - 2f * OverlayFrame.Pad - 222f, 30f);
-            }
+            var steps = card.Steps != null;
+            var grated = HasGrate(card);
+            UpdateSteps(steps ? card.Steps : NoSteps);
+            UpdateGrate(grated ? card : null, aimedZone);
+            if (steps)
+                UpdateRows(NoRows, 0f, 0f, 0f, 0f);
+            else if (grated)
+                UpdateRows(card.Rows, 222f, 0f, OverlayFrame.Width - 2f * OverlayFrame.Pad - 222f, 30f);
             else
-                DrawRows(card.Rows, 0f, 0f, OverlayFrame.Width - 2f * OverlayFrame.Pad,
+                UpdateRows(card.Rows, 0f, 0f, OverlayFrame.Width - 2f * OverlayFrame.Pad,
                     Mathf.Min(32f, OverlayFrame.BodyHeight / Mathf.Max(1, card.Rows.Count)));
         }
 
-        private void DrawGrate(FireOverlay.Card card, int aimedZone)
+        private void BuildBody()
         {
-            const float tileWidth = 62f;
-            const float tileHeight = 40f;
-            const float gap = 4f;
-            var width = 3f * tileWidth + 2f * gap;
-            AddText("Grate front", body, new Rect(0f, 0f, width, 16f), "FRONT", OverlayStyle.PlateFont, 13,
-                OverlayArt.Soft, TextAnchor.MiddleCenter);
-            for (var row = GrateLayout.Rows - 1; row >= 0; row--)
+            const float tileWidth = 62f, tileHeight = 40f, tileGap = 4f;
+            var grateWidth = 3f * tileWidth + 2f * tileGap;
+            grateFront = AddText("Grate front", body, new Rect(0f, 0f, grateWidth, 16f), "FRONT",
+                OverlayStyle.PlateFont, 13, OverlayArt.Soft, TextAnchor.MiddleCenter);
+            grateDoor = AddText("Grate door", body,
+                new Rect(0f, 18f + 3f * (tileHeight + tileGap), grateWidth, 16f), "DOOR",
+                OverlayStyle.PlateFont, 13, OverlayArt.Soft, TextAnchor.MiddleCenter);
+            grateTiles = new GrateTile[GrateLayout.ZoneCount];
+            for (var visualRow = 0; visualRow < GrateLayout.Rows; visualRow++)
             for (var col = 0; col < GrateLayout.Columns; col++)
             {
-                var zone = (int)GrateLayout.At(row, col);
-                var y = 18f + (GrateLayout.Rows - 1 - row) * (tileHeight + gap);
-                var x = col * (tileWidth + gap);
-                var rect = new Rect(x, y, tileWidth, tileHeight);
-                if (zone == aimedZone)
-                    AddImage("Aimed zone " + zone, body, x - 3f, y - 3f, tileWidth + 6f, tileHeight + 6f,
-                        OverlayArt.Rounded, OverlayArt.Steam, 5f);
-                else if (zone == card.Thin)
+                var zone = (int)GrateLayout.At(GrateLayout.Rows - 1 - visualRow, col);
+                var x = col * (tileWidth + tileGap);
+                var y = 18f + visualRow * (tileHeight + tileGap);
+                var tile = new GrateTile
                 {
-                    AddImage("Thin zone edge " + zone, body, x - 4f, y - 4f, tileWidth + 8f, tileHeight + 8f,
-                        OverlayArt.Rounded, OverlayArt.Caution, 5f);
-                    AddImage("Thin zone inset " + zone, body, x - 2f, y - 2f, tileWidth + 4f, tileHeight + 4f,
-                        OverlayArt.Rounded, OverlayArt.Ink, 5f);
-                }
-                var glow = card.ZoneGlow[zone];
-                AddImage("Zone " + zone, body, x, y, tileWidth, tileHeight, OverlayArt.Rounded, OverlayArt.Ember(glow), 4f);
-                if (card.ZoneClinker[zone] > 0.1f)
-                    AddImage("Zone clinker " + zone, body, x + 4f, y + tileHeight - 7f,
-                        (tileWidth - 8f) * Mathf.Clamp(card.ZoneClinker[zone], 0.15f, 1f), 4f, OverlayArt.White,
-                        new Color(0.6f, 0.63f, 0.65f), 0f);
-                AddText("Zone coal " + zone, body, rect, card.ZoneCoal[zone].ToString("F1"), OverlayStyle.PlateFont, 17,
-                    glow > 0.72f ? OverlayArt.Ink : OverlayArt.Cream, TextAnchor.MiddleCenter);
-                if (zone == card.Thin && zone != aimedZone)
-                    AddImage("Thin zone mark " + zone, body, x + tileWidth - 13f, y + 3f, 10f, 10f,
-                        OverlayArt.Mark(AdviceLevel.Watch), OverlayArt.Ink, 0f);
+                    Aim = AddImage("Zone aim " + zone, body, x - 3f, y - 3f, tileWidth + 6f, tileHeight + 6f,
+                        OverlayArt.Rounded, OverlayArt.Steam, 5f),
+                    ThinOuter = AddImage("Zone thin outer " + zone, body, x - 4f, y - 4f, tileWidth + 8f, tileHeight + 8f,
+                        OverlayArt.Rounded, OverlayArt.Caution, 5f),
+                    ThinInner = AddImage("Zone thin inner " + zone, body, x - 2f, y - 2f, tileWidth + 4f, tileHeight + 4f,
+                        OverlayArt.Rounded, OverlayArt.Ink, 5f),
+                    Fill = AddImage("Zone fill " + zone, body, x, y, tileWidth, tileHeight,
+                        OverlayArt.Rounded, OverlayArt.Ember(0f), 4f),
+                    Clinker = AddImage("Zone clinker " + zone, body, x + 4f, y + tileHeight - 7f,
+                        tileWidth - 8f, 4f, OverlayArt.White, new Color(0.6f, 0.63f, 0.65f), 0f),
+                    Coal = AddText("Zone coal " + zone, body, new Rect(x, y, tileWidth, tileHeight), "",
+                        OverlayStyle.PlateFont, 17, OverlayArt.Cream, TextAnchor.MiddleCenter),
+                    ThinMark = AddImage("Zone thin mark " + zone, body, x + tileWidth - 13f, y + 3f, 10f, 10f,
+                        OverlayArt.Mark(AdviceLevel.Watch), OverlayArt.Ink, 0f),
+                };
+                tile.Clinker.type = Image.Type.Filled;
+                tile.Clinker.fillMethod = Image.FillMethod.Horizontal;
+                tile.Clinker.fillOrigin = (int)Image.OriginHorizontal.Left;
+                grateTiles[zone] = tile;
             }
-            AddText("Grate door", body, new Rect(0f, 18f + 3f * (tileHeight + gap), width, 16f), "DOOR",
-                OverlayStyle.PlateFont, 13, OverlayArt.Soft, TextAnchor.MiddleCenter);
+
+            rowViews = new RowView[RowCapacity];
+            for (var i = 0; i < rowViews.Length; i++)
+                rowViews[i] = BuildRow(i);
+
+            stepViews = new StepView[StepCapacity];
+            for (var i = 0; i < stepViews.Length; i++)
+                stepViews[i] = BuildStep(i);
         }
 
-        private void DrawRows(IReadOnlyList<FireOverlay.Row> rows, float x, float y, float width, float height)
+        private RowView BuildRow(int index)
         {
-            for (var i = 0; i < rows.Count; i++)
+            return new RowView
+            {
+                Label = AddText("Row label " + index, body, new Rect(0f, 0f, 1f, 1f), "",
+                    OverlayStyle.Font, 16, OverlayArt.Soft, TextAnchor.MiddleLeft),
+                Value = AddText("Row value " + index, body, new Rect(0f, 0f, 1f, 1f), "",
+                    OverlayStyle.Font, 19, OverlayArt.Cream, TextAnchor.MiddleRight),
+                Mark = AddImage("Row warning " + index, body, 0f, 0f, 11f, 11f,
+                    OverlayArt.Mark(AdviceLevel.Ok), OverlayArt.Soft, 0f),
+                MeterBack = AddImage("Meter back " + index, body, 0f, 0f, 64f, 8f, OverlayArt.White,
+                    new Color(1f, 1f, 1f, 0.1f), 0f),
+                MeterFill = AddImage("Meter fill " + index, body, 0f, 0f, 64f, 8f, OverlayArt.White,
+                    OverlayArt.Soft, 0f),
+                MeterMark = AddImage("Meter marker " + index, body, 0f, 0f, 2f, 12f, OverlayArt.White,
+                    OverlayArt.Caution, 0f),
+                Rule = AddImage("Row rule " + index, body, 0f, 0f, 1f, 1f, OverlayArt.White, OverlayArt.Rule, 0f),
+            };
+        }
+
+        private StepView BuildStep(int index)
+        {
+            return new StepView
+            {
+                Dot = AddImage("Lighting step " + index, body, 0f, 0f, 22f, 22f, OverlayArt.Rounded,
+                    new Color(1f, 1f, 1f, 0.05f), 4f),
+                Check = AddImage("Lighting check " + index, body, 0f, 0f, 12f, 12f, OverlayArt.Check,
+                    OverlayArt.Cream, 0f),
+                Number = AddText("Lighting number " + index, body, new Rect(0f, 0f, 22f, 22f), "",
+                    OverlayStyle.PlateFont, 13, OverlayArt.Soft, TextAnchor.MiddleCenter),
+                Title = AddText("Lighting title " + index, body, new Rect(32f, 0f,
+                    OverlayFrame.Width - 2f * OverlayFrame.Pad - 32f, 26f), "", OverlayStyle.Font, 17,
+                    OverlayArt.Soft, TextAnchor.MiddleLeft),
+                How = AddText("Lighting detail " + index, body, new Rect(32f, 0f,
+                    OverlayFrame.Width - 2f * OverlayFrame.Pad - 32f, 20f), "", OverlayStyle.PlateFont, 14,
+                    OverlayArt.Dim, TextAnchor.MiddleLeft),
+            };
+        }
+
+        private static void SetActive(Component part, bool active)
+        {
+            var go = part.gameObject;
+            if (go.activeSelf != active)
+                go.SetActive(active);
+        }
+
+        private void UpdateGrate(FireOverlay.Card card, int aimedZone)
+        {
+            var show = card != null;
+            if (!show && !grateShown)
+                return;
+            grateShown = show;
+            SetActive(grateFront, show);
+            SetActive(grateDoor, show);
+            for (var i = 0; i < grateTiles.Length; i++)
+            {
+                var tile = grateTiles[i];
+                SetGrateVisible(tile, show);
+                if (!show)
+                    continue;
+                var glow = card.ZoneGlow[i];
+                tile.Fill.color = OverlayArt.Ember(glow);
+                tile.Coal.text = card.ZoneCoal[i].ToString("F1");
+                tile.Coal.color = glow > 0.72f ? OverlayArt.Ink : OverlayArt.Cream;
+                var clinker = card.ZoneClinker[i];
+                tile.Clinker.fillAmount = Mathf.Clamp(clinker, 0.15f, 1f);
+                SetActive(tile.Clinker, clinker > 0.1f);
+                MarkZone(i, card, aimedZone);
+            }
+        }
+
+        private static bool HasGrate(FireOverlay.Card card) =>
+            card.Steps == null && card.ZoneCoal != null && card.ZoneGlow != null && card.ZoneClinker != null;
+
+        private void UpdateAim(FireOverlay.Card card, int from, int to)
+        {
+            if (!HasGrate(card))
+                return;
+            if (from >= 0 && from < grateTiles.Length)
+                MarkZone(from, card, to);
+            if (to >= 0 && to < grateTiles.Length)
+                MarkZone(to, card, to);
+        }
+
+        private void MarkZone(int zone, FireOverlay.Card card, int aimedZone)
+        {
+            var tile = grateTiles[zone];
+            var aimed = zone == aimedZone;
+            var thin = zone == card.Thin && !aimed;
+            SetActive(tile.Aim, aimed);
+            SetActive(tile.ThinOuter, thin);
+            SetActive(tile.ThinInner, thin);
+            SetActive(tile.ThinMark, thin);
+        }
+
+        private void UpdateRows(IReadOnlyList<FireOverlay.Row> rows, float x, float y, float width, float height)
+        {
+            var count = Mathf.Min(rows.Count, rowViews.Length);
+            for (var i = count; i < rowViews.Length; i++)
+                SetRowVisible(rowViews[i], false);
+            for (var i = 0; i < count; i++)
             {
                 var row = rows[i];
+                var view = rowViews[i];
+                SetRowVisible(view, true);
                 var rowRect = new Rect(x, y + i * height, width, height);
-                AddText("Row label " + i, body, new Rect(rowRect.x, rowRect.y, width * 0.45f, height), row.Label,
-                    OverlayStyle.Font, 16, OverlayArt.Soft, TextAnchor.MiddleLeft);
                 var valueWidth = Mathf.Min(row.ValueWidth, width - 8f);
-                AddText("Row value " + i, body, new Rect(rowRect.xMax - valueWidth, rowRect.y, valueWidth, height), row.Value,
-                    OverlayStyle.Font, 19, OverlayArt.Cream, TextAnchor.MiddleRight);
+                view.Label.text = row.Label;
+                Move(view.Label.rectTransform, rowRect.x, rowRect.y, width * 0.45f, height);
+                view.Value.text = row.Value;
+                Move(view.Value.rectTransform, rowRect.xMax - valueWidth, rowRect.y, valueWidth, height);
+                Move(view.Rule.rectTransform, rowRect.x, rowRect.yMax - 1f, width, 1f);
                 var left = rowRect.xMax - valueWidth - 6f;
+                SetActive(view.Mark, row.Level.HasValue);
                 if (row.Level.HasValue)
                 {
-                    AddImage("Row warning " + i, body, left - 11f, rowRect.y + (height - 11f) / 2f, 11f, 11f,
-                        OverlayArt.Mark(row.Level.Value), OverlayArt.LevelColor(row.Level.Value), 0f);
+                    view.Mark.sprite = Sprite(OverlayArt.Mark(row.Level.Value), 0f);
+                    view.Mark.color = OverlayArt.LevelColor(row.Level.Value);
+                    SetPos(view.Mark.rectTransform, left - 11f, rowRect.y + (height - 11f) / 2f);
                     left -= 17f;
                 }
+                SetActive(view.MeterBack, row.Meter.HasValue);
+                SetActive(view.MeterFill, row.Meter.HasValue);
+                SetActive(view.MeterMark, row.Meter.HasValue);
                 if (row.Meter.HasValue)
                 {
                     var bar = new Rect(left - 64f, rowRect.y + (height - 8f) / 2f, 64f, 8f);
-                    AddImage("Meter back " + i, body, bar.x, bar.y, bar.width, bar.height, OverlayArt.White,
-                        new Color(1f, 1f, 1f, 0.1f), 0f);
-                    AddImage("Meter fill " + i, body, bar.x, bar.y, bar.width * Mathf.Clamp01(row.Meter.Value), bar.height,
-                        OverlayArt.White, OverlayArt.Soft, 0f);
-                    AddImage("Meter marker " + i, body, bar.x + bar.width / 2f - 1f, bar.y - 2f, 2f, bar.height + 4f,
-                        OverlayArt.White, OverlayArt.Caution, 0f);
+                    SetPos(view.MeterBack.rectTransform, bar.x, bar.y);
+                    Move(view.MeterFill.rectTransform, bar.x, bar.y, bar.width * Mathf.Clamp01(row.Meter.Value), bar.height);
+                    SetPos(view.MeterMark.rectTransform, bar.x + bar.width / 2f - 1f, bar.y - 2f);
                 }
-                AddImage("Row rule " + i, body, rowRect.x, rowRect.yMax - 1f, width, 1f, OverlayArt.White, OverlayArt.Rule, 0f);
             }
         }
 
-        private void DrawSteps(IReadOnlyList<LightingStep> steps)
+        private void UpdateSteps(IReadOnlyList<LightingStep> steps)
         {
+            var count = Mathf.Min(steps.Count, stepViews.Length);
+            for (var i = count; i < stepViews.Length; i++)
+                SetStepVisible(stepViews[i], false);
             var y = 2f;
-            for (var i = 0; i < steps.Count; i++)
+            for (var i = 0; i < count; i++)
             {
                 var step = steps[i];
+                var view = stepViews[i];
+                SetStepVisible(view, true);
                 var dotColor = step.Current ? OverlayArt.Caution
                     : step.Done ? new Color(1f, 1f, 1f, 0.12f)
                     : new Color(1f, 1f, 1f, 0.05f);
-                AddImage("Lighting step " + i, body, 0f, y + 2f, 22f, 22f, OverlayArt.Rounded, dotColor, 4f);
+                view.Dot.color = dotColor;
+                Move(view.Dot.rectTransform, 0f, y + 2f, 22f, 22f);
+                SetActive(view.Check, step.Done);
+                SetActive(view.Number, !step.Done);
                 if (step.Done)
-                    AddImage("Lighting check " + i, body, 5f, y + 7f, 12f, 12f, OverlayArt.Check, OverlayArt.Cream, 0f);
+                    Move(view.Check.rectTransform, 5f, y + 7f, 12f, 12f);
                 else
-                    AddText("Lighting number " + i, body, new Rect(0f, y + 2f, 22f, 22f), (i + 1).ToString(),
-                        OverlayStyle.PlateFont, 13, step.Current ? OverlayArt.Ink : OverlayArt.Soft, TextAnchor.MiddleCenter);
-                var textColor = step.Current ? OverlayArt.Cream : step.Done ? OverlayArt.Dim : OverlayArt.Soft;
-                AddText("Lighting title " + i, body, new Rect(32f, y, OverlayFrame.Width - 2f * OverlayFrame.Pad - 32f, 26f),
-                    step.Title, OverlayStyle.Font, 17, textColor, TextAnchor.MiddleLeft);
-                y += 27f;
-                if (step.Current)
                 {
-                    AddText("Lighting detail " + i, body, new Rect(32f, y - 4f, OverlayFrame.Width - 2f * OverlayFrame.Pad - 32f, 20f),
-                        step.How, OverlayStyle.PlateFont, 14, OverlayArt.Dim, TextAnchor.MiddleLeft);
-                    y += 18f;
+                    view.Number.text = (i + 1).ToString();
+                    view.Number.color = step.Current ? OverlayArt.Ink : OverlayArt.Soft;
+                    Move(view.Number.rectTransform, 0f, y + 2f, 22f, 22f);
                 }
+                view.Title.text = step.Title;
+                view.Title.color = step.Current ? OverlayArt.Cream : step.Done ? OverlayArt.Dim : OverlayArt.Soft;
+                Move(view.Title.rectTransform, 32f, y, OverlayFrame.Width - 2f * OverlayFrame.Pad - 32f, 26f);
+                var showHow = step.Current && !string.IsNullOrEmpty(step.How);
+                SetActive(view.How, showHow);
+                if (showHow)
+                {
+                    view.How.text = step.How;
+                    Move(view.How.rectTransform, 32f, y + 23f, OverlayFrame.Width - 2f * OverlayFrame.Pad - 32f, 20f);
+                }
+                y += 27f + (step.Current ? 18f : 0f);
+            }
+        }
+
+        private static void SetGrateVisible(GrateTile tile, bool visible)
+        {
+            SetActive(tile.Fill, visible);
+            SetActive(tile.Coal, visible);
+            if (!visible)
+            {
+                SetActive(tile.Aim, false);
+                SetActive(tile.ThinOuter, false);
+                SetActive(tile.ThinInner, false);
+                SetActive(tile.Clinker, false);
+                SetActive(tile.ThinMark, false);
+            }
+        }
+
+        private static void SetRowVisible(RowView row, bool visible)
+        {
+            SetActive(row.Label, visible);
+            SetActive(row.Value, visible);
+            SetActive(row.Rule, visible);
+            if (!visible)
+            {
+                SetActive(row.Mark, false);
+                SetActive(row.MeterBack, false);
+                SetActive(row.MeterFill, false);
+                SetActive(row.MeterMark, false);
+            }
+        }
+
+        private static void SetStepVisible(StepView step, bool visible)
+        {
+            SetActive(step.Dot, visible);
+            SetActive(step.Title, visible);
+            if (!visible)
+            {
+                SetActive(step.Check, false);
+                SetActive(step.Number, false);
+                SetActive(step.How, false);
             }
         }
 
@@ -353,6 +658,8 @@ namespace RealisticFiring.Visuals
             adviceStripe.color = color;
             adviceMark.sprite = Sprite(OverlayArt.Mark(level), 0f);
             adviceMark.color = color;
+            if (advice.Text == fittedAdvice)
+                return;
             adviceText.text = advice.Text;
             for (var size = 19; size >= 14; size--)
             {
@@ -360,12 +667,7 @@ namespace RealisticFiring.Visuals
                 if (adviceText.preferredHeight <= adviceText.rectTransform.rect.height)
                     break;
             }
-        }
-
-        private static void ClearChildren(Transform parent)
-        {
-            for (var i = parent.childCount - 1; i >= 0; i--)
-                Object.Destroy(parent.GetChild(i).gameObject);
+            fittedAdvice = advice.Text;
         }
 
         private static Image AddImage(string name, Transform parent, float x, float y, float width, float height,
@@ -384,7 +686,7 @@ namespace RealisticFiring.Visuals
         }
 
         private static Text AddText(string name, Transform parent, Rect rect, string text, Font font, int size,
-            Color color, TextAnchor anchor, Texture2D background = null, float border = 0f)
+            Color color, TextAnchor anchor)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
             go.transform.SetParent(parent, false);
@@ -392,6 +694,12 @@ namespace RealisticFiring.Visuals
             Place(transform, rect.x, rect.y, rect.width, rect.height);
             var label = go.GetComponent<Text>();
             label.text = text;
+            if (font == null)
+            {
+                if (fallbackFont == null)
+                    fallbackFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
+                font = fallbackFont;
+            }
             label.font = font;
             label.fontSize = size;
             label.alignment = anchor;
@@ -400,14 +708,6 @@ namespace RealisticFiring.Visuals
             label.horizontalOverflow = HorizontalWrapMode.Overflow;
             label.verticalOverflow = VerticalWrapMode.Truncate;
             label.raycastTarget = false;
-            if (background != null)
-            {
-                var image = go.AddComponent<Image>();
-                image.sprite = Sprite(background, border);
-                image.type = border > 0f ? Image.Type.Sliced : Image.Type.Simple;
-                image.color = Color.white;
-                image.raycastTarget = false;
-            }
             return label;
         }
 
@@ -416,8 +716,28 @@ namespace RealisticFiring.Visuals
             rect.anchorMin = new Vector2(0f, 1f);
             rect.anchorMax = new Vector2(0f, 1f);
             rect.pivot = new Vector2(0f, 1f);
-            rect.sizeDelta = new Vector2(width, height);
-            rect.anchoredPosition = new Vector2(x, -y);
+            Move(rect, x, y, width, height);
+        }
+
+        // Unity dirties the graphic on every set, so write only a changed value.
+        private static void Move(RectTransform rect, float x, float y, float width, float height)
+        {
+            SetSize(rect, width, height);
+            SetPos(rect, x, y);
+        }
+
+        private static void SetSize(RectTransform rect, float width, float height)
+        {
+            var size = new Vector2(width, height);
+            if (rect.sizeDelta != size)
+                rect.sizeDelta = size;
+        }
+
+        private static void SetPos(RectTransform rect, float x, float y)
+        {
+            var position = new Vector2(x, -y);
+            if (rect.anchoredPosition != position)
+                rect.anchoredPosition = position;
         }
 
         private static Sprite Sprite(Texture2D texture, float border)
