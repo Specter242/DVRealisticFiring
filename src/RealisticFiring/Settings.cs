@@ -128,6 +128,9 @@ namespace RealisticFiring
         [Draw("Tilt the VR fire overlay, degrees", DrawType.Slider, Min = 0, Max = 60, Precision = 0)]
         public float VrOverlayTilt = 30f;
 
+        [Draw("VR fire overlay toggle: Off (can still toggle by F6); LeftStick, click the left stick to step the overlay; LeftStickWithTrigger, click the left stick while holding the left trigger", DrawType.ToggleGroup)]
+        public VrOverlayToggle VrOverlayToggleMode = VrOverlayToggle.LeftStick;
+
         [Draw("Put the stoker's jet valves in the cab (takes effect when the cab next loads)")]
         public bool ShowStokerJetValves = true;
 
@@ -245,6 +248,19 @@ namespace RealisticFiring
             binding.Change(key, ctrl, shift, alt);
             return binding;
         }
+    }
+
+    /// <summary>How the left stick click works the fire overlay in VR.</summary>
+    public enum VrOverlayToggle
+    {
+        /// <summary>The click does nothing; the overlay key still works.</summary>
+        Off,
+
+        /// <summary>The click steps the overlay.</summary>
+        LeftStick,
+
+        /// <summary>The click steps the overlay only while the left trigger is held.</summary>
+        LeftStickWithTrigger,
     }
 
     /// <summary>How the shovel, rake, and fire iron aim into a coal firebox.</summary>

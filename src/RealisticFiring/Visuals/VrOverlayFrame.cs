@@ -162,6 +162,12 @@ namespace RealisticFiring.Visuals
 
         public void PollVrInput()
         {
+            var mode = Main.Settings.VrOverlayToggleMode;
+            if (mode == VrOverlayToggle.Off)
+            {
+                leftClickWasPressed = false;
+                return;
+            }
             if (VRManager.IsVREnabled()) {
                 var valid = leftDevice.isValid;
                 if (!valid)
@@ -173,11 +179,15 @@ namespace RealisticFiring.Visuals
                               && leftDevice.TryGetFeatureValue(CommonUsages.primary2DAxisClick, out var clicked)
                               && clicked;
                 if (pressed && !leftClickWasPressed && XRSettings.enabled
+                    && (mode != VrOverlayToggle.LeftStickWithTrigger || TriggerHeld())
                     && (FireboxRegistry.TryGetTended(PlayerManager.Car, out _) || RealisticOilFirebox.TryGetTended(PlayerManager.Car, out _)))
                     FireOverlay.Step(Main.Settings);
                 leftClickWasPressed = pressed;
             }
         }
+
+        private bool TriggerHeld() =>
+            leftDevice.TryGetFeatureValue(CommonUsages.triggerButton, out var held) && held;
 
         public void Hide()
         {
