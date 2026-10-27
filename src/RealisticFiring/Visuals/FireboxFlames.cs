@@ -3,6 +3,8 @@ using LocoSim.Implementations;
 using RealisticFiring.Core;
 using RealisticFiring.Diagnostics;
 using RealisticFiring.Sim;
+using RealisticStackEffects;
+using RealisticStackEffects.Core;
 using UnityEngine;
 
 namespace RealisticFiring.Visuals

@@ -1,5 +1,6 @@
 using System.Linq;
 using RealisticFiring.Visuals;
+using RealisticStackEffects;
 using UnityEngine;
 
 namespace RealisticFiring.Shed

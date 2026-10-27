@@ -6,6 +6,7 @@ using RealisticFiring.Core;
 using UnityModManagerNet;
 
 [assembly: InternalsVisibleTo("RealisticFiring.Multiplayer")]
+[assembly: InternalsVisibleTo("RealisticFiring.StackEffects")]
 
 namespace RealisticFiring
 {

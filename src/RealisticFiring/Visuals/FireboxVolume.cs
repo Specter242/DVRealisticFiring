@@ -374,7 +374,7 @@ namespace RealisticFiring.Visuals
         /// <summary>The zones' flames and smoke as the volume draws them, for the test bed's log.</summary>
         internal string Describe()
         {
-            var b = new System.Text.StringBuilder($"draft {flames.Draft:F2}, pulse {pulse:F2}; drawing {boxRenderer?.enabled}, viewed {Viewed}, steps {material?.GetFloat(StepsId):F0}; motion {lickOffset:F3}, dither {material?.GetFloat(DitherFrameId):F0}, source refreshes {sourceRefreshes}, clock {Time.unscaledTime:F3}; fire's light {FireColors.Light:F2}, exposure {FireColors.Exposed:F2}; gas burned over the fire {firebox.Model.OverFireBurnout:P0}, overwhelm {FireColors.Overwhelm:F2}; ");
+            var b = new System.Text.StringBuilder($"draft {flames.Draft:F2}, pulse {pulse:F2}; drawing {boxRenderer?.enabled}, viewed {Viewed}, quality {Main.Settings?.FireboxQuality}, steps {material?.GetFloat(StepsId):F0}, spacing {material?.GetFloat(StepLengthId):F3} m; motion {lickOffset:F3}, dither {material?.GetFloat(DitherFrameId):F0}, source refreshes {sourceRefreshes}, clock {Time.unscaledTime:F3}; fire's light {FireColors.Light:F2}, exposure {FireColors.Exposed:F2}; gas burned over the fire {firebox.Model.OverFireBurnout:P0}, overwhelm {FireColors.Overwhelm:F2}; ");
             if (airflow != null)
             {
                 // The airflow: its speed up and across on average and at most,
@@ -608,6 +608,12 @@ namespace RealisticFiring.Visuals
             Remember(Time.time, pulse);
             if (!Viewed && !closed)
                 return;
+            // Read the local quality each frame, outside the closed door's
+            // source-upload throttle. It changes only the ray sampling;
+            // the fire's motion, lighting, and sources keep their budgets.
+            var sampling = FireboxSampling.For(Main.Settings.FireboxQuality, closed, Distance <= 0f, Steps, StepLength);
+            material.SetFloat(StepsId, sampling.MaxSteps);
+            material.SetFloat(StepLengthId, sampling.StepLength);
             // The flow: up and toward the tube plate, faster with the draft and
             // on each beat; the curls a little faster than the sheets.
             var forcing = Mathf.Sqrt(Mathf.Clamp01(draft));
@@ -711,11 +717,6 @@ namespace RealisticFiring.Visuals
             material.SetFloat(SpotDimId, (1f - spotShare * spotGlare) / (1f - spotShare));
             material.SetFloat(SpotGlareId, spotGlare);
             material.SetFloat(TipHeatId, TipHeat);
-            // Half as many with the eye in the box, where the volume covers
-            // the whole screen. Even this case is expensive; its rays are
-            // short, so most still take 2 cm steps.
-            material.SetFloat(StepsId, closed ? 24f : Mathf.Clamp(Distance > 0f ? Steps : 0.5f * Steps, 4f, 128f));
-            material.SetFloat(StepLengthId, closed ? Mathf.Max(StepLength, 0.06f) : StepLength);
             material.SetFloat(GlowId, Glow);
             material.SetFloat(FlameDensityId, FlameDensity);
             // A choked fire's soot gathers into a fuller cloud in still gas;

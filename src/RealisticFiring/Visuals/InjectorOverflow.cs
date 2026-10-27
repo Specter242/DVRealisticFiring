@@ -6,6 +6,7 @@ using DV.Simulation.Ports;
 using RealisticFiring.Core;
 using RealisticFiring.Diagnostics;
 using RealisticFiring.Sim;
+using RealisticStackEffects;
 using UnityEngine;
 
 namespace RealisticFiring.Visuals

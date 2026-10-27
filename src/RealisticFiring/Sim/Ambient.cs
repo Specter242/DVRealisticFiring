@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using LocoSim.Implementations;
+using RealisticStackEffects;
 
 namespace RealisticFiring.Sim
 {

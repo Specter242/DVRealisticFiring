@@ -12,12 +12,17 @@ version="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["Ver
 zipfile="$repo/dist/RealisticFiring-$version.zip"
 
 dotnet test "$repo/tests/RealisticFiring.Core.Tests" -c Release -nologo -v quiet
+dotnet test "$repo/tests/RealisticStackEffects.Core.Tests" -c Release -nologo -v quiet
 "$repo/scripts/check-adapter.sh"
 project="$repo/src/RealisticFiring/RealisticFiring.csproj"
 if [[ -f "$repo/src/RealisticFiring.Multiplayer/RealisticFiring.Multiplayer.csproj" ]]; then
     project="$repo/src/RealisticFiring.Multiplayer/RealisticFiring.Multiplayer.csproj"
 fi
 dotnet build "$project" \
+    -c Release -p:DvInstallDir="$dv" -warnaserror -nologo
+# The add-on that feeds Realistic Stack Effects, loaded only when it runs.
+se="$repo/src/RealisticFiring.StackEffects/bin/Release/net48"
+dotnet build "$repo/src/RealisticFiring.StackEffects/RealisticFiring.StackEffects.csproj" \
     -c Release -p:DvInstallDir="$dv" -warnaserror -nologo
 
 if [[ -x "$unity" ]]; then
@@ -48,6 +53,8 @@ if [[ "$project" == */RealisticFiring.Multiplayer.csproj ]]; then
     cp "$mp/RealisticFiring.Multiplayer.dll" "$stage/RealisticFiring/"
     files+=(RealisticFiring/RealisticFiring.Multiplayer.dll)
 fi
+cp "$se/RealisticFiring.StackEffects.dll" "$stage/RealisticFiring/"
+files+=(RealisticFiring/RealisticFiring.StackEffects.dll)
 
 # Select the archive's contents explicitly; never include assemblies copied
 # for adapter checks, local settings, logs, or development documents.

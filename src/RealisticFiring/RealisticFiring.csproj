@@ -14,6 +14,11 @@
     <ProjectReference Include="../RealisticFiring.Core/RealisticFiring.Core.csproj" />
   </ItemGroup>
 
+  <!-- The chimney plume, shared with Realistic Stack Effects. -->
+  <ItemGroup>
+    <Compile Include="../RealisticStackEffects.Shared/Plume/*.cs" Link="Shared/%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <!-- Game and loader assemblies are referenced in place and never copied. -->
   <ItemGroup>
     <Reference Include="0Harmony" HintPath="$(DvModManagerDir)/0Harmony.dll" Private="false" />
@@ -25,6 +30,7 @@
     <Reference Include="DV.Inventory" HintPath="$(DvManagedDir)/DV.Inventory.dll" Private="false" />
     <Reference Include="DV.NAudio" HintPath="$(DvManagedDir)/DV.NAudio.dll" Private="false" />
     <Reference Include="DV.PointSet" HintPath="$(DvManagedDir)/DV.PointSet.dll" Private="false" />
+    <Reference Include="DV.Preferences" HintPath="$(DvManagedDir)/DV.Preferences.dll" Private="false" />
     <Reference Include="DV.RailTrack" HintPath="$(DvManagedDir)/DV.RailTrack.dll" Private="false" />
     <Reference Include="BezierCurves" HintPath="$(DvManagedDir)/BezierCurves.dll" Private="false" />
     <Reference Include="VerletRope" HintPath="$(DvManagedDir)/VerletRope.dll" Private="false" />
@@ -48,6 +54,7 @@
     <Reference Include="UnityEngine.PhysicsModule" HintPath="$(DvManagedDir)/UnityEngine.PhysicsModule.dll" Private="false" />
     <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(DvManagedDir)/UnityEngine.TextRenderingModule.dll" Private="false" />
     <Reference Include="UnityEngine.UI" HintPath="$(DvManagedDir)/UnityEngine.UI.dll" Private="false" />
+    <Reference Include="UnityEngine.UIModule" HintPath="$(DvManagedDir)/UnityEngine.UIModule.dll" Private="false" />
     <Reference Include="UnityEngine.VRModule" HintPath="$(DvManagedDir)/UnityEngine.VRModule.dll" Private="false" />
     <Reference Include="VRTK" HintPath="$(DvManagedDir)/VRTK.dll" Private="false" />
   </ItemGroup>

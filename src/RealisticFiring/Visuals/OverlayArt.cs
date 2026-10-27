@@ -211,6 +211,15 @@ namespace RealisticFiring.Visuals
             return t;
         }
 
+        /// <summary>Releases a physical display's private dial when that item is destroyed.</summary>
+        internal static void ReleaseDial(string key)
+        {
+            if (Cache.TryGetValue(key, out var texture) && texture != null)
+                UnityEngine.Object.Destroy(texture);
+            Cache.Remove(key);
+            Buffers.Remove(key);
+        }
+
         private static readonly Dictionary<string, Color32[]> Faces = new Dictionary<string, Color32[]>();
         private static readonly Dictionary<string, Color32[]> Buffers = new Dictionary<string, Color32[]>();
 

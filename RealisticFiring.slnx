@@ -3,11 +3,16 @@
     <Project Path="src/RealisticFiring.Core/RealisticFiring.Core.csproj" />
     <Project Path="src/RealisticFiring/RealisticFiring.csproj" />
     <Project Path="src/RealisticFiring.Multiplayer/RealisticFiring.Multiplayer.csproj" />
+    <Project Path="src/RealisticFiring.StackEffects/RealisticFiring.StackEffects.csproj" />
+    <Project Path="src/RealisticStackEffects.Core/RealisticStackEffects.Core.csproj" />
+    <Project Path="src/RealisticStackEffects/RealisticStackEffects.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/RealisticFiring.AdapterCheck/RealisticFiring.AdapterCheck.csproj" />
+    <Project Path="tools/RealisticStackEffects.AdapterCheck/RealisticStackEffects.AdapterCheck.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/RealisticFiring.Core.Tests/RealisticFiring.Core.Tests.csproj" />
+    <Project Path="tests/RealisticStackEffects.Core.Tests/RealisticStackEffects.Core.Tests.csproj" />
   </Folder>
 </Solution>

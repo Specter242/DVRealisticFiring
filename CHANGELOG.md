@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.16.0 (2026-10-26)
+
+- Optional Realistic Stack Effects integration hands chimney drawing to that mod and feeds it the realistic fires through a separately loaded add-on. Without it, Realistic Firing keeps its own plume.
+- A held and mountable firing tablet uses the stock gadget, inventory, shop, and save systems. Fire, Water, and Engine pages share F6 readings while retaining each tablet's page independently.
+- Starting kits containing the shovel include a tablet; the stock inventory safeguard checks all saved storage before adding a missing one.
+- The tablet has a 16 mm shell, sliced button and grid borders, and a cached mipmapped screen released while out of view. Desktop held tabs use mouse mode; F6 remains optional.
+- Independent firebox quality presets halve or quarter open-door volume sampling. High retains full detail; shut-door sampling, light, coal, and animation keep their existing budgets.
+- Stoker front-jet gauge hands use red for left and blue for right, with matching face labels.
+
 ## 1.15.0 (2026-10-26)
 
 - The firebox uses a volume for flames and smoke, a simulated airflow, and a heap of coal lumps. Flame sources follow gas burning over each grate zone; the bed and walls share the fire's palette. Small flames keep their roots and vary in height, with sharp edges and moving folds.

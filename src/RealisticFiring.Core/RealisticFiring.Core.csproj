@@ -6,4 +6,9 @@
     <RootNamespace>RealisticFiring.Core</RootNamespace>
   </PropertyGroup>
 
+  <!-- The chimney plume's model, shared with Realistic Stack Effects. -->
+  <ItemGroup>
+    <Compile Include="../RealisticStackEffects.Shared/Core/*.cs" Link="Shared/%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

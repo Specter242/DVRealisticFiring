@@ -1,4 +1,5 @@
 using RealisticFiring.Core;
+using RealisticStackEffects;
 using Xunit.Abstractions;
 
 namespace RealisticFiring.Core.Tests;

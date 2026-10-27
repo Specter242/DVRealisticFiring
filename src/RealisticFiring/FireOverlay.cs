@@ -20,7 +20,7 @@ namespace RealisticFiring
         public const int Pages = 3;
         private static readonly string[] PageNames = { "FIRE", "WATER", "ENGINE" };
 
-        private struct Gauge
+        internal struct Gauge
         {
             public string Key, Label, Text;
             public float Value;
@@ -33,7 +33,7 @@ namespace RealisticFiring
             public float PlateWidth, TextWidth;
         }
 
-        private struct Row
+        internal struct Row
         {
             public string Label, Value;
             public AdviceLevel? Level;
@@ -42,7 +42,7 @@ namespace RealisticFiring
         }
 
         // What the card shows, read once a second.
-        private sealed class Card
+        internal sealed class Card
         {
             public string Loco;
             public bool Oil;
@@ -84,7 +84,7 @@ namespace RealisticFiring
             shownCoal = firebox;
             Styles();
             if (Stale(firebox))
-                card = Measure(Read(firebox));
+                card = Measure(Read(firebox, Page));
             Show();
         }
 
@@ -93,7 +93,7 @@ namespace RealisticFiring
             shownCoal = null;
             Styles();
             if (Stale(oil))
-                card = Measure(Read(oil));
+                card = Measure(Read(oil, Page));
             Show();
         }
 
@@ -227,7 +227,7 @@ namespace RealisticFiring
             };
         }
 
-        private Card Read(RealisticFirebox firebox)
+        internal static Card Read(RealisticFirebox firebox, int page)
         {
             var fire = firebox.Model;
             var car = firebox.Car;
@@ -247,7 +247,7 @@ namespace RealisticFiring
             c.Advice = Bursting(waterRig) ?? FiringAdvice.ForCoal(fire, door, rig != null ? Visuals.GaugeGlass.Read(rig) : 1f, Injectors(rig),
                 waterRig != null && waterRig.DriftingHookedUp);
 
-            switch (Page)
+            switch (page)
             {
                 case 0:
                     var perZone = fire.Parameters.MaxCombustionRate / GrateLayout.ZoneCount;
@@ -278,7 +278,7 @@ namespace RealisticFiring
         private static Advice? Bursting(BoilerWaterRig water) =>
             water != null ? FiringAdvice.Bursting(water.BoilerPressure, water.SafetyValve, water.BurstPressure) : null;
 
-        private Card Read(RealisticOilFirebox oil)
+        internal static Card Read(RealisticOilFirebox oil, int page)
         {
             var fire = oil.Model;
             var car = oil.Car;
@@ -297,7 +297,7 @@ namespace RealisticFiring
             var reading = FireController.ReadOil(oil);
             c.Advice = Bursting(BoilerWaterRig.TryGet(car, out var waterRig) ? waterRig : null) ?? FiringAdvice.ForOil(reading);
 
-            switch (Page)
+            switch (page)
             {
                 case 0:
                     if (!fire.FireOn)

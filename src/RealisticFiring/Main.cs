@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using HarmonyLib;
 using RealisticFiring.Sim;
+using RealisticStackEffects;
 using UnityEngine;
 using Object = UnityEngine.Object;
 using UnityModManagerNet;
@@ -78,14 +79,20 @@ namespace RealisticFiring
             if (changed)
                 Settings.Save(modEntry);
             Core.FireTuning.Default.ClinkerTendency = Settings.ClinkerTendency;
+            Visuals.FiringStackHost.Install();
             // The test bed's tuning only on a development setup (its key bound).
             if (Settings.PlumeTestBedEnabled)
-                Visuals.PlumeTestBed.Restore(Settings.PlumeTestBed);
+                PlumeTestBed.Restore(Settings.PlumeTestBed);
             session = Session.From(Settings);
             ReplacementEnabled = session.RealisticFireboxes;
             RealisticSmokeEnabled = session.RealisticSmoke;
             RealisticInjectorsEnabled = session.RealisticInjectors;
-            modEntry.OnGUI = entry => Settings.Draw(entry);
+            modEntry.OnGUI = entry =>
+            {
+                if (StackEffectsLink.HandedOff)
+                    GUILayout.Label("Realistic Stack Effects draws the chimney smoke: its own smoke settings apply, not this mod's.");
+                Settings.Draw(entry);
+            };
             modEntry.OnSaveGUI = entry => Settings.Save(entry);
             // Unity Mod Manager opens a mod's settings on its hotkey; sharing
             // the settings' binding keeps a rebind in effect at once.
@@ -97,12 +104,13 @@ namespace RealisticFiring
                 modEntry.Logger.Error($"{FailedPatches.Count} of Realistic Firing's patches failed and the rest loaded: {string.Join(", ", FailedPatches)}. " +
                                       "Another mod, or a game update, may be in the way; please send this log with a bug report.");
             Net.TryStartAddOn(modEntry);
-            Visuals.StereoKeyword.Install();
+            StackEffectsLink.TryStart(modEntry);
+            StereoKeyword.Install();
 
             var host = new GameObject("RealisticFiring");
             Object.DontDestroyOnLoad(host);
             host.AddComponent<FireController>();
-            host.AddComponent<Visuals.PlumeCapture>();
+            host.AddComponent<PlumeCapture>();
             host.AddComponent<Visuals.FireboxCapture>();
 
             Sim.FiremanRig.NoteRivals();

@@ -6,6 +6,7 @@ using LocoSim.Implementations;
 using LocoSim.Resources;
 using Newtonsoft.Json.Linq;
 using RealisticFiring.Core;
+using RealisticStackEffects;
 using UnityEngine;
 
 namespace RealisticFiring.Sim

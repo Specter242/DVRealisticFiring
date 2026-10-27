@@ -1,4 +1,5 @@
 using RealisticFiring.Core;
+using RealisticStackEffects.Core;
 
 namespace RealisticFiring.Core.Tests;
 

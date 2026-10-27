@@ -102,7 +102,7 @@ namespace RealisticFiring.Items
         // A register hooks up its shelf tags once, when it comes on; one already
         // on missed the iron's, so scanning it showed $0 and Buy took nothing
         // (a player, 2026-10-12). One not yet hooked up takes it with the rest.
-        private static void HearTag(CashRegisterWithModules register, CashRegisterModule tag)
+        internal static void HearTag(CashRegisterWithModules register, CashRegisterModule tag)
         {
             if (!register.isActiveAndEnabled || BuyButton(register) == null)
                 return;

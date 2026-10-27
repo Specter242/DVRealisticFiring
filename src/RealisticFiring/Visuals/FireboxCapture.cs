@@ -3,12 +3,14 @@ using System.Collections;
 using System.IO;
 using System.Linq;
 using System.Text;
+using DV;
 using DV.Utils;
 using HarmonyLib;
 using LocoSim.Implementations;
 using Newtonsoft.Json;
 using RealisticFiring.Core;
 using RealisticFiring.Sim;
+using RealisticStackEffects;
 using UnityEngine;
 
 namespace RealisticFiring.Visuals
@@ -24,6 +26,7 @@ namespace RealisticFiring.Visuals
         private const int HoldFrames = 12;
 
         public static bool Running { get; private set; }
+        internal static bool ShowOverlay { get; private set; }
         internal static bool KeepsVisible => Running && !respectVisibility;
         private static bool respectVisibility;
 
@@ -31,6 +34,7 @@ namespace RealisticFiring.Visuals
         {
             public string Name;
             public float? Door;
+            public FireboxQuality? Quality;
 
             /// <summary>The flames' draft, 0 to 1, on the test bed; the fire's own when not given.</summary>
             public float? Draft;
@@ -92,6 +96,12 @@ namespace RealisticFiring.Visuals
 
             /// <summary>The engine's car ID; the fire nearest the camera when not given.</summary>
             public string Car;
+
+            /// <summary>Spawn a missing stock coal locomotive for an unsaved capture session.</summary>
+            public bool SpawnStockCar;
+
+            /// <summary>Keep the normal fire overlay visible when it is enabled in settings.</summary>
+            public bool ShowOverlay;
 
             /// <summary>The camera's vertical field of view for the shots, degrees; the player's when not given.</summary>
             public float? Fov;
@@ -171,6 +181,33 @@ namespace RealisticFiring.Visuals
                 Main.Mod.Logger.Log("Firebox capture: the game's autosave is off for the rest of the session");
             }
             var firebox = Find(request.Car);
+            if (firebox == null && request.SpawnStockCar)
+            {
+                // Only the two stock coal engines; never substitute a custom
+                // livery in a screenshot meant to represent the base game.
+                if (request.Car != "LocoS282A" && request.Car != "LocoS060")
+                {
+                    Main.Mod.Logger.Warning("Firebox capture: stock spawning requires LocoS282A or LocoS060");
+                    yield break;
+                }
+                var ids = request.Car == "LocoS282A" ? new[] { "LocoS282A", "LocoS282B" } : new[] { "LocoS060" };
+                var liveries = ids.Select(id => Globals.G.Types.Liveries.FirstOrDefault(l => l.id == id)).ToList();
+                if (liveries.Any(l => l == null))
+                {
+                    Main.Mod.Logger.Warning("Firebox capture: stock livery unavailable");
+                    yield break;
+                }
+                var spawned = SingletonBehaviour<CarSpawner>.Instance.SpawnCarTypesOnClosestTrack(
+                    liveries, PlayerManager.PlayerTransform.position, ids.Select(_ => false).ToList(),
+                    preventAutoCoupleOnLastCars: true, applyHandbrakeOnLastCars: true, playerSpawnedCars: true);
+                if (spawned == null || spawned.Count == 0)
+                {
+                    Main.Mod.Logger.Warning("Firebox capture: no room to spawn the stock locomotive");
+                    yield break;
+                }
+                yield return null;
+                firebox = Find(spawned[0].ID);
+            }
             if (firebox == null)
             {
                 Main.Mod.Logger.Warning($"Firebox capture: no fire {(string.IsNullOrEmpty(request.Car) ? "near" : $"on {request.Car}")}; available: " +
@@ -222,9 +259,11 @@ namespace RealisticFiring.Visuals
             Main.Mod.Logger.Log($"Firebox capture '{request.Name}' on {car.ID} ({livery}): {request.States.Length} states, " +
                                 $"{request.Views.Length} views, into {folder}");
             Running = true;
+            ShowOverlay = request.ShowOverlay;
             fov = request.Fov;
             var vSyncBefore = QualitySettings.vSyncCount;
             var rateBefore = Application.targetFrameRate;
+            var qualityBefore = Main.Settings.FireboxQuality;
             var widthBefore = Screen.width;
             var heightBefore = Screen.height;
             var modeBefore = Screen.fullScreenMode;
@@ -247,6 +286,7 @@ namespace RealisticFiring.Visuals
                 Main.Mod.Logger.Log($"Firebox capture: rendering at {Screen.width} x {Screen.height}");
                 foreach (var state in request.States)
                 {
+                    Main.Settings.FireboxQuality = state.Quality ?? qualityBefore;
                     respectVisibility = request.RespectVisibility;
                     var opening = state.Door ?? request.Door;
                     if (File.Exists(stop))
@@ -373,6 +413,7 @@ namespace RealisticFiring.Visuals
             }
             finally
             {
+                Main.Settings.FireboxQuality = qualityBefore;
                 Time.captureFramerate = 0;
                 if (resize)
                     Screen.SetResolution(widthBefore, heightBefore, modeBefore);
@@ -392,6 +433,7 @@ namespace RealisticFiring.Visuals
                 stokerPort?.ExternalValueUpdate(stokerBefore);
                 masterPort?.ExternalValueUpdate(masterBefore);
                 Running = false;
+                ShowOverlay = false;
                 File.WriteAllText(Path.Combine(folder, "shots.tsv"), shots.ToString());
                 File.WriteAllText(Path.Combine(folder, "done.txt"), $"{count} shots\n");
                 Main.Mod.Logger.Log($"Firebox capture '{request.Name}' done: {count} shots in {folder}");

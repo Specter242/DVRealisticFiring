@@ -10,7 +10,7 @@ namespace RealisticFiring.Visuals
     /// <summary>
     /// The stoker's gauges beside the jet manifold, as on the Standard HT: the
     /// stoker engine's, a duplex gauge for the two front jets (red hand left,
-    /// black hand right), and the fine-coal jet's; the back jets had none.
+    /// blue hand right), and the fine-coal jet's; the back jets had none.
     /// Each is the stock S282's boiler pressure gauge at half size with its
     /// printed dial swapped for a blank face and our own bar scale, its needle
     /// driven from the stoker's last tick instead of a sim port.
@@ -35,10 +35,11 @@ namespace RealisticFiring.Visuals
         private static readonly Color Face = new Color(0.9f, 0.87f, 0.78f);
         private static readonly Color Ink = new Color(0.1f, 0.09f, 0.08f);
         private static readonly Color RedHand = new Color(0.75f, 0.08f, 0.05f);
-        private static readonly Color BlackHand = new Color(0.08f, 0.08f, 0.08f);
+        private static readonly Color BlueHand = new Color(0.1f, 0.35f, 0.85f);
 
         private static Mesh disc;
         private static Material faceMaterial;
+        private static readonly Dictionary<Color, Material> handMaterials = new Dictionary<Color, Material>();
 
         internal enum Reading
         {
@@ -69,7 +70,8 @@ namespace RealisticFiring.Visuals
         private static readonly Spec[] Gauges =
         {
             new Spec(0.03f, "STOKER\nbar", 7f, 1f, (Reading.Engine, null)),
-            new Spec(-0.08f, "FRONT JETS\nbar", 5f, 1f, (Reading.LeftFront, RedHand), (Reading.RightFront, BlackHand)),
+            new Spec(-0.08f, "FRONT JETS\n<color=#BF140D>L</color>/<color=#1A59D9>R</color> bar", 5f, 1f,
+                (Reading.LeftFront, RedHand), (Reading.RightFront, BlueHand)),
             new Spec(-0.19f, "FINES\nbar", 5f, 1f, (Reading.Fines, null)),
         };
 
@@ -163,7 +165,7 @@ namespace RealisticFiring.Visuals
                 needles[i].maxValue = fullScale;
                 if (tints[i] is Color tint)
                     foreach (var renderer in needles[i].GetComponentsInChildren<Renderer>(true))
-                        renderer.material.color = tint;
+                        renderer.sharedMaterial = HandMaterial(tint);
             }
 
             var spec = new Spec(at.y, title, fullScale, step);
@@ -239,6 +241,7 @@ namespace RealisticFiring.Visuals
             var tmp = go.AddComponent<TextMeshPro>();
             tmp.font = font.font;
             tmp.fontSharedMaterial = font.fontSharedMaterial;
+            tmp.richText = true;
             tmp.text = text;
             tmp.color = Ink;
             tmp.alignment = TextAlignmentOptions.Center;
@@ -289,6 +292,19 @@ namespace RealisticFiring.Visuals
             faceMaterial = new Material(Shader.Find("Standard")) { name = "RealisticFiring gauge face", color = Face };
             faceMaterial.SetFloat("_Glossiness", 0.2f);
             return faceMaterial;
+        }
+
+        private static Material HandMaterial(Color tint)
+        {
+            if (handMaterials.TryGetValue(tint, out var material) && material != null)
+                return material;
+            // The stock needle uses the shared gauge atlas and its occlusion
+            // map. Paint the mesh directly so those textures cannot darken
+            // its identifying color. Share one material per hand color.
+            material = new Material(Shader.Find("Standard")) { name = "RealisticFiring gauge hand", color = tint };
+            material.SetFloat("_Glossiness", 0.2f);
+            handMaterials[tint] = material;
+            return material;
         }
 
         /// <summary>Moves one gauge's hand to a reading, in bar gauge.</summary>

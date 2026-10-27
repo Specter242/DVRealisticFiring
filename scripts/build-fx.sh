@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Build the chimney smoke effects bundle with Unity 2019.4.40f1, the game's
-# own engine version. Regenerates the smoke textures, then runs the editor
-# headless to build the prefab and pack it for Windows (the game's build).
+# Build the effects bundles, Realistic Firing's and Realistic Stack Effects'
+# (the plume alone), with Unity 2019.4.40f1, the game's own engine version.
+# Regenerates the smoke textures, then runs the editor headless to build the
+# prefabs and pack them for Windows (the game's build).
 # Needs an activated Unity license (sign in to Unity Hub once).
 set -euo pipefail
 
@@ -29,4 +30,4 @@ if ! "$unity" -batchmode -nographics -quit -projectPath "$project" \
     echo "Unity build failed; full log in $out/unity-build.log" >&2
     exit 1
 fi
-echo "Built $out/realisticfiring_fx"
+echo "Built $out/realisticfiring_fx and $out/realisticstackeffects_fx"

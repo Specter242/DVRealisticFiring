@@ -4,6 +4,7 @@ using HarmonyLib;
 using LocoSim.Implementations;
 using RealisticFiring.Sim;
 using RealisticFiring.Visuals;
+using RealisticStackEffects;
 
 namespace RealisticFiring.Patches
 {
@@ -17,16 +18,17 @@ namespace RealisticFiring.Patches
     {
         private static void Postfix(SteamSmokeParticlePortReader __instance, SimulationFlow simFlow)
         {
-            if (!Main.RealisticSmokeEnabled)
+            // Realistic Stack Effects draws every stack when it runs.
+            if (!Main.RealisticSmokeEnabled || StackEffectsLink.HandedOff)
                 return;
             try
             {
                 var car = TrainCar.Resolve(__instance.gameObject);
                 string result;
                 if (FireboxRegistry.TryGet(car, out var firebox))
-                    result = ChimneyPlume.Attach(__instance, simFlow, car, firebox);
+                    result = ChimneyPlume.Attach(__instance, simFlow, car, new CoalStack(car, firebox));
                 else if (RealisticOilFirebox.TryGet(car, out var oil))
-                    result = ChimneyPlume.Attach(__instance, simFlow, car, oil);
+                    result = ChimneyPlume.Attach(__instance, simFlow, car, new OilStack(car, oil));
                 else
                     return;
                 // Car numbers are assigned after the sim graph is built.

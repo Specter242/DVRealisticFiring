@@ -3,6 +3,7 @@ using System.Linq;
 using DV.Simulation.Controllers;
 using LocoSim.Implementations;
 using RealisticFiring.Visuals;
+using RealisticStackEffects;
 using UnityEngine;
 
 namespace RealisticFiring.Shed

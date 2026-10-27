@@ -110,7 +110,7 @@ namespace RealisticFiring.Visuals
         }
 
         /// <summary>The fire iron's inventory icon, and its outline for when it lies dropped; null without the bundle.</summary>
-        /// <summary>Lays the chimney's smoke drawn at half resolution over the scene (<see cref="PlumeOffscreen"/>); null in an older bundle.</summary>
+        /// <summary>Lays the chimney's smoke drawn at half resolution over the scene (<see cref="RealisticStackEffects.PlumeOffscreen"/>); null in an older bundle.</summary>
         public static Material PlumeCompositeMaterial
         {
             get
@@ -120,7 +120,7 @@ namespace RealisticFiring.Visuals
             }
         }
 
-        /// <summary>Lays the scene's depth at half resolution for the chimney's smoke drawn so (<see cref="PlumeOffscreen"/>); null in an older bundle.</summary>
+        /// <summary>Lays the scene's depth at half resolution for the chimney's smoke drawn so (<see cref="RealisticStackEffects.PlumeOffscreen"/>); null in an older bundle.</summary>
         public static Material PlumeDepthMaterial
         {
             get

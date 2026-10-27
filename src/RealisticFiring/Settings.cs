@@ -69,10 +69,13 @@ namespace RealisticFiring
         // Two players' frame rate fell from 60 to 15 with the plume
         // (Nexus, 2026-10-25); Core.SmokeDetail.
         [Draw("Smoke quality, for a slower graphics card: Medium draws the chimney's smoke at half resolution, Low with half its particles besides (in VR or with forward rendering, half and a quarter of its particles instead)", DrawType.ToggleGroup)]
-        public Core.SmokeQuality SmokeQuality = Core.SmokeQuality.High;
+        public RealisticStackEffects.Core.SmokeQuality SmokeQuality = RealisticStackEffects.Core.SmokeQuality.High;
+
+        [Draw("Firebox quality (changes live): High keeps full flame and smoke detail; Medium uses half the open-door ray samples, Low a quarter. Firelight stays the same", DrawType.ToggleGroup)]
+        public Core.FireboxQuality FireboxQuality = Core.FireboxQuality.High;
 
         [Draw("Season for the chimney's steam (the game has none; with DV Seasons running, its season's temperature is used instead): a summer afternoon's dry air shows little white, a damp dawn or the rain plenty, and winter the most", DrawType.ToggleGroup)]
-        public Core.SmokeSeason SmokeSeason = Core.SmokeSeason.Summer;
+        public RealisticStackEffects.Core.SmokeSeason SmokeSeason = RealisticStackEffects.Core.SmokeSeason.Summer;
 
         [Header("Shovel")]
         [Draw("Coal per shovelful on supported coal locomotives, kg", Min = MinShovelful, Max = MaxShovelful, Precision = 1)]
@@ -118,6 +121,9 @@ namespace RealisticFiring
 
         [Draw("Put a fire iron (slice bar) in front of me (unticks itself). Through the open door: click slices, the mouse wheel pushes and pulls, Shift with the wheel pushes sideways")]
         public bool GiveFireIron;
+
+        [Draw("Put a firing tablet in front of me (unticks itself). Hold it to read the engine, or fit it to a large gadget mount")]
+        public bool GiveFiringTablet;
 
         [Draw("Toggle fire overlay")]
         public KeyBinding ToggleOverlayKey = Bind(KeyCode.F6);

@@ -4,12 +4,14 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using HarmonyLib;
+using DV.Items;
 using LocoSim.Definitions;
 using LocoSim.Implementations;
 using Newtonsoft.Json.Linq;
 using RealisticFiring.Core;
 using RealisticFiring.Patches;
 using RealisticFiring.Sim;
+using RealisticStackEffects;
 
 namespace RealisticFiring.AdapterCheck
 {
@@ -171,6 +173,7 @@ namespace RealisticFiring.AdapterCheck
             CheckShovelLoads();
             CheckFiremanHand();
             CheckPatchTargets();
+            CheckStackEffectsFeed();
             CheckPatchEachClass();
             CheckCarPoolGuard();
             var after = false;
@@ -189,7 +192,10 @@ namespace RealisticFiring.AdapterCheck
             Check(AccessTools.Field(typeof(ShovelNonPhysicalCoal), "_coalMassLoaded")?.FieldType == typeof(float),
                 "the shovel's load is readable, for saying a shovelful does not fit the firebox");
             CheckFireIronLoading();
+            CheckFiringTablet();
+            CheckFiringTabletStartingItems();
             CheckNewDefaults();
+            CheckFireboxQualitySettings();
             Check(AccessTools.Field(typeof(DV.Interaction.AGrabHandler), Visuals.FiringValvePassThrough.PassThroughField)?.FieldType
                   == typeof(DV.Interaction.AGrabHandler.InteractionPassThroughDelegate),
                 "a control's pass-through is wrappable, so the oil burner's valves can be reached past the firing valve");
@@ -200,7 +206,7 @@ namespace RealisticFiring.AdapterCheck
                     CheckMultiplayerCabHooks(path);
                 else if (Path.GetFileName(path) == Items.SkinManagerFireIronLoading.AssemblyName + ".dll")
                     CheckSkinManagerFireIron(path);
-                else if (Path.GetFileName(path) == Sim.SeasonsMod.AssemblyName + ".dll")
+                else if (Path.GetFileName(path) == SeasonsMod.AssemblyName + ".dll")
                     CheckDvSeasons(path);
             }
             Console.WriteLine(failures == 0 ? "All adapter checks passed" : $"{failures} adapter checks failed");
@@ -2398,6 +2404,40 @@ namespace RealisticFiring.AdapterCheck
                 "patches apply a class at a time: one that fails is named in the log and the next still applies");
         }
 
+        // The realistic fires fed to Realistic Stack Effects: every field of
+        // the plume's reading crosses into its contract's intact.
+        private static void CheckStackEffectsFeed()
+        {
+            var fire = new MarkedFire();
+            var reading = default(RealisticStackEffects.Api.StackFireReading);
+            new RealisticFiring.StackEffects.Source(fire).Read(0.02f, null, ref reading);
+            var fields = typeof(StackReading).GetFields(BindingFlags.Instance | BindingFlags.Public);
+            var lost = fields.Where(f =>
+            {
+                var other = typeof(RealisticStackEffects.Api.StackFireReading).GetField(f.Name);
+                return other == null || !Equals(other.GetValue(reading), MarkedFire.Value(f.Name, f.FieldType));
+            }).Select(f => f.Name).ToList();
+            Check(lost.Count == 0, $"the realistic fires reach Realistic Stack Effects intact, {fields.Length} fields" +
+                                   (lost.Count > 0 ? $" (lost: {string.Join(", ", lost)})" : ""));
+        }
+
+        // A fire that sets each field of the plume's reading to its own value.
+        private sealed class MarkedFire : IStackFire
+        {
+            public bool Tended => true;
+
+            public void Read(float dt, LocoSim.Implementations.SteamExhaust exhaust, ref StackReading reading)
+            {
+                object boxed = reading;
+                foreach (var field in typeof(StackReading).GetFields(BindingFlags.Instance | BindingFlags.Public))
+                    field.SetValue(boxed, Value(field.Name, field.FieldType));
+                reading = (StackReading)boxed;
+            }
+
+            public static object Value(string name, Type type) =>
+                type == typeof(bool) ? (object)true : 1f + Math.Abs(name.GetHashCode() % 1000) / 7f;
+        }
+
         private static void CheckPatchTargets()
         {
             var patches = typeof(RealisticFiring.Main).Assembly.GetTypes()
@@ -2467,6 +2507,39 @@ namespace RealisticFiring.AdapterCheck
                 "the aiming keypad is on by default, turned on once for settings saved with it off, and a later choice stays");
         }
 
+        private static void CheckFireboxQualitySettings()
+        {
+            var serializer = new System.Xml.Serialization.XmlSerializer(typeof(Settings));
+            using (var reader = new StringReader("<Settings />"))
+            {
+                var legacy = (Settings)serializer.Deserialize(reader);
+                Check(legacy.FireboxQuality == FireboxQuality.High,
+                    "settings saved before firebox presets retain High detail");
+            }
+            var retained = true;
+            foreach (FireboxQuality firebox in Enum.GetValues(typeof(FireboxQuality)))
+                foreach (var chimney in EveryValue(new Settings().SmokeQuality))
+                {
+                    var settings = new Settings { FireboxQuality = firebox, SmokeQuality = chimney, ShowZonedCoalBed = false };
+                    using (var writer = new StringWriter())
+                    {
+                        serializer.Serialize(writer, settings);
+                        using (var reader = new StringReader(writer.ToString()))
+                        {
+                            var restored = (Settings)serializer.Deserialize(reader);
+                            restored.ApplyNewDefaults();
+                            retained &= restored.FireboxQuality == firebox && restored.SmokeQuality == chimney
+                                && !restored.ShowZonedCoalBed;
+                        }
+                    }
+                }
+            Check(retained, "all firebox and chimney quality combinations survive settings saves independently of the visual-off switch");
+        }
+
+        // Both cores build the shared SmokeQuality, which this check sees twice:
+        // an enum's values by the type of a value at hand.
+        private static IEnumerable<T> EveryValue<T>(T _) where T : Enum => Enum.GetValues(typeof(T)).Cast<T>();
+
         private static void CheckFireIronLoading()
         {
             var targets = Items.FireIronLoading.TargetMethods().ToList();
@@ -2490,6 +2563,139 @@ namespace RealisticFiring.AdapterCheck
                 .Where(t => t.GetCustomAttributes(typeof(HarmonyLib.HarmonyPatch), true).Length > 0);
             Check(!patches.Any(t => HarmonyLib.HarmonyMethodExtensions.GetFromType(t).Any(info => info.declaringType == typeof(UnityEngine.Resources)))
                   && !targets.Contains(resourceLoad), "no global Unity Resources.Load patch");
+        }
+
+        private static void CheckFiringTablet()
+        {
+            var item = typeof(DV.Customization.Gadgets.GadgetItem);
+            var gadget = typeof(DV.Customization.Gadgets.GadgetBase);
+            Check(AccessTools.Field(item, "gadgetPrefab")?.FieldType == gadget
+                  && AccessTools.Field(item, "onlyPlaceInOneAxis")?.FieldType == typeof(bool)
+                  && AccessTools.Field(gadget, "boundsCenter")?.FieldType == typeof(UnityEngine.Vector3)
+                  && AccessTools.Field(gadget, "boundsSize")?.FieldType == typeof(UnityEngine.Vector3)
+                  && AccessTools.Field(gadget, "requiredMountPoints")?.FieldType == typeof(int)
+                  && AccessTools.Field(gadget, "removalMethod")?.FieldType == typeof(DV.Customization.Gadgets.GadgetBase.GadgetRemovalMethod)
+                  && AccessTools.Field(gadget, "vrIgnoreColliders")?.FieldType == typeof(UnityEngine.Collider[])
+                  && AccessTools.Field(gadget, "highlightMeshes")?.FieldType == typeof(UnityEngine.MeshFilter[])
+                  && AccessTools.Field(gadget, "requirements")?.FieldType == typeof(DV.Customization.TrainCarCustomization.TrainCarCustomizerBase.TrainCarRequirements),
+                "tablet's stock gadget configuration fields resolve with their expected types");
+            Check(typeof(Items.FiringTabletGadget).IsSubclassOf(gadget)
+                  && AccessTools.Method(item, "OnItemSaveDataRequestedInternal") != null
+                  && AccessTools.Method(item, "OnItemSaveDataLoadedInternal") != null,
+                "tablet uses the stock item-to-gadget serialization lifecycle");
+            Check(Items.FiringTabletGadget.SavedPage(new JObject()) == 0
+                  && Items.FiringTabletGadget.SavedPage(new JObject { ["rfTabletPage"] = "bad" }) == 0
+                  && Items.FiringTabletGadget.SavedPage(new JObject { ["rfTabletPage"] = -12 }) == 0
+                  && Items.FiringTabletGadget.SavedPage(new JObject { ["rfTabletPage"] = 1 }) == 1
+                  && Items.FiringTabletGadget.SavedPage(new JObject { ["rfTabletPage"] = 2 }) == 2
+                  && Items.FiringTabletGadget.SavedPage(new JObject { ["rfTabletPage"] = long.MaxValue }) == 2,
+                "saved tablet page restores Fire/Water/Engine, defaults missing or invalid data, and clamps out-of-range data");
+            var framed = true;
+            foreach (var fov in new[] { 30f, 31f, 45f, 65f, 90f, 110f, 120f })
+                foreach (var aspect in new[] { 4d / 3d, 16d / 9d, 21d / 9d })
+                {
+                    var at = Items.FiringTabletHold.CameraOffset(fov, (float)aspect);
+                    var halfHeight = (at.z + Items.FiringTabletScreen.ButtonFront) * Math.Tan(fov * Math.PI / 360d);
+                    framed &= at.z > 0.1f
+                        && at.x - Items.FiringTablet.Size.x * 0.5f > 0.03f
+                        && at.y + Items.FiringTablet.Size.y * 0.5f < halfHeight
+                        && at.y - Items.FiringTablet.Size.y * 0.5f > -halfHeight
+                        && Math.Abs(at.x) + Items.FiringTablet.Size.x * 0.5f < halfHeight * aspect;
+                }
+            Check(framed, "desktop tablet keeps the placement ray clear and its whole shell in view at 30–120 degree FOV and 4:3–21:9 aspect ratios");
+            var settings = new Settings { ShowOverlay = false, OverlayPage = 2 };
+            FireOverlay.Step(settings);
+            var first = settings.ShowOverlay && settings.OverlayPage == 0;
+            FireOverlay.Step(settings);
+            FireOverlay.Step(settings);
+            FireOverlay.Step(settings);
+            Check(first && !settings.ShowOverlay && settings.OverlayPage == 2 && !settings.GiveFiringTablet,
+                "F6 retains its show/three-pages/hide cycle and does not create a tablet");
+        }
+
+        private static List<StartingItems.StartingItem> tabletStartingKit;
+
+        private static bool TabletStartingKitPrefix(ref List<StartingItems.StartingItem> __result)
+        {
+            __result = tabletStartingKit;
+            return false;
+        }
+
+        private static void CheckFiringTabletStartingItems()
+        {
+            var prefabName = AccessTools.Field(typeof(InventoryItemSpec), "itemPrefabName");
+            InventoryItemSpec Spec(string name)
+            {
+                // Only the serialized prefab name is needed; no Unity object is created.
+                var spec = (InventoryItemSpec)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(InventoryItemSpec));
+                prefabName.SetValue(spec, name);
+                return spec;
+            }
+            var radio = new StartingItems.StartingItem { item = Spec("Radio"), preferredRelativeSlot = 0 };
+            var shovel = new StartingItems.StartingItem { item = Spec("shovel"), preferredRelativeSlot = 3 };
+            var tablet = Spec(Items.FiringTablet.PrefabName);
+            var basic = new List<StartingItems.StartingItem> { radio };
+            var steam = new List<StartingItems.StartingItem> { radio, shovel };
+            var built = 0;
+            InventoryItemSpec Tablet() { built++; return tablet; }
+            Check(ReferenceEquals(basic, Items.FiringTabletStartingItems.WithTablet(basic, Tablet)) && built == 0,
+                "a starting kit without the shovel stays unchanged and never builds a tablet");
+            tabletStartingKit = Items.FiringTabletStartingItems.WithTablet(steam, Tablet);
+            Check(built == 1 && tabletStartingKit.Count == 3 && steam.Count == 2
+                  && tabletStartingKit.Select(i => i.ItemPrefabName).Take(2).SequenceEqual(steam.Select(i => i.ItemPrefabName))
+                  && tabletStartingKit.Last().ItemPrefabName == Items.FiringTablet.PrefabName
+                  && tabletStartingKit.Last().allowDuplicates,
+                "the steam kit gets one purchasable tablet in a copy, preserving the shared asset and existing item order");
+            Check(ReferenceEquals(tabletStartingKit, Items.FiringTabletStartingItems.WithTablet(tabletStartingKit, Tablet)) && built == 1,
+                "a starting kit already containing the tablet does not add or build another");
+            Check(ReferenceEquals(steam, Items.FiringTabletStartingItems.WithTablet(steam, () => null))
+                  && Items.FiringTabletStartingItems.WithTablet(null, Tablet) == null,
+                "a missing tablet template or missing kit leaves the stock loader's result intact");
+
+            var target = AccessTools.DeclaredMethod(typeof(StartingItemsController), "GetStartingItemsPrefabs");
+            var safeguard = AccessTools.DeclaredMethod(typeof(StartingItemsController), "StartingItemsSafeguard");
+            Check(target?.ReturnType == typeof(List<StartingItems.StartingItem>) && safeguard != null,
+                "tablet starting equipment hooks the resolved kit used by the stock save safeguard");
+            if (target == null || safeguard == null)
+                return;
+            var harmony = new Harmony("RealisticFiring.AdapterCheck.TabletStartingKit");
+            try
+            {
+                // Feed the extended kit to the real stock safeguard, without loading Unity resources.
+                harmony.Patch(target, prefix: new HarmonyMethod(typeof(Program), nameof(TabletStartingKitPrefix)));
+                var controller = System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(StartingItemsController));
+                StorageItemData Saved(string name, int slot = -1) => new StorageItemData(name,
+                    UnityEngine.Vector3.zero, UnityEngine.Quaternion.identity, true, inventorySlotIndex: slot);
+                var inventory = new List<StorageItemData>();
+                var combined = new List<StorageItemData> { Saved("Radio", 0), Saved("shovel", 3), Saved("other", 12) };
+                safeguard.Invoke(controller, new object[] { inventory, combined, null, true });
+                Check(inventory.Count == 1 && inventory[0].itemPrefabName == Items.FiringTablet.PrefabName
+                      && inventory[0].inventorySlotIndex == 13 && inventory[0].belongsToPlayer,
+                    "the stock safeguard grants the tablet in the next free backpack slot without displacing existing gear");
+                var fullBackpack = Enumerable.Range(0, 36).Where(slot => slot < 4 || slot == 11 || slot >= 12)
+                    .Select(slot => Saved("gear-" + slot, slot)).ToList();
+                fullBackpack.Single(i => i.inventorySlotIndex == 0).itemPrefabName = "Radio";
+                fullBackpack.Single(i => i.inventorySlotIndex == 35).itemPrefabName = "shovel";
+                var overflow = new List<StorageItemData>();
+                safeguard.Invoke(controller, new object[] { overflow, fullBackpack, null, true });
+                Check(overflow.Count == 1 && overflow[0].itemPrefabName == Items.FiringTablet.PrefabName
+                      && overflow[0].inventorySlotIndex == 4 && fullBackpack.Count == 29,
+                    "an Engineer-style full backpack puts the tablet in a free hotbar slot without replacing any starting gear");
+                inventory.Clear();
+                combined.Add(Saved(Items.FiringTablet.PrefabName));
+                safeguard.Invoke(controller, new object[] { inventory, combined, null, false });
+                Check(inventory.Count == 0 && combined.Count == 4,
+                    "a tablet saved outside inventory, including a mounted gadget, prevents another starter tablet");
+                combined.Add(Saved(Items.FiringTablet.PrefabName, 14));
+                safeguard.Invoke(controller, new object[] { inventory, combined, null, false });
+                Check(inventory.Count == 0 && combined.Count == 5,
+                    "the stock starting-kit safeguard preserves additional purchased tablets");
+            }
+            finally
+            {
+                harmony.UnpatchAll(harmony.Id);
+                tabletStartingKit = null;
+            }
         }
 
         // Skin Manager rewrites the game's saved-item and purchased-item
@@ -2570,10 +2776,10 @@ namespace RealisticFiring.AdapterCheck
             try
             {
                 var assembly = Assembly.LoadFrom(path);
-                var (runtime, currentState) = Sim.SeasonsMod.Resolve(assembly.GetType(Sim.SeasonsMod.MainType));
+                var (runtime, currentState) = SeasonsMod.Resolve(assembly.GetType(SeasonsMod.MainType));
                 var state = currentState?.PropertyType;
-                Check(runtime != null && currentState != null && state?.FullName == Sim.SeasonsMod.StateType
-                      && state.GetProperty(Sim.SeasonsMod.TemperatureProperty)?.PropertyType == typeof(float)
+                Check(runtime != null && currentState != null && state?.FullName == SeasonsMod.StateType
+                      && state.GetProperty(SeasonsMod.TemperatureProperty)?.PropertyType == typeof(float)
                       && new[] { "Current", "Next", "Transition", "SnowAmount" }.All(p => state.GetProperty(p) != null),
                     $"DV Seasons (assembly {assembly.GetName().Version}): its runtime's current state and temperature are where the mod reads them");
                 var cooling = HarmonyLib.AccessTools.Method(typeof(Boiler), "SimulateSteamConsumption");

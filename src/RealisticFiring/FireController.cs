@@ -4,6 +4,7 @@ using LocoSim.Implementations;
 using RealisticFiring.Core;
 using RealisticFiring.Diagnostics;
 using RealisticFiring.Sim;
+using RealisticStackEffects;
 using UnityEngine;
 
 namespace RealisticFiring
@@ -74,6 +75,11 @@ namespace RealisticFiring
         private void HandleKeys()
         {
             var settings = Main.Settings;
+            if (settings.GiveFiringTablet)
+            {
+                settings.GiveFiringTablet = false;
+                Notify(Net.IsClient ? "In multiplayer, buy the firing tablet at a gadget shop, beside the clinometer" : Items.FiringTablet.GiveToPlayer());
+            }
             if (settings.GiveFireIron)
             {
                 settings.GiveFireIron = false;
@@ -91,7 +97,7 @@ namespace RealisticFiring
             if (settings.ToggleOverlayKey.Down())
                 FireOverlay.Step(settings);
             if (settings.PlumeTestBedEnabled && settings.DevPlumeTestBedKey.Down())
-                Visuals.PlumeTestBed.Toggle();
+                PlumeTestBed.Toggle();
             if (settings.SeatingBenchEnabled && settings.DevSeatingKey.Down())
                 Visuals.SeatingBench.Toggle();
 
@@ -427,7 +433,7 @@ namespace RealisticFiring
                    $"atomizer {oil.AtomizerValve * 100f:0.#} %: {fire.Atomizing:F1}× the oil's need" + (fire.Drumming > 0f ? $", drumming {fire.Drumming:P0}" : "") +
                    $", {fire.AtomizerSteam:F2} kg/s of steam; " +
                    $"draft {oil.AirFlowIn:F2} kg/s, {fire.ExcessAir:F1}× the air the oil needs, stack {stack}, soot {fire.SootDensity:P0}" +
-                   (Visuals.ChimneyPlume.TryGet(oil.Car, out var plume) ? $", plume top {plume.PlumeTop:F0} m" : "") + "; " +
+                   (ChimneyPlume.TryGet(oil.Car, out var plume) ? $", plume top {plume.PlumeTop:F0} m" : "") + "; " +
                    $"brick {fire.BrickTemperature:F0} C, firebox {fire.Temperature:F0} C, door {oil.DoorOpening:P0}; " +
                    $"oil {fire.OilTemperature:F0} C ({fire.OilTemperature * 9f / 5f + 32f:F0} F), heater {oil.HeaterValve:P0}" +
                    (oil.SteamLineOpening > 0f
@@ -552,14 +558,14 @@ namespace RealisticFiring
 
         private void DrawGui()
         {
-            // Nothing of the mod's over the capture run's shots.
-            if (Visuals.PlumeCapture.Running || Visuals.FireboxCapture.Running)
+            // Promotional firebox captures can retain the normal overlay.
+            if (PlumeCapture.Running || (Visuals.FireboxCapture.Running && !Visuals.FireboxCapture.ShowOverlay))
                 return;
             if (notice != null && Time.time - noticeTime <= NoticeTime)
                 DrawLabel(notice, NoticeOffset, new Color(1f, 0.85f, 0.5f));
             if (FiremanRig.TryGetTended(PlayerManager.Car, out var fireman))
                 firemanPanel.Draw(fireman);
-            Visuals.PlumeTestBed.Draw();
+            PlumeTestBed.Draw();
             Visuals.SeatingBench.Draw();
             if (!FireboxRegistry.TryGetTended(PlayerManager.Car, out var firebox))
             {

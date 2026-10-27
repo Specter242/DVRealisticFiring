@@ -5,6 +5,15 @@ live-steam injectors, boiler water simulation, automatic firemen, and chimney
 effects. Supports stock steam locomotives and selected Custom Car Loader
 locomotives, with optional Multiplayer integration.
 
+Read Fire, Water, and Engine on F6 or on the firing tablet. Starting gear
+that includes the shovel includes a tablet; shops sell it beside the
+clinometer, and the mod settings can give you one. Use mouse mode to press
+its tabs while holding it on desktop, or fit it to a large gadget mount.
+F6 remains available separately. Firebox quality presets apply live and
+control the fire inside the box independently of chimney smoke quality.
+With Realistic Stack Effects installed, it draws the chimney smoke using
+the realistic fires; its own chimney smoke settings then apply.
+
 Requires Derail Valley and Unity Mod Manager. Install custom locomotives through
 Custom Car Loader separately. Game and third-party mod assemblies are not included.
 
@@ -20,6 +29,7 @@ Build with the .NET 10 SDK and your own installed game assemblies:
 ```sh
 dotnet build RealisticFiring.slnx -c Release -p:DvInstallDir="/path/to/Derail Valley"
 dotnet test tests/RealisticFiring.Core.Tests -c Release
+dotnet test tests/RealisticStackEffects.Core.Tests -c Release
 ```
 
 The core tests run without the game. On Linux, `scripts/check-adapter.sh` also

@@ -17,6 +17,9 @@ namespace RealisticFiringFX
     public static class PlumeBuilder
     {
         public const string BundleName = "realisticfiring_fx";
+
+        // Realistic Stack Effects' bundle: the plume alone, from the same assets.
+        public const string StackBundleName = "realisticstackeffects_fx";
         public const string PrefabName = "ChimneyPlumeFX";
         public const string OverflowPrefabName = "InjectorOverflowFX";
         public const string FireboxPrefabName = "FireboxFX";
@@ -192,6 +195,34 @@ namespace RealisticFiringFX
             if (manifest == null)
                 throw new InvalidOperationException("Asset bundle build failed; see the editor log");
             Debug.Log($"Realistic Firing FX: built '{BundleName}' into {Path.GetFullPath(output)}");
+            BuildStackBundle(output);
+        }
+
+        // Realistic Stack Effects' bundle: the plume's prefab and its
+        // half-resolution materials, their shaders and textures copied in.
+        // An asset takes one bundle by its importer's name, so this one is
+        // listed outright and built on its own, then laid beside the other.
+        private static void BuildStackBundle(string output)
+        {
+            var own = Path.Combine(output, "stackeffects");
+            Directory.CreateDirectory(own);
+            var build = new AssetBundleBuild
+            {
+                assetBundleName = StackBundleName,
+                assetNames = new[]
+                {
+                    PrefabPath,
+                    $"{MaterialsDir}/{PlumeCompositeMaterialName}.mat",
+                    $"{MaterialsDir}/{PlumeDepthMaterialName}.mat",
+                },
+            };
+            var manifest = BuildPipeline.BuildAssetBundles(own, new[] { build },
+                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.StrictMode,
+                BuildTarget.StandaloneWindows64);
+            if (manifest == null)
+                throw new InvalidOperationException("Stack effects bundle build failed; see the editor log");
+            File.Copy(Path.Combine(own, StackBundleName), Path.Combine(output, StackBundleName), true);
+            Debug.Log($"Realistic Firing FX: built '{StackBundleName}' into {Path.GetFullPath(output)}");
         }
 
         private static Texture2D ImportFlipbook(string file, bool data = false)
