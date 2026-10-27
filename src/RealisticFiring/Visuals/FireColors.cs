@@ -9,6 +9,7 @@ namespace RealisticFiring.Visuals
         private static readonly int OrangeId = Shader.PropertyToID("_FireRampOrange");
         private static readonly int CoreId = Shader.PropertyToID("_FireRampCore");
         private static readonly int WhiteId = Shader.PropertyToID("_FireRampWhite");
+        private static readonly int WhiteHeatId = Shader.PropertyToID("_FireWhiteHeat");
         private static readonly int ExposureId = Shader.PropertyToID("_FireExposure");
 
         // The ramp's stops at a quarter, half, three quarters, and all of the
@@ -18,8 +19,12 @@ namespace RealisticFiring.Visuals
         internal static Color Red = new Color(1.2f, 0.1f, 0.002f);
         internal static Color Orange = new Color(3f, 0.33f, 0.012f);
         internal static Color Core = new Color(8f, 1.1f, 0.06f);
-        // Over the cores, at 1.25: white-hot, a hard-driven fire's hearts'.
-        internal static Color White = new Color(16f, 7f, 2.5f);
+        // Only the hottest end turns white. Coal heat stops at 1, so the
+        // white stop must be reachable there as well as in the flame cores.
+        // Enough blue radiance survives the eye's minimum exposure to make
+        // a fully forced fire glare white instead of stopping at yellow.
+        internal static Color White = new Color(24f, 18f, 12f);
+        internal static float WhiteHeat = 0.85f;
         internal static float Exposure = 0.8f;
 
         // The adaptation: the fire's light (its zones' glow and flames, on
@@ -76,8 +81,11 @@ namespace RealisticFiring.Visuals
             c = Color.LerpUnclamped(c, Red, Mathf.Clamp01(x - 1f));
             c = Color.LerpUnclamped(c, Orange, Mathf.Clamp01(x - 2f));
             c = Color.LerpUnclamped(c, Core, Mathf.Clamp01(x - 3f));
-            return Color.LerpUnclamped(c, White, Mathf.Clamp01(x - 4f));
+            var white = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(WhiteStart, 1f, heat));
+            return Color.LerpUnclamped(c, White, white);
         }
+
+        private static float WhiteStart => Mathf.Clamp(WhiteHeat, 0.75f, 0.99f);
 
         /// <summary>A flame's color at its temperature, 0 to 1: the ramp from its dull red up.</summary>
         internal static Color Flame(float t) => At(0.25f + 0.75f * Mathf.Clamp01(t));
@@ -147,6 +155,7 @@ namespace RealisticFiring.Visuals
             Shader.SetGlobalVector(OrangeId, Orange);
             Shader.SetGlobalVector(CoreId, Core);
             Shader.SetGlobalVector(WhiteId, White);
+            Shader.SetGlobalFloat(WhiteHeatId, WhiteStart);
             Shader.SetGlobalFloat(ExposureId, Exposed);
         }
     }

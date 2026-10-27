@@ -39,13 +39,9 @@ Shader "RealisticFiring/CoalLumpsSurface"
         #pragma surface surf FireOnly vertex:vert noambient noforwardadd nolightmap nodynlightmap nodirlightmap nometa addshadow
         #pragma target 3.0
         #include "Assets/RealisticFiring/Shaders/FireLight.cginc"
+        #include "Assets/RealisticFiring/Shaders/CoalSurface.cginc"
 
         sampler3D _Noise;
-        sampler2D _LumpZones;
-        float4 _BedMin;
-        float4 _BedMax;
-        float _DoorSlope;
-        sampler2D _BedRelief;
         float _CrackScale;
         float _GlowStrength;
         half _FireLightScale;
@@ -65,15 +61,8 @@ Shader "RealisticFiring/CoalLumpsSurface"
         {
             UNITY_INITIALIZE_OUTPUT(Input, o);
             float2 anchor = v.texcoord1.xy;
-            float4 zone = tex2Dlod(_LumpZones, float4(anchor, 0, 0));
-            // The coal's surface there, with the bed's swells and heaps
-            // (ZonedCoalBed.ReliefTexture), sloping down to the door as the
-            // bed does.
-            float4 relief = tex2Dlod(_BedRelief, float4(anchor, 0, 0));
-            float height = max(zone.r * max(0.2, 1.0 + relief.r) + relief.g, 0.0) * smoothstep(0.0, 1.0, anchor.y / max(_DoorSlope, 1e-3));
-            // A fresh heap's lumps lie black, as a zone's green coal does.
-            zone.b = max(zone.b, relief.b);
-            float3 at = float3(lerp(_BedMin.x, _BedMax.x, anchor.x), lerp(_BedMin.y, _BedMax.y, height), lerp(_BedMin.z, _BedMax.z, anchor.y));
+            float4 zone;
+            float3 at = CoalSurfacePoint(anchor, zone);
             // Where no coal lies, the lumps shrink away into the grate.
             float present = saturate(zone.r * 20.0);
             // Its own frame for its mottling, m: its point on the unit rock (UV3) by its size.
@@ -97,6 +86,11 @@ Shader "RealisticFiring/CoalLumpsSurface"
             // Each burning lump its own heat about the zone's.
             half own = frac(seed * 7.13);
             half t = saturate(heat * (0.6 + 0.4 * own)) * (1.0 - fresh);
+            // As the zone reaches white heat, its burning lumps heat through.
+            // Keeping their random cooler share at full heat left most of
+            // the pile dark even when the fire between them was white hot.
+            half hot = smoothstep(_FireWhiteHeat, 1.0, heat);
+            t = lerp(t, heat * (1.0 - fresh), hot);
 
             // Its ash film and cooler patches, smooth over it (cracks cut from
             // the noise drew as flat yellow patches stuck on the lumps).
@@ -108,11 +102,15 @@ Shader "RealisticFiring/CoalLumpsSurface"
             // all over a working one, as hot coke does in the footage, its cap
             // a darker crust (dark caps over orange feet on a slower fire).
             half body = 0.4 * saturate((t - 0.45) * 2.0) * (0.45 + 0.55 * low) * (0.5 + 0.9 * mottle);
+            // The cooler crust remains below white heat; at full heat the
+            // cap glows too, with slight mottling. Fresh lumps stay black.
+            body = lerp(body, (0.7 + 0.3 * mottle) * (1.0 - fresh), hot);
             // Its foot glows in the gaps' fire; green coal shows it round its
             // edges first.
             half margin = low * low * saturate(heat * 1.6) * lerp(0.55, 0.8, fresh);
-            // An ember's red-orange, cooler than the gaps.
-            half3 glow = FireColor(t * 0.7) * body + FireColor(heat * 0.6) * margin;
+            // Cooler lumps are red-orange. At white heat both their bodies
+            // and feet reach the same end of the ramp as the gaps.
+            half3 glow = FireColor(t * lerp(0.7, 1.0, hot)) * body + FireColor(heat * lerp(0.6, 1.0, hot)) * margin;
             glow *= _GlowStrength * (1.0 + 0.5 * _Pulse) * (1.0 - 0.7 * ash);
 
             half3 albedo = lerp(half3(0.05, 0.045, 0.04), half3(0.022, 0.021, 0.02), fresh);

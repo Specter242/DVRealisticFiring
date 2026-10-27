@@ -18,6 +18,7 @@ half3 _FireRampRed;
 half3 _FireRampOrange;
 half3 _FireRampCore;
 half3 _FireRampWhite;
+half _FireWhiteHeat;
 half _FireExposure;
 
 half3 FireColor(half heat)
@@ -27,7 +28,7 @@ half3 FireColor(half heat)
     c = lerp(c, _FireRampRed, x.y);
     c = lerp(c, _FireRampOrange, x.z);
     c = lerp(c, _FireRampCore, x.w);
-    return lerp(c, _FireRampWhite, saturate(heat * 4.0 - 4.0));
+    return lerp(c, _FireRampWhite, smoothstep(_FireWhiteHeat, 1.0, heat));
 }
 
 // The fire's radiance as the eye sees it.

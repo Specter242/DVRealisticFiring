@@ -31,8 +31,8 @@ Shader "RealisticFiring/FireboxVolume"
         _StepLength ("Step length, m", Float) = 0.02
         _Glow ("A thick flame's radiance", Float) = 1.4
         _FlameDensity ("Flame density, per m", Float) = 8
-        _SmokeDensity ("Smoke density, per m", Float) = 3
-        _SmokeAlbedo ("Smoke's share of light given back", Float) = 0.6
+        _SmokeDensity ("Smoke density, per m", Float) = 5
+        _SmokeAlbedo ("Smoke's share of light given back", Float) = 0.45
         _SmokeLight ("Smoke's light from the fire under it", Float) = 1
         _Sharp ("Flame edge sharpness", Float) = 4
         _Warp ("Curl warp", Float) = 0.35
@@ -57,10 +57,10 @@ Shader "RealisticFiring/FireboxVolume"
         _BeatHeight ("A beat's surge of the flames' height", Float) = 0.5
         _BeatHeat ("A beat's surge of the flames' heat, for their color", Float) = 0.3
         _BeatCover ("A beat's spread of the flames, off their threshold", Float) = 0.06
-        _LickHeight ("Short flames in the gaps: height, m", Float) = 0.12
+        _LickHeight ("Short flames in the gaps: height, m", Float) = 0.09
         _LickDepth ("Short flames in the gaps: from this far under the coal's surface, m", Float) = 0.05
-        _LickScale ("Short flames in the gaps: noise tiles per m across", Float) = 1.5
-        _LickLow ("Short flames in the gaps: threshold at their foot", Float) = 0.72
+        _LickScale ("Short flames in the gaps: noise tiles per m across", Float) = 2.1
+        _LickLow ("Short flames in the gaps: threshold at their foot", Float) = 0.65
         _LickStrength ("Short flames in the gaps: their density against the flames'", Float) = 3
         _LickGlow ("Short flames in the gaps: their light against the flames'", Float) = 6
         _LickHeat ("Short flames in the gaps: their foot's heat over the coolest coal, share of the hottest's", Range(0, 1)) = 0.7
@@ -68,7 +68,7 @@ Shader "RealisticFiring/FireboxVolume"
         _LickStanding ("Short flames: anchored bodies (0 the old scrolling bodies)", Range(0, 1)) = 1
         _LickEdgeSharpness ("Short flames: crisp edges and luminous folds (0 the old soft ramp)", Range(0, 1)) = 1
         _LickDetail ("Short flames: shaped detail (0 the test bed's old smooth cells)", Range(0, 1)) = 1
-        _LickCurl ("Short flames: curling at their tips, m", Float) = 0.04
+        _LickCurl ("Short flames: curling at their tips, m", Float) = 0.025
         _LickRoughness ("Short flames: roughness of their upper edges", Float) = 0.18
         _DoorSlope ("The bed's slope down to the door, share of its length", Float) = 0.07
         _GrateLevel ("The grate's height in the box, 0 to 1", Float) = 0
@@ -478,6 +478,10 @@ Shader "RealisticFiring/FireboxVolume"
                     half spotsAt = spotNoise.g * smoothstep(0.4, 0.65, spotNoise.a);
                     half spotTall = lerp(0.6 + 1.2 * saturate((spotsAt - 0.55) / 0.25), 1.0, _LickMotion);
                     float lickTall = _LickHeight * (0.5 + lerp(0.5, puff, 0.5 + 0.5 * _LickMotion)) * spotTall;
+                    // Puffing and a strong root used to multiply into a much
+                    // taller isolated flame. Keep growth within a small bed
+                    // tongue's scale while retaining its standing motion.
+                    lickTall = min(lickTall, 1.2 * _LickHeight);
                     float lickUp = (above + gapFloor) * _BoxSize.y / max(lickTall, 0.01);
                     // Each patch's sideways push, changing where it is, not carried
                     // up with the flames: the tongues, short and tall, sway from
@@ -523,7 +527,7 @@ Shader "RealisticFiring/FireboxVolume"
                         // At a low draft they burn only at fixed spots in the bed,
                         // relighting there (the footage, real time: tongues at the
                         // same places for seconds); under a hard draft, all over.
-                        lick *= lerp(smoothstep(0.58, 0.72, spotsAt), 1.0, _LickMotion);
+                        lick *= lerp(smoothstep(0.5, 0.68, spotsAt), 1.0, _LickMotion);
                     }
                     // The flames proper stand on the coal's surface.
                     half onCoal = step(0.0, above);
@@ -732,14 +736,21 @@ Shader "RealisticFiring/FireboxVolume"
                     // in wisps over a working one.
                     // (From 10 cm over the coal: thicker there and lit hard from
                     // under it, the smoke lay on a standing bed as glowing ripples.)
-                    half smoke = flowB.g * onCoal * saturate((above * _BoxSize.y - 0.1) / 0.3) * lerp(0.5 + lobes, clumps, _SmokeClumps);
+                    // A dense cloud still has smoke between its billows. Large
+                    // zero-density holes left the walls visible through it.
+                    half smokeShape = max(0.25, lerp(0.5 + lobes, clumps, _SmokeClumps));
+                    half smoke = flowB.g * onCoal * saturate((above * _BoxSize.y - 0.04) / 0.18) * smokeShape;
                     // Lit orange from the coal below (the bed's glow, its color
                     // a little cooler than its flames') and by the flames in it.
                     half3 fireBelow = FlameColor(zoneB.r * 0.75) * zoneB.g * exp(-3.0 * above);
                     // Lit from the coal below, by the flames in it, and by the flames'
                     // light filling the box: pale among a working fire's flames, dark
                     // orange-brown over a standing one.
-                    half3 lit = smoke * _SmokeAlbedo * (_SmokeLight * fireBelow + 0.3 * flameLight + _BoxLight);
+                    // Approximate the bed light absorbed on its way up through
+                    // the smoke. Unattenuated box light made dense smoke glow
+                    // almost as brightly as the fire it should hide.
+                    half smokeShadow = exp(-smoke * _SmokeDensity * max(above * _BoxSize.y, 0.0));
+                    half3 lit = smoke * _SmokeAlbedo * ((_SmokeLight * fireBelow + _BoxLight) * smokeShadow + 0.15 * flameLight);
 
                     // The test bed's views: the flames or the smoke alone.
                     if (_VolumeDebug > 1.5)

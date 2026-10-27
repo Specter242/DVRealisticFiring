@@ -14,8 +14,6 @@ namespace RealisticFiring.Visuals
         private static readonly int DoorSlopeId = Shader.PropertyToID("_DoorSlope");
         private static readonly int PulseId = Shader.PropertyToID("_Pulse");
         private static readonly int GlowStrengthId = Shader.PropertyToID("_GlowStrength");
-        private static readonly int UnderLumpsId = Shader.PropertyToID("_UnderLumps");
-        private static readonly int UnderDropId = Shader.PropertyToID("_UnderDrop");
 
         // The lumps' spacing, m: about one or two a cell; their sizes, m:
         // chips, the usual run, and a few big ones (the footage: caps a few
@@ -49,7 +47,6 @@ namespace RealisticFiring.Visuals
         private Texture2D zones;
         private Mesh mesh;
         private readonly Color[] pixels = new Color[GrateLayout.ZoneCount];
-        private MaterialPropertyBlock bedBlock;
         // Metres per the bed's unit up.
         private float upPerUnit = 1f;
 
@@ -156,9 +153,7 @@ namespace RealisticFiring.Visuals
             mesh.SetUVs(3, rockPoints);
             mesh.SetTriangles(triangles, 0);
             // The shader lifts the lumps to the coal: drawn wherever the pile can reach.
-            var reach = new Bounds(box.center, box.size);
-            reach.Expand(new Vector3(0f, box.size.y * 2f, 0f));
-            mesh.bounds = reach;
+            mesh.bounds = bed.LumpSurfaceBounds;
 
             holder.gameObject.AddComponent<MeshFilter>().sharedMesh = mesh;
             lumpRenderer = holder.gameObject.AddComponent<MeshRenderer>();
@@ -291,15 +286,9 @@ namespace RealisticFiring.Visuals
                 material.SetTexture(BedReliefId, bed.ReliefTexture);
             material.SetFloat(PulseId, flames != null ? flames.Pulse : 0f);
             material.SetFloat(GlowStrengthId, GlowStrength);
-            // The bed under the lumps is the deeper coal between them.
-            if (bed.BedRenderer != null)
-            {
-                bedBlock = bedBlock ?? new MaterialPropertyBlock();
-                bed.BedRenderer.GetPropertyBlock(bedBlock);
-                bedBlock.SetFloat(UnderLumpsId, 1f);
-                bedBlock.SetFloat(UnderDropId, UnderDrop / Mathf.Max(1e-5f, upPerUnit));
-                bed.BedRenderer.SetPropertyBlock(bedBlock);
-            }
+            // The continuous layers follow this same surface and heat,
+            // with their own depth below it.
+            bed.SetLumpSurface(zones, UnderDrop, upPerUnit);
         }
 
         private void OnDestroy()

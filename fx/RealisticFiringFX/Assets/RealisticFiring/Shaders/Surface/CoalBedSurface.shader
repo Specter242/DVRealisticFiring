@@ -33,6 +33,11 @@ Shader "RealisticFiring/CoalBedSurface"
         _FireLightScale ("Fire light", Float) = 1
         _UnderLumps ("Under lumps: the deeper coal between them, whole", Range(0, 1)) = 0
         _UnderDrop ("Under lumps: how far under the coal's surface it lies (its units)", Float) = 0
+        _LumpZones ("Zones: height, heat, green, ash", 2D) = "black" {}
+        _BedRelief ("The bed's relief: swells, heaps, freshness", 2D) = "black" {}
+        _BedMin ("The bed's box, low corner", Vector) = (0, 0, 0, 0)
+        _BedMax ("The bed's box, high corner", Vector) = (1, 1, 1, 0)
+        _DoorSlope ("The bed's slope down to the door", Float) = 0.07
     }
 
     SubShader
@@ -44,6 +49,7 @@ Shader "RealisticFiring/CoalBedSurface"
         #pragma surface surf FireOnly vertex:vert noambient noforwardadd nolightmap nodynlightmap nodirlightmap nometa addshadow
         #pragma target 3.0
         #include "Assets/RealisticFiring/Shaders/FireLight.cginc"
+        #include "Assets/RealisticFiring/Shaders/CoalSurface.cginc"
 
         sampler2D _CoalTex;
         sampler2D _NormalTex;
@@ -80,8 +86,14 @@ Shader "RealisticFiring/CoalBedSurface"
             o.bed = v.texcoord.xy;
             o.state = v.color;
             o.bare = v.texcoord3.x;
-            // Under the lumps, the deeper coal lies under them.
-            v.vertex.y -= _UnderDrop * _UnderLumps;
+            if (_UnderLumps > 0.5)
+            {
+                // Follow the lumps' surface, without a separate coarse
+                // height field or heat jitter crossing through them.
+                float4 zone;
+                v.vertex.y = CoalSurfacePoint(o.bed, zone).y - _UnderDrop;
+                o.state.rgb = zone.gba;
+            }
         }
 
         void surf(Input IN, inout SurfaceOutput o)
@@ -150,7 +162,12 @@ Shader "RealisticFiring/CoalBedSurface"
             half local = saturate(heat * (0.75 + 0.25 * hot) * (1.05 - 0.2 * height) + 0.15 * saturate((heat - 0.9) / 0.1));
             half lit = (1.0 - 0.6 * ash) * (1.0 - 0.85 * clinker);
             half forced = heat * heat * heat;
-            half3 glow = FireColor(local * (1.0 - 0.4 * fresh)) * mask * lit * waver * (0.4 + 1.2 * heat + 0.8 * forced * forced);
+            // Deep coal reaches the same white heat as the lumps above it.
+            // Green cover dims it through the mask, without making cold
+            // texture patches in an otherwise white-hot layer.
+            half through = _UnderLumps * smoothstep(_FireWhiteHeat, 1.0, heat);
+            half colorHeat = lerp(local * (1.0 - 0.4 * fresh), heat, through);
+            half3 glow = FireColor(colorHeat) * mask * lit * waver * (0.4 + 1.2 * heat + 0.8 * forced * forced);
             o.Emission = glow * _GlowStrength * (1.0 + 0.6 * _Pulse) * step(0.001, heat) * (1.0 - saturate(IN.bare * 2.0));
 
             // The fire's light on the coal, the ash, and the bars: no other light reaches them.

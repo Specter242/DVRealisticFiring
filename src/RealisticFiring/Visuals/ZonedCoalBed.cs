@@ -28,6 +28,14 @@ namespace RealisticFiring.Visuals
         private static readonly int TilingId = Shader.PropertyToID("_Tiling");
         private static readonly int PulseId = Shader.PropertyToID("_Pulse");
         private static readonly int GlowStrengthId = Shader.PropertyToID("_GlowStrength");
+        private static readonly int LumpZonesId = Shader.PropertyToID("_LumpZones");
+        private static readonly int BedReliefId = Shader.PropertyToID("_BedRelief");
+        private static readonly int BedMinId = Shader.PropertyToID("_BedMin");
+        private static readonly int BedMaxId = Shader.PropertyToID("_BedMax");
+        private static readonly int DoorSlopeId = Shader.PropertyToID("_DoorSlope");
+        private static readonly int UnderLumpsId = Shader.PropertyToID("_UnderLumps");
+        private static readonly int UnderDropId = Shader.PropertyToID("_UnderDrop");
+        private static readonly int UnderFloorId = Shader.PropertyToID("_UnderFloor");
         private static readonly Color AimColor = new Color(0.25f, 0.6f, 1f);
 
         // Height of a zone's coal over the stock pile's, per even share of capacity.
@@ -1008,6 +1016,51 @@ namespace RealisticFiring.Visuals
         /// A surface is (smooth height × (1 + R) + G), tapered at the door.
         /// </summary>
         internal Texture2D ReliefTexture => reliefTexture;
+
+        /// <summary>
+        /// Makes the continuous coal and ember layers read the lumps' surface
+        /// and heat, keeping both below it instead of crossing it where their
+        /// CPU height interpolation and heat jitter differ from the shader's.
+        /// </summary>
+        internal void SetLumpSurface(Texture2D zones, float depth, float upPerUnit)
+        {
+            var units = 1f / Mathf.Max(1e-5f, upPerUnit);
+            var floor = bed.min.y - EmberUnder * units;
+            SetLumpSurface(bedRenderer, properties, zones, depth * units, floor);
+            SetLumpSurface(emberRenderer, emberProperties, zones, Mathf.Max(EmberDepth, depth + EmberUnder) * units, floor);
+            // The shader can lift these beyond the CPU mesh at a heaped or
+            // overfilled zone. Keep its displaced surface inside the bounds.
+            if (mesh != null)
+                mesh.bounds = LumpSurfaceBounds;
+            if (emberMesh != null)
+                emberMesh.bounds = LumpSurfaceBounds;
+        }
+
+        internal Bounds LumpSurfaceBounds
+        {
+            get
+            {
+                var reach = new Bounds(bed.center, bed.size);
+                reach.Expand(new Vector3(0f, bed.size.y * 4f, 0f));
+                return reach;
+            }
+        }
+
+        private void SetLumpSurface(Renderer renderer, MaterialPropertyBlock block, Texture2D zones, float depth, float floor)
+        {
+            if (renderer == null || block == null)
+                return;
+            renderer.GetPropertyBlock(block);
+            block.SetTexture(LumpZonesId, zones);
+            block.SetTexture(BedReliefId, reliefTexture);
+            block.SetVector(BedMinId, bed.min);
+            block.SetVector(BedMaxId, bed.max);
+            block.SetFloat(DoorSlopeId, DoorSlope);
+            block.SetFloat(UnderLumpsId, 1f);
+            block.SetFloat(UnderDropId, depth);
+            block.SetFloat(UnderFloorId, floor);
+            renderer.SetPropertyBlock(block);
+        }
 
         /// <summary>Whether the bed has been built and placed.</summary>
         public bool Ready => pivot != null;

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.16.1 (2026-10-27)
+
+- The hottest coal fires now reach white-hot brightness across the coal,
+  embers, and flames. The layers beneath the lumps follow the same surface.
+- Small bed flames are shorter and form more connected groups.
+- Dense firebox smoke absorbs more light and obscures the fire and walls.
+
 ## 1.16.0 (2026-10-26)
 
 - Optional Realistic Stack Effects integration hands chimney drawing to that mod and feeds it the realistic fires through a separately loaded add-on. Without it, Realistic Firing keeps its own plume.

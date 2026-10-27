@@ -110,14 +110,11 @@ namespace RealisticFiring.Visuals
         private int sourceRefreshes;
         internal static float Glow = 0.9f;
         internal static float FlameDensity = 6f;
-        // (Smoke 2.5 per m, from 1: carried by the airflow it filled a
-        // standing fire's box only as a faint haze, where the footage's is
-        // murky; a working fire's is diluted six times as much.)
-        internal static float SmokeDensity = 2.5f;
-        // (0.7: coal smoke's tar and steam scatter more than soot alone; at
-        // 0.5 a working fire's fresh smoke streamed up dark brown, where the
-        // footage's wisps are pale grey-tan.)
-        internal static float SmokeAlbedo = 0.7f;
+        // Dense firebox smoke must obscure the fire and walls. The old
+        // low extinction and bright scattering showed a luminous haze,
+        // especially against the white-hot bed.
+        internal static float SmokeDensity = 5f;
+        internal static float SmokeAlbedo = 0.45f;
         internal static float SmokeLight = 0.08f;
         internal static float SmokeClumps = 1f;
         internal static float ChokedSmoke = 2f;
@@ -167,9 +164,9 @@ namespace RealisticFiring.Visuals
         internal static float BeatCover = 0.04f;
         private const float PulseMeanTime = 1f;
 
-        internal static float LickHeight = 0.12f;
-        internal static float LickScale = 1.5f;
-        internal static float LickLow = 0.72f;
+        internal static float LickHeight = 0.09f;
+        internal static float LickScale = 2.1f;
+        internal static float LickLow = 0.65f;
         internal static float LickStrength = 3f;
         internal static float LickGlow = 6f;
         internal static float LickHeat = 0.7f;
@@ -178,7 +175,7 @@ namespace RealisticFiring.Visuals
         // body. Zero keeps the old soft ramp and wider fronts for comparisons.
         internal static float LickEdgeSharpness = 1f;
         internal static float LickDetail = 1f;
-        internal static float LickCurl = 0.04f;
+        internal static float LickCurl = 0.025f;
         internal static float LickRoughness = 0.18f;
         private const float LickStretch = 0.35f;
 
@@ -295,7 +292,7 @@ namespace RealisticFiring.Visuals
         // lit from below).
         internal static float GasSmoke = 0.3f;
         internal static float SmokeOutPerKg = 0.5f;
-        internal static float SmokeBoxLight = 1f;
+        internal static float SmokeBoxLight = 0.6f;
 
         private ZonedCoalBed bed;
         private FireboxFlames flames;
