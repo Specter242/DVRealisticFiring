@@ -13,12 +13,45 @@ least coal or oil. For what each control does, see the README.
 - **Keep the door shut.** Crack it briefly after firing to burn off the
   smoke, then close it. Cold air through the door wastes more heat than air
   through the grate.
-- **Read before you act.** F6 shows the fire, the draft (choked when
+- **Read before you act.** The tablet and optional F6 overlay show the fire,
+  the draft (choked when
   overstoked, thin when underfed, the smoke's color under it), the glass,
   and the boiler on dials, each grate zone's coal, and the next thing to do.
   The stack and the bed tell you the rest.
 - **Keep the water in the middle of the glass.** Feed steadily, not in
   floods, and never let it get low.
+
+## The tablet and automatic fireman
+
+Carry the firing tablet or fit it to a large gadget mount in the cab. Steam
+starting equipment that includes a shovel includes a tablet too; buy one
+beside the clinometer or use **Controls → Equipment → Give firing tablet**
+in the mod's settings (F8). Each tablet saves its selected page. On desktop,
+use mouse mode to press the tabs and buttons while holding it.
+
+The **Fire**, **Water**, and **Engine** pages show the readings and advice
+also available through F6. A mounted tablet reads its engine; a held tablet
+reads the engine you are tending. Between two locomotives, the readings
+prefer the engine you were last in.
+
+Open **Fireman** to give the automatic fireman orders:
+
+- **Off:** you do the firing and feeding.
+- **Keep It Alive:** a thin fire and about half pressure for a long stand.
+- **Shunting:** pressure ready for stop-start work, clear of the safety valve.
+- **Road:** pressure just under the safety valve for road work.
+
+Before a pull, press **Heavy Work Ahead** to build the fire and fill the
+boiler. Before shutting off or stopping, press **Easing Off** to let the
+fire burn down and fill the boiler. Press an active call again to cancel
+it. The page shows his status and warnings; F7 still opens the separate
+fireman controls.
+
+You can take over a control he is working: move it and it is yours for a
+minute. A new order hands the controls back. He handles stoker feed, jets,
+jams, and retained table coal, but you still light the fire, break clinker,
+and empty the ashpan. Check which engine the tablet is reading before
+giving an order.
 
 ## Hand firing coal
 
@@ -121,7 +154,7 @@ and use the cab's blower (the 8F has no fitting).
 
 - **Start** with steam up: floor lever at Forward, open the stoker engine
   valve, and set the feed to hold the coal steady.
-- **Jets:** start at master 1.4 bar, front 0.8, back 0.8, fines 0.7. Turn
+- **Jets:** start at master 1.4 bar, front 1.2, back 0.8, fines 0.7. Turn
   the front and fines down as the engine works harder; the draft carries
   coal forward anyway. The back draws hardest and the stoker can't reach it
   all: keep the back corners up by hand.
@@ -149,18 +182,25 @@ and use the cab's blower (the 8F has no fitting).
     back jets' sideways into the corners, the front jets' up each side;
     each jet's steam shows how hard it blows, and the fines catch and burn
     in the air.
-- **Wet coal** sticks on the distributor table and falls short: raise the
-  jets a little in the rain. A little damp keeps the fines on the fire
-  instead of up the stack.
-- **Feed and moisture matter.** Soaked fines can pack the screw; dry coal
-  scours it gradually, and a short reverse relieves a heavily loaded screw.
-  Persistent packing is disabled when jams are off. Ease excessive feed
-  when the jets cannot keep up. If coal stays on the table, open the door and rake the back of
-  the fire with the empty shovel, or slice, push, or pull there with the
-  iron. This clears coal onto the grate and scrapes the plate even when
-  empty; reversing the engine only relieves the screw. A hot table wears
-  clean as dry coal replaces the wet mixture. Stopping the screw and
-  closing the jets leaves retained coal on the table.
+- **Wet coal and fines:** a little dampness binds fines and reduces dust
+  and cinders. Soaked coal catches more slowly, sticks on the distributing
+  table, and can pack the screw. Delivery can slow before a stall. Dry coal
+  gradually scours packing away; a short reverse relieves the screw.
+  Persistent packing is disabled when jams are off.
+- **Match feed to the jets.** More coal needs more jet steam to throw it.
+  Ease the feed or raise the jets a little when the coal falls short.
+  Turning one jet down affects its own lane; watch where that coal lands.
+- **Coal held on the table:** the tablet's Fire page and F6 show the amount
+  retained and advise when it needs clearing. Open the door and rake the
+  back of the fire with the empty shovel, or slice, push, or pull there
+  with the fire iron. This moves coal onto the grate and scrapes the plate,
+  even when empty. Reversing relieves the screw, not the table. A hot table
+  wears clean as dry coal replaces the wet mixture.
+- **After stopping:** with the screw stopped and jets shut, coal stays on
+  the table until the jets or the hook move it. A little retained coal
+  while standing is normal; it and its water are saved with the engine.
+  The automatic fireman attends to loaded tables and a heavily loaded or
+  jammed screw.
 - **Fire the back corners and under the door by hand.** The stoker runs them
   short.
 - **Don't stoke standing.** With no draft it banks the fire and smokes. Shut
@@ -255,6 +295,8 @@ and use the cab's blower (the 8F has no fitting).
 - **Work the fire to the job.** Heavy pulls at a long cut-off need a strong
   fire and full draft. Drifting needs only a light fire: hold it, don't
   build it.
+- **Bailing off moved to [Realistic Brakes](https://www.nexusmods.com/derailvalley/mods/1798)
+  in 1.16.2.** Install that optional mod to keep the bail-off feature.
 
 ## Booster (NYC Hudson)
 
@@ -297,8 +339,10 @@ A grinding clash means the booster was turning or you were going too fast.
 | Wiggle the grate | every 10–15 min of hard work |
 | Clean the fire | when clinker shows, about every 2 h of hard work |
 | Ashpan | empty at half full |
-| Stoker jets | master 1.4, front 0.8, back 0.8, fines 0.7 bar |
+| Fireman orders | tablet's Fireman page, or F7; Heavy Work Ahead before a pull, Easing Off before stopping |
+| Stoker jets | master 1.4, front 1.2, back 0.8, fines 0.7 bar |
 | Stoker coal piling | at the front: front jets down; under the door: back jets and fines up |
+| Coal held on the table | door open; empty-shovel rake or fire-iron slice, push, or pull at the back; reverse clears the screw |
 | Oil temperature | 45–80 °C (110–175 °F) |
 | Oil stack | light grey-brown haze |
 | Injector | at least 2.5 bar; water open, steam Prime, then Feed; water past two fifths |
