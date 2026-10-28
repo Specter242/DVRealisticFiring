@@ -91,6 +91,10 @@ namespace RealisticFiring.Visuals
         private RealisticFirebox firebox;
         private ZonedCoalBed bed;
         private ParticleSystem lumps;
+        private ParticleSystem tableCoal;
+        private const int HeldLumps = 24;
+        private readonly ParticleSystem.Particle[] heldParticles = new ParticleSystem.Particle[HeldLumps];
+        private float tableRefresh;
         private ParticleSystem fines;
         private ParticleSystem steam;
         private StokerJetStream jets;
@@ -120,6 +124,7 @@ namespace RealisticFiring.Visuals
             spray.bed = bed;
             spray.firebox = firebox;
             spray.lumps = spray.CreateLumps();
+            spray.tableCoal = spray.CreateTableCoal();
             var sparks = SparkMaterial();
             spray.fines = sparks != null ? spray.CreateFines(sparks) : null;
             var smoke = SmokeSystem(bed);
@@ -150,7 +155,8 @@ namespace RealisticFiring.Visuals
 
         private ParticleSystem CreateLumps()
         {
-            var system = NewSystem("stoker lumps", 200);
+            // Reserve part of the existing lump budget for retained coal.
+            var system = NewSystem("stoker lumps", 200 - HeldLumps);
             var main = system.main;
             main.gravityModifier = 1f;
             main.startRotation3D = true;
@@ -169,6 +175,42 @@ namespace RealisticFiring.Visuals
             lumpGlow = new MaterialPropertyBlock();
             system.Play();
             return system;
+        }
+
+        private ParticleSystem CreateTableCoal()
+        {
+            var system = NewSystem("coal on stoker table", HeldLumps);
+            var main = system.main; main.startRotation3D = true;
+            var renderer = system.GetComponent<ParticleSystemRenderer>();
+            renderer.renderMode = ParticleSystemRenderMode.Mesh;
+            var meshes = LumpMeshes(); renderer.mesh = meshes[0]; renderer.SetMeshes(meshes);
+            renderer.sharedMaterial = LumpMaterial();
+            system.Play();
+            return system;
+        }
+
+        private void UpdateTableCoal(Vector3 plate)
+        {
+            if (Time.time < tableRefresh) return;
+            tableRefresh = Time.time + .1f;
+            var fill = Mathf.Clamp01(firebox.StokerTableFill);
+            var count = firebox.StokerTableCoal > .03f ? Mathf.Max(1, Mathf.CeilToInt(HeldLumps * fill)) : 0;
+            var aside = Vector3.Cross(bedUp, bedAlong).normalized;
+            for (var i = 0; i < count; i++)
+            {
+                var angle = i * 2.399963f;
+                var radius = Mathf.Sqrt((i + .5f) / Mathf.Max(1, count));
+                heldParticles[i] = new ParticleSystem.Particle
+                {
+                    position = plate + aside * (Mathf.Cos(angle) * radius * .12f)
+                        + bedAlong * (.065f + Mathf.Sin(angle) * radius * .055f)
+                        + bedUp * (.015f + (1f - radius) * .07f * fill),
+                    startSize = Mathf.Lerp(.025f, .055f, fill),
+                    startColor = Color.white, startLifetime = 1000f, remainingLifetime = 1000f,
+                    rotation3D = new Vector3(i * 17f, i * 53f, i * 31f),
+                };
+            }
+            tableCoal.SetParticles(heldParticles, count);
         }
 
         private ParticleSystem CreateFines(Material sparks)
@@ -251,12 +293,12 @@ namespace RealisticFiring.Visuals
             if (firebox == null || bed == null || !bed.Ready || lumps == null)
                 return;
             var stoker = firebox.StokerModel;
-            if (stoker == null || !(firebox.LastStoker is StokerFlow flow))
+            if (!(firebox.LastStoker is StokerFlow flow))
                 return;
             if (!draftSet)
                 SetDraft();
 
-            Report(flow.Fed > 0f ? stoker.EngineSpeed * stoker.Spec.MaxFeedRate : 0f, flow);
+            Report(flow.EjectedRate, flow);
 
             // Shut, nothing in the firebox shows.
             if (firebox.DoorOpening <= DoorShut)
@@ -270,14 +312,18 @@ namespace RealisticFiring.Visuals
                 Cull(false);
 
             var dt = Time.deltaTime;
-            var fedRate = flow.Fed > 0f ? stoker.EngineSpeed * stoker.Spec.MaxFeedRate : 0f;
+            var fedRate = flow.EjectedRate;
             var plate = InFrame(plateBox);
             var gravity = transform.InverseTransformDirection(Physics.gravity);
-            var (lumpShare, fineTotal) = Shares(stoker);
             Firelight();
+            UpdateTableCoal(plate);
+            // Clients can draw the host's retained pile without a local
+            // feeding model; airborne landing shares remain host-owned.
+            if (stoker == null) return;
+            var (lumpShare, fineTotal) = Shares(stoker);
             if (seed && fedRate > 0f)
                 Seed(stoker, fedRate, lumpShare, fineTotal, plate, gravity);
-            Steam(flow, stoker, fedRate, dt);
+            Steam(flow, stoker, fedRate, dt, fineTotal);
             if (!(fedRate > 0f))
                 return;
 
@@ -307,6 +353,7 @@ namespace RealisticFiring.Visuals
             renderer.GetPropertyBlock(lumpGlow);
             lumpGlow.SetColor(EmissionColorId, glow);
             renderer.SetPropertyBlock(lumpGlow);
+            tableCoal.GetComponent<ParticleSystemRenderer>().SetPropertyBlock(lumpGlow);
         }
 
         // What the spray is doing, for the log: the door, the feed, and what is in the air.
@@ -342,7 +389,7 @@ namespace RealisticFiring.Visuals
                 lumpShare += stoker.LumpShares[i];
                 fineShare += stoker.FineShares[i];
             }
-            return (lumpShare, fineShare + stoker.LostShare);
+            return (lumpShare + stoker.LostLumpShare, fineShare + stoker.LostFineShare);
         }
 
         // With the door shut nothing is thrown or drawn; open, it all shows again.
@@ -350,10 +397,11 @@ namespace RealisticFiring.Visuals
         {
             culled = shut;
             jets?.Hide();
+            tableRefresh = 0f;
             lumpsDue = finesDue = dustDue = 0f;
             for (var j = 0; j < wispsDue.Length; j++)
                 wispsDue[j] = 0f;
-            foreach (var system in new[] { lumps, fines, steam })
+            foreach (var system in new[] { lumps, fines, steam, tableCoal })
             {
                 if (system == null)
                     continue;
@@ -576,7 +624,7 @@ namespace RealisticFiring.Visuals
 
         // Jet steam along each lane as strong as its jet, and coal dust while
         // the screw feeds.
-        private void Steam(StokerFlow flow, Stoker stoker, float fedRate, float dt)
+        private void Steam(StokerFlow flow, Stoker stoker, float fedRate, float dt, float looseFines)
         {
             var cold = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(100f, 200f, firebox.Model.Temperature));
             steamVisibility = Mathf.Lerp(cold, 1f, Mathf.Clamp01(HotJetSteam));
@@ -613,7 +661,8 @@ namespace RealisticFiring.Visuals
             if (streams) jets.End(); else jets?.Hide();
             if (steam == null)
                 return;
-            dustDue = Mathf.Min(dustDue + Mathf.Clamp01(fedRate / Mathf.Max(0.01f, stoker.Spec.MaxFeedRate)) * DustAtFullFeed * dt, 2f);
+            dustDue = Mathf.Min(dustDue + Mathf.Clamp01(fedRate / Mathf.Max(0.01f, stoker.Spec.MaxFeedRate))
+                * Mathf.Clamp01(looseFines / Mathf.Max(.01f, stoker.Spec.FinesShare)) * DustAtFullFeed * dt, 2f);
             for (; dustDue >= 1f; dustDue -= 1f)
             {
                 var from = InFrame(plateBox);

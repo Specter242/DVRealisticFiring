@@ -35,9 +35,14 @@ namespace RealisticFiring.Items
         private DV.Customization.Gadgets.GadgetItem item;
         private MeshRenderer shell;
         private Text loco, advice, waiting;
-        private readonly Image[] tabs = new Image[3], zones = new Image[9], zoneBorders = new Image[9];
+        private readonly Image[] tabs = new Image[FiringTabletGadget.Pages], zones = new Image[9], zoneBorders = new Image[9];
         private readonly RawImage[] dials = new RawImage[4], smoke = new RawImage[4];
-        private readonly Text[] tabNames = new Text[3], gaugeNames = new Text[4], gaugeValues = new Text[4], coal = new Text[9];
+        private readonly Text[] tabNames = new Text[FiringTabletGadget.Pages], gaugeNames = new Text[4], gaugeValues = new Text[4], coal = new Text[9];
+        private readonly Image[] orderPlates = new Image[6];
+        private readonly Text[] orderNames = new Text[6];
+        private readonly GameObject[] orderButtons = new GameObject[6];
+        private Text ordersHeading, callsHeading, firemanInfo;
+        private static readonly string[] OrderNames = { "OFF", "KEEP IT ALIVE", "SHUNTING", "ROAD", "HEAVY WORK AHEAD", "EASING OFF" };
         private readonly RawImage[] gaugeMarks = new RawImage[4], stepChecks = new RawImage[5];
         private readonly Text[] labels = new Text[MaxRows], values = new Text[MaxRows];
         private readonly Text[] stepTitles = new Text[5], stepHow = new Text[5];
@@ -96,8 +101,7 @@ namespace RealisticFiring.Items
             }
             lastVisibleAt = Time.unscaledTime;
             // A mounted tablet never follows the player into a different engine.
-            var car = mounted != null ? mounted.TrainCar
-                : item?.Item != null && item.Item.IsGrabbed() ? PlayerManager.Car : TrainCar.Resolve(gameObject);
+            var car = TargetCar();
             UpdateAim();
             if (Time.unscaledTime < refreshAt && readPage == state.Page && car == readCar)
                 return;
@@ -105,15 +109,21 @@ namespace RealisticFiring.Items
             readPage = state.Page;
             readCar = car;
             FireOverlay.Card card = null;
+            FiremanRig fireman = null;
             shownCoal = null;
-            if (FireboxRegistry.TryGetTended(car, out var fire))
+            if (state.Page == FiringTabletGadget.FiremanPage)
+            {
+                if (FiremanRig.TryGetTended(car, out fireman))
+                    card = FiremanPanel.ReadTablet(fireman);
+            }
+            else if (FireboxRegistry.TryGetTended(car, out var fire))
             {
                 shownCoal = fire;
                 card = FireOverlay.Read(fire, state.Page);
             }
             else if (RealisticOilFirebox.TryGetTended(car, out var oil))
                 card = FireOverlay.Read(oil, state.Page);
-            Show(card, state.Page);
+            Show(card, state.Page, fireman);
             UpdateAim();
             dirty = true;
         }
@@ -122,6 +132,25 @@ namespace RealisticFiring.Items
         {
             if (State != null)
                 State.Page = page;
+            // Stop invisible controls receiving touches before the next reading.
+            foreach (var button in orderButtons)
+                if (button != null) button.SetActive(false);
+            refreshAt = 0f;
+        }
+
+        private TrainCar TargetCar() => mounted != null ? mounted.TrainCar
+            : item?.Item != null && item.Item.IsGrabbed() ? PlayerManager.Car : TrainCar.Resolve(gameObject);
+
+        internal void GiveOrder(int order)
+        {
+            // Resolve again on every press: carrying a tablet into another cab
+            // must never command the engine from the previous cached reading.
+            if (State?.Page != FiringTabletGadget.FiremanPage || !FiremanRig.TryGetTended(TargetCar(), out var rig))
+                return;
+            if (order >= 0 && order < 4)
+                FiremanOrders.Order(rig, (FiremanMode)order);
+            else if (order == 4 || order == 5)
+                FiremanOrders.Call(rig, order == 4 ? FiremanCall.HeavyAhead : FiremanCall.EasingOff);
             refreshAt = 0f;
         }
 
@@ -145,14 +174,32 @@ namespace RealisticFiring.Items
             if (surface == null) BuildSurface();
             Picture("Background", new Rect(0, 0, Width, Height), OverlayArt.White, new Color(0.035f, 0.028f, 0.021f, 1f));
             Picture("Frame", new Rect(1, 1, Width - 2, 1), OverlayArt.White, OverlayArt.Soft);
-            for (var i = 0; i < 3; i++)
+            for (var i = 0; i < FiringTabletGadget.Pages; i++)
             {
-                var rect = new Rect(16 + i * 102, 12, 96, 26);
+                var rect = new Rect(16 + i * 90, 12, 84, 26);
                 tabs[i] = Panel("Page plate", rect, OverlayArt.PlateOff, Color.white);
                 tabNames[i] = Words("Page", rect, 15, TextAnchor.MiddleCenter, OverlayArt.Cream);
-                if (!controlsBuilt) AddButton(i, rect);
+                var page = i;
+                if (!controlsBuilt) AddButton("page " + i, rect, () => SelectPage(page));
             }
-            loco = Words("Locomotive", new Rect(330, 12, 194, 26), 16, TextAnchor.MiddleRight, OverlayArt.Soft);
+            loco = Words("Locomotive", new Rect(382, 12, 142, 26), 16, TextAnchor.MiddleRight, OverlayArt.Soft);
+            ordersHeading = Words("Orders heading", new Rect(16, 44, 508, 22), 16, TextAnchor.MiddleLeft, OverlayArt.Soft);
+            ordersHeading.text = "Fireman's orders";
+            callsHeading = Words("Calls heading", new Rect(16, 114, 508, 22), 16, TextAnchor.MiddleLeft, OverlayArt.Soft);
+            callsHeading.text = "Engineer's calls";
+            firemanInfo = Words("Fireman status", new Rect(40, 204, 460, 148), 22, TextAnchor.MiddleCenter, OverlayArt.Cream);
+            for (var i = 0; i < orderPlates.Length; i++)
+            {
+                var area = OrderArea(i);
+                orderPlates[i] = Panel("Order plate", area, OverlayArt.PlateOff, Color.white);
+                orderNames[i] = Words("Order", area, 17, TextAnchor.MiddleCenter, OverlayArt.Cream);
+                if (!controlsBuilt)
+                {
+                    var order = i;
+                    orderButtons[i] = AddButton("order " + i, area, () => GiveOrder(order));
+                    orderButtons[i].SetActive(false);
+                }
+            }
             for (var i = 0; i < 4; i++)
             {
                 var x = 16 + i * 128;
@@ -267,9 +314,18 @@ namespace RealisticFiring.Items
             dirty = true;
         }
 
-        private void AddButton(int page, Rect area)
+        internal static Rect OrderArea(int order)
         {
-            var button = new GameObject("[tablet page " + page + "]");
+            if (order == 0) return new Rect(16, 68, 80, 40);
+            if (order == 1) return new Rect(104, 68, 160, 40);
+            if (order == 2) return new Rect(272, 68, 136, 40);
+            if (order == 3) return new Rect(416, 68, 108, 40);
+            return new Rect(order == 4 ? 16 : 274, 138, 250, 40);
+        }
+
+        private GameObject AddButton(string name, Rect area, System.Action pressed)
+        {
+            var button = new GameObject("[tablet " + name + "]");
             button.SetActive(false);
             button.layer = FiringTablet.ControlLayer;
             button.transform.SetParent(transform, false);
@@ -280,37 +336,54 @@ namespace RealisticFiring.Items
             // Hover casts include triggers; tabs must never push controls or loose items.
             collider.isTrigger = true;
             var spec = button.AddComponent<DV.CabControls.Spec.Button>();
-            spec.colliderGameObjects = new[] { button };
-            spec.createRigidbody = false;
-            spec.useJoints = false;
+            FiringTabletSetup.ConfigurePageButton(spec, button);
             var use = button.AddComponent<FiringTabletPageButton>();
-            use.Screen = this;
-            use.Page = page;
+            use.Pressed = pressed;
             button.SetActive(true);
+            return button;
         }
 
-        private void Show(FireOverlay.Card card, int page)
+        private void Show(FireOverlay.Card card, int page, FiremanRig fireman)
         {
             var hasData = card != null;
+            var orders = page == FiringTabletGadget.FiremanPage;
             waiting.gameObject.SetActive(!hasData);
             waiting.text = mounted != null
                 ? "No supported steam engine\nThis car has no firing readings."
                 : "No supported steam engine\nCarry the tablet aboard a locomotive to read its fire.";
             loco.text = hasData ? card.Loco : "FIRING TABLET";
-            for (var i = 0; i < 3; i++)
+            for (var i = 0; i < FiringTabletGadget.Pages; i++)
             {
                 tabs[i].sprite = PanelSprite(i == page ? OverlayArt.PlateOn : OverlayArt.PlateOff);
                 tabNames[i].color = i == page ? OverlayArt.Cream : OverlayArt.Dim;
-                tabNames[i].text = i == 0 ? (hasData && card.Oil ? "BURNER" : "FIRE") : i == 1 ? "WATER" : "ENGINE";
+                tabNames[i].text = i == 0 ? (hasData && card.Oil ? "BURNER" : "FIRE") : i == 1 ? "WATER" : i == 2 ? "ENGINE" : "FIREMAN";
+            }
+            ordersHeading.gameObject.SetActive(orders && hasData);
+            callsHeading.gameObject.SetActive(orders && hasData);
+            firemanInfo.gameObject.SetActive(orders && hasData && card.Rows.Count == 0);
+            firemanInfo.text = Net.IsClient ? "Orders go to the host's fireman.\nLive readings are on the other tabs."
+                : "The fire and controls are yours.\nChoose an order to have the fireman take over.";
+            for (var i = 0; i < orderPlates.Length; i++)
+            {
+                var show = orders && fireman != null;
+                orderPlates[i].gameObject.SetActive(show);
+                orderNames[i].gameObject.SetActive(show);
+                orderButtons[i].SetActive(show);
+                if (!show) continue;
+                var active = i < 4 ? FiremanOrders.ModeOf(fireman) == (FiremanMode)i
+                    : FiremanOrders.CallActive(fireman, i == 4 ? FiremanCall.HeavyAhead : FiremanCall.EasingOff);
+                orderPlates[i].sprite = PanelSprite(active ? OverlayArt.PlateOn : OverlayArt.PlateOff);
+                orderNames[i].color = active ? OverlayArt.Cream : OverlayArt.Dim;
+                orderNames[i].text = OrderNames[i] + (active && i >= 4 ? $" · {fireman.Fireman.CallLeft:F0} s" : "");
             }
             for (var i = 0; i < 4; i++)
             {
-                dials[i].gameObject.SetActive(hasData);
-                gaugeNames[i].gameObject.SetActive(hasData);
-                gaugeValues[i].gameObject.SetActive(hasData);
-                gaugeMarks[i].gameObject.SetActive(hasData);
-                smoke[i].gameObject.SetActive(hasData && card.Gauges[i].Smoke.HasValue);
-                if (!hasData)
+                dials[i].gameObject.SetActive(hasData && !orders);
+                gaugeNames[i].gameObject.SetActive(hasData && !orders);
+                gaugeValues[i].gameObject.SetActive(hasData && !orders);
+                gaugeMarks[i].gameObject.SetActive(hasData && !orders);
+                smoke[i].gameObject.SetActive(hasData && !orders && card.Gauges[i].Smoke.HasValue);
+                if (!hasData || orders)
                     continue;
                 var gauge = card.Gauges[i];
                 dials[i].texture = OverlayArt.Dial(dialKey + i, gauge.Value, gauge.Band0, gauge.Band1, gauge.Level);
@@ -338,7 +411,8 @@ namespace RealisticFiring.Items
                 clinker[i].rectTransform.sizeDelta = new Vector2(54f * Mathf.Clamp(card.ZoneClinker[i], 0.15f, 1f), 4f);
             }
             var rows = hasData ? card.Rows.Count : 0;
-            var rowHeight = Mathf.Min(32f, 196f / Mathf.Max(1, rows));
+            var rowHeight = Mathf.Min(32f, (orders ? 184f : 196f) / Mathf.Max(1, rows));
+            var rowsTop = orders ? 194f : 180f;
             var left = grate ? 238f : 16f;
             var width = 524f - left;
             for (var i = 0; i < MaxRows; i++)
@@ -348,8 +422,8 @@ namespace RealisticFiring.Items
                 if (i >= rows)
                     continue;
                 var row = card.Rows[i];
-                Place(labels[i].rectTransform, new Rect(left, 180 + i * rowHeight, width * 0.32f, rowHeight));
-                Place(values[i].rectTransform, new Rect(left + width * 0.33f, 180 + i * rowHeight, width * 0.67f, rowHeight));
+                Place(labels[i].rectTransform, new Rect(left, rowsTop + i * rowHeight, width * 0.32f, rowHeight));
+                Place(values[i].rectTransform, new Rect(left + width * 0.33f, rowsTop + i * rowHeight, width * 0.67f, rowHeight));
                 labels[i].text = row.Label;
                 values[i].text = row.Value;
                 values[i].color = row.Level.HasValue ? OverlayArt.LevelColor(row.Level.Value) : OverlayArt.Cream;
@@ -540,8 +614,7 @@ namespace RealisticFiring.Items
 
     internal sealed class FiringTabletPageButton : MonoBehaviour
     {
-        internal FiringTabletScreen Screen;
-        internal int Page;
+        internal System.Action Pressed;
         private ControlImplBase control;
 
         private void Start()
@@ -554,7 +627,7 @@ namespace RealisticFiring.Items
         private void Changed(ValueChangedEventArgs change)
         {
             if (change.newValue >= 0.5f && change.oldValue < 0.5f)
-                Screen.SelectPage(Page);
+                Pressed?.Invoke();
         }
 
         private void OnDestroy()

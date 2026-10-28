@@ -16,6 +16,57 @@ namespace RealisticFiring.Core.Tests;
     private const float S282Stoker = 1.56f;
 
     [Fact]
+    public void AStoppedStokerStillOpensEveryJetToClearItsTable()
+    {
+        var engine = new Footplate(stokerFeed: S282Stoker);
+        engine.Run(30f);
+        var readings = engine.Readings; readings.StokerTableLoaded = true;
+        var action = engine.Fireman.Step(.1f, engine.Fire, readings);
+        Assert.False(engine.Fireman.Stoking);
+        Assert.True(action.ClearStokerTable && action.FrontJets > 0f && action.BackJets > 0f && action.FinesJet > 0f);
+        Assert.Equal(1f, action.Door);
+    }
+
+    [Fact]
+    public void SustainedVisibleOverloadPromptsAReverseBeforeAJamButNormalLoadDoesNot()
+    {
+        var engine = new Footplate(stokerFeed: S282Stoker) { EngineSteam = Cruise };
+        engine.Run(60f);
+        var readings = engine.Readings;
+        readings.StokerThrottle = .7f; readings.StokerEngineSpeed = .4f;
+        readings.StokerEnginePressure = 4f; readings.StokerWorkingPressure = 2.5f;
+        readings.StokerRunningForward = true;
+        FiremanActions action = default;
+        for (int i = 0; i < 70; i++) action = engine.Fireman.Step(.1f, engine.Fire, readings);
+        Assert.Equal(StokerDirection.Forward, action.StokerDirection);
+        for (int i = 0; i < 20; i++) action = engine.Fireman.Step(.1f, engine.Fire, readings);
+        Assert.Equal(StokerDirection.Reverse, action.StokerDirection);
+        readings.StokerRunningForward = false;
+        for (int i = 0; i < 90; i++) action = engine.Fireman.Step(.1f, engine.Fire, readings);
+        Assert.Equal(StokerDirection.Forward, action.StokerDirection);
+        readings.StokerRunningForward = true; readings.StokerEngineSpeed = .7f; readings.StokerEnginePressure = 1.75f;
+        for (int i = 0; i < 700; i++)
+            Assert.Equal(StokerDirection.Forward, engine.Fireman.Step(.1f, engine.Fire, readings).StokerDirection);
+    }
+
+    [Fact]
+    public void CoalSeenOnTheTableMakesHimEaseFeedAndUseTheHook()
+    {
+        var engine = new Footplate(stokerFeed: S282Stoker) { EngineSteam = Cruise };
+        engine.Run(60f);
+        var readings = engine.Readings; readings.StokerTableLoaded = true;
+        var actions = engine.Fireman.Step(FireTestKit.Dt, engine.Fire, readings);
+        Assert.True(actions.ClearStokerTable);
+        Assert.Equal(1f, actions.Door);
+        Assert.InRange(actions.StokerThrottle, 0f, .45f);
+        Assert.True(actions.MasterJet > .35f);
+        readings.StokerJammed = true;
+        actions = engine.Fireman.Step(FireTestKit.Dt, engine.Fire, readings);
+        Assert.Equal(StokerDirection.Reverse, actions.StokerDirection);
+        Assert.False(actions.ClearStokerTable);
+    }
+
+    [Fact]
     public void WithAStokerHeRunsItAndHandFiresOnlyWhatItStarves()
     {
         var engine = new Footplate(stokerFeed: S282Stoker);

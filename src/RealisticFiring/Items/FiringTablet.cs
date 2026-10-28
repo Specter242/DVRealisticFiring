@@ -68,9 +68,7 @@ namespace RealisticFiring.Items
             var item = Object.Instantiate(source, holder.transform, false);
             item.name = PrefabName;
             item.transform.localScale = Vector3.one;
-            // Replace the model and its stock VR grip anchors with the tablet's shell.
-            for (var i = item.transform.childCount - 1; i >= 0; i--)
-                Object.DestroyImmediate(item.transform.GetChild(i).gameObject);
+            FiringTabletSetup.RemoveStockModel(item.transform);
             foreach (var collider in item.GetComponents<Collider>())
                 Object.DestroyImmediate(collider);
             var box = item.AddComponent<BoxCollider>();
@@ -162,6 +160,8 @@ namespace RealisticFiring.Items
 
     internal sealed class FiringTabletGadget : GadgetBase
     {
+        internal const int FiremanPage = 3;
+        internal const int Pages = 4;
         private int page;
         internal int Page
         {
@@ -169,13 +169,13 @@ namespace RealisticFiring.Items
             set => page = ValidPage(value);
         }
 
-        internal static int ValidPage(int value) => Math.Max(0, Math.Min(FireOverlay.Pages - 1, value));
+        internal static int ValidPage(int value) => Math.Max(0, Math.Min(Pages - 1, value));
 
         internal static int SavedPage(JObject src)
         {
             var token = src?["rfTabletPage"];
             return token?.Type == JTokenType.Integer
-                ? (int)Math.Max(0L, Math.Min(FireOverlay.Pages - 1L, token.Value<long>())) : 0;
+                ? (int)Math.Max(0L, Math.Min(Pages - 1L, token.Value<long>())) : 0;
         }
 
         public override void SaveDataRequested(JObject dst)
@@ -195,8 +195,8 @@ namespace RealisticFiring.Items
     {
         private void Awake() => GetComponent<InventoryItemSpec>().NameOverride = FiringTablet.DisplayName;
         public string GetNameParam() => FiringTablet.DisplayName;
-        public string GetCustomDescription() => "A portable firing display. Fire, Water, and Engine show the same readings as F6. " +
-            "Use the three screen tabs to change pages (mouse mode while held on desktop). While held, it reads the engine you are tending; " +
+        public string GetCustomDescription() => "A portable firing display. Fire, Water, and Engine show the same readings as F6; Fireman has his orders and the engineer's calls. " +
+            "Press the screen controls to change pages or give orders (mouse mode while held on desktop). While held, it reads the engine you are tending; " +
             "on a large gadget mount, it reads that engine. Pick it up again with an empty hand. No wiring is needed.";
     }
 

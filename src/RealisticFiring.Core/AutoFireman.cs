@@ -100,6 +100,7 @@ namespace RealisticFiring.Core
         private float crackLeft;
         private float workClock;
         private float sinceShake;
+        private float stokerHeavyTime, stokerReverseLeft, stokerReverseCooldown;
 
         /// <summary>The coal he wants on the grate, in kg.</summary>
         public float CoalTarget { get; private set; }
@@ -121,11 +122,13 @@ namespace RealisticFiring.Core
             if (Mode == FiremanMode.Off || !(dt > 0f))
             {
                 roundLeft = 0;
+                stokerHeavyTime = stokerReverseLeft = stokerReverseCooldown = 0f;
                 return actions;
             }
 
             var j = Perceive(dt, r, fire.Parameters);
             Fire(dt, fire, r, j, ref actions);
+            if (actions.ClearStokerTable) actions.Door = 1f;
             Blower(fire, r, j, ref actions);
             Water(dt, r, j, ref actions);
             Grate(dt, fire, ref actions);
@@ -168,7 +171,7 @@ namespace RealisticFiring.Core
             var boost = Math.Max(1f, r.StartupMultiplier);
             Stoking = r.HasStoker && (j.Working || boost >= BoostStokes) && fire.FireOn && !outOfWater && Mode != FiremanMode.KeepAlive;
             if (r.HasStoker)
-                Stoker(fire, r, boost * rate, coal, ref actions);
+                Stoker(dt, fire, r, boost * rate, coal, ref actions);
 
             sinceRound += dt;
             crackLeft = Math.Max(0f, crackLeft - dt);
@@ -228,22 +231,49 @@ namespace RealisticFiring.Core
         // The stoker: run to hold the fire at his mark while the engine works,
         // its jets set for the work and steered to where the bed runs short;
         // reversed a few turns when it jams; shut standing, the master cracked.
-        private void Stoker(FireModel fire, FiremanReadings r, float rate, float coal, ref FiremanActions actions)
+        private static void WorkingJets(ref FiremanActions actions)
         {
-            if (r.StokerJammed)
+            actions.MasterJet = WorkingMaster;
+            actions.FrontJets = WorkingFront;
+            actions.BackJets = WorkingBack;
+            actions.FinesJet = WorkingFines;
+        }
+
+        private void Stoker(float dt, FireModel fire, FiremanReadings r, float rate, float coal, ref FiremanActions actions)
+        {
+            var clearTable = r.StokerTableLoaded && r.TenderWater > 0f && fire.FireOn;
+            stokerReverseCooldown = Math.Max(0f, stokerReverseCooldown - dt);
+            // A sustained high gauge and slow engine are observable overload,
+            // even before a stall. A full table needs the hook instead.
+            var heavy = Stoking && !clearTable && r.StokerRunningForward && r.StokerThrottle > .2f
+                && r.StokerEngineSpeed > .05f && r.StokerEngineSpeed < .8f * r.StokerThrottle
+                && r.StokerEnginePressure > r.StokerWorkingPressure * r.StokerThrottle + .5f;
+            stokerHeavyTime = heavy && stokerReverseCooldown <= 0f ? stokerHeavyTime + dt : 0f;
+            if (stokerHeavyTime >= 8f)
             {
-                // The engine stalls with its gauge pegged: reverse it to clear the jam.
+                stokerReverseLeft = 8f;
+                stokerReverseCooldown = 60f;
+                stokerHeavyTime = 0f;
+            }
+            if (r.StokerJammed || stokerReverseLeft > 0f)
+            {
+                // Hard jams take priority. Otherwise reverse a few turns to
+                // relieve the load, then give the forward feed time to settle.
+                stokerReverseLeft = r.StokerJammed ? 0f : Math.Max(0f, stokerReverseLeft - dt);
                 actions.StokerDirection = StokerDirection.Reverse;
                 actions.StokerThrottle = JamThrottle;
-                actions.MasterJet = WorkingMaster;
-                actions.FrontJets = WorkingFront;
-                actions.BackJets = WorkingBack;
-                actions.FinesJet = WorkingFines;
+                WorkingJets(ref actions);
                 return;
             }
             if (!Stoking)
             {
                 actions.MasterJet = CrackedMaster;
+                if (clearTable)
+                {
+                    WorkingJets(ref actions);
+                    actions.MasterJet += .08f;
+                    actions.ClearStokerTable = true;
+                }
                 return;
             }
             var full = Math.Max(0.01f, r.StokerFullFeed);
@@ -257,6 +287,14 @@ namespace RealisticFiring.Core
             actions.FrontJets = Clamp(WorkingFront - FrontEasing * HeardWork - 0.5f * steer, 0.3f, 1f);
             actions.BackJets = Clamp(WorkingBack + steer, 0.3f, 1f);
             actions.FinesJet = Clamp(WorkingFines - FinesEasing * HeardWork, 0.2f, 0.8f);
+            if (clearTable)
+            {
+                // He sees the coal collecting: ease the screw, strengthen
+                // the jets slightly, and use the hook through the open door.
+                actions.StokerThrottle = Math.Min(actions.StokerThrottle, .45f);
+                actions.MasterJet = WorkingMaster + .08f;
+                actions.ClearStokerTable = true;
+            }
         }
 
         // The zone furthest short of its share of the coal he wants, by how

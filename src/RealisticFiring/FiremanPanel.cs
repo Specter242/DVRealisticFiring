@@ -37,6 +37,7 @@ namespace RealisticFiring
             public string Label, Value;
             public AdviceLevel? Level;
             public bool Small;
+            public bool RoadPlanning;
             public float ValueWidth;
         }
 
@@ -68,9 +69,6 @@ namespace RealisticFiring
         private GUIStyle panel, fill, plateOn, plateOff, loco, label, value, valueSmall, noteText, statusPlate, statusText, statusNote;
         private Font fontFor;
 
-        // On a multiplayer client, the orders last sent to the host's fireman.
-        private readonly Dictionary<TrainCar, FiremanMode> sentModes = new Dictionary<TrainCar, FiremanMode>();
-
         public bool Open { get; private set; }
 
         public void Toggle() => SetOpen(!Open);
@@ -80,7 +78,7 @@ namespace RealisticFiring
         public void Draw(FiremanRig rig)
         {
             shown = rig;
-            var mode = ModeOf(rig);
+            var mode = FiremanOrders.ModeOf(rig);
             if (!Open && !(Main.Settings.ShowFiremanStatus && mode != FiremanMode.Off))
                 return;
             Styles();
@@ -101,9 +99,6 @@ namespace RealisticFiring
             GUI.matrix = matrix;
         }
 
-        private FiremanMode ModeOf(FiremanRig rig) =>
-            Net.IsClient ? sentModes.TryGetValue(rig.Car, out var mode) ? mode : FiremanMode.Off : rig.Fireman.Mode;
-
         private bool Stale(FiremanRig rig, FiremanMode mode)
         {
             if (card != null && ReferenceEquals(rig, readFor) && mode == readMode && Time.unscaledTime - readTime < RefreshSeconds)
@@ -114,29 +109,20 @@ namespace RealisticFiring
             return true;
         }
 
-        private void Order(FiremanRig rig, FiremanMode mode)
-        {
-            if (Net.TrySend(rig.Car, FireAction.FiremanMode, value: (float)mode))
-                sentModes[rig.Car] = mode;
-            else
-                rig.SetMode(mode);
-        }
-
         private void Call(FiremanRig rig, FiremanCall call, string plate, Rect rect)
         {
-            var active = !Net.IsClient && rig.Fireman.Call == call;
+            var active = FiremanOrders.CallActive(rig, call);
             var text = active ? $"{plate} · {rig.Fireman.CallLeft:F0} s" : plate;
             if (!GUI.Button(rect, text, active ? plateOn : plateOff))
                 return;
-            if (!Net.TrySend(rig.Car, FireAction.FiremanCall, value: (float)call))
-                rig.Fireman.Call = active ? FiremanCall.None : call;
+            FiremanOrders.Call(rig, call);
         }
 
         // ---- Reading ----
 
         private static string P0(float v) => $"{Mathf.RoundToInt(v * 100f)}%";
 
-        private Card Read(FiremanRig rig, FiremanMode mode)
+        private static Card Read(FiremanRig rig, FiremanMode mode)
         {
             var c = new Card { Loco = rig.Car.ID };
             var man = rig.Fireman;
@@ -161,6 +147,23 @@ namespace RealisticFiring
             return c;
         }
 
+        /// <summary>Orders stay within reach above a compact version of the F7 readings.</summary>
+        internal static FireOverlay.Card ReadTablet(FiremanRig rig)
+        {
+            var reading = Read(rig, FiremanOrders.ModeOf(rig));
+            var note = reading.Notes.OrderByDescending(n => n.Level).FirstOrDefault();
+            var c = new FireOverlay.Card
+            {
+                Loco = reading.Loco,
+                Oil = rig.OilFireman != null,
+                Advice = new Advice(note.Level, note.Text ?? "He is tending the fire. Press an active engineer's call again to cancel it."),
+            };
+            foreach (var row in reading.Rows)
+                if (!row.RoadPlanning)
+                    c.Rows.Add(new FireOverlay.Row { Label = row.Label, Value = row.Value, Level = row.Level });
+            return c;
+        }
+
         private static void ReadRows(FiremanRig rig, List<Row> rows)
         {
             var man = rig.Fireman;
@@ -178,6 +181,8 @@ namespace RealisticFiring
                 if (r.HasStoker)
                     rows.Add(r.StokerJammed
                         ? new Row { Label = "Stoker", Value = "jammed · reversing the screw", Level = AdviceLevel.Act }
+                        : r.StokerTableLoaded
+                            ? new Row { Label = "Stoker", Value = "coal on the table · using the hook", Level = AdviceLevel.Watch }
                         : coal.Stoking
                             ? new Row { Label = "Stoker", Value = $"{P0(rig.Actions.StokerThrottle)} · jets front {P0(rig.Actions.FrontJets)}, back {P0(rig.Actions.BackJets)}" }
                             : new Row { Label = "Stoker", Value = "shut · master jet cracked" });
@@ -204,13 +209,13 @@ namespace RealisticFiring
             });
             var road = rig.Road;
             if (!road.Known)
-                rows.Add(new Row { Label = "Road", Value = "not read · standing, or off the end" });
+                rows.Add(new Row { Label = "Road", Value = "not read · standing, or off the end", RoadPlanning = true });
             else
             {
-                rows.Add(new Row { Label = "Road", Value = $"{Grade(road.GradeNow)} now · hardest {Grade(road.GradeSoon)} in {road.FireLead / 1000f:F1} km" });
+                rows.Add(new Row { Label = "Road", Value = $"{Grade(road.GradeNow)} now · hardest {Grade(road.GradeSoon)} in {road.FireLead / 1000f:F1} km", RoadPlanning = true });
                 if (!float.IsNaN(road.GradeAhead))
-                    rows.Add(new Row { Label = "Further on", Value = $"{Grade(road.GradeAhead)} by {road.WaterLead / 1000f:F1} km" });
-                rows.Add(new Row { Label = "Train", Value = $"{road.Mass / 1000f:F0} t · work soon {P0(road.WorkSoon)}, ahead {P0(road.WorkAhead)}" });
+                    rows.Add(new Row { Label = "Further on", Value = $"{Grade(road.GradeAhead)} by {road.WaterLead / 1000f:F1} km", RoadPlanning = true });
+                rows.Add(new Row { Label = "Train", Value = $"{road.Mass / 1000f:F0} t · work soon {P0(road.WorkSoon)}, ahead {P0(road.WorkAhead)}", RoadPlanning = true });
             }
             var held = rig.Hands.Where(h => h.YieldLeft > 0f).Select(h => $"{h.Name} {h.YieldLeft:F0} s").ToList();
             if (held.Count > 0)
@@ -306,7 +311,7 @@ namespace RealisticFiring
             var c = card;
             if (rig == null || c == null)
                 return;
-            var mode = ModeOf(rig);
+            var mode = FiremanOrders.ModeOf(rig);
             GUI.Box(new Rect(0f, 0f, Width, c.Height), GUIContent.none, panel);
             OverlayStyle.Rivets(Width);
 
@@ -315,7 +320,7 @@ namespace RealisticFiring
             foreach (var (each, plate, width) in Modes)
             {
                 if (GUI.Button(new Rect(x, 12f, width, PlateHeight), plate, each == mode ? plateOn : plateOff) && each != mode)
-                    Order(rig, each);
+                    FiremanOrders.Order(rig, each);
                 x += width + 6f;
             }
             var close = new Rect(Width - Pad - PlateHeight, 12f, PlateHeight, PlateHeight);

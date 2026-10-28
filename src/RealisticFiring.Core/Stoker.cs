@@ -156,6 +156,13 @@ namespace RealisticFiring.Core
         /// <summary>Share of the crushed coal that is fines.</summary>
         public float FinesShare { get; set; } = 0.25f;
 
+        /// <summary>Nominal soaked coal passed before packing fills the screw; inferred, not an empirical HT rate.</summary>
+        public float CoalToPack { get; set; } = 5000f;
+        public bool PackingJams { get; set; } = true;
+        /// <summary>Maximum fuel held on the table, as seconds of rated feed.</summary>
+        public float TableCapacitySeconds { get; set; } = 3f;
+        public float TableResidenceSeconds { get; set; } = 2f;
+
         /// <summary>
         /// Coal fed, on average, between jams from lumps or tramp iron, in
         /// firebox kg; zero or less for none.
@@ -177,7 +184,7 @@ namespace RealisticFiring.Core
         public float CarryoverExponent { get; set; } = 1.4f;
 
         /// <summary>
-        /// Share of the carryover damp fines keep on the fire instead, at
+        /// Share of fine coal bound into fresh-burning clumps, at
         /// <see cref="DampFinesMoisture"/> and wetter (inferred: "With fine
         /// coal, wetting it down tends to prevent too much fine coal being
         /// drawn out through the stack", Santa Fe, Instructions for Enginemen,
@@ -227,6 +234,8 @@ namespace RealisticFiring.Core
 
         /// <summary>The water's share of the tender's coal (<see cref="CoalMoisture"/>), 0 to 1.</summary>
         public float CoalMoisture;
+        /// <summary>Optional post-crusher fine fraction for a different coal mix; absent uses the stoker's normal coal.</summary>
+        public float? CoalFinesShare;
     }
 
     /// <summary>The stoker's output for one tick.</summary>
@@ -243,6 +252,8 @@ namespace RealisticFiring.Core
 
         /// <summary>Coal lost as cinders out of the stack or over the arch, in kg/s.</summary>
         public float CinderRate;
+        /// <summary>Fuel actually leaving the table, including cinders, in kg/s; independent of screw speed.</summary>
+        public float EjectedRate;
 
         /// <summary>Steam used by the engine and jets, in kg/s.</summary>
         public float SteamUsed;
@@ -258,6 +269,10 @@ namespace RealisticFiring.Core
         public float LeftFrontPressure;
         public float RightFrontPressure;
         public float FinesPressure;
+
+        /// <summary>Visible retained coal and its clearing notice, also shown to multiplayer clients.</summary>
+        public float TableCoal, TableFill;
+        public bool TableNeedsClearing;
     }
 
     /// <summary>
@@ -267,8 +282,10 @@ namespace RealisticFiring.Core
     /// feed; each jet's pressure sets how far its lane of coal goes, and hard
     /// draft carries it farther. A shut jet drops its coal at the door, which
     /// builds a heel; too much pressure blows coal over the arch. The fines
-    /// catch at once, but the draft carries part of them out of the stack, more
-    /// as the engine works harder: stoked coal gives less heat per kg.
+    /// catch at once while wet bound fines join fresh coal. Jet capacity is
+    /// shared by the feed; retained fuel stays on the table until delivered
+    /// or cleared with the hook. Coarse coal loads the crusher, wet fines can
+    /// pack the screw, and the draft carries loose fines out of the stack.
     /// </summary>
     public sealed class Stoker
     {
@@ -297,12 +314,17 @@ namespace RealisticFiring.Core
         private readonly Random random;
         private float revolutionsToClear;
         private float reversed;
+        private readonly StokerHandling handling;
+        private float shaftLoad = 1f;
+        private bool packingJam;
+        private float distributionLumpLoss;
 
         public Stoker(StokerSpec spec, FireboxParameters firebox, Random random = null)
         {
             Spec = spec ?? throw new ArgumentNullException(nameof(spec));
             this.firebox = firebox ?? throw new ArgumentNullException(nameof(firebox));
             this.random = random ?? new Random();
+            handling = new StokerHandling(spec);
         }
 
         /// <summary>
@@ -316,6 +338,7 @@ namespace RealisticFiring.Core
         public void Jam()
         {
             Jammed = true;
+            packingJam = false;
             EngineSpeed = 0f;
             reversed = 0f;
             revolutionsToClear = Spec.MinRevolutionsToClear
@@ -323,6 +346,29 @@ namespace RealisticFiring.Core
         }
 
         public StokerSpec Spec { get; }
+        public float TableCoal => handling.Table.Coal;
+        public float TableFill => handling.Fill;
+        public bool TableNeedsClearing => handling.NeedsClearing;
+        public float Packing => handling.Packing;
+
+        public StokerState CaptureState() => new StokerState
+        {
+            TableCoal = TableCoal, TableFines = handling.Table.Fines, TableWater = handling.Table.Water,
+            Packing = Packing, TableWarmth = handling.Warmth, TableCake = handling.Cake,
+            TableNeedsClearing = TableNeedsClearing,
+            EngineSpeed = EngineSpeed, Jammed = Jammed, PackingJam = packingJam,
+            Reversed = reversed, TurnsToClear = revolutionsToClear,
+        };
+
+        public void RestoreState(StokerState state)
+        {
+            handling.Restore(state);
+            Jammed = state.Jammed; packingJam = state.PackingJam && Jammed;
+            EngineSpeed = Jammed ? 0f : Clamp01(StokerHandling.Finite(state.EngineSpeed));
+            revolutionsToClear = Math.Max(Spec.MinRevolutionsToClear,
+                Math.Min(Spec.MaxRevolutionsToClear, StokerHandling.Finite(state.TurnsToClear)));
+            reversed = Math.Min(revolutionsToClear, StokerHandling.Finite(state.Reversed));
+        }
 
         /// <summary>Engine speed as a share of full speed.</summary>
         public float EngineSpeed { get; private set; }
@@ -335,9 +381,15 @@ namespace RealisticFiring.Core
 
         /// <summary>Share of the last coal fed lost up the stack or over the arch.</summary>
         public float LostShare { get; private set; }
+        public float LostLumpShare { get; private set; }
+        public float LostFineShare { get; private set; }
 
         /// <summary>The share of the stoked coal each zone receives, and the share lost, at the given settings.</summary>
-        public float Distribute(StokerControls controls, float boilerPressure, float airFlow, float[] lumpShares, float[] fineShares, float moisture = 0f)
+        public float Distribute(StokerControls controls, float boilerPressure, float airFlow, float[] lumpShares, float[] fineShares, float moisture = 0f) =>
+            DistributeAtRate(controls, boilerPressure, airFlow, lumpShares, fineShares, 0f, moisture);
+
+        public float DistributeAtRate(StokerControls controls, float boilerPressure, float airFlow, float[] lumpShares, float[] fineShares,
+            float feedRate, float moisture = 0f, float? finesShare = null)
         {
             if (lumpShares == null || fineShares == null
                 || lumpShares.Length != GrateLayout.ZoneCount || fineShares.Length != GrateLayout.ZoneCount)
@@ -348,8 +400,12 @@ namespace RealisticFiring.Core
             // Wet coal sticks on the table: the jets throw it as if weaker.
             var soaked = Clamp01((moisture - Core.CoalMoisture.Delivered) / (Core.CoalMoisture.Soaked - Core.CoalMoisture.Delivered));
             var manifold = ManifoldPressure(controls, boilerPressure) / (1f + Spec.WetTableLoss * soaked);
+            var rawFines = Clamp01(StokerHandling.Finite(finesShare ?? Spec.FinesShare));
+            var damp = Clamp01((moisture - Core.CoalMoisture.Delivered) / Math.Max(1e-3f, Spec.DampFinesMoisture - Core.CoalMoisture.Delivered));
+            var looseFines = rawFines * (1f - Clamp01(Spec.DampFinesHold) * damp);
             var draft = DraftFraction(airFlow);
-            var lump = 1f - Spec.FinesShare;
+            // Bound fines launch as clumps and join fresh coal on the grate.
+            var lump = 1f - looseFines;
             var lost = 0f;
 
             // Back jets blow their lanes sideways into the back corners; short
@@ -357,23 +413,22 @@ namespace RealisticFiring.Core
             var left = 1f + Math.Max(-1f, Math.Min(1f, Spec.LumpsLeftBias));
             var right = 2f - left;
             var backLane = lump * Spec.BackLaneShare;
-            ThrowBack(backLane * left, manifold * Clamp01(controls.LeftBack), draft, 0, lumpShares);
-            ThrowBack(backLane * right, manifold * Clamp01(controls.RightBack), draft, GrateLayout.Columns - 1, lumpShares);
+            ThrowBack(backLane * left, ThrowPressure(StokerJet.LeftBack, controls, boilerPressure, manifold, feedRate, lump / .75f), draft, 0, lumpShares);
+            ThrowBack(backLane * right, ThrowPressure(StokerJet.RightBack, controls, boilerPressure, manifold, feedRate, lump / .75f), draft, GrateLayout.Columns - 1, lumpShares);
 
             // Front jets throw their halves up the grate; past the front row
             // the coal goes over the arch.
             var frontLane = lump * (1f - 2f * Spec.BackLaneShare) / 2f;
-            lost += ThrowFront(frontLane * left, manifold * Clamp01(controls.LeftFront), draft, 0, lumpShares);
-            lost += ThrowFront(frontLane * right, manifold * Clamp01(controls.RightFront), draft, GrateLayout.Columns - 1, lumpShares);
+            lost += ThrowFront(frontLane * left, ThrowPressure(StokerJet.LeftFront, controls, boilerPressure, manifold, feedRate, lump / .75f), draft, 0, lumpShares);
+            lost += ThrowFront(frontLane * right, ThrowPressure(StokerJet.RightFront, controls, boilerPressure, manifold, feedRate, lump / .75f), draft, GrateLayout.Columns - 1, lumpShares);
+            distributionLumpLoss = lost;
 
             // Fines: the draft lifts part of them straight out of the stack;
             // the fine-coal jet spreads the rest, or they fall at the door.
-            var damp = Clamp01((moisture - Core.CoalMoisture.Delivered) / Math.Max(1e-3f, Spec.DampFinesMoisture - Core.CoalMoisture.Delivered));
-            var carried = Math.Min(0.95f, Spec.FinesCarryoverAtFullDraft * (float)Math.Pow(Math.Min(draft, 1.5f), Spec.CarryoverExponent))
-                          * (1f - Spec.DampFinesHold * damp);
-            var remaining = Spec.FinesShare * (1f - carried);
-            lost += Spec.FinesShare * carried;
-            var reach = manifold * Clamp01(controls.Fines) / Spec.FinesReachPressure;
+            var carried = Math.Min(0.95f, Spec.FinesCarryoverAtFullDraft * (float)Math.Pow(Math.Min(draft, 1.5f), Spec.CarryoverExponent));
+            var remaining = looseFines * (1f - carried);
+            lost += looseFines * carried;
+            var reach = ThrowPressure(StokerJet.Fines, controls, boilerPressure, manifold, feedRate, looseFines / .25f) / Spec.FinesReachPressure;
             var overArch = Math.Min(0.5f, Math.Max(0f, 0.5f * (reach - FinesOvershoot)));
             lost += remaining * overArch;
             remaining *= 1f - overArch;
@@ -394,38 +449,114 @@ namespace RealisticFiring.Core
             if (fire == null)
                 throw new ArgumentNullException(nameof(fire));
             var flow = new StokerFlow();
-            if (!(dt > 0f))
+            if (!(dt > 0f) || float.IsInfinity(dt))
                 return flow;
 
             var controls = inputs.Controls;
-            var offered = Math.Min(RunEngine(dt, controls.Throttle, inputs.BoilerPressure, controls.Direction) * dt, Math.Max(0f, inputs.TenderCoal));
-            if (offered > 0f)
+            var moisture = Math.Min(Core.CoalMoisture.Soaked, StokerHandling.Finite(inputs.CoalMoisture));
+            var rawFines = Clamp01(StokerHandling.Finite(inputs.CoalFinesShare ?? Spec.FinesShare));
+            handling.Warm(dt, fire.FireOn);
+            shaftLoad = handling.ShaftLoad(moisture, rawFines);
+            var rate = AdvanceEngine(dt, controls.Throttle, inputs.BoilerPressure, controls.Direction, true) * handling.Yield(moisture, rawFines);
+            var room = Math.Max(0f, fire.Parameters.MaxCoalCapacity - fire.CoalMass);
+            var offered = Math.Min(rate * dt, Math.Min(StokerHandling.Finite(inputs.TenderCoal),
+                Math.Min(room, Math.Max(0f, handling.Capacity - TableCoal))));
+            var incoming = new StokerCoal { Coal = offered, Fines = offered * rawFines, Water = offered * StokerCoal.RainWater(moisture) };
+            var delivery = handling.Prepare(dt, incoming, JetBudget(controls, inputs.BoilerPressure));
+            flow.Drawn = offered;
+            if (delivery.Coal > 0f)
             {
-                var lostShare = Distribute(controls, inputs.BoilerPressure, inputs.AirFlow, lumps, fines, inputs.CoalMoisture);
+                var lostShare = DistributeAtRate(controls, inputs.BoilerPressure, inputs.AirFlow, lumps, fines,
+                    delivery.Coal / dt, delivery.Moisture, delivery.FineShare);
                 LostShare = lostShare;
+                LostLumpShare = distributionLumpLoss;
+                LostFineShare = Math.Max(0f, lostShare - LostLumpShare);
                 for (var i = 0; i < GrateLayout.ZoneCount; i++)
                 {
                     lumpShares[i] = lumps[i];
                     fineShares[i] = fines[i];
-                    lumps[i] *= offered;
-                    fines[i] *= offered;
+                    lumps[i] *= delivery.Coal;
+                    fines[i] *= delivery.Coal;
                 }
-                var landing = offered * (1f - lostShare);
-                var accepted = fire.AddStoked(lumps, fines);
-                // A full box stops the conveyor: only coal that landed, and its
-                // share of what was lost on the way, left the tender.
+                var landing = delivery.Coal * (1f - lostShare);
+                var accepted = fire.AddStoked(lumps, fines, delivery.Moisture);
+                // Coal not accepted by a full box stays on the table. Intake
+                // and ejection are separate transactions; never refund fuel
+                // to a tender after it has entered the retained mixture.
                 var share = landing > 0f ? accepted / landing : 1f;
                 flow.Fed = accepted;
-                flow.Drawn = offered * share;
-                flow.CinderRate = offered * lostShare * share / dt;
-
-                // Now and then a lump or tramp iron jams the conveyor.
-                if (Spec.MeanCoalBetweenJams > 0f && random.NextDouble() < flow.Drawn / Spec.MeanCoalBetweenJams)
-                    Jam();
+                flow.CinderRate = delivery.Coal * lostShare * share / dt;
+                flow.EjectedRate = delivery.Coal * share / dt;
+                handling.Remove(delivery.Scale(share));
+            }
+            else
+            {
+                Array.Clear(lumpShares, 0, lumpShares.Length);
+                Array.Clear(fineShares, 0, fineShares.Length);
+                LostShare = 0f;
+                LostLumpShare = LostFineShare = 0f;
+            }
+            handling.PassCoal(offered, moisture, rawFines, rate);
+            if (!Jammed && Spec.PackingJams && Packing >= 1f)
+            {
+                Jam();
+                packingJam = true;
+            }
+            else if (!Jammed && offered > 0f && Spec.MeanCoalBetweenJams > 0f)
+            {
+                // A throughput hazard, independent of the frame duration.
+                // Coarse coal adds crushing obstructions; foreign matter
+                // remains possible even in a fine-rich load.
+                var crushing = .5f + .5f * (1f - rawFines) / .75f;
+                if (random.NextDouble() < 1d - Math.Exp(-offered * crushing / Spec.MeanCoalBetweenJams)) Jam();
             }
 
             ReadGauges(controls, inputs.BoilerPressure, ref flow);
             return flow;
+        }
+
+        /// <summary>A hook or rake dislodges retained fuel onto the grate; no fuel is drawn from the tender.</summary>
+        public float ClearTable(FireModel fire, float most = 3f)
+        {
+            if (fire == null) throw new ArgumentNullException(nameof(fire));
+            if (!(most > 0f)) return 0f;
+            // The hook scrapes the plate even when there is no loose fuel
+            // left to move. Coating is not additional fuel.
+            handling.Cake = 0f;
+            if (!(TableCoal > 0f)) return 0f;
+            var moved = Math.Min(most, TableCoal);
+            var mixture = handling.Table.Scale(moved / TableCoal);
+            Array.Clear(lumps, 0, lumps.Length); Array.Clear(fines, 0, fines.Length);
+            lumps[(int)GrateZone.UnderDoor] = moved;
+            var accepted = fire.AddStoked(lumps, fines, mixture.Moisture);
+            handling.Remove(mixture.Scale(accepted / moved));
+            return accepted;
+        }
+
+        // Each jet carries its own lane. Closing a different valve cannot
+        // directly weaken this jet; the common table can still back up.
+        private float ThrowPressure(StokerJet jet, StokerControls controls, float boilerPressure,
+            float effectiveManifold, float feedRate, float laneLoad)
+        {
+            var working = StokerControls.Working(1f);
+            var pressure = ManifoldPressure(controls, boilerPressure) * Clamp01(controls.Jet(jet));
+            var reference = working.MasterJet * Spec.ManifoldMaxPressure * working.Jet(jet);
+            var loading = feedRate / Spec.MaxFeedRate * laneLoad / Math.Max(.1f, pressure / Math.Max(.01f, reference));
+            return effectiveManifold * Clamp01(controls.Jet(jet)) / (float)Math.Sqrt(Math.Max(1f, loading));
+        }
+
+        private float JetBudget(StokerControls controls, float boilerPressure)
+        {
+            var opening = 0f;
+            var workingOpening = 0f;
+            var working = StokerControls.Working(1f);
+            for (var i = 0; i < JetCount; i++)
+            {
+                opening += Clamp01(controls.Jet((StokerJet)i));
+                workingOpening += working.Jet((StokerJet)i);
+            }
+            return ManifoldPressure(controls, boilerPressure) * opening /
+                Math.Max(.01f, working.MasterJet * Spec.ManifoldMaxPressure * workingOpening);
         }
 
         /// <summary>
@@ -437,13 +568,25 @@ namespace RealisticFiring.Core
         /// </summary>
         public float RunEngine(float dt, float throttle, float boilerPressure, StokerDirection direction = StokerDirection.Forward)
         {
+            // The stock-firebox adapter uses only the engine, and must not
+            // stall against fuel retained by a previously enabled zoned fire.
+            shaftLoad = 1f;
+            return AdvanceEngine(dt, throttle, boilerPressure, direction, false);
+        }
+
+        private float AdvanceEngine(float dt, float throttle, float boilerPressure, StokerDirection direction, bool loaded)
+        {
             var feeding = direction == StokerDirection.Forward && !Jammed;
             if (!(dt > 0f))
                 return feeding ? EngineSpeed * Spec.MaxFeedRate : 0f;
             var pressureFactor = Clamp01((boilerPressure - Spec.MinWorkingPressure)
                                          / (Spec.FullSpeedPressure - Spec.MinWorkingPressure));
             var stalled = Jammed && direction == StokerDirection.Forward;
-            var target = direction == StokerDirection.Neutral || stalled ? 0f : Clamp01(throttle) * pressureFactor;
+            // Ease into table backpressure instead of switching between a
+            // fully running and stopped screw at the capacity boundary.
+            var tableRoom = loaded && feeding ? Clamp01((1f - handling.Fill) * 5f) : 1f;
+            var target = direction == StokerDirection.Neutral || stalled ? 0f
+                : Math.Min(1f, Clamp01(throttle) * pressureFactor * tableRoom / (direction == StokerDirection.Reverse ? 1f : shaftLoad));
             EngineSpeed = stalled ? 0f : EngineSpeed + (target - EngineSpeed) * (1f - (float)Math.Exp(-dt / Spec.EngineSmoothTime));
             if (EngineSpeed < 1e-4f && target == 0f)
                 EngineSpeed = 0f;
@@ -454,15 +597,22 @@ namespace RealisticFiring.Core
                 if (reversed >= revolutionsToClear)
                 {
                     Jammed = false;
+                    packingJam = false;
                     reversed = 0f;
                 }
             }
+            if (direction == StokerDirection.Reverse)
+                handling.Reverse(EngineSpeed * Spec.RevolutionsPerSecond * dt);
             return feeding ? EngineSpeed * Spec.MaxFeedRate : 0f;
         }
 
         /// <summary>Fills in the gauges and the steam used at the engine's present speed.</summary>
         public void ReadGauges(StokerControls controls, float boilerPressure, ref StokerFlow flow)
         {
+            handling.ReadTable();
+            flow.TableCoal = TableCoal;
+            flow.TableFill = TableFill;
+            flow.TableNeedsClearing = TableNeedsClearing;
             flow.ManifoldPressure = ManifoldPressure(controls, boilerPressure);
             flow.LeftBackPressure = flow.ManifoldPressure * Clamp01(controls.LeftBack);
             flow.RightBackPressure = flow.ManifoldPressure * Clamp01(controls.RightBack);
@@ -471,13 +621,14 @@ namespace RealisticFiring.Core
             flow.FinesPressure = flow.ManifoldPressure * Clamp01(controls.Fines);
             var jetLoad = flow.LeftBackPressure + flow.RightBackPressure + flow.LeftFrontPressure
                           + flow.RightFrontPressure + flow.FinesPressure;
-            flow.SteamUsed = Spec.EngineSteamAtFull * EngineSpeed + Spec.JetSteamPerBar * jetLoad;
+            flow.SteamUsed = Spec.EngineSteamAtFull * EngineSpeed * shaftLoad + Spec.JetSteamPerBar * jetLoad;
             flow.Jammed = Jammed;
             // Stalled against a jam, the engine's gauge climbs to what its
             // throttle lets through from the boiler.
             flow.EnginePressure = Jammed && controls.Direction == StokerDirection.Forward
                 ? Clamp01(controls.Throttle) * Math.Max(0f, boilerPressure)
-                : Spec.EngineWorkingPressure * EngineSpeed;
+                : Math.Min(Math.Max(0f, boilerPressure), Spec.EngineWorkingPressure * EngineSpeed * shaftLoad
+                    + Math.Max(0f, shaftLoad - 1f) * .25f * Math.Max(0f, boilerPressure) * Clamp01(controls.Throttle));
         }
 
         // The manifold's gauge pressure: the boiler's (absolute) less the

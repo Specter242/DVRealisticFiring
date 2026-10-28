@@ -197,15 +197,13 @@ namespace RealisticFiring.Sim
             return car != null && ByCar.TryGetValue(car, out firebox);
         }
 
-        /// <summary>The oil firebox the player tends from <paramref name="car"/>: its own, or a coupled loco's.</summary>
-        public static bool TryGetTended(TrainCar car, out RealisticOilFirebox firebox)
-        {
-            if (TryGet(car, out firebox))
-                return true;
-            if (car == null)
-                return false;
-            return TryGet(car.frontCoupler.CoupledCar(), out firebox) || TryGet(car.rearCoupler.CoupledCar(), out firebox);
-        }
+        /// <summary>
+        /// The oil firebox the player tends from <paramref name="car"/>: its
+        /// own, or a coupled loco's, the one the player was last in between
+        /// two.
+        /// </summary>
+        public static bool TryGetTended(TrainCar car, out RealisticOilFirebox firebox) =>
+            TryGet(CarCouplings.Tended(car, ByCar), out firebox);
 
         /// <summary>How hard the draft pulls through the firebox, 0 still to 1 the stock fire's full air.</summary>
         public float Drawing => Mathf.Clamp01(airFlow.Value / Mathf.Max(0.1f, Model.Parameters.MaxCombustionRate * FireModel.AirPerCoal));

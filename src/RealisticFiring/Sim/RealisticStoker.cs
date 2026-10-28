@@ -126,6 +126,8 @@ namespace RealisticFiring.Sim
         // and Custom Car Loader stokers save nothing, and ignore this.
         public const string JammedSaveKey = "rfJammed";
         private bool savedJam;
+        public const string HandlingSaveKey = "rfStokerHandling";
+        private StokerState? savedHandling;
 
         public override bool HasSaveData => true;
 
@@ -134,24 +136,41 @@ namespace RealisticFiring.Sim
             var data = new JObject();
             if (stoker != null ? stoker.Jammed : savedJam)
                 data.SetBool(JammedSaveKey, true);
+            var state = stoker != null ? stoker.CaptureState() : savedHandling ?? default;
+            if (state.TableCoal > 0f || state.Packing > 0f || state.TableCake > 0f || state.TableWarmth > 0f || state.Jammed)
+                data[HandlingSaveKey] = JObject.FromObject(state);
             return data;
         }
 
         public override void SetSaveStateData(JObject savedData)
         {
             savedJam = savedData != null && savedData.GetBool(JammedSaveKey) == true;
-            if (stoker != null && savedJam && !stoker.Jammed)
-                stoker.Jam();
+            savedHandling = null;
+            if (savedData?[HandlingSaveKey] is JObject handlingData)
+            {
+                try { savedHandling = handlingData.ToObject<StokerState>(); }
+                catch (System.Exception e) when (e is System.FormatException || e is Newtonsoft.Json.JsonException || e is System.OverflowException)
+                { Main.Mod?.Logger.Warning("Invalid stoker handling data; using the legacy jam state"); }
+            }
+            if (stoker != null) RestoreHandling();
+        }
+
+        private void RestoreHandling()
+        {
+            if (savedHandling.HasValue) stoker.RestoreState(savedHandling.Value);
+            else stoker.RestoreState(default);
+            if (savedJam && !stoker.Jammed) stoker.Jam();
         }
 
         /// <summary>Where its coal goes: the zoned fire, or the coal port of a stock firebox.</summary>
         internal bool FeedsZonedFire => firebox != null;
 
-        /// <summary>Gives the stoker its firebox and boiler directly, for checks outside the game.</summary>
-        internal void Attach(RealisticFirebox realisticFirebox, Boiler steamSource)
+        /// <summary>Gives the stoker its firebox, boiler, and optional operating lever directly, for checks outside the game.</summary>
+        internal void Attach(RealisticFirebox realisticFirebox, Boiler steamSource, Port operatingLever = null)
         {
             firebox = realisticFirebox;
             boiler = steamSource;
+            reversePort = operatingLever;
             Build();
         }
 
@@ -216,7 +235,7 @@ namespace RealisticFiring.Sim
                 // A stock firebox takes coal through its port, as from CCL's stoker.
                 flow = new StokerFlow();
                 var space = Mathf.Max(0f, fireboxCoalCapacity.Value - fireboxCoalLevel.Value);
-                var offered = Mathf.Min(stoker.RunEngine(delta, throttle, pressure) * delta, Mathf.Min(available, space));
+                var offered = Mathf.Min(stoker.RunEngine(delta, throttle, pressure, controls.Direction) * delta, Mathf.Min(available, space));
                 fireboxCoalControl.Value = offered;
                 flow.Drawn = offered;
                 flow.Fed = offered;
@@ -337,12 +356,12 @@ namespace RealisticFiring.Sim
                 LumpsLeftBias = habits != null ? habits.StokerLumpsLeft : 0f,
                 // Jams need the operating lever to clear them.
                 MeanCoalBetweenJams = Main.Session.StokerJams && reversePort != null ? typical.MeanCoalBetweenJams : 0f,
+                PackingJams = Main.Session.StokerJams && reversePort != null,
                 MinWorkingPressure = MinWorkingPressure,
                 FullSpeedPressure = Mathf.Max(MinWorkingPressure + 0.1f, fullSpeedPressure),
                 EngineSmoothTime = Mathf.Max(0.1f, smoothTime),
             }, parameters);
-            if (savedJam)
-                stoker.Jam();
+            RestoreHandling();
         }
     }
 }

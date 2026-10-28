@@ -68,7 +68,7 @@ namespace RealisticFiring
 
         // Two players' frame rate fell from 60 to 15 with the plume
         // (Nexus, 2026-10-25); Core.SmokeDetail.
-        [Draw("Smoke quality, for a slower graphics card: Medium draws the chimney's smoke at half resolution, Low with half its particles besides (in VR or with forward rendering, half and a quarter of its particles instead)", DrawType.ToggleGroup)]
+        [Draw("Smoke quality, for a slower graphics card: Medium draws the chimney's smoke at half resolution and drops its faintest smoke, Low with half its particles and more of the faint smoke besides (in VR or with forward rendering, half and a quarter of its particles instead)", DrawType.ToggleGroup)]
         public RealisticStackEffects.Core.SmokeQuality SmokeQuality = RealisticStackEffects.Core.SmokeQuality.High;
 
         [Draw("Firebox quality (changes live): High keeps full flame and smoke detail; Medium uses half the open-door ray samples, Low a quarter. Firelight stays the same", DrawType.ToggleGroup)]
@@ -101,10 +101,6 @@ namespace RealisticFiring
 
         [Draw("Draw the fire door's aiming keypad while aiming with the keypad")]
         public bool ShowAimKeypad = true;
-
-        [Header("Brakes")]
-        [Draw("Click the independent brake lever to bail off (in VR, hold it and press the trigger): the engine's own brakes release from a train brake application, the train's stay on (every locomotive)")]
-        public bool ClickToBailOff = true;
 
         [Header("Controls")]
         [Draw("Open these settings (Unity Mod Manager's Ctrl+F10 is taken by some desktops)")]

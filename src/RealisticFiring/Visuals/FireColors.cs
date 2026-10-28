@@ -24,7 +24,9 @@ namespace RealisticFiring.Visuals
         // Enough blue radiance survives the eye's minimum exposure to make
         // a fully forced fire glare white instead of stopping at yellow.
         internal static Color White = new Color(24f, 18f, 12f);
-        internal static float WhiteHeat = 0.85f;
+        // Spread the yellow-to-white change over the upper quarter of heat.
+        // A narrow end stop made cooling coal appear to lose its glare at once.
+        internal static float WhiteHeat = 0.75f;
         internal static float Exposure = 0.8f;
 
         // The adaptation: the fire's light (its zones' glow and flames, on

@@ -269,6 +269,7 @@ namespace RealisticFiring.Sim
                 return;
             var before = Model.Zones[(int)zone].Clinker;
             Model.Slice(zone);
+            if (GrateLayout.Row(zone) == 0) ClearStokerTable();
             if (Main.Settings.LogCoalDeliveries)
                 Main.Mod.Logger.Log($"{Car?.ID}: sliced {zone}, clinker {before:F2} -> {Model.Zones[(int)zone].Clinker:F2} kg, " +
                                     $"stirred {Model.Zones[(int)zone].Stirred:P0}");
@@ -282,6 +283,7 @@ namespace RealisticFiring.Sim
             var before = Model.Zones[(int)zone].Coal;
             var hookedBefore = Model.HookedOut;
             Model.Push(zone, direction);
+            if (GrateLayout.Row(zone) == 0) ClearStokerTable();
             if (Main.Settings.LogCoalDeliveries)
                 Main.Mod.Logger.Log($"{Car?.ID}: worked {zone} {direction.ToString().ToLowerInvariant()}, coal there {before:F1} -> {Model.Zones[(int)zone].Coal:F1} kg" +
                                     (Model.HookedOut > hookedBefore ? $", {Model.HookedOut - hookedBefore:F2} kg of ash and clinker hooked out" : ""));
@@ -297,6 +299,7 @@ namespace RealisticFiring.Sim
                 return;
             var before = Model.Zones[(int)zone].Coal;
             Model.Rake(zone);
+            if (GrateLayout.Row(zone) == 0) ClearStokerTable();
             if (Main.Settings.LogCoalDeliveries)
                 Main.Mod.Logger.Log($"{Car?.ID}: raked {zone}, {before:F1} -> {Model.Zones[(int)zone].Coal:F1} kg there");
         }
@@ -404,6 +407,9 @@ namespace RealisticFiring.Sim
 
         /// <summary>The stoker feeding this firebox, once it has run.</summary>
         public Stoker StokerModel { get; private set; }
+        internal float StokerTableCoal => StokerModel?.TableCoal ?? LastStoker?.TableCoal ?? 0f;
+        internal float StokerTableFill => StokerModel?.TableFill ?? LastStoker?.TableFill ?? 0f;
+        internal bool StokerTableLoaded => StokerModel?.TableNeedsClearing ?? LastStoker?.TableNeedsClearing ?? false;
 
         /// <summary>
         /// Runs <paramref name="stoker"/> for a tick, its jets throwing coal
@@ -427,6 +433,16 @@ namespace RealisticFiring.Sim
             var fed = continuousFeed;
             continuousFeed = 0f;
             return fed;
+        }
+
+        /// <summary>The iron or empty shovel knocks fuel off the distributor at the back of the fire.</summary>
+        internal float ClearStokerTable()
+        {
+            if (DoorOpening < .4f || StokerModel == null) return 0f;
+            var moved = StokerModel.ClearTable(Model);
+            continuousFeed += moved;
+            UpdateCoalLevel();
+            return moved;
         }
 
         // Coal from anything but a shovel the player just pointed into this

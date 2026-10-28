@@ -21,6 +21,14 @@ half3 _FireRampWhite;
 half _FireWhiteHeat;
 half _FireExposure;
 
+// The coal heats through before the end of the color ramp. Reusing the
+// white blend for its crust, local heat, and color compressed those nested
+// changes into the last few percent of heat, despite each being smooth.
+half FireHeatThrough(half heat)
+{
+    return smoothstep(_FireWhiteHeat - 0.2, min(_FireWhiteHeat + 0.1, 1.0), heat);
+}
+
 half3 FireColor(half heat)
 {
     half4 x = saturate(heat * 4.0 - half4(0.0, 1.0, 2.0, 3.0));

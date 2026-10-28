@@ -158,7 +158,7 @@ namespace RealisticFiring.AdapterCheck
             CheckJk3Firebox(gameParams);
             CheckBoilerWater();
             CheckGlassTilt();
-            CheckVrBailButton();
+            CheckVrShedHoseParts();
             CheckStoker(gameParams, def);
             CheckOilBurner(gameParams);
             CheckClientMirror(gameParams, def);
@@ -193,9 +193,12 @@ namespace RealisticFiring.AdapterCheck
                 "the shovel's load is readable, for saying a shovelful does not fit the firebox");
             CheckFireIronLoading();
             CheckFiringTablet();
+            CheckFiringTabletVrButtonSpec();
+            CheckFiremanOrders();
             CheckFiringTabletStartingItems();
             CheckNewDefaults();
             CheckFireboxQualitySettings();
+            CheckRetiredBrakeSetting();
             Check(AccessTools.Field(typeof(DV.Interaction.AGrabHandler), Visuals.FiringValvePassThrough.PassThroughField)?.FieldType
                   == typeof(DV.Interaction.AGrabHandler.InteractionPassThroughDelegate),
                 "a control's pass-through is wrappable, so the oil burner's valves can be reached past the firing valve");
@@ -670,29 +673,8 @@ namespace RealisticFiring.AdapterCheck
             Check(pumpRig.PumpFlow.State == FeedPumpState.Choked, "with the throttle shut its drifting valve chokes it to half");
         }
 
-        // The boiler water rig on a stock boiler with the S282's crown sheet,
-        // its hooks run between the stock steps in tick order as the patches do
-        // (the stock damage step needs Unity's curves, so its crown sheet test
-        // is read instead).
-        // In VR the trigger bails off while the independent brake lever is
-        // held (IndependentBailClick): the game's own use of a held object.
-        // What it rests on: VRTK's usable flags and use event, the game's use
-        // as the trigger is let go while holding, and its narrowing of the use
-        // to the hand that grabbed. Not run: no VR here.
-        private static void CheckVrBailButton()
+        private static void CheckVrShedHoseParts()
         {
-            const BindingFlags any = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            var interactable = typeof(VRTK.VRTK_InteractableObject);
-            var flags = interactable.GetField("isUsable") != null && interactable.GetField("useOnlyIfGrabbed") != null
-                        && interactable.GetEvent("InteractableObjectUsed") != null;
-            var gameUse = typeof(DV.VRTK_Extensions.VRTK_InteractUse_DV);
-            var releaseUse = gameUse.GetMethod("OnUseButtonReleased", any, null, new[] { typeof(object), typeof(VRTK.ControllerInteractionEventArgs) }, null) != null;
-            var grabbedHand = typeof(DV.VRTK_Extensions.VRTK_InteractableObject_DV).GetMethod("OnInteractableObjectGrabbed", any) != null;
-            var lever = typeof(DV.CabControls.VRTK.LeverVRTK).IsSubclassOf(typeof(DV.CabControls.ControlImplBase))
-                        && typeof(DV.CabControls.VRTK.VRTK_ControlImplBaseInteractableObject).IsSubclassOf(interactable);
-            Check(flags && releaseUse && grabbedHand && lever,
-                "the VR independent brake lever can take the trigger while held: VRTK's use flags and event, the game's use on release and its grabbing hand");
-
             // A shed hose is a copy of a live station hose, stripped of what
             // the game added as it woke; in VR the plug's control (GizmoVRTK)
             // added its interactable in the game's own DV.CabControls.VRTK, so
@@ -749,6 +731,10 @@ namespace RealisticFiring.AdapterCheck
                 $"a grade ahead turns into the same shift ({BoilerWaterRig.GlassPerGrade(boiler, span) * 0.02f:F3} for 2 %)");
         }
 
+        // The boiler water rig on a stock boiler with the S282's crown sheet,
+        // its hooks run between the stock steps in tick order as the patches do
+        // (the stock damage step needs Unity's curves, so its crown sheet test
+        // is read instead).
         private static void CheckBoilerWater()
         {
             var failuresOn = new SimGameParams(true, false, false, 1f, 1f);
@@ -1598,7 +1584,7 @@ namespace RealisticFiring.AdapterCheck
             var host = Create(def, gameParams);
             host.SetSaveStateData(new JObject { ["fireOn"] = true, ["coalMass"] = 40f });
             host.DeliverShovelful(5f, GrateZone.Front);
-            host.LastStoker = new StokerFlow { Fed = 0.4f, Jammed = true, ManifoldPressure = 3.2f };
+            host.LastStoker = new StokerFlow { Fed = 0.4f, Jammed = true, ManifoldPressure = 3.2f, TableCoal = 2f, TableFill = .6f, TableNeedsClearing = true };
             host.StokerEngineSpeed = 0.6f;
 
             Boiler NewBoiler()
@@ -1640,7 +1626,8 @@ namespace RealisticFiring.AdapterCheck
             ClientMirror.Apply(data, client, clientRig, clientWater, null, clientOil);
 
             Check(client.Model.FireOn && client.Model.SaveZones().SequenceEqual(host.Model.SaveZones())
-                  && client.LastStoker is StokerFlow flow && flow.Jammed && flow.Fed == 0.4f && client.StokerEngineSpeed == 0.6f,
+                  && client.LastStoker is StokerFlow flow && flow.Jammed && flow.Fed == 0.4f && client.StokerEngineSpeed == 0.6f
+                  && client.StokerTableCoal == 2f && client.StokerTableLoaded,
                 $"a client's view gets the host's bed zone by zone and its stoker's reading ({data.Length} bytes; " +
                 $"front zone {client.Model.Zones[(int)GrateZone.Front].Coal:F1} kg)");
             Check(clientRig.Flow.State == InjectorState.Priming && clientRig.Flow.Overflow == 1.3f
@@ -1664,7 +1651,15 @@ namespace RealisticFiring.AdapterCheck
                     return false;
                 }
             }
-            var injectorAt = 0;
+            var incompatible = (byte[])data.Clone();
+            incompatible[3] ^= 1;
+            client.StokerEngineSpeed = .2f;
+            var mismatchOk = Survives(incompatible) && client.StokerEngineSpeed == .2f;
+            var legacy = data.Skip(ClientMirror.HeaderSize).ToArray();
+            mismatchOk &= Survives(legacy) && client.StokerEngineSpeed == .2f;
+            Check(mismatchOk && ClientMirror.Capture(null, null, null, null, null) == null,
+                "incompatible or legacy mirror layouts are rejected before any state changes; empty captures stay empty");
+            var injectorAt = ClientMirror.HeaderSize;
             while (data[injectorAt] != 2)
                 injectorAt += 3 + (data[injectorAt + 1] | data[injectorAt + 2] << 8);
             var injectorLength = data[injectorAt + 1] | data[injectorAt + 2] << 8;
@@ -1686,8 +1681,12 @@ namespace RealisticFiring.AdapterCheck
             Array.Copy(data, injectorAt + 3 + injectorLength, shortStream, injectorAt + 3 + 8, tail);
             clientWater.PlugVent = 0f;
             var shortOk = Survives(shortStream) && clientWater.PlugVent == 0.8f;
-            Check(Survives(new byte[] { 1 }) && Survives(new byte[] { 1, 200 }) && Survives(new byte[] { 1, 255, 255, 0 })
-                  && Survives(new byte[] { 99, 2, 0, 7, 7 }) && Survives(new byte[0]) && poisonedOk && shortOk,
+            byte[] Framed(params byte[] sections) => data.Take(ClientMirror.HeaderSize).Concat(sections).ToArray();
+            client.StokerEngineSpeed = 0f;
+            var unknownThenGood = Framed(new byte[] { 99, 2, 0, 7, 7 }.Concat(legacy).ToArray());
+            var unknownOk = Survives(unknownThenGood) && client.StokerEngineSpeed == .6f;
+            Check(Survives(Framed(1)) && Survives(Framed(1, 200)) && Survives(Framed(1, 255, 255, 0))
+                  && unknownOk && Survives(data.Take(ClientMirror.HeaderSize - 1).ToArray()) && poisonedOk && shortOk,
                 "damaged state from the host is dropped section by section: a broken header, a length past the end, an unknown tag, " +
                 "a NaN, and a section shorter than it reads, the good sections still applied");
         }
@@ -1859,6 +1858,11 @@ namespace RealisticFiring.AdapterCheck
             var stockCoal = P(stock, "COAL_LEVEL").Value;
             Check(!fallback.FeedsZonedFire && stockCoal > 1f && Math.Abs(stockConsumed - multiplier * stockCoal) < 0.01f * stockConsumed,
                 $"without the zoned fire it feeds a stock firebox's port at the right multiplier ({stockCoal:F1} kg, {stockConsumed:F1} tender kg)");
+            var heldFuel = fallback.Model.Spec.MaxFeedRate * fallback.Model.Spec.TableCapacitySeconds;
+            fallback.Model.RestoreState(new StokerState { TableCoal = heldFuel, Packing = .8f });
+            for (var t = 0f; t < 5f; t += .02f) fallback.Tick(.02f);
+            Check(fallback.Model.EngineSpeed > .5f && fallback.Model.TableCoal == heldFuel,
+                "stock-firebox fallback keeps running while preserving table fuel from a formerly zoned fire");
 
             // A jam survives a save, whether the stoker loads before or after
             // its model is built (audit 2026-10-10: a recreated stoker came
@@ -1883,6 +1887,37 @@ namespace RealisticFiring.AdapterCheck
             Check(valved.HasSaveData && jamSave.Value<bool>(RealisticStoker.JammedSaveKey) && early.Model.Jammed && late.Model.Jammed
                   && !clear.Model.Jammed && clear.GetSaveStateData()[RealisticStoker.JammedSaveKey] == null,
                 "a jammed stoker stays jammed through a save and a recreated stoker; a clear one saves nothing");
+
+            var operatingLever = new Port(StokerJetControls.Reverse.PortId,
+                new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"), 1f);
+            valved.Attach(heel, boiler, operatingLever);
+            early.Attach(heel, boiler, operatingLever);
+            valved.Model.RestoreState(new StokerState { TableCoal = 1.5f, TableFines = .6f, TableWater = .1f,
+                Packing = .7f, TableWarmth = .4f, TableCake = .2f, Jammed = true, PackingJam = true,
+                TurnsToClear = 5f, Reversed = 1f, TableNeedsClearing = true });
+            var wetSave = valved.GetSaveStateData();
+            early.SetSaveStateData(wetSave);
+            var beforeBuild = new RealisticStoker(values, null, multiplier, steamWired: true);
+            beforeBuild.SetGameParams(gameParams); Connect(beforeBuild, heel);
+            beforeBuild.SetSaveStateData(wetSave); beforeBuild.Attach(heel, boiler, operatingLever);
+            var stored = early.Model.CaptureState(); var built = beforeBuild.Model.CaptureState();
+            Check(stored.TableCoal == 1.5f && built.TableCoal == 1.5f && stored.TableFines == .6f && built.TableWater == .1f
+                  && early.Model.Spec.PackingJams && beforeBuild.Model.Spec.PackingJams
+                  && stored.Packing == .7f && built.Packing == .7f && built.TableCake == .2f && stored.Reversed == 1f && built.TurnsToClear == 5f
+                  && stored.PackingJam && built.Jammed && stored.TableNeedsClearing && built.TableNeedsClearing,
+                "stoker fuel, fine mix, water, packing, coating and reversal progress round-trip before and after model creation");
+            var withoutLever = new RealisticStoker(values, null, multiplier, steamWired: true);
+            withoutLever.SetGameParams(gameParams); Connect(withoutLever, heel);
+            withoutLever.SetSaveStateData(wetSave); withoutLever.Attach(heel, boiler);
+            var noPacking = withoutLever.Model.CaptureState();
+            Check(!withoutLever.Model.Spec.PackingJams && noPacking.Packing == 0f
+                  && noPacking.TableCoal == stored.TableCoal && noPacking.TableFines == stored.TableFines
+                  && noPacking.TableWater == stored.TableWater && noPacking.TableCake == stored.TableCake,
+                "without a reversing lever, loading clears disabled packing while preserving table fuel, fines, water and coating");
+            early.SetSaveStateData(new JObject { [RealisticStoker.JammedSaveKey] = true,
+                [RealisticStoker.HandlingSaveKey] = new JObject { ["TableCoal"] = "bad" } });
+            Check(early.Model.Jammed && early.Model.TableCoal == 0f,
+                "malformed new stoker data falls back to the old jam key without injecting fuel or aborting load");
         }
 
         private static RealisticFirebox Create(FireboxDefinition def, SimGameParams gameParams)
@@ -2536,9 +2571,94 @@ namespace RealisticFiring.AdapterCheck
             Check(retained, "all firebox and chimney quality combinations survive settings saves independently of the visual-off switch");
         }
 
+        private static void CheckRetiredBrakeSetting()
+        {
+            var serializer = new System.Xml.Serialization.XmlSerializer(typeof(Settings));
+            foreach (var oldValue in new[] { "true", "false" })
+            {
+                using (var reader = new StringReader("<Settings><ClickToBailOff>" + oldValue + "</ClickToBailOff>"
+                    + "<FireboxQuality>Low</FireboxQuality><ShovelfulMass>4.5</ShovelfulMass><ShowOverlay>true</ShowOverlay></Settings>"))
+                {
+                    var restored = (Settings)serializer.Deserialize(reader);
+                    using (var writer = new StringWriter())
+                    {
+                        serializer.Serialize(writer, restored);
+                        Check(restored.FireboxQuality == FireboxQuality.Low && restored.ShovelfulMass == 4.5f && restored.ShowOverlay
+                              && !writer.ToString().Contains("ClickToBailOff"),
+                            $"legacy brake setting ({oldValue}) is ignored on load and omitted on save; other preferences survive");
+                    }
+                }
+            }
+        }
+
         // Both cores build the shared SmokeQuality, which this check sees twice:
         // an enum's values by the type of a value at hand.
         private static IEnumerable<T> EveryValue<T>(T _) where T : Enum => Enum.GetValues(typeof(T)).Cast<T>();
+
+        private static void CheckFiremanOrders()
+        {
+            var oldClient = Net.ClientCheck;
+            var oldSender = Net.Sender;
+            // Native Unity objects are not needed here. A nonzero cached pointer
+            // lets Net's null check recognize these synthetic car identities.
+            Sim.FiremanRig Rig()
+            {
+                var car = (TrainCar)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(TrainCar));
+                AccessTools.Field(typeof(UnityEngine.Object), "m_CachedPtr").SetValue(car, new IntPtr(1));
+                var rig = (Sim.FiremanRig)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(Sim.FiremanRig));
+                AccessTools.Field(typeof(Sim.FiremanRig), "<Car>k__BackingField").SetValue(rig, car);
+                AccessTools.Field(typeof(Sim.FiremanRig), "<CoalFireman>k__BackingField").SetValue(rig, new AutoFireman());
+                return rig;
+            }
+            try
+            {
+                var a = Rig();
+                var b = Rig();
+                var packets = new List<(TrainCar Car, FireAction Action, float Value)>();
+                Net.ClientCheck = () => true;
+                Net.Sender = (car, action, zone, direction, value) => packets.Add((car, action, value));
+                FiremanOrders.Order(a, FiremanMode.Road);
+                FiremanOrders.Order(a, FiremanMode.Road);
+                Check(packets.Count == 1 && ReferenceEquals(packets[0].Car, a.Car)
+                      && packets[0].Action == FireAction.FiremanMode && packets[0].Value == (float)FiremanMode.Road
+                      && FiremanOrders.ModeOf(a) == FiremanMode.Road && FiremanOrders.ModeOf(b) == FiremanMode.Off
+                      && a.Fireman.Mode == FiremanMode.Off,
+                    "tablet and F7 share per-engine client orders, send once, and leave the client's local fireman alone");
+                FiremanOrders.Order(a, FiremanMode.Off);
+                FiremanOrders.Call(b, FiremanCall.HeavyAhead);
+                Check(packets.Count == 3 && packets[1].Value == (float)FiremanMode.Off
+                      && ReferenceEquals(packets[2].Car, b.Car) && packets[2].Action == FireAction.FiremanCall
+                      && packets[2].Value == (float)FiremanCall.HeavyAhead && b.Fireman.Call == FiremanCall.None,
+                    "tablet orders can stop the host fireman and send engineer's calls to the selected engine");
+                Net.ClientCheck = () => false;
+                FiremanOrders.Call(a, FiremanCall.HeavyAhead);
+                var called = FiremanOrders.CallActive(a, FiremanCall.HeavyAhead) && a.Fireman.CallLeft > 0f;
+                FiremanOrders.Call(a, FiremanCall.HeavyAhead);
+                var cancelled = a.Fireman.Call == FiremanCall.None;
+                FiremanOrders.Call(a, FiremanCall.EasingOff);
+                Check(called && cancelled && FiremanOrders.CallActive(a, FiremanCall.EasingOff)
+                      && packets.Count == 3 && b.Fireman.Call == FiremanCall.None,
+                    "host engineer's calls activate, cancel on a second press, and stay local to their engine");
+            }
+            finally
+            {
+                Net.ClientCheck = oldClient;
+                Net.Sender = oldSender;
+            }
+        }
+
+        private static void CheckFiringTabletVrButtonSpec()
+        {
+            // The stock VR control dereferences the hand poses during Awake.
+            // Exercise the production initializer without a Unity scene.
+            var spec = (DV.CabControls.Spec.Button)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(DV.CabControls.Spec.Button));
+            Items.FiringTabletSetup.ConfigurePageButton(spec, null);
+            var poses = spec.handPosesOverride;
+            Check(poses != null && poses.nearTouchPose == DV.Interaction.HandPose.Generic
+                  && poses.touchPose == DV.Interaction.HandPose.Generic && poses.grabPose == DV.Interaction.HandPose.Generic
+                  && spec.colliderGameObjects.Length == 1 && !spec.createRigidbody && !spec.useJoints,
+                "runtime tablet tabs initialize VR hand poses before control Awake and do not add a second rigidbody");
+        }
 
         private static void CheckFireIronLoading()
         {
@@ -2588,8 +2708,10 @@ namespace RealisticFiring.AdapterCheck
                   && Items.FiringTabletGadget.SavedPage(new JObject { ["rfTabletPage"] = -12 }) == 0
                   && Items.FiringTabletGadget.SavedPage(new JObject { ["rfTabletPage"] = 1 }) == 1
                   && Items.FiringTabletGadget.SavedPage(new JObject { ["rfTabletPage"] = 2 }) == 2
-                  && Items.FiringTabletGadget.SavedPage(new JObject { ["rfTabletPage"] = long.MaxValue }) == 2,
-                "saved tablet page restores Fire/Water/Engine, defaults missing or invalid data, and clamps out-of-range data");
+                  && Items.FiringTabletGadget.SavedPage(new JObject { ["rfTabletPage"] = 3 }) == 3
+                  && Items.FiringTabletGadget.SavedPage(new JObject { ["rfTabletPage"] = long.MaxValue }) == 3
+                  && FireOverlay.Pages == 3,
+                "saved tablet restores all four pages without adding a fireman page to F6; missing, invalid, and out-of-range data stays bounded");
             var framed = true;
             foreach (var fov in new[] { 30f, 31f, 45f, 65f, 90f, 110f, 120f })
                 foreach (var aspect in new[] { 4d / 3d, 16d / 9d, 21d / 9d })

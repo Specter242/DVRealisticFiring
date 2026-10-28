@@ -13,7 +13,7 @@ namespace RealisticStackEffects
         [Draw("Heat shimmer over the stack (custom smoke effects; restart required)")]
         public bool HeatShimmer = true;
 
-        [Draw("Smoke quality, for a slower graphics card: Medium draws the chimney's smoke at half resolution, Low with half its particles besides (in VR or with forward rendering, half and a quarter of its particles instead)", DrawType.ToggleGroup)]
+        [Draw("Smoke quality, for a slower graphics card: Medium draws the chimney's smoke at half resolution and drops its faintest smoke, Low with half its particles and more of the faint smoke besides (in VR or with forward rendering, half and a quarter of its particles instead)", DrawType.ToggleGroup)]
         public SmokeQuality SmokeQuality = SmokeQuality.High;
 
         // The game has no temperature or humidity; the exhaust's white

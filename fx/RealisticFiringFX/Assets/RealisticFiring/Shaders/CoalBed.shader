@@ -234,7 +234,7 @@ HLSLPROGRAM
             // Deep coal reaches the same white heat as the lumps above it.
             // Green cover dims it through the mask, without making cold
             // texture patches in an otherwise white-hot layer.
-            half through = _UnderLumps * smoothstep(_FireWhiteHeat, 1.0, heat);
+            half through = _UnderLumps * FireHeatThrough(heat);
             half colorHeat = lerp(local * (1.0 - 0.4 * fresh), heat, through);
             half3 glow = FireColor(colorHeat) * mask * lit * waver * (0.4 + 1.2 * heat + 0.8 * forced * forced);
             o.Emission = glow * _GlowStrength * (1.0 + 0.6 * _Pulse) * step(0.001, heat) * (1.0 - saturate(IN.bare * 2.0));
@@ -650,7 +650,7 @@ fixed4 frag_surf (v2f_surf IN) : SV_Target {
             // Deep coal reaches the same white heat as the lumps above it.
             // Green cover dims it through the mask, without making cold
             // texture patches in an otherwise white-hot layer.
-            half through = _UnderLumps * smoothstep(_FireWhiteHeat, 1.0, heat);
+            half through = _UnderLumps * FireHeatThrough(heat);
             half colorHeat = lerp(local * (1.0 - 0.4 * fresh), heat, through);
             half3 glow = FireColor(colorHeat) * mask * lit * waver * (0.4 + 1.2 * heat + 0.8 * forced * forced);
             o.Emission = glow * _GlowStrength * (1.0 + 0.6 * _Pulse) * step(0.001, heat) * (1.0 - saturate(IN.bare * 2.0));
@@ -1095,7 +1095,7 @@ HLSLPROGRAM
             // Deep coal reaches the same white heat as the lumps above it.
             // Green cover dims it through the mask, without making cold
             // texture patches in an otherwise white-hot layer.
-            half through = _UnderLumps * smoothstep(_FireWhiteHeat, 1.0, heat);
+            half through = _UnderLumps * FireHeatThrough(heat);
             half colorHeat = lerp(local * (1.0 - 0.4 * fresh), heat, through);
             half3 glow = FireColor(colorHeat) * mask * lit * waver * (0.4 + 1.2 * heat + 0.8 * forced * forced);
             o.Emission = glow * _GlowStrength * (1.0 + 0.6 * _Pulse) * step(0.001, heat) * (1.0 - saturate(IN.bare * 2.0));
@@ -1455,7 +1455,7 @@ fixed3 originalNormal = o.Normal;
             // Deep coal reaches the same white heat as the lumps above it.
             // Green cover dims it through the mask, without making cold
             // texture patches in an otherwise white-hot layer.
-            half through = _UnderLumps * smoothstep(_FireWhiteHeat, 1.0, heat);
+            half through = _UnderLumps * FireHeatThrough(heat);
             half colorHeat = lerp(local * (1.0 - 0.4 * fresh), heat, through);
             half3 glow = FireColor(colorHeat) * mask * lit * waver * (0.4 + 1.2 * heat + 0.8 * forced * forced);
             o.Emission = glow * _GlowStrength * (1.0 + 0.6 * _Pulse) * step(0.001, heat) * (1.0 - saturate(IN.bare * 2.0));
@@ -1840,7 +1840,7 @@ HLSLPROGRAM
             // Deep coal reaches the same white heat as the lumps above it.
             // Green cover dims it through the mask, without making cold
             // texture patches in an otherwise white-hot layer.
-            half through = _UnderLumps * smoothstep(_FireWhiteHeat, 1.0, heat);
+            half through = _UnderLumps * FireHeatThrough(heat);
             half colorHeat = lerp(local * (1.0 - 0.4 * fresh), heat, through);
             half3 glow = FireColor(colorHeat) * mask * lit * waver * (0.4 + 1.2 * heat + 0.8 * forced * forced);
             o.Emission = glow * _GlowStrength * (1.0 + 0.6 * _Pulse) * step(0.001, heat) * (1.0 - saturate(IN.bare * 2.0));
@@ -2087,7 +2087,7 @@ fixed4 frag_surf (v2f_surf IN) : SV_Target {
             // Deep coal reaches the same white heat as the lumps above it.
             // Green cover dims it through the mask, without making cold
             // texture patches in an otherwise white-hot layer.
-            half through = _UnderLumps * smoothstep(_FireWhiteHeat, 1.0, heat);
+            half through = _UnderLumps * FireHeatThrough(heat);
             half colorHeat = lerp(local * (1.0 - 0.4 * fresh), heat, through);
             half3 glow = FireColor(colorHeat) * mask * lit * waver * (0.4 + 1.2 * heat + 0.8 * forced * forced);
             o.Emission = glow * _GlowStrength * (1.0 + 0.6 * _Pulse) * step(0.001, heat) * (1.0 - saturate(IN.bare * 2.0));

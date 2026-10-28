@@ -87,6 +87,7 @@ namespace RealisticFiring.Sim
         private FiremanHand stokerLever;
         private FiremanHand[] stokerJets;
         private float clock;
+        private float nextTableHook;
         private float lastDoor;
         private RoadReckoner reckoner;
         private float lastTick;
@@ -262,15 +263,12 @@ namespace RealisticFiring.Sim
             return car != null && ByCar.TryGetValue(car, out rig);
         }
 
-        /// <summary>The fireman the player is with on <paramref name="car"/>: its own, or a coupled loco's.</summary>
-        public static bool TryGetTended(TrainCar car, out FiremanRig rig)
-        {
-            if (TryGet(car, out rig))
-                return true;
-            if (car == null)
-                return false;
-            return TryGet(car.frontCoupler.CoupledCar(), out rig) || TryGet(car.rearCoupler.CoupledCar(), out rig);
-        }
+        /// <summary>
+        /// The fireman the player is with on <paramref name="car"/>: its own,
+        /// or a coupled loco's, the one the player was last in between two.
+        /// </summary>
+        public static bool TryGetTended(TrainCar car, out FiremanRig rig) =>
+            TryGet(CarCouplings.Tended(car, ByCar), out rig);
 
         /// <summary>Sets his mode, giving every control back to him.</summary>
         public void SetMode(FiremanMode mode)
@@ -370,6 +368,9 @@ namespace RealisticFiring.Sim
         // The stoker's engine throttle, operating lever, and jets.
         private void WorkStoker(FiremanActions actions)
         {
+            if (actions.ClearStokerTable && clock >= nextTableHook && Firebox != null
+                && Firebox.ClearStokerTable() > 0f)
+                nextTableHook = clock + 4f;
             if (stokerThrottle == null)
             {
                 var flow = controller.simFlow;
@@ -466,6 +467,12 @@ namespace RealisticFiring.Sim
                 PumpFullFeed = rig != null && rig.Pump != null ? rig.Pump.Spec.Capacity : 0f,
                 HasStoker = stokerModel != null,
                 StokerJammed = stokerModel != null && stokerModel.Jammed,
+                StokerTableLoaded = Firebox != null && Firebox.StokerTableLoaded,
+                StokerEnginePressure = Firebox?.LastStoker?.EnginePressure ?? 0f,
+                StokerEngineSpeed = Firebox?.StokerEngineSpeed ?? 0f,
+                StokerThrottle = stoker?.ThrottlePort?.Value ?? 0f,
+                StokerWorkingPressure = stokerModel?.Spec.EngineWorkingPressure ?? 0f,
+                StokerRunningForward = stoker != null && stoker.Direction == StokerDirection.Forward,
                 StokerFullFeed = stokerModel != null ? stokerModel.Spec.MaxFeedRate : 0f,
                 Sand = OilFirebox != null ? SandAvailable() : 0f,
                 Solids = water != null ? water.Water.Concentration : 0f,

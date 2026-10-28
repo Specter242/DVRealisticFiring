@@ -148,6 +148,18 @@ namespace RealisticStackEffects.Core
         /// </summary>
         public static float SpreadWidth(float age, float airSpeed, float scale = 1f) => SpreadRate(airSpeed, scale) * Math.Max(0f, age);
 
+        /// <summary>
+        /// A parcel spread <paramref name="spreadWidth"/> m wide, spread on for
+        /// <paramref name="seconds"/> s more with the air going past at
+        /// <paramref name="airSpeed"/> m/s, in m. What the air has spread
+        /// stays spread when it slows (loady740, Nexus, 2026-10-27: a line of
+        /// puffs hung where the train had run; the spread was the air's speed
+        /// now over the parcel's whole age, so a train that stopped drew its
+        /// trail back in, narrower and thicker, and kept it).
+        /// </summary>
+        public static float SpreadOn(float spreadWidth, float seconds, float airSpeed, float scale = 1f) =>
+            Math.Max(0f, spreadWidth) + SpreadWidth(seconds, airSpeed, scale);
+
         /// <summary>The plume's width at a parcel: its rise's and its spread's together, in m.</summary>
         public static float PlumeWidth(float height, float spreadWidth)
         {

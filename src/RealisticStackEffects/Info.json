@@ -2,11 +2,15 @@
   "Id": "RealisticStackEffects",
   "DisplayName": "Realistic Stack Effects",
   "Author": "Specter242",
-  "Version": "1.0.0",
+  "Version": "1.0.1",
   "ManagerVersion": "0.28.2",
   "AssemblyName": "RealisticStackEffects.dll",
   "EntryMethod": "RealisticStackEffects.Main.Load",
-  "LoadAfter": ["DVCustomCarLoader", "Multiplayer"],
+  "LoadAfter": [
+    "DVCustomCarLoader",
+    "Multiplayer"
+  ],
   "MultiplayerCompatibility": "Client",
+  "HomePage": "https://www.nexusmods.com/derailvalley/mods/1795",
   "Repository": "https://raw.githubusercontent.com/Specter242/DVRealisticStackEffects/main/repository.json"
 }

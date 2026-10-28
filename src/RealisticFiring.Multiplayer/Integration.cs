@@ -79,6 +79,7 @@ namespace RealisticFiring.Multiplayer
             var session = Main.Session;
             return string.Join(";", new[]
             {
+                $"mirror layout {ClientMirror.LayoutSignature}",
                 $"realistic fireboxes {session.RealisticFireboxes}",
                 $"realistic injectors {session.RealisticInjectors}",
                 $"injector steam valves {session.InjectorSteamValves}",

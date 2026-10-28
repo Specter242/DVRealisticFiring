@@ -87,12 +87,8 @@ namespace RealisticFiring
             ReplacementEnabled = session.RealisticFireboxes;
             RealisticSmokeEnabled = session.RealisticSmoke;
             RealisticInjectorsEnabled = session.RealisticInjectors;
-            modEntry.OnGUI = entry =>
-            {
-                if (StackEffectsLink.HandedOff)
-                    GUILayout.Label("Realistic Stack Effects draws the chimney smoke: its own smoke settings apply, not this mod's.");
-                Settings.Draw(entry);
-            };
+            var settingsMenu = new SettingsMenu();
+            modEntry.OnGUI = entry => settingsMenu.Draw(Settings, StackEffectsLink.HandedOff);
             modEntry.OnSaveGUI = entry => Settings.Save(entry);
             // Unity Mod Manager opens a mod's settings on its hotkey; sharing
             // the settings' binding keeps a rebind in effect at once.

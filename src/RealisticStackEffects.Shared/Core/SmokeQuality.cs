@@ -26,6 +26,9 @@ namespace RealisticStackEffects.Core
             return halfResolution ? (low ? 0.5f : 1f) : (low ? 0.25f : 0.5f);
         }
 
+ public static float Faint(SmokeQuality quality) =>
+            quality == SmokeQuality.Low ? 0.05f : quality == SmokeQuality.Medium ? 0.03f : PlumeRise.Invisible;
+
         /// <summary>
         /// The particles to throw for <paramref name="wanted"/> at
         /// <paramref name="share"/>: <paramref name="due"/> carries the

@@ -37,7 +37,7 @@ throws to the front (left, middle, right), the middle third to the sides
 and center, the bottom third to the back corners and under the door. The
 zone is named under the crosshair, and the keypad is drawn on the door as
 you aim (a setting turns it off). If you'd rather aim at the spot on the
-fire you look at, set "How to aim" to Grate (F8); on some engines the
+fire you look at, set **Firing → Aiming method** to **Grate** (F8); on some engines the
 front of the box is out of sight through the door.
 
 ![The S282's open firehole with the aiming keypad drawn on it: front left, front, and front right along the top; left side, center, and right side across the middle; back left, under the door, and back right along the bottom.](images/s282-firehole-keypad.jpg)
@@ -152,6 +152,15 @@ and use the cab's blower (the 8F has no fitting).
 - **Wet coal** sticks on the distributor table and falls short: raise the
   jets a little in the rain. A little damp keeps the fines on the fire
   instead of up the stack.
+- **Feed and moisture matter.** Soaked fines can pack the screw; dry coal
+  scours it gradually, and a short reverse relieves a heavily loaded screw.
+  Persistent packing is disabled when jams are off. Ease excessive feed
+  when the jets cannot keep up. If coal stays on the table, open the door and rake the back of
+  the fire with the empty shovel, or slice, push, or pull there with the
+  iron. This clears coal onto the grate and scrapes the plate even when
+  empty; reversing the engine only relieves the screw. A hot table wears
+  clean as dry coal replaces the wet mixture. Stopping the screw and
+  closing the jets leaves retained coal on the table.
 - **Fire the back corners and under the door by hand.** The stoker runs them
   short.
 - **Don't stoke standing.** With no draft it banks the fire and smokes. Shut

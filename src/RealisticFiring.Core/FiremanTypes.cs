@@ -189,6 +189,11 @@ namespace RealisticFiring.Core
         public bool HasStoker;
         public bool StokerJammed;
         public float StokerFullFeed;
+        /// <summary>Coal visibly collecting on the distributor; no knowledge of hidden moisture or packing.</summary>
+        public bool StokerTableLoaded;
+        /// <summary>The visible engine gauge, throttle, and running speed; the working gauge pressure is known for this stoker.</summary>
+        public float StokerEnginePressure, StokerThrottle, StokerEngineSpeed, StokerWorkingPressure;
+        public bool StokerRunningForward;
 
         /// <summary>Flue sand in the cab, in kg (oil burners).</summary>
         public float Sand;
@@ -240,6 +245,7 @@ namespace RealisticFiring.Core
         public float BackJets;
         public float FrontJets;
         public float FinesJet;
+        public bool ClearStokerTable;
 
         /// <summary>The oil burner: its firing valve, atomizer, and oil heater, each 0 to 1, and flue sand to throw now, in kg.</summary>
         public float FiringValve;

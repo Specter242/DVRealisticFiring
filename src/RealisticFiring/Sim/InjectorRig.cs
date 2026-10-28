@@ -618,15 +618,12 @@ namespace RealisticFiring.Sim
             return car != null && ByCar.TryGetValue(car, out rig);
         }
 
-        /// <summary>The rig the player tends from <paramref name="car"/>: its own, or a coupled loco's.</summary>
-        public static bool TryGetTended(TrainCar car, out InjectorRig rig)
-        {
-            if (TryGet(car, out rig))
-                return true;
-            if (car == null)
-                return false;
-            return TryGet(car.frontCoupler.CoupledCar(), out rig) || TryGet(car.rearCoupler.CoupledCar(), out rig);
-        }
+        /// <summary>
+        /// The rig the player tends from <paramref name="car"/>: its own, or a
+        /// coupled loco's, the one the player was last in between two.
+        /// </summary>
+        public static bool TryGetTended(TrainCar car, out InjectorRig rig) =>
+            TryGet(CarCouplings.Tended(car, ByCar), out rig);
 
         // The tender coupled behind, or null; a deleted one counts as none.
         // Callers compare it by reference: Unity's == calls a deleted car

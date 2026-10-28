@@ -157,6 +157,22 @@ namespace RealisticStackEffects.Core.Tests;
     }
 
     [Fact]
+    public void ATrailStaysSpreadWhenTheTrainStops()
+    {
+        // loady740 (Nexus, 2026-10-27): a line of puffs hung where the train had run.
+        var running = 0f;
+        for (var turn = 0; turn < 1200; turn++)
+            running = PlumeRise.SpreadOn(running, 0.025f, 20f);
+        Assert.Equal(PlumeRise.SpreadWidth(30f, 20f), running, 1);
+        var stopped = PlumeRise.SpreadOn(running, 10f, 0f);
+        Assert.True(stopped > running);
+        float Shown(float spread) => PlumeRise.OpacityOf(PlumeRise.Parcel(0.8f, 1f).SmokeDepth, 5f, spread);
+        Assert.True(Shown(stopped) < Shown(running));
+        // Worked out from its age at the air's speed now, the stopped trail drew back in over three times as thick.
+        Assert.True(Shown(PlumeRise.SpreadWidth(40f, 0f)) > 3f * Shown(stopped));
+    }
+
+    [Fact]
     public void AnAgingPlumeKeepsWidening()
     {
         Assert.True(PlumeRise.PlumeWidth(100f, PlumeRise.SpreadWidth(60f, 5f)) > PlumeRise.PlumeWidth(100f, PlumeRise.SpreadWidth(20f, 5f)));

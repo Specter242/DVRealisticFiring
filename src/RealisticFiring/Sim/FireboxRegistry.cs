@@ -58,16 +58,11 @@ namespace RealisticFiring.Sim
         /// <summary>
         /// The firebox the player tends from <paramref name="car"/>: its own,
         /// or that of a loco coupled to it, so standing on the S282's tender
-        /// counts as being on the footplate.
+        /// counts as being on the footplate; between two locos, the one the
+        /// player was last in (<see cref="CarCouplings.Tended"/>).
         /// </summary>
-        public static bool TryGetTended(TrainCar car, out RealisticFirebox firebox)
-        {
-            if (TryGet(car, out firebox))
-                return true;
-            if (car == null)
-                return false;
-            return TryGet(car.frontCoupler.CoupledCar(), out firebox) || TryGet(car.rearCoupler.CoupledCar(), out firebox);
-        }
+        public static bool TryGetTended(TrainCar car, out RealisticFirebox firebox) =>
+            TryGet(CarCouplings.Tended(car, Fireboxes), out firebox);
 
         private static void PruneDestroyedCars()
         {

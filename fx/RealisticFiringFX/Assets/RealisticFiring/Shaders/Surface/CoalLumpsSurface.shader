@@ -86,10 +86,10 @@ Shader "RealisticFiring/CoalLumpsSurface"
             // Each burning lump its own heat about the zone's.
             half own = frac(seed * 7.13);
             half t = saturate(heat * (0.6 + 0.4 * own)) * (1.0 - fresh);
-            // As the zone reaches white heat, its burning lumps heat through.
+            // As the zone heats toward white, its burning lumps heat through.
             // Keeping their random cooler share at full heat left most of
             // the pile dark even when the fire between them was white hot.
-            half hot = smoothstep(_FireWhiteHeat, 1.0, heat);
+            half hot = FireHeatThrough(heat);
             t = lerp(t, heat * (1.0 - fresh), hot);
 
             // Its ash film and cooler patches, smooth over it (cracks cut from

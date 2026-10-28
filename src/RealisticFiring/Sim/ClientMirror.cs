@@ -9,6 +9,21 @@ namespace RealisticFiring.Sim
 {
  internal static class ClientMirror
     {
+        // The first three bytes deliberately look like an impossible section
+        // to older readers (tag 255, length 65535), so they drop this packet
+        // before interpreting any changed struct fields.
+        internal const int HeaderSize = 11;
+        private static readonly ulong LayoutHash = HashLayout("sections-v2;" + Codec<StokerFlow>.Layout
+            + Codec<InjectorFlow>.Layout + Codec<FeedPumpFlow>.Layout + Codec<BoosterFlow>.Layout + Codec<OilFireState>.Layout);
+        internal static string LayoutSignature => LayoutHash.ToString("x16");
+
+        private static ulong HashLayout(string layout)
+        {
+            var hash = 14695981039346656037UL;
+            foreach (var c in layout) hash = unchecked((hash ^ c) * 1099511628211UL);
+            return hash;
+        }
+
         private const byte Firebox = 1;
         private const byte Injector = 2;
         private const byte Water = 3;
@@ -60,6 +75,7 @@ namespace RealisticFiring.Sim
             using (var stream = new MemoryStream())
             using (var writer = new BinaryWriter(stream))
             {
+                writer.Write((byte)255); writer.Write(ushort.MaxValue); writer.Write(LayoutHash);
                 if (firebox != null)
                     Section(writer, Firebox, w =>
                     {
@@ -122,7 +138,9 @@ namespace RealisticFiring.Sim
                         w.Write(oil.FlarebackSmoke);
                     });
                 writer.Flush();
-                return stream.Length > 0 ? stream.ToArray() : null;
+                // Keep the sentinel length impossible for an old section reader.
+                if (stream.Length >= ushort.MaxValue) throw new InvalidDataException("mirror packet too large");
+                return stream.Length > HeaderSize ? stream.ToArray() : null;
             }
         }
 
@@ -130,10 +148,14 @@ namespace RealisticFiring.Sim
         internal static void Apply(byte[] data, RealisticFirebox firebox, InjectorRig rig, BoilerWaterRig water, RealisticBooster booster,
             RealisticOilFirebox oil, string carName = null)
         {
-            if (data == null)
+            if (data == null || data.Length < HeaderSize || data[0] != 255 || data[1] != 255 || data[2] != 255)
                 return;
+            // Version/settings mismatch removal is delayed to show its notice.
+            // Reject incompatible state immediately, before mutating any model.
+            using (var headerReader = new BinaryReader(new MemoryStream(data, 3, 8, writable: false)))
+                if (headerReader.ReadUInt64() != LayoutHash) return;
             const int header = 3;
-            var at = 0;
+            var at = HeaderSize;
             while (at < data.Length)
             {
                 if (data.Length - at < header)
@@ -286,6 +308,10 @@ namespace RealisticFiring.Sim
                 .GetFields(BindingFlags.Public | BindingFlags.Instance)
                 .OrderBy(f => f.MetadataToken)
                 .ToArray();
+
+            internal static readonly string Layout = typeof(T).FullName + ":" + string.Join(",", Fields.Select(f =>
+                f.Name + ":" + f.FieldType.FullName + (f.FieldType.IsEnum
+                    ? "=" + string.Join("/", Enum.GetValues(f.FieldType).Cast<object>().Select(v => Convert.ToInt32(v).ToString())) : ""))) + ";";
 
             public static void Write(BinaryWriter w, T value)
             {

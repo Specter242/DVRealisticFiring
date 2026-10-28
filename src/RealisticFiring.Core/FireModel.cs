@@ -312,10 +312,12 @@ namespace RealisticFiring.Core
         }
 
         // Fresh coal put on, wet as the coal it comes from.
-        private void Wet(float fresh)
+        private void Wet(float fresh) => Wet(fresh, FeedMoisture);
+
+        private void Wet(float fresh, float moisture)
         {
             CountWater();
-            FreshWater += Math.Max(0f, fresh) * RainWater(FeedMoisture);
+            FreshWater += Math.Max(0f, fresh) * RainWater(moisture);
             wettedFresh = FreshMass;
         }
 
@@ -441,7 +443,10 @@ namespace RealisticFiring.Core
         /// at once, landing as burning coal. If the box can't take it all,
         /// every zone takes the same share. Returns the mass accepted.
         /// </summary>
-        public float AddStoked(float[] lumps, float[] fines)
+        public float AddStoked(float[] lumps, float[] fines) => AddStoked(lumps, fines, FeedMoisture);
+
+        /// <summary>Retained stoker fuel carries its own moisture, independent of a newly refilled tender.</summary>
+        public float AddStoked(float[] lumps, float[] fines, float moisture)
         {
             if (lumps == null || fines == null || lumps.Length != zones.Length || fines.Length != zones.Length)
                 throw new ArgumentException("Need one lump and one fines mass per zone.");
@@ -465,9 +470,9 @@ namespace RealisticFiring.Core
                 freshAdded += lump + (FireOn ? 0f : fine);
                 caught += FireOn ? fine : 0f;
             }
-            Wet(freshAdded);
+            Wet(freshAdded, moisture);
             // Fines that catch at once dry at once.
-            flashWater += caught * RainWater(FeedMoisture);
+            flashWater += caught * RainWater(moisture);
             return accepted;
         }
 

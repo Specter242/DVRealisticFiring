@@ -6,7 +6,7 @@ namespace RealisticStackEffects.Core.Tests;
 /// The smoke quality: Medium draws the plume at half resolution, Low with
 /// half its particles besides; without half resolution, half and a quarter
 /// of them. A share is thrown exactly on average over many puffs, but never
-/// a beat without its puff.
+/// a beat without its puff. Medium and Low let the plume's faint far end go.
 /// </summary>
 public class SmokeQualityTests
 {
@@ -43,6 +43,24 @@ public class SmokeQualityTests
         for (var beat = 0; beat < 400; beat++)
             thrown += SmokeDetail.Scaled(wanted, share, ref due);
         Assert.InRange(thrown, wanted * share * 400 - 1, wanted * share * 400 + 1);
+    }
+
+    [Fact]
+    public void LowerQualitiesLetTheFaintEndOfTheTrailGo()
+    {
+        var light = PlumeRise.Parcel(0.3f, 1f);
+        float Lasts(SmokeQuality quality)
+        {
+            for (var seconds = 0f; seconds < 240f; seconds += 0.5f)
+                if (PlumeRise.OpacityOf(light.SmokeDepth, 10f, PlumeRise.SpreadWidth(seconds, 14f)) < SmokeDetail.Faint(quality))
+                    return seconds;
+            return 240f;
+        }
+        Assert.Equal(PlumeRise.Invisible, SmokeDetail.Faint(SmokeQuality.High));
+        Assert.True(Lasts(SmokeQuality.Medium) < Lasts(SmokeQuality.High) / 2f);
+        Assert.True(Lasts(SmokeQuality.Low) < Lasts(SmokeQuality.Medium));
+        // Smoke that plainly shows stays.
+        Assert.True(PlumeRise.OpacityOf(light.SmokeDepth, 0f) > 5f * SmokeDetail.Faint(SmokeQuality.Low));
     }
 
     [Fact]

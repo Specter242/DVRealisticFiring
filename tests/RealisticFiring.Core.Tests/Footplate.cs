@@ -71,6 +71,13 @@ internal sealed class Footplate
         WaterMass = glass * GlassMass;
     }
 
+    private StokerFlow StokerReading()
+    {
+        StokerFlow flow = default;
+        Stoker?.ReadGauges(StokerControls, Pressure, ref flow);
+        return flow;
+    }
+
     public FireModel Fire { get; }
     public ShovelDelivery Shovel { get; }
     public Injector Injector { get; }
@@ -208,6 +215,12 @@ internal sealed class Footplate
         InjectorFullFeed = Injector.FullDelivery(Pressure),
         HasStoker = Stoker != null,
         StokerJammed = Stoker != null && Stoker.Jammed,
+        StokerTableLoaded = Stoker?.TableNeedsClearing ?? false,
+        StokerThrottle = StokerControls.Throttle,
+        StokerEngineSpeed = Stoker?.EngineSpeed ?? 0f,
+        StokerWorkingPressure = Stoker?.Spec.EngineWorkingPressure ?? 0f,
+        StokerEnginePressure = StokerReading().EnginePressure,
+        StokerRunningForward = StokerControls.Direction == StokerDirection.Forward,
         StokerFullFeed = Stoker != null ? Stoker.Spec.MaxFeedRate : 0f,
         HasPump = Pump != null,
         Pump = PumpFlow.State,

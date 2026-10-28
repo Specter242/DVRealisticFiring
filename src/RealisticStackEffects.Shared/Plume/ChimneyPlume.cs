@@ -91,6 +91,10 @@ namespace RealisticStackEffects
         // rising at least this fast, m/s.
         private const float MinZoneRise = 1f;
 
+        // Smoke this far from the stack's axis, m, has left it, however low
+        // it lies (the stack's outside radius is at most about half a metre).
+        private const float ZoneReach = 1.5f;
+
         private const float VisibleShare = 0.6f;
 
         // A stack the mod can't read: its bore's and outside radius, m.
@@ -1298,6 +1302,19 @@ namespace RealisticStackEffects
             system.SetParticles(buffer, count);
         }
 
+        // In the narrow-jet zone: below its top along the stack's axis, and
+        // near the axis. By height alone, smoke the train had left behind
+        // below the stack's level (past a crest, or where the line falls
+        // away) was taken back into the zone: carried along with the train
+        // and never retired until it rose back above the stack (loady740,
+        // Nexus, 2026-10-27: a line of puffs left in the air).
+        private static bool InZone(Vector3 position, Vector3 emitter, Vector3 axis, float zone)
+        {
+            var offset = position - emitter;
+            var along = Vector3.Dot(offset, axis);
+            return along < zone && (offset - axis * along).sqrMagnitude < ZoneReach * ZoneReach;
+        }
+
         private int Particles(ParticleSystem system)
         {
             var capacity = system.main.maxParticles;
@@ -1403,6 +1420,7 @@ namespace RealisticStackEffects
                     RollSlows = Look.RollSlows,
                     Roof = SameSpace(system, smoke) ? roof : null,
                     InTunnel = roof.OverStack.HasValue,
+                    Faint = SmokeDetail.Faint(StackHost.Settings.SmokeQuality),
                     Floor = Vector3.Dot(zoneTop, up),
                 }, emitter, axis, zone, zoneTop, carried);
                 return;
@@ -1419,7 +1437,7 @@ namespace RealisticStackEffects
                 var life = particle.startLifetime > 0f ? 1f - particle.remainingLifetime / particle.startLifetime : 0f;
                 var shown = intended * growth.Evaluate(life);
                 var velocity = streaks ? jetVelocities.Recall(particle.randomSeed, particle.velocity) : particle.velocity;
-                var inZone = Vector3.Dot(particle.position - emitter, axis) < zone;
+                var inZone = InZone(particle.position, emitter, axis, zone);
                 float drawn;
                 if (inZone)
                 {
@@ -1517,7 +1535,7 @@ namespace RealisticStackEffects
             for (var i = 0; i < count; i++)
             {
                 var particle = buffer[i];
-                var inZone = Vector3.Dot(particle.position - emitter, axis) < zone;
+                var inZone = InZone(particle.position, emitter, axis, zone);
                 if (inZone)
                 {
                     var upward = Mathf.Max(Vector3.Dot(particle.velocity - carried, axis), MinZoneRise);

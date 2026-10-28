@@ -54,6 +54,10 @@ namespace RealisticStackEffects
             // The particles emitted a second as it left: those overlapping it
             // left with it (Drawn).
             public float Rate;
+            // How wide the air has spread it, m, by the age it was last
+            // carried at, s (PlumeRise.SpreadOn).
+            public float Spread;
+            public float SpreadAge;
         }
 
         private static readonly Color SteamColor = new Color(PlumeModel.Steam.R, PlumeModel.Steam.G, PlumeModel.Steam.B);
@@ -186,6 +190,9 @@ namespace RealisticStackEffects
 
             /// <summary>Whether the engine is under a roof now, pushing the bore's air along.</summary>
             public bool InTunnel;
+
+            /// <summary>Where the plume shows fainter than this its particles fade out (<see cref="SmokeDetail.Faint"/>).</summary>
+            public float Faint;
 
             /// <summary>The stack's mouth's height on <see cref="Up"/>: a roof holds smoke down to no lower.</summary>
             public float Floor;
@@ -546,7 +553,11 @@ namespace RealisticStackEffects
                 var angle = Hash(particle.randomSeed ^ 0x5bd1e995u) * 2f * Mathf.PI;
                 var share = air.Disperse * Mathf.Sqrt(Hash(particle.randomSeed ^ 0x27d4eb2du));
                 var smokeAtLip = PlumeRise.OpacityOf(parcel.Thickness.SmokeDepth, 0f);
-                var spread = PlumeRise.SpreadWidth(age, air.Speed, air.Spread);
+                // Spread on from where it was, so a train that slows leaves it as spread.
+                parcel.Spread = PlumeRise.SpreadOn(parcel.Spread, age - parcel.SpreadAge, air.Speed, air.Spread);
+                parcel.SpreadAge = age;
+                parcels.Keep(particle.randomSeed, parcel);
+                var spread = parcel.Spread;
                 var smokeHere = PlumeRise.OpacityOf(parcel.Thickness.SmokeDepth, height, spread);
                 var widening = PlumeRise.WidthPerHeight * rise + PlumeRise.SpreadRate(air.Speed, air.Spread);
                 var outward = (across * Mathf.Cos(angle) + along * Mathf.Sin(angle)) * (share * widening);
@@ -589,7 +600,12 @@ namespace RealisticStackEffects
                     Shape(particle, age, PlumeRise.PlumeWidth(height, spread));
                 // Fewer, wider particles carry the plume as it widens: one past
                 // its share fades out, then goes; one too thin to see goes at once.
-                if (parcel.RetiredAt < 0f && Hash(particle.randomSeed) > PlumeRise.Survival(height, spread))
+                // At a lower smoke quality one where the plume is faint fades
+                // out as well (Air.Faint), unless its white is still forming.
+                var formedAll = parcel.Thickness.SteamDepth < 1e-3f || cloud == null
+                                || cloud.PastThickest(age, air.Speed, air.Mixing, air.Forming);
+                if (parcel.RetiredAt < 0f && (Hash(particle.randomSeed) > PlumeRise.Survival(height, spread)
+                                              || age > FadeIn && plumeShown < air.Faint && formedAll))
                 {
                     parcel.RetiredAt = Time.time;
                     parcels.Keep(particle.randomSeed, parcel);
@@ -597,8 +613,6 @@ namespace RealisticStackEffects
                 if (parcel.RetiredAt >= 0f)
                     leaving = 1f - (Time.time - parcel.RetiredAt) / FadeOut;
                 // Too thin to see goes, unless its white is still forming.
-                var formedAll = parcel.Thickness.SteamDepth < 1e-3f || cloud == null
-                                || cloud.PastThickest(age, air.Speed, air.Mixing, air.Forming);
                 if (age > FadeIn && plumeShown < PlumeRise.Invisible && formedAll || leaving <= 0f)
                 {
                     particle.remainingLifetime = 0f;

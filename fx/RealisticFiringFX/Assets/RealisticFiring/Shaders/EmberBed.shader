@@ -100,7 +100,7 @@ Shader "RealisticFiring/EmberBed"
                 half fine = tex2D(_NoiseTex, uv * 0.8 - float2(t * 0.11, t * 0.03)).g;
                 // Embers glow even under a slow fire; ash dulls them.
                 half glowHeat = saturate((0.25 + 0.75 * heat) * (0.85 + 0.3 * hot) * (0.9 + 0.2 * fine));
-                glowHeat = lerp(glowHeat, heat, smoothstep(_FireWhiteHeat, 1.0, heat));
+                glowHeat = lerp(glowHeat, heat, FireHeatThrough(heat));
                 half3 c = FireColor(glowHeat) * (0.45 + 0.9 * broad) * (1.0 - 0.7 * ash);
                 // The ramp brightens with the heat itself; a little more as it
                 // is forced, and with each beat.

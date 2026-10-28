@@ -246,6 +246,8 @@ namespace RealisticFiring
             BoilerWaterRig.TryGet(car, out var waterRig);
             c.Advice = Bursting(waterRig) ?? FiringAdvice.ForCoal(fire, door, rig != null ? Visuals.GaugeGlass.Read(rig) : 1f, Injectors(rig),
                 waterRig != null && waterRig.DriftingHookedUp);
+            if (c.Advice.Level == AdviceLevel.Ok && firebox.StokerTableLoaded)
+                c.Advice = new Advice(AdviceLevel.Watch, "Rake the back of the fire to clear the stoker table. Ease the feed or raise the jets to keep it clear.");
 
             switch (page)
             {
@@ -261,7 +263,7 @@ namespace RealisticFiring
                     c.Rows.Add(new Row { Label = "In the box", Value = $"{fire.CoalMass:F0} kg" });
                     c.Rows.Add(CoalRow(fire.FeedMoisture, firebox.CoalCoverOpen));
                     c.Rows.Add(firebox.LastStoker is StokerFlow stoker
-                        ? new Row { Label = "Stoker", Value = $"{(stoker.Jammed ? "JAMMED" : P0(firebox.StokerEngineSpeed))} · jets {stoker.ManifoldPressure:F1} bar", Level = stoker.Jammed ? AdviceLevel.Act : (AdviceLevel?)null }
+                        ? StokerRow(firebox, stoker)
                         : new Row { Label = "Firebox", Value = $"{fire.Temperature:F0} °C" });
                     break;
                 case 1:
@@ -420,11 +422,21 @@ namespace RealisticFiring
             else
                 c.Rows.Add(new Row { Label = "Cylinders", Value = "the engine's own" });
             c.Rows.Add(firebox != null && firebox.LastStoker is StokerFlow stoker
-                ? new Row { Label = "Stoker", Value = $"{(stoker.Jammed ? "JAMMED" : P0(firebox.StokerEngineSpeed))} · jets {stoker.ManifoldPressure:F1} bar", Level = stoker.Jammed ? AdviceLevel.Act : (AdviceLevel?)null }
+                ? StokerRow(firebox, stoker)
                 : new Row { Label = "Stoker", Value = "none fitted" });
             c.Rows.Add(RealisticBooster.TryGet(car, out var booster)
                 ? new Row { Label = "Booster", Value = $"{(booster.Flow.State != BoosterState.CutOut ? "up" : "down")} · warm {P0(booster.Model.Warmth)}" }
                 : new Row { Label = "Booster", Value = "none fitted" });
+        }
+
+        private static Row StokerRow(RealisticFirebox firebox, StokerFlow flow)
+        {
+            var table = firebox.StokerTableCoal;
+            var status = flow.Jammed ? "JAMMED" : P0(firebox.StokerEngineSpeed);
+            return new Row { Label = "Stoker",
+                Value = table > .1f ? $"{status} · table {table:F1} kg" : $"{status} · jets {flow.ManifoldPressure:F1} bar",
+                Level = flow.Jammed ? AdviceLevel.Act : firebox.StokerTableLoaded
+                    ? AdviceLevel.Watch : (AdviceLevel?)null };
         }
 
         // ---- Drawing ----

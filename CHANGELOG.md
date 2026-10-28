@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.16.2 (2026-10-27)
+
+- Bailing off has moved to the Realistic Brakes mod.
+- Coal, lumps, and embers transition more gradually into and out of white heat.
+- The settings menu now uses tabs, clearer explanations, units, and restart labels.
+- Fixed the tablet's VR orientation after inventory and distance grabs, and errors when touching its tabs.
+- Added a Fireman page to the tablet with orders, engineer's calls, status, and warnings.
+- Wet coal and fines affect stoker feed, load, packing, and jet throw together. Retained table coal is saved and can be cleared with the shovel or fire iron; the automatic fireman attends to it too.
+- Between two locomotives, the tablet, overlay, and controls follow the engine you were last in.
+- Smoke keeps its spread when a train slows. Smoke left behind is no longer pulled along as though it were still inside the stack.
+- Medium and Low smoke quality fade out faint smoke sooner to reduce long trails; High keeps its existing appearance.
+
 ## 1.16.1 (2026-10-27)
 
 - The hottest coal fires now reach white-hot brightness across the coal,
@@ -54,7 +66,6 @@
 
 - The fireman judges the water as it would stand level (`FiremanReadings.GlassTilt`, the game's glass shift from the boiler's pitch, `BoilerWaterRig.GlassTiltNow`) and bounds his goal by the steepest climb and descent within the water's lead (`GlassTiltHigh`, `GlassTiltLow`): under `GlassTop` (0.9) on the climb, over `GlassLeast` on the descent.
 - A shed hose hanging on its stand runs its rope only within 15 m once it has settled (10 s hanging); one in use keeps 150 m (`ShedStands.SleepFar`).
-- VR: the independent brake lever is made usable while grabbed, and its use (the trigger) bails off (`IndependentBailClick`, VRTK `InteractableObjectUsed`).
 - `CarNames.LogName`: a car goes by its livery until the game numbers it, so the log no longer reads `TrainCar.ID` early.
 
 ## 1.13.7 (2026-10-18)
@@ -111,7 +122,6 @@
 - Each step of a car's setup is guarded and logged (`SetupGuard`).
 - Smoke tints the steam (`PlumeModel.SmokeTint`), a clean coal fire clears its stack (`PlumeModel.CoalClearStack`), heat shimmer (`PlumeModel.Shimmer`, `HeatHaze.shader`), and the plume sorted as if at the stack (`ChimneyPlume.SortAtStack`).
 - A renewed boiler's steel starts as hot as its water (`BoilerWaterRig`, `BoilerMetal.Settle`).
-- Bail off the independent (`BailOff`, `BailOffPatches`, `IndependentBailClick`).
 - Wet coal (`CoalMoisture`, `CoalStore`; the Hudson's bunker door keeps the rain off).
 - The stoker manifold's plates hang from their valves (`StokerCab.HangLabel`).
 - Unity Mod Manager's update feed (`repository.json`, `Info.json`'s HomePage and Repository).
