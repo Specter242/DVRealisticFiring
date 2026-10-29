@@ -124,7 +124,15 @@ namespace RealisticStackEffects
             reading.MostHeat = mostHeat;
             reading.Soot = smoke != null ? SootShare * Mathf.Clamp01(smoke.Value) : 0f;
             var drawn = Mathf.Max(0f, air != null ? air.Value : exhaust != null ? exhaust.airFlowReadOut.Value : 0f);
-            reading.AirThrough = drawn;
+            // The steam meets only the air its own blast draws: the exhaust's
+            // passive draft goes on whatever the steam, and counted in, a
+            // little steam met many times its weight of hot gas and showed no
+            // white at all (78youbaba, Nexus, 2026-10-28: the white went as
+            // the regulator was eased; SteamExhaust.Tick).
+            var passive = exhaust != null
+                ? exhaust.passiveExhaust * Mathf.Lerp(SteamExhaust.MIN_DAMPER, 1f, exhaust.damperControl.Value)
+                : 0f;
+            reading.AirThrough = Mathf.Max(0f, drawn - passive);
             // No smoke to see and air to spare beyond the coal's need: a clear
             // stack. A fire that is out burns none of it.
             var need = reading.FireOn && coal != null && burnTime > 0f ? Mathf.Max(0f, coal.Value) / burnTime * AirPerCoal : 0f;

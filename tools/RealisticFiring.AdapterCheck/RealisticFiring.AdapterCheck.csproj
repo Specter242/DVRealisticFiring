@@ -35,6 +35,7 @@
     <Reference Include="UnityEngine" HintPath="$(DvManagedDir)/UnityEngine.dll" />
     <Reference Include="UnityEngine.CoreModule" HintPath="$(DvManagedDir)/UnityEngine.CoreModule.dll" />
     <Reference Include="UnityEngine.PhysicsModule" HintPath="$(DvManagedDir)/UnityEngine.PhysicsModule.dll" />
+    <Reference Include="UnityEngine.ParticleSystemModule" HintPath="$(DvManagedDir)/UnityEngine.ParticleSystemModule.dll" />
     <Reference Include="VRTK" HintPath="$(DvManagedDir)/VRTK.dll" />
   </ItemGroup>
 

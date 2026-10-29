@@ -88,6 +88,43 @@ namespace RealisticStackEffects.Core.Tests;
     }
 
     [Fact]
+    public void ASummerAfternoonsBeatsStillShowAShortWhite()
+    {
+        // 78youbaba (Nexus, 2026-10-28): a summer afternoon's engine showed no
+        // white at all. The blast's core still shows some, briefly, however
+        // much of the fire's gas is about.
+        var afternoon = PlumeClimate.Air(SmokeSeason.Summer, 13f, 0f, 0f);
+        Assert.Equal(0f, SteamCloud.For(afternoon, SteamCloud.ReferenceFlueGas).Whiteness);
+        foreach (var flueGas in new[] { SteamCloud.ReferenceFlueGas, 6f })
+        {
+            var cloud = SteamCloud.ForBeats(afternoon, flueGas, 0f, out var white);
+            Assert.InRange(white, 0.1f, 0.4f);
+            Assert.InRange(Lasting(cloud, 15f), 0.3f, 3f);
+        }
+    }
+
+    [Fact]
+    public void TheBlastsCoreLeavesTheTunedAndTheHotDryAirAsTheyWere()
+    {
+        // The reference air and the damp photos (16, 31) are the mixed
+        // steam's alone; the hot, dry photos (03, 01, 07) still show no
+        // white, and photo 18's dry day only a wisp gone within 1.5 s.
+        foreach (var air in new[] { PlumeAir.Reference, new PlumeAir(14.3f, 0.82f), new PlumeAir(2.5f, 0.92f) })
+        {
+            var mixed = SteamCloud.For(air, SteamCloud.ReferenceFlueGas);
+            Assert.Same(mixed, SteamCloud.ForBeats(air, SteamCloud.ReferenceFlueGas, 0f, out var white));
+            Assert.Equal(mixed.Whiteness, white);
+        }
+        foreach (var air in new[] { new PlumeAir(36.4f, 0.34f), new PlumeAir(26f, 0.30f), new PlumeAir(22.8f, 0.22f) })
+        {
+            SteamCloud.ForBeats(air, SteamCloud.ReferenceFlueGas, 0f, out var white);
+            Assert.True(white < 0.02f, $"{air}: {white:F3}");
+        }
+        var dry = SteamCloud.ForBeats(new PlumeAir(14.9f, 0.31f), SteamCloud.ReferenceFlueGas, 0f, out _);
+        Assert.True(Lasting(dry, 7.6f) < 1.5f, $"{Lasting(dry, 7.6f):F2} s");
+    }
+
+    [Fact]
     public void HotFlueGasInTheSteamKeepsItClear()
     {
         var air = new PlumeAir(10f, 0.8f);

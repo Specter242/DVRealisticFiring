@@ -141,7 +141,7 @@ namespace RealisticFiring
                 c.Notes.Add(new Note { Level = AdviceLevel.Watch, Text = $"{FiremanRig.Rivals} is running too: two firemen will fight; use one." });
 
             c.Plate = Modes.First(m => m.Mode == mode).Plate;
-            c.Line = $"{r.Pressure:F1} of {man.PressureTarget:F1} bar · glass {P0(r.Glass)}" +
+            c.Line = $"{r.Pressure:F1} of {man.PressureTarget:F1} bar · glass {P0(rig.GlassShown)}" +
                      (man.Call == FiremanCall.HeavyAhead ? " · building for heavy work" : man.Call == FiremanCall.EasingOff ? " · easing off" : "");
             c.Warnings.AddRange(warnings.Select(w => new Note { Level = w.Level, Text = w.Text }));
             return c;
@@ -199,7 +199,7 @@ namespace RealisticFiring
                 rows.Add(new Row { Label = "Oil", Value = $"{fire.OilTemperature:F0} °C · heater {P0(rig.Actions.Heater)}" });
                 rows.Add(new Row { Label = "Brick", Value = $"{fire.BrickTemperature:F0} °C · flue soot {P0(fire.FlueSoot)}" });
             }
-            rows.Add(new Row { Label = "Glass", Value = $"{P0(r.Glass)} · holding {P0(man.GlassTarget)}", Level = rig.Actions.Notices.HasFlag(FiremanNotice.LowWater) ? AdviceLevel.Act : (AdviceLevel?)null });
+            rows.Add(new Row { Label = "Glass", Value = $"{P0(rig.GlassShown)} · holding {P0(rig.GlassTargetShown)}", Level = rig.Actions.Notices.HasFlag(FiremanNotice.LowWater) ? AdviceLevel.Act : (AdviceLevel?)null });
             rows.Add(new Row
             {
                 Label = "Feed",
@@ -410,7 +410,7 @@ namespace RealisticFiring
                              (oil.StackBlack ? "black at the stack: less oil, more air" : oil.StackClear ? "clear at the stack, less air" : "a light haze at the stack");
                 yield return $"Atomizer {rig.Actions.Atomizer:P0} ({fire.Atomizing:F1}x the oil's need); oil {fire.OilTemperature:F0} C, heater {rig.Actions.Heater:P0}; flue soot {fire.FlueSoot:P0}";
             }
-            yield return $"Glass {r.Glass:P0}, holding {man.GlassTarget:P0}; " +
+            yield return $"Glass {rig.GlassShown:P0}, holding {rig.GlassTargetShown:P0}; " +
                          (man.OnPump ? $"feed pump {r.Pump.ToString().ToLowerInvariant()}" : $"injector {r.Injector.ToString().ToLowerInvariant()}") +
                          (man.BlowingDown ? $"; blowing down ({r.Solids:F0} ppm)" : "");
             yield return DescribeRoad(rig.Road);

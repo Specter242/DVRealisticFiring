@@ -23,7 +23,11 @@ namespace RealisticStackEffects
         /// <summary>How clear the stack is between beats, 0 to 1 (<see cref="Core.PlumeInputs.ClearStack"/>).</summary>
         public float ClearStack;
 
-        /// <summary>The air drawn through the fire, kg/s.</summary>
+        /// <summary>
+        /// The air drawn through the fire that leaves with the stack's steam,
+        /// kg/s: the fire's gas its white meets. The game's own firebox leaves
+        /// out its exhaust's passive draft (Realistic Stack Effects' StockStack).
+        /// </summary>
         public float AirThrough;
 
         /// <summary>Whether the fire throws cinders at all: an oil burner throws none.</summary>

@@ -158,6 +158,7 @@ namespace RealisticFiring.AdapterCheck
             CheckJk3Firebox(gameParams);
             CheckBoilerWater();
             CheckGlassTilt();
+            CheckFiremanGlassDisplay();
             CheckVrShedHoseParts();
             CheckStoker(gameParams, def);
             CheckOilBurner(gameParams);
@@ -174,6 +175,7 @@ namespace RealisticFiring.AdapterCheck
             CheckFiremanHand();
             CheckPatchTargets();
             CheckStackEffectsFeed();
+            CheckPlumeReinitialization();
             CheckPatchEachClass();
             CheckCarPoolGuard();
             var after = false;
@@ -729,6 +731,97 @@ namespace RealisticFiring.AdapterCheck
                 $"the fireman reads the glass's tilt as the game shifts it (2 % front down {oursDown:F3}, game {stockDown:F3}; front up {oursUp:F3}, game {stockUp:F3})");
             Check(Math.Abs(BoilerWaterRig.GlassPerGrade(boiler, span) * 0.02f - stockUp) < 2e-3f,
                 $"a grade ahead turns into the same shift ({BoilerWaterRig.GlassPerGrade(boiler, span) * 0.02f:F3} for 2 %)");
+        }
+
+        private static object displayGlassSpan;
+        private static MethodInfo displayGlassShow;
+
+        // Supply a learned cab calibration without creating native Unity objects.
+        private static bool CalibratedGlassPrefix(float level, ref float __result)
+        {
+            __result = (float)displayGlassShow.Invoke(displayGlassSpan, new object[] { level });
+            return false;
+        }
+
+        private static void CheckFiremanGlassDisplay()
+        {
+            var shown = typeof(FiremanRig).GetProperty("GlassShown");
+            var target = typeof(FiremanRig).GetProperty("GlassTargetShown");
+            var read = AccessTools.Method(typeof(Visuals.GaugeGlass), "Read", new[] { typeof(TrainCar), typeof(string), typeof(float) });
+            Check(shown != null && target != null && read != null,
+                "the fireman's displayed glass and target use the shared cab-glass calibration");
+            if (shown == null || target == null || read == null)
+                return;
+
+            var boiler = (Boiler)new BoilerDefinition
+            {
+                ID = "boiler", diameter = 1.7f, length = 8.8f,
+                crownSheetNormalizedWaterLevel = 0.6f, steamOutletNormalizedWaterLevel = 0.98f,
+            }.InstantiateImplementation();
+            var rig = (FiremanRig)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(FiremanRig));
+            AccessTools.Field(typeof(FiremanRig), "boiler").SetValue(rig, boiler);
+            var man = new AutoFireman();
+            AccessTools.Field(typeof(FiremanRig), "<CoalFireman>k__BackingField").SetValue(rig, man);
+            var injector = (InjectorRig)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(InjectorRig));
+            AccessTools.Field(typeof(InjectorRig), "boiler").SetValue(injector, boiler);
+            var spanType = typeof(Visuals.GaugeGlass).GetNestedType("Span", BindingFlags.NonPublic);
+            displayGlassShow = spanType.GetMethod("Show");
+            var harmony = new Harmony("RealisticFiring.AdapterCheck.GlassDisplay");
+            var correct = true;
+            try
+            {
+                harmony.Patch(read, prefix: new HarmonyMethod(typeof(Program), nameof(CalibratedGlassPrefix)));
+                // JK3 1.0.1's measured glass, LMS 8F, the stock span, and
+                // reader modifiers. Compare against the stock indicator itself.
+                foreach (var spec in new[] { (0.68f, 0.85f, 1f, 0f, false), (0.70f, 0.95f, 1f, 0f, false),
+                    (0.6f, 0.98f, 1f, 0f, false), (0.5f, 0.9f, -2f, 0.5f, true) })
+                {
+                    var indicator = (IndicatorScaler)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(IndicatorScaler));
+                    indicator.minValue = spec.Item1;
+                    indicator.maxValue = spec.Item2;
+                    var reader = (DV.Simulation.Ports.IndicatorPortReader)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(DV.Simulation.Ports.IndicatorPortReader));
+                    reader.valueMultiplier = spec.Item3;
+                    reader.valueOffset = spec.Item4;
+                    reader.useAbsoluteValue = spec.Item5;
+                    displayGlassSpan = Activator.CreateInstance(spanType, new object[] { indicator, reader });
+                    float Expected(float raw)
+                    {
+                        var value = raw * reader.valueMultiplier + reader.valueOffset;
+                        AccessTools.Field(typeof(Indicator), "value").SetValue(indicator, reader.useAbsoluteValue ? Math.Abs(value) : value);
+                        return indicator.NormalizedValue;
+                    }
+                    foreach (var raw in new[] { 0.64f, 0.68f, 0.765f, 0.85f, 0.98f })
+                    {
+                        boiler.waterLevelReadOut.Value = raw;
+                        correct &= Math.Abs((float)shown.GetValue(rig) - Expected(raw)) < 1e-5f
+                            && Math.Abs(Visuals.GaugeGlass.Read(injector) - Expected(raw)) < 1e-5f;
+                    }
+                    foreach (var goal in new[] { 0f, 0.3f, 0.55f, 0.75f, 1f, 1.2f })
+                    {
+                        AccessTools.Field(typeof(AutoFiremanBase), "<GlassTarget>k__BackingField").SetValue(man, goal);
+                        correct &= Math.Abs((float)target.GetValue(rig) - Expected(0.6f + goal * 0.38f)) < 1e-5f
+                            && man.GlassTarget == goal;
+                    }
+                }
+            }
+            finally
+            {
+                harmony.UnpatchAll(harmony.Id);
+                displayGlassSpan = null;
+                displayGlassShow = null;
+            }
+            Check(correct, "fireman levels and holding targets match the cab/F6 calibration, including JK3, modifiers, and out-of-range targets");
+            bool Calls(string name, MethodInfo getter)
+            {
+                var method = AccessTools.Method(typeof(FiremanPanel), name);
+                var iterator = method.GetCustomAttribute<System.Runtime.CompilerServices.IteratorStateMachineAttribute>();
+                if (iterator != null)
+                    method = AccessTools.Method(iterator.StateMachineType, "MoveNext");
+                return PatchProcessor.GetOriginalInstructions(method).Any(i => Equals(i.operand, getter));
+            }
+            Check(Calls("Read", shown.GetGetMethod()) && Calls("ReadRows", shown.GetGetMethod())
+                  && Calls("ReadRows", target.GetGetMethod()) && Calls("Describe", shown.GetGetMethod()) && Calls("Describe", target.GetGetMethod()),
+                "the compact fireman HUD, tablet/shared card, detailed rows and descriptions use calibrated glass readings");
         }
 
         // The boiler water rig on a stock boiler with the S282's crown sheet,
@@ -2454,6 +2547,28 @@ namespace RealisticFiring.AdapterCheck
             }).Select(f => f.Name).ToList();
             Check(lost.Count == 0, $"the realistic fires reach Realistic Stack Effects intact, {fields.Length} fields" +
                                    (lost.Count > 0 ? $" (lost: {string.Join(", ", lost)})" : ""));
+        }
+
+        private static void CheckPlumeReinitialization()
+        {
+            var type = typeof(ChimneyPlume);
+            var bind = AccessTools.Method(type, "BindInputs");
+            Check(bind != null, "a repeated plume setup rebinds the sim inputs separately from creating its effects");
+            if (bind == null)
+                return;
+            var binding = PatchProcessor.GetOriginalInstructions(bind);
+            var written = binding.Where(i => i.opcode == System.Reflection.Emit.OpCodes.Stfld)
+                .Select(i => (i.operand as FieldInfo)?.Name).ToList();
+            Check(new[] { "fire", "beats", "crankRotation", "exhaustPressure", "totalFlow", "exhaustSim", "boilerBroken", "hasLastPosition" }.All(written.Contains)
+                  && !written.Any(n => new[] { "smoke", "sootCore", "jet", "heat", "effectsRoot", "volume" }.Contains(n)),
+                "a plume rebind replaces the fire, beat phase and every sim port without replacing its effects");
+            var instructions = PatchProcessor.GetOriginalInstructions(AccessTools.Method(type, "Attach"));
+            int ComponentCall(string name) => instructions.FindIndex(i => i.operand is MethodInfo m && m.Name == name
+                && m.IsGenericMethod && m.GetGenericArguments().Contains(type));
+            var get = ComponentCall("GetComponent");
+            var add = ComponentCall("AddComponent");
+            Check(get >= 0 && add > get && instructions.Skip(get).Take(add - get).Any(i => i.opcode == System.Reflection.Emit.OpCodes.Ret),
+                "plume attachment checks and returns its existing driver before another component or FX clone can be created");
         }
 
         // A fire that sets each field of the plume's reading to its own value.

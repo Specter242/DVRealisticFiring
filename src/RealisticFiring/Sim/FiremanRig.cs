@@ -185,6 +185,24 @@ namespace RealisticFiring.Sim
         public FiremanReadings Readings { get; private set; }
         public FiremanActions Actions { get; private set; }
 
+        /// <summary>The current water as the cab glass and F6 show it.</summary>
+        public float GlassShown => GaugeGlass.Read(Car, boiler.waterLevelReadOut.id, boiler.waterLevelReadOut.Value);
+
+        /// <summary>The fireman's holding target on that same visible glass scale.</summary>
+        public float GlassTargetShown
+        {
+            get
+            {
+                // Feeding, mass, and tilt stay in the core's crown-to-outlet
+                // coordinates. Convert the target back to boiler height before
+                // applying the cab's indicator calibration, just as for F6.
+                var crown = BoilerWaterRig.TryGet(boiler, out var water) ? water.CrownSheetLevelNormalized : 0.6f;
+                var outlet = boiler.steamOutletNormalizedWaterLevel > crown ? boiler.steamOutletNormalizedWaterLevel : 1f;
+                var level = crown + Fireman.GlassTarget * (outlet - crown);
+                return GaugeGlass.Read(Car, boiler.waterLevelReadOut.id, level);
+            }
+        }
+
         private IEnumerable<FiremanHand> AllHands =>
             new[] { door, injector, injectorSteam, pump, blower, damper, blowdown, firingValve, atomizer, heater, stokerThrottle, stokerLever }
                 .Concat(stokerJets ?? new FiremanHand[0])

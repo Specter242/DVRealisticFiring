@@ -185,8 +185,12 @@ namespace RealisticStackEffects.AdapterCheck
             var working = Read(stack, exhaust);
             var used = P(exhaust, def.steamConsumptionReadOut).Value;
             var drawn = P(exhaust, def.airFlowReadOut).Value;
-            Check(Math.Abs(working.BlowerSteam - used) < 1e-5f && Math.Abs(working.StackSteam - (1.2f + used)) < 1e-5f && working.AirThrough == drawn,
-                $"the blower's steam {working.BlowerSteam:F3} kg/s as the game's ({used:F3}), {working.StackSteam:F2} kg/s up the stack, {working.AirThrough:F2} kg/s of air");
+            // The steam meets only the air its blast draws, not the passive draft.
+            var blast = def.entrainmentRatio * working.StackSteam;
+            Check(Math.Abs(working.BlowerSteam - used) < 1e-5f && Math.Abs(working.StackSteam - (1.2f + used)) < 1e-5f
+                  && Math.Abs(working.AirThrough - blast) < 1e-4f && Math.Abs(drawn - def.passiveExhaust - blast) < 1e-4f,
+                $"the blower's steam {working.BlowerSteam:F3} kg/s as the game's ({used:F3}), {working.StackSteam:F2} kg/s up the stack, " +
+                $"{working.AirThrough:F2} kg/s of the {drawn:F2} kg/s of air with it (the blast's)");
         }
 
         // Another mod's fire through the public contract: every field of the

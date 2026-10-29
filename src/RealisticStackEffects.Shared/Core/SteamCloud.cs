@@ -211,6 +211,38 @@ namespace RealisticStackEffects.Core
             return high;
         }
 
+        /// <summary>
+        /// The most of the fire's gas a kg of a beat's steam meets at the
+        /// blast's core, kg, and the share of the beat's white that core
+        /// shows. The core leaves before the gas around the blast has mixed
+        /// into it, so on a mild day it still shows a short white where the
+        /// mixed steam shows none (78youbaba, Nexus, 2026-10-28: a summer
+        /// afternoon's engine showed no white at all); in hot, dry air it
+        /// shows none either, as the reference photos do. Fitted so that the
+        /// reference air and the damp photos (16, 31) are the mixed steam's alone.
+        /// </summary>
+        public const float CoreFlueGas = 0.9f;
+        public const float CoreWhite = 0.7f;
+
+        /// <summary>
+        /// The white a beat's steam makes (<see cref="For"/>), meeting
+        /// <paramref name="flueGas"/> kg of the fire's gas a kg mixed in, or
+        /// its core's (<see cref="CoreFlueGas"/>), whichever shows the more;
+        /// <paramref name="whiteness"/> is how white it shows, as <see cref="Whiteness"/>.
+        /// </summary>
+        public static SteamCloud ForBeats(PlumeAir air, float flueGas, float wetness, out float whiteness)
+        {
+            var mixed = For(air, flueGas, wetness);
+            var core = For(air, Math.Min(flueGas, CoreFlueGas), wetness);
+            if (CoreWhite * core.Whiteness > mixed.Whiteness)
+            {
+                whiteness = CoreWhite * core.Whiteness;
+                return core;
+            }
+            whiteness = mixed.Whiteness;
+            return mixed;
+        }
+
         private static double DilutionAt(int i) => FirstDilution * Math.Pow(DilutionStep, i);
 
         /// <summary>

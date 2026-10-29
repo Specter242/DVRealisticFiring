@@ -45,23 +45,27 @@ namespace RealisticFiring.Visuals
         {
             if (rig == null)
                 return 0f;
-            var car = rig.Car;
+            return Read(rig.Car, rig.WaterLevelPortId, rig.WaterLevel);
+        }
+
+        /// <summary>Shows a boiler level or target on the same cab scale as F6.</summary>
+        public static float Read(TrainCar car, string port, float level)
+        {
             var livery = car != null && car.carLivery != null ? car.carLivery.id : null;
             if (livery == null)
-                return rig.WaterLevel;
+                return level;
             if (!Spans.ContainsKey(livery))
-                Learn(car, rig);
-            return Spans.TryGetValue(livery, out var span) ? span.Show(rig.WaterLevel) : rig.WaterLevel;
+                Learn(car, port);
+            return Spans.TryGetValue(livery, out var span) ? span.Show(level) : level;
         }
 
         // The cab's glasses: indicators reading the boiler's water level.
-        private static void Learn(TrainCar car, InjectorRig rig)
+        private static void Learn(TrainCar car, string port)
         {
             var interior = car.loadedInterior;
             if (interior == null || !Searched.Add(interior))
                 return;
             Searched.RemoveWhere(o => o == null);
-            var port = rig.WaterLevelPortId;
             var glass = interior.GetComponentsInChildren<IndicatorPortReader>(true)
                 .Where(r => r.portId == port)
                 .Select(r => (Reader: r, Indicator: r.GetComponent<Indicator>()))

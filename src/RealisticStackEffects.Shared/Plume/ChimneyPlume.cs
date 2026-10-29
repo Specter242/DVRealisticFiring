@@ -163,6 +163,9 @@ namespace RealisticStackEffects
         private ParticleSystem smoke;
         private ParticleSystem sootCore;
         private ParticleSystem jet;
+        // The cloned effects belong to this driver, including when only the
+        // component is removed while the stock reader's object stays alive.
+        private GameObject effectsRoot;
 
         // The plume lit as one volume (PlumeVolume), on its materials.
         private PlumeVolume volume;
@@ -207,6 +210,8 @@ namespace RealisticStackEffects
         private Vector3 airVelocity;
         private float stackFlux;
         private SteamCloud steamCloud = SteamCloud.Reference;
+        // How white the beats' steam shows, its cloud's or its core's (SteamCloud.ForBeats).
+        private float steamWhite = 1f;
 
         // The steady stream's between beats, the blower's mostly.
         private SteamCloud streamCloud = SteamCloud.Reference;
@@ -338,25 +343,40 @@ namespace RealisticStackEffects
                 || !flow.TryGetPort(reader.isBoilerBrokenPortId, out var broken))
                 return "a smoke input port is missing; keeping the stock smoke";
 
+            // Cab refreshes call the same stock reader's Init again. Rebind its
+            // ports and fire, but keep its particles, materials and driver:
+            // another clone would leave the previous plume emitting as well.
+            var plume = reader.GetComponent<ChimneyPlume>();
+            if (plume != null)
+            {
+                if (!plume.Active || plume.smoke == null)
+                {
+                    plume.enabled = false;
+                    plume.Release();
+                    Destroy(plume);
+                    return "incomplete plume retired; keeping the stock smoke until the next initialization";
+                }
+                Bind(plume);
+                plume.stock.StopAllCoroutines();
+                // A cab refresh can replace its steam renderers too. Restore
+                // their old sorting before gathering the current set once.
+                plume.AlignSteam(false);
+                plume.steamSorting.Clear();
+                plume.MatchSorting(car);
+                plume.ShimmerLast();
+                plume.enabled = true;
+                return "realistic chimney smoke rebound to the existing plume";
+            }
+
             var systems = reader.smokeParticlesParent != null
                 ? reader.smokeParticlesParent.GetComponentsInChildren<ParticleSystem>(true)
                 : new ParticleSystem[0];
             if (systems.Length == 0)
                 return "no smoke particle systems; keeping the stock smoke";
 
-            var plume = reader.gameObject.AddComponent<ChimneyPlume>();
-            plume.stock = reader;
-            plume.fire = fire;
-            plume.car = car;
-            OnCar.Remove(car);
-            OnCar.Add(car, plume);
+            plume = reader.gameObject.AddComponent<ChimneyPlume>();
+            Bind(plume);
             All.Add(plume);
-            plume.beats = new ExhaustBeatCounter(2 * engine.numCylinders);
-            plume.crankRotation = crank;
-            plume.exhaustPressure = pressure;
-            plume.totalFlow = total;
-            plume.exhaustSim = flow.OrderedSimComps.OfType<SteamExhaust>().FirstOrDefault(c => c.id == exhaust.ID);
-            plume.boilerBroken = broken;
             var custom = StackHost.Settings.CustomEffects && StackHost.Assets.PlumePrefab != null && plume.UseCustomEffect(systems);
             plume.custom = custom;
             if (!custom)
@@ -384,6 +404,34 @@ namespace RealisticStackEffects
                    $", sparks {string.Join("/", plume.embers.Select(s => $"'{s.name}'"))}" +
                    $", {2 * engine.numCylinders} beats per revolution from '{engineId}', flow from '{exhaust.ID}'; {sorting}; {lip}; " +
                    $"simulated in {(plume.smoke.main.simulationSpace == ParticleSystemSimulationSpace.Custom && plume.smoke.main.customSimulationSpace != null ? $"'{plume.smoke.main.customSimulationSpace.name}'" : plume.smoke.main.simulationSpace.ToString())}";
+
+            void Bind(ChimneyPlume target)
+            {
+                if (target.car != null && target.car != car && OnCar.TryGetValue(target.car, out var previous) && previous == target)
+                    OnCar.Remove(target.car);
+                target.stock = reader;
+                target.car = car;
+                target.BindInputs(fire, 2 * engine.numCylinders, crank, pressure, total,
+                    flow.OrderedSimComps.OfType<SteamExhaust>().FirstOrDefault(c => c.id == exhaust.ID), broken);
+                OnCar.Remove(car);
+                OnCar.Add(car, target);
+            }
+        }
+
+        // Refreshing a sim graph replaces its ports and fire source, not the
+        // plume's effects or material ownership. A new beat phase and position
+        // sample avoid a false chuff or velocity jump across that change.
+        private void BindInputs(IStackFire source, int beatsPerRevolution, Port crank, Port pressure, Port total,
+            SteamExhaust exhaust, Port broken)
+        {
+            fire = source;
+            beats = new ExhaustBeatCounter(beatsPerRevolution);
+            crankRotation = crank;
+            exhaustPressure = pressure;
+            totalFlow = total;
+            exhaustSim = exhaust;
+            boilerBroken = broken;
+            hasLastPosition = false;
         }
 
         // The stack's lip above the game's smoke emitter, along the stack's
@@ -618,6 +666,7 @@ namespace RealisticStackEffects
         {
             var stockSmoke = stockSystems.OrderByDescending(s => s.main.maxParticles).First();
             var fx = Instantiate(StackHost.Assets.PlumePrefab, stockSmoke.transform.parent, false);
+            effectsRoot = fx;
             fx.name = PlumeEffectsName;
             fx.transform.localPosition = stockSmoke.transform.localPosition;
             fx.transform.localRotation = stockSmoke.transform.localRotation;
@@ -672,6 +721,7 @@ namespace RealisticStackEffects
             if (smoke == null)
             {
                 Destroy(fx);
+                effectsRoot = null;
                 return false;
             }
             foreach (var system in stockSystems)
@@ -752,18 +802,30 @@ namespace RealisticStackEffects
             Active = true;
         }
 
-        private void OnDestroy()
+        private void OnDestroy() => Release();
+
+        private void Release()
         {
+            Active = false;
             Camera.onPreCull -= BeforeCull;
             AlignSteam(false);
             All.Remove(this);
+            if (car != null && OnCar.TryGetValue(car, out var registered) && registered == this)
+                OnCar.Remove(car);
             volume?.Destroy();
+            volume = null;
             foreach (var material in ownMaterials)
             {
                 if (material != null)
                     Destroy(material);
             }
             ownMaterials.Clear();
+            if (effectsRoot != null)
+            {
+                effectsRoot.SetActive(false);
+                Destroy(effectsRoot);
+                effectsRoot = null;
+            }
         }
 
         // The copies of its systems' materials the plume has made: Unity
@@ -1178,13 +1240,13 @@ namespace RealisticStackEffects
             flueGas += (flue - flueGas) * settle;
             wetness += (wet - wetness) * settle;
             var air = PlumeWeather.Air;
-            steamCloud = SteamCloud.For(air, tuning.FlueGasMixing * flueGas, wetness);
+            steamCloud = SteamCloud.ForBeats(air, tuning.FlueGasMixing * flueGas, wetness, out steamWhite);
             // The stream between beats: the blower's narrow jet meets less of
             // the flue gas, and its steam is dry.
             streamCloud = SteamCloud.For(air, Mathf.Lerp(tuning.FlueGasMixing, tuning.BlowerFlueGasMixing, blower) * flueGas, wetness * (1f - blower));
             waterCloud = SteamCloud.For(air, SteamCloud.FlueGasPerFireWater);
             plugCloud = SteamCloud.For(air, 0f);
-            inputs.SteamWhiteness = steamCloud.Whiteness;
+            inputs.SteamWhiteness = steamWhite;
             inputs.WaterWhiteness = waterCloud.Whiteness;
             inputs.BlowerWhiteness = streamCloud.Whiteness;
             stackFlux = PlumeRise.StackFlux(stackHeat, steam) * tuning.Buoyancy;
@@ -1744,7 +1806,7 @@ namespace RealisticStackEffects
         {
             var past = airVelocity - stackVelocity;
             var speed = new Vector2(past.x, past.z).magnitude;
-            return $"steam white {steamCloud.Whiteness:F2} formed half by {Seconds(steamCloud.Forming(speed, tuning.SteamMixing, tuning.SteamForming, 0.5f))}, " +
+            return $"steam white {steamWhite:F2} formed half by {Seconds(steamCloud.Forming(speed, tuning.SteamMixing, tuning.SteamForming, 0.5f))}, " +
                    $"lasting {steamCloud.Lasting(speed, tuning.SteamMixing, 1f / Mathf.Exp(1f), tuning.SteamForming):F1} s at {speed:F1} m/s " +
                    $"(flue gas {flueGas:F1} kg/kg, {tuning.FlueGasMixing * flueGas:F2} mixing; exhaust wetness {wetness:F2}; {steamFlowNow:F2} kg/s up the stack), " +
                    $"the fire's water white {waterCloud.Whiteness:F2}, shimmer {shimmerNow:F2}";
@@ -1758,7 +1820,7 @@ namespace RealisticStackEffects
             var half = steamCloud.Forming(speed, tuning.SteamMixing, tuning.SteamForming, 0.5f);
             var third = steamCloud.Lasting(speed, tuning.SteamMixing, 1f / Mathf.Exp(1f), tuning.SteamForming);
             var gone = steamCloud.Lasting(speed, tuning.SteamMixing, 0.05f, tuning.SteamForming);
-            return $"Steam white: {steamCloud.Whiteness:F2} of the tuned air's; half formed at {Seconds(half)}, a third left at {third:F1} s, gone by {gone:F1} s, the air past at {speed:F1} m/s\n" +
+            return $"Steam white: {steamWhite:F2} of the tuned air's; half formed at {Seconds(half)}, a third left at {third:F1} s, gone by {gone:F1} s, the air past at {speed:F1} m/s\n" +
                    $"Flue gas {flueGas:F1} kg a kg of steam ({tuning.FlueGasMixing * flueGas:F2} mixing in); exhaust wetness {wetness:F2}; {steamFlowNow:F2} kg/s of steam up the stack\n" +
                    $"The fire's own water: white {waterCloud.Whiteness:F2}. The stream between beats (the blower's): white {streamCloud.Whiteness:F2}. Heat shimmer: {shimmerNow:F2}\n" +
                    $"Stack: bore {2f * boreRadius:F2} m, outside {2f * outsideRadius:F2} m, lip {(stackLip.HasValue ? $"{stackLip.Value:F2} m over the emitter" : "not found")}\n" +

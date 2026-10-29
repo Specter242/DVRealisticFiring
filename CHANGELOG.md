@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.16.3 (2026-10-28)
+
+- Fixed duplicate chimney effects accumulating when a locomotive's particles were refreshed, adding smoke and slowing the game down.
+- The fireman's water-level reading and holding target now match the cab glass and F6, including on the JK3.
+- A warm afternoon's exhaust now keeps a short white steam at the stack instead of none.
+
 ## 1.16.2 (2026-10-27)
 
 - Bailing off has moved to the Realistic Brakes mod.
