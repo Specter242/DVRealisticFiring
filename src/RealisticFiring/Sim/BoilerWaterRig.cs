@@ -78,6 +78,8 @@ namespace RealisticFiring.Sim
             AccessTools.FieldRefAccess<Boiler, WaterPressureVessel>("vessel");
         private static readonly AccessTools.FieldRef<Boiler, float> TotalVolume =
             AccessTools.FieldRefAccess<Boiler, float>("totalVolume");
+        private static readonly AccessTools.FieldRef<Boiler, float> ExteriorConductance =
+            AccessTools.FieldRefAccess<Boiler, float>("exteriorThermalConductance");
         private static readonly AccessTools.FieldRef<Boiler, float> MaxBlowdownRate =
             AccessTools.FieldRefAccess<Boiler, float>("maxBlowdownRate");
         private static readonly AccessTools.FieldRef<Boiler, float> CrownSheetLevel =
@@ -339,8 +341,27 @@ namespace RealisticFiring.Sim
                 if (lost > 0f && delta > 0f)
                     vessel.AddEnergy(-Mathf.Max(0f, boiler.heat.Value) * delta * lost);
             }
+            else if (vessel != null)
+                CoolEmpty(delta);
             ChargeWear(delta);
             massAtTick = vessel != null ? vessel.mass : 0f;
+        }
+
+        // A drained boiler has no water to carry the stock exterior heat
+        // loss. Do not leave its steel permanently hot after the fire is out.
+        internal void CoolEmpty(float seconds)
+        {
+            var vessel = Vessel(boiler);
+            if (vessel != null && vessel.mass <= 0f && !(boiler.heat.Value > 0f))
+                Steel.Cool(seconds, AmbientWater, ExteriorConductance(boiler));
+        }
+
+        internal static void CoolEmptyBoilers(float seconds)
+        {
+            if (Net.IsClient)
+                return;
+            foreach (var rig in ByBoiler.Values)
+                rig.CoolEmpty(seconds);
         }
 
         // The engine's wear: the fouling's share as it stands, charged or given

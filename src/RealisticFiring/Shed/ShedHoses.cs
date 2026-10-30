@@ -68,6 +68,8 @@ namespace RealisticFiring.Shed
 
         private static GameObject template;
 
+        internal static void ForgetTemplate() => template = null;
+
         /// <summary>The station hose to copy, or null before the stations load.</summary>
         public static GameObject Template()
         {

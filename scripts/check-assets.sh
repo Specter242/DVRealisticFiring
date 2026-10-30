@@ -11,6 +11,14 @@ unity="${UNITY_EDITOR:-$HOME/Unity/Hub/Editor/2019.4.40f1/Editor/Unity}"
 dv="${DV_INSTALL_DIR:-$HOME/.local/share/Steam/steamapps/common/Derail Valley}"
 bundle="${1:-$dv/Mods/RealisticFiring/realisticfiring_fx}"
 stack="${2:-$repo/fx/build/realisticstackeffects_fx}"
+manual="${3:-$repo/fx/build/realisticfiring_manual}"
+manual_only=0
+if [[ "${1:-}" == --manual-only ]]; then
+    manual_only=1
+    manual="${2:-$repo/fx/build/realisticfiring_manual}"
+    bundle="$repo/fx/build/realisticfiring_fx"
+    [[ -f "$manual" ]] || { echo "Manual bundle not found: $manual" >&2; exit 1; }
+fi
 
 [[ -x "$unity" ]] || { echo "Unity 2019.4.40f1 not found at $unity" >&2; exit 1; }
 [[ -f "$bundle" ]] || { echo "Effects bundle not found at $bundle" >&2; exit 1; }
@@ -25,6 +33,7 @@ check() {
     cp "$repo/fx/RealisticFiringFX/Packages/manifest.json" "$project/Packages/manifest.json"
     cp "$repo/fx/RealisticFiringFX/ProjectSettings/ProjectVersion.txt" "$project/ProjectSettings/ProjectVersion.txt"
     cp "$loader" "$source" "$project/Assets/"
+    if [[ -n "${6:-}" ]]; then cp "$6" "$project/Assets/"; fi
     if ! DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 timeout 180 "$unity" -batchmode -nographics -projectPath "$project" \
             -executeMethod "$method" -fxBundle "$fx" -logFile "$log"; then
         rm -rf "$project"
@@ -36,6 +45,7 @@ check() {
     rg -q 'ALL ASSET LIFETIME CHECKS PASSED' "$log"
 }
 
+if [[ "$manual_only" == 0 ]]; then
 check "$repo/src/RealisticFiring/Visuals/PlumeAssets.cs" "$repo/tools/RealisticFiring.AssetCheck/AssetLifetimeCheck.cs" \
     AssetLifetimeCheck.Run "$bundle" "$repo/fx/build/asset-check.log"
 if [[ -f "$stack" ]]; then
@@ -44,4 +54,11 @@ if [[ -f "$stack" ]]; then
         StackAssetsCheck.Run "$stack" "$repo/fx/build/stack-asset-check.log"
 else
     echo "No Realistic Stack Effects bundle at $stack; its loader was not checked" >&2
+fi
+
+fi
+
+if [[ -f "$manual" ]]; then
+    check "$repo/src/RealisticFiring/Items/FiringManualAssets.cs" "$repo/tools/RealisticFiring.AssetCheck/ManualAssetCheck.cs" \
+        ManualAssetCheck.Run "$manual" "$repo/fx/build/manual-asset-check.log" "$repo/src/RealisticFiring/Items/FiringManualContents.cs"
 fi

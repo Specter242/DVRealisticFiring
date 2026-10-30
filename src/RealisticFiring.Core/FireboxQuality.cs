@@ -10,6 +10,24 @@ namespace RealisticFiring.Core
         Low,
     }
 
+    /// <summary>Coal geometry and visible surface-upload budgets, independent of firelight.</summary>
+    public readonly struct FireboxDetail
+    {
+        public int LumpStride { get; }
+        public float UploadInterval { get; }
+
+        private FireboxDetail(int lumpStride, float uploadInterval)
+        {
+            LumpStride = lumpStride;
+            UploadInterval = uploadInterval;
+        }
+
+        public static FireboxDetail For(FireboxQuality quality) =>
+            quality == FireboxQuality.Low ? new FireboxDetail(4, 0.1f)
+            : quality == FireboxQuality.Medium ? new FireboxDetail(2, 0.05f)
+            : new FireboxDetail(1, 0f);
+    }
+
     /// <summary>
     /// A ray's sample limit and target spacing in meters. The shader always
     /// covers the whole visible ray, spreading its samples farther apart

@@ -54,6 +54,9 @@ namespace RealisticFiring
         [Draw("Feed pump's sound, volume × (0 off)", DrawType.Slider, Min = 0, Max = 2, Precision = 1)]
         public float FeedPumpVolume = 1f;
 
+        [Draw("Low-water alarm whistle, volume × (0 silent); its sound also follows boiler pressure", DrawType.Slider, Min = 0, Max = 2, Precision = 1)]
+        public float LowWaterAlarmVolume = 1f;
+
         [Draw("Steam blowing off: a melted fusible plug, an injector's overflow (and its spilled water), a shed's open steam hose; volume × (0 off)", DrawType.Slider, Min = 0, Max = 2, Precision = 1)]
         public float SteamVentVolume = 1f;
 
@@ -71,7 +74,7 @@ namespace RealisticFiring
         [Draw("Smoke quality, for a slower graphics card: Medium draws the chimney's smoke at half resolution and drops its faintest smoke, Low with half its particles and more of the faint smoke besides (in VR or with forward rendering, half and a quarter of its particles instead)", DrawType.ToggleGroup)]
         public RealisticStackEffects.Core.SmokeQuality SmokeQuality = RealisticStackEffects.Core.SmokeQuality.High;
 
-        [Draw("Firebox quality (changes live): High keeps full flame and smoke detail; Medium uses half the open-door ray samples, Low a quarter. Firelight stays the same", DrawType.ToggleGroup)]
+        [Draw("Firebox quality (changes live): High keeps full detail; Medium uses half the open-door ray samples and coal lumps at 20 surface updates/s; Low a quarter at 10/s. Firelight stays the same", DrawType.ToggleGroup)]
         public Core.FireboxQuality FireboxQuality = Core.FireboxQuality.High;
 
         [Draw("Season for the chimney's steam (the game has none; with DV Seasons running, its season's temperature is used instead): a summer afternoon's dry air shows little white, a damp dawn or the rain plenty, and winter the most", DrawType.ToggleGroup)]
@@ -120,6 +123,9 @@ namespace RealisticFiring
 
         [Draw("Put a firing tablet in front of me (unticks itself). Hold it to read the engine, or fit it to a large gadget mount")]
         public bool GiveFiringTablet;
+
+        [Draw("Put an illustrated firing manual in front of me (unticks itself)")]
+        public bool GiveFiringManual;
 
         [Draw("Toggle fire overlay")]
         public KeyBinding ToggleOverlayKey = Bind(KeyCode.F6);

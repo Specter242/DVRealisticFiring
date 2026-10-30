@@ -98,6 +98,7 @@ namespace RealisticFiring.Multiplayer
         {
             Items.FireIron.RegisterAsGameItem();
             Items.FiringTablet.RegisterAsGameItem();
+            Items.FiringManual.RegisterAsGameItem();
             PumpingBy.Clear();
             server.RegisterSerializablePacket<HelloPacket>(OnHello);
             server.RegisterSerializablePacket<FireActionPacket>(OnFireAction);
@@ -111,6 +112,7 @@ namespace RealisticFiring.Multiplayer
         {
             Items.FireIron.RegisterAsGameItem();
             Items.FiringTablet.RegisterAsGameItem();
+            Items.FiringManual.RegisterAsGameItem();
             client.RegisterSerializablePacket<NoticePacket>(notice => FireController.Announce(notice.Text));
             client.RegisterSerializablePacket<SnapshotPacket>(OnSnapshot);
             client.RegisterSerializablePacket<FireEventPacket>(OnFireEvent);

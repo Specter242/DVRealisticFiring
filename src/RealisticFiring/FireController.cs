@@ -75,6 +75,11 @@ namespace RealisticFiring
         private void HandleKeys()
         {
             var settings = Main.Settings;
+            if (settings.GiveFiringManual)
+            {
+                settings.GiveFiringManual = false;
+                Notify(Net.IsClient ? "Ask the multiplayer host to give you a firing manual" : Items.FiringManual.GiveToPlayer());
+            }
             if (settings.GiveFiringTablet)
             {
                 settings.GiveFiringTablet = false;

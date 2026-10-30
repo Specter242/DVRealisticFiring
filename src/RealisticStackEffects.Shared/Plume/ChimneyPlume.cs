@@ -363,7 +363,7 @@ namespace RealisticStackEffects
                 plume.AlignSteam(false);
                 plume.steamSorting.Clear();
                 plume.MatchSorting(car);
-                plume.ShimmerLast();
+                plume.ShimmerFirst();
                 plume.enabled = true;
                 return "realistic chimney smoke rebound to the existing plume";
             }
@@ -394,7 +394,7 @@ namespace RealisticStackEffects
             }
             plume.TakeOver();
             var sorting = plume.MatchSorting(car);
-            plume.ShimmerLast();
+            plume.ShimmerFirst();
             plume.stackLip = MeasureStackLip(car, Emitter(plume.smoke), plume.smoke.transform.up, out var lip, out plume.boreRadius, out plume.outsideRadius);
             lip += $"; aloft: {string.Join("; ", plume.aloft.Values.Select(a => a.Setup))}";
             return $"realistic chimney smoke {(custom ? "with the custom effects" : "on the game's systems")}: " +
@@ -609,24 +609,28 @@ namespace RealisticStackEffects
             string.Join("; ", steamSorting.Where(e => e.Renderer != null && e.Renderer.gameObject.activeInHierarchy)
                 .Select(e => $"{string.Join("/", e.Renderer.GetComponentsInParent<Transform>().Take(4).Reverse().Select(t => t.name))} o{e.Renderer.sortingOrder} f{e.Renderer.sortingFudge:F2} n{e.Renderer.GetComponent<ParticleSystem>()?.particleCount} {e.Renderer.sharedMaterial.shader.name}"));
 
-        // The heat shimmer's sorting order and render queue: after every
-        // plume's and the game's own steam's, in any engine.
-        public const int ShimmerOrder = 1000;
+        // The heat shimmer's sorting order and render queue: before every
+        // plume's and the game's own steam's (orders 2 to 6), in any engine.
+        public const int ShimmerOrder = 0;
         public const int ShimmerQueue = 3001;
 
         // The heat shimmer shows the scene behind it, one copy of the screen
-        // a frame shared by every shimmer (and with other mods' shimmers drawn
-        // in the same place: its grab is named for it, _SharedGrab_Transparent1).
-        // The copy is taken when the first shimmer is drawn; drawn back to
-        // front among the smoke, a farther engine's shimmer took it before a
-        // nearer plume was drawn, and the nearer shimmer laid that copy,
-        // without its own plume, over it: the plume's middle cut away in the
-        // shimmer's shape (0Krait0, Nexus, 2026-10-21). Every shimmer is drawn
-        // after all of them: in the next render queue, and, as Unity sorts a
-        // sorting order before a queue, at an order above any steam's (the
-        // 8F's plume sorts at 4, the S282's at 5; at the next queue alone the
-        // 8F's shimmer, at 4, still took the copy first).
-        private void ShimmerLast()
+        // a frame shared by every shimmer, and with TurboTurbo's: its grab is
+        // named for where they draw, _SharedGrab_Transparent1_Order0 (geluk,
+        // DM, 2026-10-29). The copy is taken when the first shimmer is drawn.
+        // Drawn back to front among the smoke, a farther engine's shimmer took
+        // it before a nearer plume was drawn, and the nearer shimmer laid that
+        // copy, without its own plume, over it: the plume's middle cut away in
+        // the shimmer's shape (0Krait0, Nexus, 2026-10-21). Drawn after all
+        // the smoke (order 1000), it bent the smoke in front of it, ragging
+        // the plumes' edges, and would have laid its smoke-free copy over them
+        // had TurboTurbo's shimmer, at order 0, taken it first. Every shimmer
+        // is drawn before all the smoke: Unity sorts a sorting order before a
+        // queue, so at order 0 it goes before every plume and the stock steam,
+        // and in the next queue after what else draws at order 0 (the stock
+        // embers, queue 3000, are in the copy, bent with what is behind them).
+        // Dense smoke in front of it hides it, as it would the real thing.
+        private void ShimmerFirst()
         {
             var renderer = heat != null ? heat.GetComponent<ParticleSystemRenderer>() : null;
             if (renderer == null || renderer.sharedMaterial == null)

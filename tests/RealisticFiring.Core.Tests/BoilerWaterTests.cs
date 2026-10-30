@@ -305,4 +305,18 @@ public class FusiblePlugTests
         Assert.True(alarm.Step(crown + LowWaterAlarm.Margin + 0.005f, crown));
         Assert.False(alarm.Step(crown + LowWaterAlarm.Margin + 0.02f, crown));
     }
+
+    [Theory]
+    [InlineData(1f, 0f)]
+    [InlineData(1.01325f, 0f)]
+    [InlineData(1.26325f, 0.5f)]
+    [InlineData(1.51325f, 1f)]
+    [InlineData(15f, 1f)]
+    public void AlarmSoundNeedsSteamButTheLowWaterWarningRemains(float pressure, float volume)
+    {
+        var alarm = new LowWaterAlarm();
+        Assert.True(alarm.Step(0f, 0.6f));
+        Assert.Equal(volume, LowWaterAlarm.AudibleShare(pressure), 0.00001f);
+        Assert.True(alarm.Sounding);
+    }
 }

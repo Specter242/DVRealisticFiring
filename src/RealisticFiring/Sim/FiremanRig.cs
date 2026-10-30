@@ -128,7 +128,7 @@ namespace RealisticFiring.Sim
             var rig = InjectorRig.TryGet(boiler, out var found) ? found : null;
             injector = new FiremanHand("injector", rig != null && rig.Circuits.Count > 0
                 ? rig.Circuits[0].Feed
-                : Control(boiler.injectorControl), LeverPace);
+                : InjectorRig.FiremanControl(boiler, car?.carLivery?.id, flow.OrderedSimComps), LeverPace);
             // Its own steam valve, where it has one: the feed hand then works its water valve.
             var steamValve = rig != null && rig.Circuits.Count > 0 ? rig.Circuits[0].SteamValve : null;
             injectorSteam = steamValve != null ? new FiremanHand("injector steam", Control(steamValve), DoorPace) : null;

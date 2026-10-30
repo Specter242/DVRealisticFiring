@@ -5,6 +5,18 @@ namespace RealisticFiring.Core.Tests;
 public class FireboxQualityTests
 {
     [Theory]
+    [InlineData(FireboxQuality.High, 1, 0f)]
+    [InlineData(FireboxQuality.Medium, 2, 0.05f)]
+    [InlineData(FireboxQuality.Low, 4, 0.1f)]
+    [InlineData((FireboxQuality)999, 1, 0f)]
+    public void QualityAlsoBoundsCoalGeometryAndSurfaceUploads(FireboxQuality quality, int stride, float interval)
+    {
+        var detail = FireboxDetail.For(quality);
+        Assert.Equal(stride, detail.LumpStride);
+        Assert.Equal(interval, detail.UploadInterval);
+    }
+
+    [Theory]
     [InlineData(false, false, 128f, 0.02f)]
     [InlineData(false, true, 64f, 0.02f)]
     [InlineData(true, false, 24f, 0.06f)]

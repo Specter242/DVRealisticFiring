@@ -32,7 +32,9 @@ namespace RealisticStackEffects
         private const float ColorChannels = 14f;
 
         // The laying over sorted this far behind the nearest stack, m: behind
-        // its cinders and shimmer, as the cloud was (ChimneyPlume.DrawnBefore).
+        // its cinders, as the cloud was (ChimneyPlume.DrawnBefore). At the
+        // cloud's sorting order it draws after every shimmer, which sorts at
+        // order 0 (ChimneyPlume.ShimmerFirst), so the shimmer's copy holds none of it.
         private const float BehindStack = 0.2f;
 
         private static readonly int ColorMask = Shader.PropertyToID("_ColorMask");

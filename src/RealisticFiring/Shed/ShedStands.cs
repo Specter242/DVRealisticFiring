@@ -81,6 +81,8 @@ namespace RealisticFiring.Shed
 
         private static RailTrack TrackNamed(string id)
         {
+            if (tracks != null && tracks.TryGetValue(id, out var cached) && cached == null)
+                tracks = null;
             if (tracks == null || tracks.Count == 0)
             {
                 tracks = new Dictionary<string, RailTrack>();
@@ -213,6 +215,37 @@ namespace RealisticFiring.Shed
         // the game as the copy wakes, looked up as it is read).
         private static readonly Dictionary<PluggableObject, Transform> Valves = new Dictionary<PluggableObject, Transform>();
         private static float lookAt;
+        private static Transform worldRoot;
+
+        private static void NewWorld(Transform root)
+        {
+            foreach (var stand in Built)
+                if (stand != null)
+                    Object.Destroy(stand);
+            Built.Clear();
+            KindOf.Clear();
+            ByRoundhouse.Clear();
+            Valves.Clear();
+            SteamValves.Clear();
+            HungStill.Clear();
+            tracks = null;
+            lookAt = refloorAt = sleepAt = lastSleepCheck = 0f;
+            ShedHoses.ForgetTemplate();
+            worldRoot = root;
+        }
+
+        // World objects can also be destroyed without changing the origin
+        // parent. Remove their site keys before testing whether setup is done.
+        internal static void ForgetDestroyedSites()
+        {
+            foreach (var site in ByRoundhouse.Keys.ToList())
+            {
+                var stands = ByRoundhouse[site];
+                stands.RemoveAll(stand => stand == null);
+                if (stands.Count == 0)
+                    ByRoundhouse.Remove(site);
+            }
+        }
 
         /// <summary>Whether a stand's hose of <paramref name="kind"/> reaches <paramref name="point"/>: its gooseneck within <paramref name="reach"/> m.</summary>
         public static bool Reaches(Vector3 point, float reach, HoseKind kind)
@@ -363,6 +396,9 @@ namespace RealisticFiring.Shed
         /// <summary>Builds the stands once their places and a hose to copy are loaded; call every frame.</summary>
         public static void Update()
         {
+            var root = WorldMover.OriginShiftParent;
+            if (!ReferenceEquals(root, worldRoot))
+                NewWorld(root);
             SleepFar();
             FloorStands();
             ShedNet.Update();
@@ -372,22 +408,27 @@ namespace RealisticFiring.Shed
             Built.RemoveAll(go => go == null);
             foreach (var gone in KindOf.Keys.Where(k => k == null).ToList())
                 KindOf.Remove(gone);
-            if (ByRoundhouse.Count >= Roundhouses.Length + Shops.Length || ShedHoses.Template() == null)
-                return;
+            ForgetDestroyedSites();
             foreach (var gone in Valves.Keys.Where(k => k == null).ToList())
                 Valves.Remove(gone);
+            foreach (var gone in SteamValves.Keys.Where(k => k == null).ToList())
+                SteamValves.Remove(gone);
+            if (ByRoundhouse.Count >= Roundhouses.Length + Shops.Length || ShedHoses.Template() == null)
+                return;
             var found = Found(Object.FindObjectsOfType<TurntableController>());
             foreach (var (roundhouse, controller) in found)
             {
                 if (ByRoundhouse.ContainsKey(roundhouse.Turntable))
                     continue;
-                var built = ByRoundhouse[roundhouse.Turntable] = new List<GameObject>();
                 var stalls = controller.turntable.trackEnds
                     .Where(e => e != null && e.track != null)
                     .Select(e => e.track)
                     .Distinct()
                     .Where(t => (t.LogicTrack()?.ID?.FullID ?? "").StartsWith(roundhouse.StallPrefix))
                     .ToList();
+                if (stalls.Count == 0)
+                    continue;
+                var built = ByRoundhouse[roundhouse.Turntable] = new List<GameObject>();
                 var lines = new List<string>();
                 foreach (var stall in stalls)
                 {

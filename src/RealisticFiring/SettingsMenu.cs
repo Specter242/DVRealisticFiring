@@ -73,7 +73,7 @@ namespace RealisticFiring
             s.ShowZonedCoalBed = Toggle("Detailed firebox", s.ShowZonedCoalBed,
                 "Coal heaps, flames, smoke, and firelight. Turn off to use the stock visuals. Applies immediately.");
             s.FireboxQuality = Choice("Firebox quality", s.FireboxQuality, Quality,
-                "High: full detail. Medium: half the open-door samples. Low: a quarter. Firelight stays the same.");
+                "High: full detail. Medium: half the flame samples and coal lumps, 20 surface updates/s. Low: a quarter, 10 updates/s. Firelight stays the same.");
             s.AshpanGlow = Slider("Ashpan glow", s.AshpanGlow, 0f, 3f, 1, "×",
                 "Light beneath the engine, dimmed by ash. 0 turns it off.");
             End();
@@ -171,6 +171,8 @@ namespace RealisticFiring
             Begin("VOLUME", "Adjust individual effects. 1 is normal volume; 0 is silent.");
             s.OilBurnerVolume = Slider("Oil burner", s.OilBurnerVolume, 0f, 2f, 1, "×", "The roar and drumming of the burner.");
             s.FeedPumpVolume = Slider("Feed pump", s.FeedPumpVolume, 0f, 2f, 1, "×", "The locomotive's feed pump.");
+            s.LowWaterAlarmVolume = Slider("Low-water alarm", s.LowWaterAlarmVolume, 0f, 2f, 1, "×",
+                "The warning whistle. Silent without steam pressure. Muting it leaves the low-water indication active.");
             s.SteamVentVolume = Slider("Steam blowing off", s.SteamVentVolume, 0f, 2f, 1, "×",
                 "Injector overflow and spilled water, open shed steam hoses, and a melted fusible plug.");
             End();
@@ -194,6 +196,8 @@ namespace RealisticFiring
             Begin("EQUIPMENT", "Place an item in front of you in a loaded game.");
             if (Action("Give firing tablet", "Hold it to read the engine, or fit it to a large gadget mount."))
                 s.GiveFiringTablet = true;
+            if (Action("Give firing manual", "An illustrated booklet with a clickable table of contents."))
+                s.GiveFiringManual = true;
             if (Action("Give fire iron", "Through the open door: click to slice, scroll to push or pull, Shift + scroll to move sideways."))
                 s.GiveFireIron = true;
             End();

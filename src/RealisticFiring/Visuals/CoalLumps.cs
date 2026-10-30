@@ -46,6 +46,10 @@ namespace RealisticFiring.Visuals
         private Material material;
         private Texture2D zones;
         private Mesh mesh;
+        private int[] fullTriangles;
+        private int trianglesPerLump;
+        private int drawnStride;
+        private float nextUploadAt;
         private readonly Color[] pixels = new Color[GrateLayout.ZoneCount];
         // Metres per the bed's unit up.
         private float upPerUnit = 1f;
@@ -151,7 +155,11 @@ namespace RealisticFiring.Visuals
             mesh.SetUVs(1, anchors);
             mesh.SetUVs(2, lumpData);
             mesh.SetUVs(3, rockPoints);
-            mesh.SetTriangles(triangles, 0);
+            // All rocks have the same icosphere topology. Keep their complete
+            // index blocks so switching detail never moves the retained lumps.
+            trianglesPerLump = rocks[0].Triangles.Length;
+            fullTriangles = triangles.ToArray();
+            ApplyQuality();
             // The shader lifts the lumps to the coal: drawn wherever the pile can reach.
             mesh.bounds = bed.LumpSurfaceBounds;
 
@@ -163,6 +171,25 @@ namespace RealisticFiring.Visuals
             lumpRenderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
             lumpRenderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
             return count;
+        }
+
+        private void ApplyQuality()
+        {
+            var stride = FireboxDetail.For(Main.Settings.FireboxQuality).LumpStride;
+            if (drawnStride == stride)
+                return;
+            drawnStride = stride;
+            nextUploadAt = 0f;
+            if (stride == 1)
+                mesh.SetTriangles(fullTriangles, 0, false);
+            else
+            {
+                var indices = new List<int>(fullTriangles.Length / stride + trianglesPerLump);
+                for (var i = 0; i < fullTriangles.Length; i += trianglesPerLump * stride)
+                    for (var j = 0; j < trianglesPerLump; j++)
+                        indices.Add(fullTriangles[i + j]);
+                mesh.SetTriangles(indices, 0, false);
+            }
         }
 
         // A broken lump: a sphere squashed a little and cut by a few planes,
@@ -272,7 +299,14 @@ namespace RealisticFiring.Visuals
                 lumpRenderer.enabled = show;
             // Unseen (ZonedCoalBed.Seen), the zones' upload waits.
             if (!show || !bed.Seen)
+            {
+                nextUploadAt = 0f;
                 return;
+            }
+            ApplyQuality();
+            if (Time.unscaledTime < nextUploadAt)
+                return;
+            nextUploadAt = Time.unscaledTime + FireboxDetail.For(Main.Settings.FireboxQuality).UploadInterval;
             for (var i = 0; i < GrateLayout.ZoneCount; i++)
             {
                 var zone = (GrateZone)i;

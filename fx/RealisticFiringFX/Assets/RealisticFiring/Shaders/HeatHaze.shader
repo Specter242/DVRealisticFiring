@@ -16,18 +16,20 @@ Shader "RealisticFiring/HeatHaze"
 
     SubShader
     {
-        // After every plume and the game's steam (the mod also sorts it at an
-        // order above theirs: ChimneyPlume.ShimmerLast).
+        // Before every plume and the game's steam: the mod sorts it at order 0,
+        // below theirs, and the queue puts it after what else draws there
+        // (ChimneyPlume.ShimmerFirst).
         Tags { "Queue"="Transparent+1" "IgnoreProjector"="True" "RenderType"="Transparent" "PreviewType"="Plane" }
 
         // One copy of the screen a frame, taken when the first shimmer is
-        // drawn: after all the smoke, so it holds every plume (drawn among
-        // the smoke, a farther engine's shimmer took it before a nearer plume
-        // was drawn, and laid over that plume it cut its middle away in the
-        // shimmer's shape; 0Krait0, Nexus, 2026-10-21). Named for that place,
-        // Transparent+1 after all the smoke, so other mods' shimmers drawn
-        // there share the one copy (geluk's scheme, TurboTurbo, 2026-10-22).
-        GrabPass { "_SharedGrab_Transparent1" }
+        // drawn: before any smoke, so it holds none, and no shimmer lays a
+        // copy without a plume over that plume (drawn among the smoke, a
+        // farther engine's shimmer took it before a nearer plume was drawn,
+        // and cut that plume's middle away in the shimmer's shape; 0Krait0,
+        // Nexus, 2026-10-21). Named for that place, Transparent+1 at sorting
+        // order 0, so TurboTurbo's shimmer drawn there shares the one copy
+        // (geluk's scheme, DM, 2026-10-29).
+        GrabPass { "_SharedGrab_Transparent1_Order0" }
 
         Pass
         {
@@ -48,7 +50,7 @@ Shader "RealisticFiring/HeatHaze"
             #include "HLSLSupport.cginc"
             #include "UnityCG.cginc"
 
-            sampler2D _SharedGrab_Transparent1;
+            sampler2D _SharedGrab_Transparent1_Order0;
             sampler2D _NoiseTex;
             float _Strength;
             float _Scroll;
@@ -106,7 +108,7 @@ Shader "RealisticFiring/HeatHaze"
                 offset.x *= 0.5;
                 #endif
                 float2 screen = i.grab.xy / i.grab.w + offset;
-                fixed4 col = tex2D(_SharedGrab_Transparent1, screen);
+                fixed4 col = tex2D(_SharedGrab_Transparent1_Order0, screen);
                 col.a = mask * saturate(i.color.a * 3);
                 return col;
             }

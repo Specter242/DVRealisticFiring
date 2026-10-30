@@ -195,11 +195,13 @@ namespace RealisticFiring.AdapterCheck
                 "the shovel's load is readable, for saying a shovelful does not fit the firebox");
             CheckFireIronLoading();
             CheckFiringTablet();
+            CheckFiringManual();
             CheckFiringTabletVrButtonSpec();
             CheckFiremanOrders();
             CheckFiringTabletStartingItems();
             CheckNewDefaults();
             CheckFireboxQualitySettings();
+            CheckShedStandReload();
             CheckRetiredBrakeSetting();
             Check(AccessTools.Field(typeof(DV.Interaction.AGrabHandler), Visuals.FiringValvePassThrough.PassThroughField)?.FieldType
                   == typeof(DV.Interaction.AGrabHandler.InteractionPassThroughDelegate),
@@ -828,6 +830,8 @@ namespace RealisticFiring.AdapterCheck
         // its hooks run between the stock steps in tick order as the patches do
         // (the stock damage step needs Unity's curves, so its crown sheet test
         // is read instead).
+        private static bool BlockClockSkip() => false;
+
         private static void CheckBoilerWater()
         {
             var failuresOn = new SimGameParams(true, false, false, 1f, 1f);
@@ -944,6 +948,7 @@ namespace RealisticFiring.AdapterCheck
             Run(plugged, plugRig, 600f);
             Run(bare, bareRig, 600f);
             fireTemperature.Value = 1000f;
+
             var pressureBefore = plugRig.BoilerPressure;
             var meltTime = 0f;
             while (!plugRig.Plug.Melted && meltTime < 60f)
@@ -1185,6 +1190,72 @@ namespace RealisticFiring.AdapterCheck
                     $"water {lowWater:F0} to {peakWater:F0} C, crown sheet up to {peakCrown:F0} C, pressure up to {peakPressure:F1} bar" +
                     (drainedDry ? "" : $" (not drained: {washedRig2.MassNow:F0} kg left)"));
             }
+
+            // Exercise the hose pressure interlock, not direct AddWater:
+            // after a drained, unheated boiler cools, the real hose must
+            // reach its fill stop without needing blowdown or a restart.
+            foreach (var hotWater in new[] { false, true })
+            {
+                var filling = NewBoiler(12000f, 13f);
+                var waterRig = BoilerWaterRig.Create(filling, null, BoilerWaterRig.Guard.None);
+                var vessel = (WaterPressureVessel)vesselField.GetValue(filling);
+                vessel.RemoveWater(vessel.mass);
+                vessel.Update();
+                Call(filling, "SimulateWaterLevel", 0.1f);
+                waterRig.Steel.Settle(192f);
+                heat.Value = 0f;
+                fireTemperature.Value = 25f;
+                blowdown.Value = injector.Value = steamDraw.Value = 0f;
+                waterRig.CoolEmpty(8f * 3600f);
+                var cooled = waterRig.Steel.Temperature;
+                InjectorRig.TryCreate(null, filling, out _);
+                InjectorRig.TryGet(filling, out var hose);
+                hose.HoseIn = true;
+                hose.HoseOpening = 0.5f;
+                hose.HoseHot = hotWater;
+                var mostPressure = 0f;
+                for (var i = 0; i < 24000 && filling.waterLevelReadOut.Value < InjectorRig.HoseFillLevel; i++)
+                {
+                    const float dt = 0.1f;
+                    waterRig.BeginTick(dt);
+                    hose.Simulate(dt);
+                    waterRig.AfterFeed();
+                    Call(filling, "SimulateSteamConsumption", dt);
+                    Call(filling, "SimulateEvaporation", dt);
+                    Call(filling, "SimulateWaterLevel", dt);
+                    waterRig.AfterWaterLevel(dt);
+                    mostPressure = Math.Max(mostPressure, vessel.pressure);
+                }
+                hose.Simulate(0.1f);
+                Check(cooled < 50f && filling.waterLevelReadOut.Value >= InjectorRig.HoseFillLevel
+                      && !hose.HoseFilling && mostPressure <= InjectorRig.HoseMaxPressure,
+                    $"a hot drained boiler cools to {cooled:F1} C and the actual {(hotWater ? "hot" : "cold")} hose at half opening reaches its fill stop " +
+                    $"({filling.waterLevelReadOut.Value:P1}, peak {mostPressure:F2} bar absolute) without blowdown");
+            }
+            // Multiplayer can veto a clock skip. Exercise Harmony's real
+            // skip-original path: our postfix must not cool anything then.
+            var blocked = NewBoiler(12000f, 13f);
+            var blockedRig = BoilerWaterRig.Create(blocked, null, BoilerWaterRig.Guard.None);
+            var blockedVessel = (WaterPressureVessel)vesselField.GetValue(blocked);
+            blockedVessel.RemoveWater(blockedVessel.mass);
+            blockedVessel.Update();
+            heat.Value = 0f;
+            blockedRig.Steel.Settle(192f);
+            var clockPatch = new Harmony("RealisticFiring.AdapterCheck.BlockedClockSkip");
+            try
+            {
+                clockPatch.CreateClassProcessor(typeof(EmptyBoilerTimeAdvancePatch)).Patch();
+                clockPatch.Patch(AccessTools.Method(typeof(DV.TimeAdvance), nameof(DV.TimeAdvance.AdvanceTime)),
+                    prefix: new HarmonyMethod(typeof(Program), nameof(BlockClockSkip)) { priority = Priority.First });
+                DV.TimeAdvance.AdvanceTime(8f * 3600f, true);
+                Check(blockedRig.Steel.Temperature == 192f,
+                    "a clock skip vetoed by another Harmony prefix does not cool a drained boiler");
+            }
+            finally
+            {
+                clockPatch.UnpatchAll(clockPatch.Id);
+            }
+            fireTemperature.Value = 1000f;
         }
 
         // An oil burner: the oil firebox has the stock firebox's contract, the
@@ -1470,6 +1541,11 @@ namespace RealisticFiring.AdapterCheck
         private static void CheckLms8FInjectors(SimGameParams gameParams)
         {
             var setup = Lms8FInjectorSetup(gameParams);
+            var hand = InjectorRig.FiremanControl(setup.Boiler, "em_lms_8f_loc_black", setup.Components);
+            var changedFallback = Lms8FInjectorSetup(gameParams, factorValue: 1f);
+            Check(hand != null && hand.id == "injector2.EXT_IN"
+                  && InjectorRig.FiremanControl(changedFallback.Boiler, "em_lms_8f_loc_black", changedFallback.Components) == null,
+                "the stock-injector 8F fireman uses the verified right cab valve even though its calculated average is typed as a control");
             var made = InjectorRig.TryCreate(null, setup.Boiler, "em_lms_8f_loc_black", setup.Components, out var note);
             InjectorRig.TryGet(setup.Boiler, out var rig);
             Check(made && rig != null && rig.Circuits.Count == 2
@@ -1583,6 +1659,11 @@ namespace RealisticFiring.AdapterCheck
                     rig.Simulate(0.02f);
             }
             var setup = Jk3InjectorSetup(gameParams);
+            var stockHand = InjectorRig.FiremanControl(setup.Boiler, "Jk3A", setup.Components);
+            var changed = Jk3InjectorSetup(gameParams, divisorValue: 1f);
+            Check(ReferenceEquals(stockHand, setup.Right.controlExtIn)
+                  && InjectorRig.FiremanControl(changed.Boiler, "Jk3A", changed.Components) == null,
+                "without a realistic injector rig the JK3 fireman reaches the verified right cab valve, never its read-only average or a changed graph");
             Check(!InjectorRig.TryCreate(null, setup.Boiler, out _)
                   && !InjectorRig.TryCreate(null, setup.Boiler, "OtherLoco", setup.Components, out _),
                 "calculated injector inputs remain stock without the JK3 livery and verified graph");
@@ -2657,6 +2738,31 @@ namespace RealisticFiring.AdapterCheck
                 "the aiming keypad is on by default, turned on once for settings saved with it off, and a later choice stays");
         }
 
+        private static void CheckShedStandReload()
+        {
+            var sites = (Dictionary<string, List<UnityEngine.GameObject>>)AccessTools.Field(typeof(Shed.ShedStands), "ByRoundhouse").GetValue(null);
+            var live = (UnityEngine.GameObject)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(UnityEngine.GameObject));
+            AccessTools.Field(typeof(UnityEngine.Object), "m_CachedPtr").SetValue(live, new IntPtr(1));
+            try
+            {
+                sites.Add("adapter dead", new List<UnityEngine.GameObject> { null });
+                sites.Add("adapter failed build", new List<UnityEngine.GameObject>());
+                sites.Add("adapter live", new List<UnityEngine.GameObject> { live });
+                Shed.ShedStands.ForgetDestroyedSites();
+                Shed.ShedStands.ForgetDestroyedSites();
+                Check(!sites.ContainsKey("adapter dead") && !sites.ContainsKey("adapter failed build")
+                      && sites.TryGetValue("adapter live", out var kept) && kept.Count == 1 && ReferenceEquals(kept[0], live),
+                    "shed reload bookkeeping retries destroyed/failed sites and keeps live stands without duplicating them");
+            }
+            finally
+            {
+                sites.Remove("adapter dead");
+                sites.Remove("adapter failed build");
+                sites.Remove("adapter live");
+                AccessTools.Field(typeof(UnityEngine.Object), "m_CachedPtr").SetValue(live, IntPtr.Zero);
+            }
+        }
+
         private static void CheckFireboxQualitySettings()
         {
             var serializer = new System.Xml.Serialization.XmlSerializer(typeof(Settings));
@@ -2665,6 +2771,18 @@ namespace RealisticFiring.AdapterCheck
                 var legacy = (Settings)serializer.Deserialize(reader);
                 Check(legacy.FireboxQuality == FireboxQuality.High,
                     "settings saved before firebox presets retain High detail");
+                Check(legacy.LowWaterAlarmVolume == 1f,
+                    "old settings default the low-water alarm volume to normal");
+            }
+            foreach (var volume in new[] { 0f, 0.5f, 2f })
+            {
+                using (var writer = new StringWriter())
+                {
+                    serializer.Serialize(writer, new Settings { LowWaterAlarmVolume = volume });
+                    using (var reader = new StringReader(writer.ToString()))
+                        Check(((Settings)serializer.Deserialize(reader)).LowWaterAlarmVolume == volume,
+                            $"low-water alarm volume {volume:F1} survives settings saves");
+                }
             }
             var retained = true;
             foreach (FireboxQuality firebox in Enum.GetValues(typeof(FireboxQuality)))
@@ -2856,6 +2974,68 @@ namespace RealisticFiring.AdapterCheck
         {
             __result = tabletStartingKit;
             return false;
+        }
+
+        private static void CheckFiringManual()
+        {
+            var rows = Items.FiringManualContents.Entries;
+            Check(rows.Length == 15 && Items.FiringManualContents.PageCount == 17
+                  && Items.FiringManualContents.ContentsPage == 1,
+                "the manual preserves O1's cover and fifteen lessons, with contents inserted after the cover");
+            for (var i = 0; i < rows.Length; i++)
+            {
+                Check(Items.FiringManualContents.TryDestination(i, 1, out var target) && target == i + 2
+                      && rows[i].Area.width > 0 && rows[i].Area.yMin >= 0
+                      && rows[i].Area.yMax < Items.FiringManualContents.Height,
+                    $"manual contents row {i + 1} opens its printed page {i + 2}");
+            }
+            Check(!Items.FiringManualContents.TryDestination(-1, 1, out _)
+                  && !Items.FiringManualContents.TryDestination(15, 1, out _)
+                  && !Items.FiringManualContents.TryDestination(0, 0, out _)
+                  && !Items.FiringManualContents.TryDestination(0, 2, out _),
+                "manual links reject non-contents pages and invalid rows");
+            var top = Items.FiringManualLinks.PrintedPoint(new UnityEngine.Vector2(0, 0));
+            var bottom = Items.FiringManualLinks.PrintedPoint(new UnityEngine.Vector2(1184, 1684));
+            Check(top.x > 0 && top.z < 0 && bottom.x < 0 && bottom.z > 0,
+                "manual print maps left to +x and top to -z, the portrait orientation confirmed in the brake booklet");
+            var touch = (DV.CabControls.Spec.Touchscreen)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(DV.CabControls.Spec.Touchscreen));
+            touch.handPosesOverride = new DV.Interaction.InteractionHandPoses();
+            var originalPoses = touch.handPosesOverride;
+            touch.createRigidbody = true;
+            touch.maxVRTolerance = 1f;
+            touch.hoverVerticalOffset = 0f;
+            Items.FiringManualControl.ConfigureGrid(touch, rows.Length);
+            Check(touch.handPosesOverride != null && touch.gridSize.x == 1 && touch.gridSize.y == rows.Length
+                  && touch.createRigidbody && ReferenceEquals(touch.handPosesOverride, originalPoses)
+                  && touch.maxVRTolerance == 1f && touch.hoverVerticalOffset == 0f
+                  && !touch.flipHorizontalCoords && !touch.flipVerticalCoords && touch.useEntireScreen,
+                "manual grid override preserves the stock touchscreen poses, rigidbody, VR tolerance, and hover height");
+            Check(typeof(PageBook).GetMethod("FlipTo", new[] { typeof(int) }) != null
+                  && typeof(PageBook).GetMethod("OnItemSaveDataRequested")?.ReturnType == typeof(JObject)
+                  && typeof(PageBook).GetEvent("PageFlipped") != null
+                  && Items.FiringManual.SourcePrefab == "VehicleCatalog",
+                "manual retains the stock portrait catalog's grips, page-flip API, and page-save contract");
+            var book = (PageBook)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(PageBook));
+            book.currentPage = 13;
+            var saved = book.OnItemSaveDataRequested(new JObject());
+            Check((int)saved["BookletPageNumber"] == 13, "manual page 13 saves with the stock BookletPageNumber key");
+            book.currentPage = 0;
+            Check(book.OnItemSaveDataRequested(saved)["BookletPageNumber"] == null, "returning to the cover clears the saved page as stock booklets do");
+            InventoryItemSpec Spec(string name)
+            {
+                var value = (InventoryItemSpec)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(InventoryItemSpec));
+                AccessTools.Field(typeof(InventoryItemSpec), "itemPrefabName").SetValue(value, name);
+                return value;
+            }
+            var manual = Spec(Items.FiringManual.PrefabName);
+            var basic = new List<StartingItems.StartingItem>();
+            var steam = new List<StartingItems.StartingItem> { new StartingItems.StartingItem { item = Spec("shovel") } };
+            var kit = Items.FiringManualStartingItems.WithManual(steam, () => manual);
+            Check(ReferenceEquals(basic, Items.FiringManualStartingItems.WithManual(basic, () => throw new Exception("unused")))
+                  && kit.Count == 2 && steam.Count == 1 && kit[1].ItemPrefabName == Items.FiringManual.PrefabName
+                  && ReferenceEquals(kit, Items.FiringManualStartingItems.WithManual(kit, () => throw new Exception("duplicate")))
+                  && ReferenceEquals(steam, Items.FiringManualStartingItems.WithManual(steam, () => null)),
+                "steam starting kits gain one manual without mutating assets or duplicating an existing entry; missing templates are safe");
         }
 
         private static void CheckFiringTabletStartingItems()

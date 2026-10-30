@@ -78,6 +78,14 @@ namespace RealisticFiring.Core
 
         public bool Sounding { get; private set; }
 
+        /// <summary>
+        /// A steam whistle is silent without gauge pressure. Sound reaches
+        /// its normal level at half a bar gauge (audio tuning, not a change
+        /// to the water-level detector or its warning hysteresis).
+        /// </summary>
+        public static float AudibleShare(float absolutePressure) =>
+            absolutePressure > 1.01325f ? Smoothing.Clamp01((absolutePressure - 1.01325f) / 0.5f) : 0f;
+
         /// <summary>Shows another alarm's state, as a multiplayer client shows the host's.</summary>
         public void Mirror(bool sounding) => Sounding = sounding;
 

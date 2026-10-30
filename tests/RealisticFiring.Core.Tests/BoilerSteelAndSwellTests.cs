@@ -72,6 +72,23 @@ public class BoilerSteelAndSwellTests
     }
 
     [Fact]
+    public void EmptySteelCoolsThroughTheBoilersExteriorWithoutOvershooting()
+    {
+        var oneStep = new BoilerMetal(12000f, 192f);
+        var smallSteps = new BoilerMetal(12000f, 192f);
+        oneStep.Cool(8f * 3600f, 25f, 1300f);
+        for (var i = 0; i < 8 * 3600; i++)
+            smallSteps.Cool(1f, 25f, 1300f);
+        Assert.InRange(oneStep.Temperature, 25f, 45f);
+        Assert.Equal(oneStep.Temperature, smallSteps.Temperature, 0.1f);
+        oneStep.Cool(1e9f, 25f, 1300f);
+        Assert.Equal(25f, oneStep.Temperature);
+        var before = smallSteps.Temperature;
+        smallSteps.Cool(1000f, 25f, 0f);
+        Assert.Equal(before, smallSteps.Temperature);
+    }
+
+    [Fact]
     public void The_glass_stands_higher_the_harder_the_boiler_steams()
     {
         var idle = new BoilerSwell();

@@ -189,6 +189,12 @@ namespace RealisticFiring.Visuals
         {
             if (measuredFrame == Time.frameCount)
                 return;
+            // FireRadiance is also read by the cab's lights before this
+            // component's LateUpdate. Apply the hidden budget here so every
+            // caller shares it, while a visible fire measures immediately.
+            if (!bed.Seen && Time.unscaledTime < hiddenMeasureAt)
+                return;
+            hiddenMeasureAt = Time.unscaledTime + 0.25f;
             measuredFrame = Time.frameCount;
             fireRadiance = Color.black;
             if (volume == null)
@@ -268,6 +274,7 @@ namespace RealisticFiring.Visuals
         // The fire's light this frame, its zones' glow and flames on average.
         private float light;
         private float hiddenLightAt;
+        private float hiddenMeasureAt;
 
         internal string Describe() =>
             $"lighting {light:F3}, door area {door.w:F3}, cab rgb {doorLight.x:F3}/{doorLight.y:F3}/{doorLight.z:F3}, bed seen {bed.Seen}; " +

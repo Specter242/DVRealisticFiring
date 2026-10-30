@@ -524,6 +524,7 @@ namespace RealisticFiring.Visuals
             }
 
             mesh = new Mesh { name = "RealisticFiring fire bed" };
+            surfaceReady = false;
             mesh.MarkDynamic();
             mesh.vertices = vertices;
             mesh.uv = uvs;
@@ -650,7 +651,13 @@ namespace RealisticFiring.Visuals
             var seen = Seen;
             UpdateRelief(fire, seen);
             if (!seen)
+            {
+                nextVisibleUploadAt = 0f;
                 return;
+            }
+            if (Time.unscaledTime < nextVisibleUploadAt)
+                return;
+            nextVisibleUploadAt = Time.unscaledTime + FireboxDetail.For(Main.Settings.FireboxQuality).UploadInterval;
             if (mesh != null)
                 UpdateMesh(fire, aimed, pulse);
             else
@@ -664,6 +671,8 @@ namespace RealisticFiring.Visuals
         // all the while, and the bed is remade the moment it can be seen.
         private const float SeenDoor = 0.01f;
         private const float SeenWithin = 15f;
+        private float nextVisibleUploadAt;
+        private bool surfaceReady;
 
         /// <summary>
         /// Whether the coal can be seen now: its door open (or none) and the
@@ -678,8 +687,11 @@ namespace RealisticFiring.Visuals
                 if (firebox != null && firebox.HasDoorPort && firebox.DoorOpening <= SeenDoor)
                     return false;
                 var camera = PlayerManager.ActiveCamera != null ? PlayerManager.ActiveCamera : Camera.main;
-                return camera == null || pivot == null
-                       || (camera.transform.position - pivot.position).sqrMagnitude < SeenWithin * SeenWithin;
+                if (camera == null || pivot == null)
+                    return true;
+                if ((camera.transform.position - pivot.position).sqrMagnitude >= SeenWithin * SeenWithin)
+                    return false;
+                return FireboxVisibility.InView(camera, bedRenderer, surfaceReady);
             }
         }
 
@@ -872,6 +884,7 @@ namespace RealisticFiring.Visuals
             mesh.SetUVs(3, bare);
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
+            surfaceReady = true;
 
             if (emberMesh != null)
             {

@@ -49,3 +49,12 @@ The package is written to `dist/RealisticFiring-<version>.zip`. Extract its
 `RealisticFiring` folder into the game's `Mods` directory.
 
 Source code is available under the [MIT license](LICENSE).
+
+## Illustrated firing manual
+
+The handheld firing manual has diagrams, photographs, and a clickable table
+of contents. Open the cover and select a subject to turn to its page; on
+desktop use mouse mode while holding it. Normal booklet page controls still
+work, and your page is saved. It comes with starting equipment that includes
+the steam shovel. You can also use **Controls → Equipment → Give firing
+manual** in the mod settings (F8); in multiplayer, ask the host for a copy.

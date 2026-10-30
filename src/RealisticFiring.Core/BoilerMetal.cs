@@ -41,6 +41,19 @@ namespace RealisticFiring.Core
         public void Settle(float temperature) => Temperature = temperature;
 
         /// <summary>
+        /// Cools an empty boiler through its existing exterior conductance,
+        /// W/K. The wet boiler already loses this heat through its water.
+        /// Exponential cooling remains bounded during long simulation steps.
+        /// </summary>
+        public void Cool(float dt, float ambientTemperature, float conductance)
+        {
+            if (!(dt > 0f) || !(conductance > 0f) || !(HeatCapacity > 0f))
+                return;
+            Temperature = ambientTemperature + (Temperature - ambientTemperature)
+                * (float)Math.Exp(-conductance * dt / HeatCapacity);
+        }
+
+        /// <summary>
         /// The heat the water takes from the steel over <paramref name="dt"/>
         /// s at <paramref name="waterTemperature"/>, J; negative when the
         /// steel takes it from the water. No more than brings the two to the

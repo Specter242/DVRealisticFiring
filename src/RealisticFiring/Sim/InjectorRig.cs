@@ -576,6 +576,23 @@ namespace RealisticFiring.Sim
         /// <summary>Whether <paramref name="livery"/>'s cab works two injectors through a verified calculated feed.</summary>
         internal static bool HasTwoValveGraph(string livery) => livery != null && TwoValveGraphs.ContainsKey(livery);
 
+        /// <summary>
+        /// The fireman still needs the cab valve when realistic injectors are
+        /// disabled. A two-injector boiler's calculated average is read-only;
+        /// use its verified right-hand valve rather than trying to write it.
+        /// </summary>
+        internal static Port FiremanControl(Boiler boiler, string livery, IEnumerable<SimComponent> components)
+        {
+            var control = boiler.injectorControl.IsConnected ? ReferencedPort(boiler.injectorControl) : null;
+            // The 8F's calculated output is itself typed EXTERNAL_IN, so
+            // validate the graph before accepting an ordinary control port.
+            if (HasTwoValveGraph(livery))
+                return TwoValveControls(livery, components, control)?.FirstOrDefault();
+            if (control != null && control.type == PortType.EXTERNAL_IN && control.valueType == PortValueType.CONTROL)
+                return control;
+            return null;
+        }
+
         private static Port[] TwoValveControls(string livery, IEnumerable<SimComponent> components, Port control)
         {
             if (livery == null || !TwoValveGraphs.TryGetValue(livery, out var graph) || components == null || control == null)

@@ -1,4 +1,5 @@
 using System.Linq;
+using RealisticFiring.Core;
 using RealisticFiring.Sim;
 using UnityEngine;
 
@@ -83,7 +84,9 @@ namespace RealisticFiring.Visuals
         {
             if (rig == null)
                 return;
-            SetVolume(whistle, rig.Alarm != null && rig.Alarm.Sounding ? WhistleVolume : 0f);
+            SetVolume(whistle, rig.Alarm != null && rig.Alarm.Sounding
+                ? WhistleVolume * LowWaterAlarm.AudibleShare(rig.BoilerPressure)
+                  * Mathf.Clamp(Main.Settings.LowWaterAlarmVolume, 0f, 2f) : 0f);
             SetVolume(blow, Mathf.Clamp01(rig.PlugVent / LoudestBlow) * Mathf.Max(0f, Main.Settings.SteamVentVolume));
         }
 

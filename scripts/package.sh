@@ -8,6 +8,7 @@ unity="${UNITY_EDITOR:-$HOME/Unity/Hub/Editor/2019.4.40f1/Editor/Unity}"
 out="$repo/src/RealisticFiring/bin/Release/net48"
 mp="$repo/src/RealisticFiring.Multiplayer/bin/Release/net48"
 bundle="$repo/fx/build/realisticfiring_fx"
+manual="$repo/fx/build/realisticfiring_manual"
 version="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["Version"])' "$repo/src/RealisticFiring/Info.json")"
 zipfile="$repo/dist/RealisticFiring-$version.zip"
 
@@ -32,16 +33,18 @@ elif [[ ! -f "$bundle" ]]; then
     exit 1
 fi
 
+[[ -f "$manual" ]] || { echo "No firing manual bundle at $manual" >&2; exit 1; }
+
 mkdir -p "$repo/dist"
 stage="$(mktemp -d "$repo/dist/package.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
 mkdir "$stage/RealisticFiring"
 cp "$out/Info.json" "$out/RealisticFiring.dll" "$out/RealisticFiring.Core.dll" \
-    "$bundle" "$repo/LICENSE" "$stage/RealisticFiring/"
+    "$bundle" "$manual" "$repo/LICENSE" "$stage/RealisticFiring/"
 # The players' firing guide, one page that opens in any browser.
 python3 -I "$repo/scripts/build-guide.py" "$stage/RealisticFiring/FIRING-GUIDE.html" >/dev/null
 files=(RealisticFiring/Info.json RealisticFiring/RealisticFiring.dll
-       RealisticFiring/RealisticFiring.Core.dll RealisticFiring/realisticfiring_fx
+       RealisticFiring/RealisticFiring.Core.dll RealisticFiring/realisticfiring_fx RealisticFiring/realisticfiring_manual
        RealisticFiring/LICENSE RealisticFiring/FIRING-GUIDE.html)
 # The overlay's typeface rides in the effects bundle; its license goes beside it.
 fonts="$repo/fx/RealisticFiringFX/Assets/RealisticFiring/Fonts"

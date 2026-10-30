@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.17.0 (2026-10-30)
+
+- Added an illustrated firing manual with a clickable contents page. Steam
+  starting kits include it; in an existing save, use F8 → Controls → Equipment
+  → Give firing manual.
+- Shed hoses return after reloading a save. Empty, unfired boilers cool during
+  play and sleep or fast travel, allowing a cooled boiler to refill from a hose.
+- Added a low-water alarm volume slider. The whistle follows steam pressure;
+  the low-water indication remains active when muted.
+- Medium and Low firebox quality reduce coal geometry and surface updates.
+  Unseen fireboxes do less work while keeping their firelight.
+- The JK3 and 8F fireman can operate the right injector with realistic
+  injectors turned off.
+- Heat shimmer draws before smoke and shares TurboTurbo's screen copy.
+
 ## 1.16.3 (2026-10-28)
 
 - Fixed duplicate chimney effects accumulating when a locomotive's particles were refreshed, adding smoke and slowing the game down.

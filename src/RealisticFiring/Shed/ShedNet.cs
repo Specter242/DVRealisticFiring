@@ -257,9 +257,9 @@ namespace RealisticFiring.Shed
         private static void Forget(Stand stand)
         {
             Each.Remove(stand);
-            if (stand.Hose != null)
+            if (!ReferenceEquals(stand.Hose, null))
                 ByHose.Remove(stand.Hose);
-            if (stand.Plug != null)
+            if (!ReferenceEquals(stand.Plug, null))
                 ByPlug.Remove(stand.Plug);
         }
 
@@ -270,6 +270,17 @@ namespace RealisticFiring.Shed
         /// <summary>Keeps the stands the same on every machine of a session; call every frame.</summary>
         public static void Update()
         {
+            // Prune in single player as well: a later multiplayer join must
+            // not inherit registrations from an unloaded world.
+            for (var i = Each.Count - 1; i >= 0; i--)
+            {
+                var old = Each[i];
+                if (old.ValveOnly ? old.Wheel == null : old.Hose == null || old.Plug == null)
+                {
+                    Stands.Remove(old.Key);
+                    Forget(old);
+                }
+            }
             if (Each.Count == 0)
                 return;
             var inSession = InSession;
