@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.17.1 (2026-10-30)
+
+- Fixed the fire showing through the locomotive body in external views.
+
 ## 1.17.0 (2026-10-30)
 
 - Added an illustrated firing manual with a clickable contents page. Steam

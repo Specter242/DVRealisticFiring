@@ -127,6 +127,7 @@ Shader "RealisticFiring/FireboxVolume"
             #include "HLSLSupport.cginc"
             #include "UnityCG.cginc"
             #include "Assets/RealisticFiring/Shaders/FireColor.cginc"
+            #include "Assets/RealisticFiring/Shaders/FireboxView.cginc"
 
             sampler3D _Noise;
             sampler2D _ZonesA;
@@ -394,20 +395,14 @@ Shader "RealisticFiring/FireboxVolume"
                 float scene = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE_PROJ(_CameraDepthTexture, UNITY_PROJ_COORD(i.screen)));
                 float3 forward = -UNITY_MATRIX_V[2].xyz;
                 leave = min(leave, scene / max(dot(dir, forward), 1e-4));
-                // From the cab, admit only rays through the firehole and only
-                // the part beyond its plane. A camera inside the box still sees
-                // the whole fire.
-                float behind = dot(_HolePlane, float4(origin, 1));
-                if (behind < -1e-4)
-                {
-                    float heading = dot(_HolePlane.xyz, step3);
-                    float atHole = -behind / max(heading, 1e-6);
-                    float4 crossing = float4(origin + step3 * atHole, 1);
-                    float2 hole = float2(dot(_HoleAcross, crossing), dot(_HoleUp, crossing));
-                    enter = max(enter, atHole);
-                    if (heading <= 0.0 || any(hole < 0.0) || any(hole > 1.0))
-                        leave = enter;
-                }
+                // Every view from outside must enter through the real door.
+                // An exterior side/front view must not use a missing or open
+                // underside of the locomotive's exterior mesh as a window.
+                float viewStart = FireboxViewStart(origin, step3, _HolePlane, _HoleAcross, _HoleUp, enter);
+                if (viewStart < 0.0)
+                    leave = enter;
+                else
+                    enter = viewStart;
                 // None of the box in front of the scene: nothing to march, though
                 // the pixel still runs on to its quad's blend.
                 float span = max(leave - enter, 0.0);
