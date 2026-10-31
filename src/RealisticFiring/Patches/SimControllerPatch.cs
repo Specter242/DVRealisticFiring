@@ -68,6 +68,7 @@ namespace RealisticFiring.Patches
             if (__instance.simFlow != null)
             {
                 SetupGuard.Logged(trainCar, "superheater", () => EngineSuperheater.Attach(trainCar, __instance));
+                SetupGuard.Logged(trainCar, "throttle steam storage", () => EngineSteamPath.Attach(trainCar, __instance.simFlow));
                 SetupGuard.Logged(trainCar, "boiler water", () => BoilerWaterRig.Attach(trainCar, __instance.simFlow));
             }
 

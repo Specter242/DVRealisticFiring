@@ -5,7 +5,7 @@ namespace RealisticFiring.Items
 {
     internal static class FiringManualContents
     {
-        internal const int PageCount = 17, ContentsPage = 1, Width = 1184, Height = 1684;
+        internal const int PageCount = 18, ContentsPage = 1, Width = 1184, Height = 1684;
         internal readonly struct Entry
         {
             internal readonly string Title;
@@ -15,21 +15,22 @@ namespace RealisticFiring.Items
         }
         internal static readonly Entry[] Entries =
         {
-            new Entry("Five habits", 2, new Rect(72f, 330f, 1040f, 76f)),
-            new Entry("Where the air goes", 3, new Rect(72f, 406f, 1040f, 76f)),
-            new Entry("Aiming the shovel", 4, new Rect(72f, 482f, 1040f, 76f)),
-            new Entry("Reading the bed and the stack", 5, new Rect(72f, 558f, 1040f, 76f)),
-            new Entry("Each engine’s fire", 6, new Rect(72f, 634f, 1040f, 76f)),
-            new Entry("Wet coal, and raising steam", 7, new Rect(72f, 710f, 1040f, 76f)),
-            new Entry("Working an injector", 8, new Rect(72f, 786f, 1040f, 76f)),
-            new Entry("The glass", 9, new Rect(72f, 862f, 1040f, 76f)),
-            new Entry("Where the jets throw", 10, new Rect(72f, 938f, 1040f, 76f)),
-            new Entry("Screw, table, and bed", 11, new Rect(72f, 1014f, 1040f, 76f)),
-            new Entry("Keeping the fire clean", 12, new Rect(72f, 1090f, 1040f, 76f)),
-            new Entry("The automatic fireman", 13, new Rect(72f, 1166f, 1040f, 76f)),
-            new Entry("Warm the oil, then light up", 14, new Rect(72f, 1242f, 1040f, 76f)),
-            new Entry("Running an oil fire", 15, new Rect(72f, 1318f, 1040f, 76f)),
-            new Entry("Numbers to remember", 16, new Rect(72f, 1394f, 1040f, 76f)),
+            new Entry("Five habits", 2, new Rect(72f, 330f, 1040f, 70f)),
+            new Entry("Where the air goes", 3, new Rect(72f, 400f, 1040f, 70f)),
+            new Entry("Aiming the shovel", 4, new Rect(72f, 470f, 1040f, 70f)),
+            new Entry("Reading the bed and the stack", 5, new Rect(72f, 540f, 1040f, 70f)),
+            new Entry("Each engine’s fire", 6, new Rect(72f, 610f, 1040f, 70f)),
+            new Entry("Wet coal, and raising steam", 7, new Rect(72f, 680f, 1040f, 70f)),
+            new Entry("Working an injector", 8, new Rect(72f, 750f, 1040f, 70f)),
+            new Entry("The glass", 9, new Rect(72f, 820f, 1040f, 70f)),
+            new Entry("Where the jets throw", 10, new Rect(72f, 890f, 1040f, 70f)),
+            new Entry("Screw, table, and bed", 11, new Rect(72f, 960f, 1040f, 70f)),
+            new Entry("Keeping the fire clean", 12, new Rect(72f, 1030f, 1040f, 70f)),
+            new Entry("The automatic fireman", 13, new Rect(72f, 1100f, 1040f, 70f)),
+            new Entry("Warm the oil, then light up", 14, new Rect(72f, 1170f, 1040f, 70f)),
+            new Entry("Running an oil fire", 15, new Rect(72f, 1240f, 1040f, 70f)),
+            new Entry("Numbers to remember", 16, new Rect(72f, 1310f, 1040f, 70f)),
+            new Entry("Throttle and stored steam", 17, new Rect(72f, 1380f, 1040f, 70f)),
         };
 
         internal static bool TryDestination(int row, int page, out int destination)

@@ -13,8 +13,9 @@ namespace RealisticFiring.Sim
         // to older readers (tag 255, length 65535), so they drop this packet
         // before interpreting any changed struct fields.
         internal const int HeaderSize = 11;
-        private static readonly ulong LayoutHash = HashLayout("sections-v2;" + Codec<StokerFlow>.Layout
-            + Codec<InjectorFlow>.Layout + Codec<FeedPumpFlow>.Layout + Codec<BoosterFlow>.Layout + Codec<OilFireState>.Layout);
+        private static readonly ulong LayoutHash = HashLayout("sections-v4;" + Codec<StokerFlow>.Layout
+            + Codec<InjectorFlow>.Layout + Codec<FeedPumpFlow>.Layout + Codec<BoosterFlow>.Layout + Codec<OilFireState>.Layout
+            + Codec<SteamPathSnapshot>.Layout);
         internal static string LayoutSignature => LayoutHash.ToString("x16");
 
         private static ulong HashLayout(string layout)
@@ -30,6 +31,7 @@ namespace RealisticFiring.Sim
         private const byte Booster = 4;
         private const byte Oil = 5;
         private const byte InjectorCircuits = 6;
+        private const byte Throttle = 7;
 
         /// <summary>
         /// Every car with something of the mod's to mirror: each part that
@@ -42,6 +44,7 @@ namespace RealisticFiring.Sim
                 .Concat(BoilerWaterRig.All.Select(w => w.Car))
                 .Concat(RealisticBooster.All.Select(b => b.Car))
                 .Concat(RealisticOilFirebox.All.Select(o => o.Car))
+                .Concat(EngineSteamPath.AllCars())
                 .Where(car => car != null)
                 .Distinct();
 
@@ -53,7 +56,8 @@ namespace RealisticFiring.Sim
             BoilerWaterRig.TryGet(car, out var water);
             RealisticBooster.TryGet(car, out var booster);
             RealisticOilFirebox.TryGet(car, out var oil);
-            return Capture(firebox, rig, water, booster, oil);
+            EngineSteamPath.TryGet(car, out var throttle);
+            return Capture(firebox, rig, water, booster, oil, throttle);
         }
 
         /// <summary>On a client: shows the host's state of <paramref name="car"/>.</summary>
@@ -66,11 +70,13 @@ namespace RealisticFiring.Sim
             BoilerWaterRig.TryGet(car, out var water);
             RealisticBooster.TryGet(car, out var booster);
             RealisticOilFirebox.TryGet(car, out var oil);
-            Apply(data, firebox, rig, water, booster, oil, car.ID);
+            EngineSteamPath.TryGet(car, out var throttle);
+            Apply(data, firebox, rig, water, booster, oil, car.ID, throttle);
         }
 
         /// <summary>The state of these parts (any may be null); null with nothing to send.</summary>
-        internal static byte[] Capture(RealisticFirebox firebox, InjectorRig rig, BoilerWaterRig water, RealisticBooster booster, RealisticOilFirebox oil)
+        internal static byte[] Capture(RealisticFirebox firebox, InjectorRig rig, BoilerWaterRig water, RealisticBooster booster, RealisticOilFirebox oil,
+            EngineSteamPath throttle = null)
         {
             using (var stream = new MemoryStream())
             using (var writer = new BinaryWriter(stream))
@@ -137,6 +143,8 @@ namespace RealisticFiring.Sim
                         Codec<OilFireState>.Write(w, oil.Model.Snapshot());
                         w.Write(oil.FlarebackSmoke);
                     });
+                if (throttle != null)
+                    Section(writer, Throttle, w => Codec<SteamPathSnapshot>.Write(w, throttle.Snapshot()));
                 writer.Flush();
                 // Keep the sentinel length impossible for an old section reader.
                 if (stream.Length >= ushort.MaxValue) throw new InvalidDataException("mirror packet too large");
@@ -146,7 +154,7 @@ namespace RealisticFiring.Sim
 
         /// <summary>Shows captured state on these parts (any may be null).</summary>
         internal static void Apply(byte[] data, RealisticFirebox firebox, InjectorRig rig, BoilerWaterRig water, RealisticBooster booster,
-            RealisticOilFirebox oil, string carName = null)
+            RealisticOilFirebox oil, string carName = null, EngineSteamPath throttle = null)
         {
             if (data == null || data.Length < HeaderSize || data[0] != 255 || data[1] != 255 || data[2] != 255)
                 return;
@@ -174,7 +182,7 @@ namespace RealisticFiring.Sim
                 try
                 {
                     using (var reader = new BinaryReader(new MemoryStream(data, at, length, writable: false)))
-                        ApplySection(tag, reader, firebox, rig, water, booster, oil);
+                        ApplySection(tag, reader, firebox, rig, water, booster, oil, throttle);
                 }
                 catch (Exception e) when (e is EndOfStreamException || e is IOException || e is InvalidDataException)
                 {
@@ -185,7 +193,7 @@ namespace RealisticFiring.Sim
         }
 
         private static void ApplySection(byte tag, BinaryReader r, RealisticFirebox firebox, InjectorRig rig, BoilerWaterRig water,
-            RealisticBooster booster, RealisticOilFirebox oil)
+            RealisticBooster booster, RealisticOilFirebox oil, EngineSteamPath throttle)
         {
             switch (tag)
             {
@@ -265,6 +273,12 @@ namespace RealisticFiring.Sim
                     booster.Model.MirrorWarmth(warmth);
                     break;
                 }
+                case Throttle when throttle != null:
+                {
+                    var state = Codec<SteamPathSnapshot>.Read(r);
+                    if (!throttle.Apply(state)) throw new InvalidDataException("invalid throttle inventory or volume budget");
+                    break;
+                }
                 case Oil when oil != null:
                 {
                     var state = Codec<OilFireState>.Read(r);
@@ -322,6 +336,8 @@ namespace RealisticFiring.Sim
                     var v = field.GetValue(boxed);
                     if (type == typeof(float))
                         w.Write((float)v);
+                    else if (type == typeof(double))
+                        w.Write((double)v);
                     else if (type == typeof(bool))
                         w.Write((bool)v);
                     else if (type == typeof(int))
@@ -341,6 +357,12 @@ namespace RealisticFiring.Sim
                     var type = field.FieldType;
                     if (type == typeof(float))
                         field.SetValue(boxed, Finite(r));
+                    else if (type == typeof(double))
+                    {
+                        var number = r.ReadDouble();
+                        if (double.IsNaN(number) || double.IsInfinity(number)) throw new InvalidDataException("not a finite number");
+                        field.SetValue(boxed, number);
+                    }
                     else if (type == typeof(bool))
                         field.SetValue(boxed, r.ReadBoolean());
                     else if (type == typeof(int))

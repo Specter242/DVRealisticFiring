@@ -24,7 +24,9 @@ namespace RealisticFiring.Patches
             var cylinders = EngineCylinders.Of(__instance);
             var model = cylinders.Model;
             var intake = __instance.intakePressure.Value;
-            var temperature = EngineSuperheater.TryGet(__instance, out var superheater)
+            var stored = EngineSteamPath.TryGet(__instance, out var path) && path.Active;
+            var temperature = stored && ___steamChestSteamMass > 0 ? (float)path.Model.ChestTemperature
+                : EngineSuperheater.TryGet(__instance, out var superheater)
                 ? superheater.SteamTemperature(intake)
                 : __instance.intakeTemperature.Value;
             model.Set(___cutoff, __instance.exhaustFlowReadOut.Value, intake, temperature);
@@ -35,7 +37,8 @@ namespace RealisticFiring.Patches
                 ___admissionPressure = chest;
                 return false;
             }
-            var admission = model.Admit(chest, ___steamChestSteamMass, __instance.steamChestVolume, ___cylinderVolume, turns,
+            var available = stored ? path.AdmissionMass : ___steamChestSteamMass;
+            var admission = model.Admit(chest, available, __instance.steamChestVolume, ___cylinderVolume, turns,
                 EngineCylinders.SteamVolume, EngineCylinders.SteamPressure);
             // An engine whose boiler was balanced for the stock engine takes its steam.
             ___steamMassPerChuff = EngineCylinders.TakesStockSteam(__instance)
@@ -103,6 +106,7 @@ namespace RealisticFiring.Patches
     {
         private static void Prefix(ReciprocatingSteamEngine __instance, float delta)
         {
+            EngineSteamPath.BeginTick(__instance, delta);
             if (EngineCylinders.Works(__instance) && EngineSuperheater.TryGet(__instance, out var superheater))
                 superheater.Step(__instance, delta);
         }

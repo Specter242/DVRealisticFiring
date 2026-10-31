@@ -113,7 +113,10 @@ namespace RealisticFiring.Core
         {
             var f = Math.Min(1.5f, Math.Max(0f, fire));
             gas = conductance * (float)Math.Pow(Math.Max(DeadGas, f), GasExponent);
-            steam = Math.Min(1.5f, Math.Max(0f, flow));
+            // Stroke-driven delivery can exceed the average rated rate for a
+            // short pulse. Every kg must cool the elements; clipping the pulse
+            // makes the same mean flow leave them hotter at some frame rates.
+            steam = Math.Max(0f, flow);
             soak = Spec.StandingSuperheat * (float)Math.Pow(f, gasExponent);
         }
     }

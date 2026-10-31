@@ -23,6 +23,14 @@ namespace RealisticFiring.AdapterCheck
 
         private static int Main(string[] args)
         {
+            if (args.Length == 2 && args[0] == "--throttle-calibration") return ThrottleBench.Calibration(args[1]);
+            if (args.Length > 0 && (args[0] == "--throttle-bench" || args[0] == "--throttle-sensitivity"))
+            {
+                if (args.Length < 2 || args.Length > 3 || (args.Length == 3 && args[2] != "--quick"))
+                { Console.Error.WriteLine("Usage: --throttle-bench|--throttle-sensitivity OUTPUT_DIRECTORY [--quick]"); return 2; }
+                return args[0] == "--throttle-sensitivity" ? ThrottleBench.Sensitivity(args[1], args.Length == 3)
+                    : ThrottleBench.Run(args[1], args.Length == 3);
+            }
             RealisticFiring.Main.Settings = new Settings { LogCoalDeliveries = false };
             var gameParams = new SimGameParams(false, false, false, 1f, 1f);
             var def = new FireboxDefinition { ID = Id };
@@ -159,12 +167,14 @@ namespace RealisticFiring.AdapterCheck
             CheckBoilerWater();
             CheckGlassTilt();
             CheckFiremanGlassDisplay();
+            CheckOverlayBoilerFallback();
             CheckVrShedHoseParts();
             CheckStoker(gameParams, def);
             CheckOilBurner(gameParams);
             CheckClientMirror(gameParams, def);
             CheckBooster();
             CheckCylinders(gameParams);
+            CheckSteamPath(gameParams);
             CheckBlower(gameParams);
             CheckAirPump(gameParams);
             CheckSafetyValveFit(gameParams);
@@ -824,6 +834,68 @@ namespace RealisticFiring.AdapterCheck
             Check(Calls("Read", shown.GetGetMethod()) && Calls("ReadRows", shown.GetGetMethod())
                   && Calls("ReadRows", target.GetGetMethod()) && Calls("Describe", shown.GetGetMethod()) && Calls("Describe", target.GetGetMethod()),
                 "the compact fireman HUD, tablet/shared card, detailed rows and descriptions use calibrated glass readings");
+        }
+
+        private static void CheckOverlayBoilerFallback()
+        {
+            var boiler = (Boiler)new BoilerDefinition
+            {
+                ID = "boiler", diameter = 1.7f, length = 8.8f,
+                spawnPressure = 12f, spawnWaterLevel = 12000f,
+                safetyValveOpeningPressure = 15f, safetyValveClosingPressure = 14.8f,
+                crownSheetNormalizedWaterLevel = 0.6f, steamOutletNormalizedWaterLevel = 0.98f,
+            }.InstantiateImplementation();
+            var water = BoilerWaterRig.Create(boiler, null, BoilerWaterRig.Guard.None);
+            var injector = (InjectorRig)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(InjectorRig));
+            AccessTools.Field(typeof(InjectorRig), "boiler").SetValue(injector, boiler);
+            var vessel = (WaterPressureVessel)AccessTools.Field(typeof(Boiler), "vessel").GetValue(boiler);
+            var gauges = AccessTools.Method(typeof(FireOverlay), "WaterGauges");
+            FireOverlay.Card Read(InjectorRig optional)
+            {
+                var card = new FireOverlay.Card();
+                gauges.Invoke(null, new object[] { card, optional, water });
+                return card;
+            }
+            var spanType = typeof(Visuals.GaugeGlass).GetNestedType("Span", BindingFlags.NonPublic);
+            displayGlassShow = spanType.GetMethod("Show");
+            var indicator = (IndicatorScaler)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(IndicatorScaler));
+            indicator.minValue = 0.68f;
+            indicator.maxValue = 0.85f;
+            var reader = (DV.Simulation.Ports.IndicatorPortReader)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(DV.Simulation.Ports.IndicatorPortReader));
+            reader.valueMultiplier = 1f;
+            displayGlassSpan = Activator.CreateInstance(spanType, new object[] { indicator, reader });
+            var readGlass = AccessTools.Method(typeof(Visuals.GaugeGlass), "Read", new[] { typeof(TrainCar), typeof(string), typeof(float) });
+            var harmony = new Harmony("RealisticFiring.AdapterCheck.OverlayBoilerFallback");
+            try
+            {
+                harmony.Patch(readGlass, prefix: new HarmonyMethod(typeof(Program), nameof(CalibratedGlassPrefix)));
+                boiler.waterLevelReadOut.Value = 0.765f;
+                vessel.pressure = 12f;
+                vessel.waterTemp = 180f;
+                var off = Read(null);
+                var on = Read(injector);
+                Check(water.WaterLevelPortId == "boiler.WATER_LEVEL_NORMALIZED"
+                      && Math.Abs(off.Gauges[2].Value - 0.5f) < 1e-5f
+                      && off.Gauges[2].Text == "50%" && off.Gauges[3].Text == "11.0 bar"
+                      && Math.Abs(off.Gauges[3].Value - 11f / 14f / 1.1f) < 1e-5f,
+                    "without realistic injectors the shared overlay/tablet gauges read the boiler and calibrated JK3 glass");
+                Check(on.Gauges[2].Value == off.Gauges[2].Value && on.Gauges[3].Value == off.Gauges[3].Value
+                      && on.Gauges[3].Text == off.Gauges[3].Text && on.Gauges[3].Level == off.Gauges[3].Level,
+                    "enabling realistic injectors keeps the same boiler gauge pressure and working band");
+                vessel.pressure = 1f;
+                vessel.waterTemp = 40f;
+                off = Read(null);
+                on = Read(injector);
+                Check(off.Gauges[3].Text == "water 40 °C" && off.Gauges[3].Value == 0f
+                      && on.Gauges[3].Text == off.Gauges[3].Text,
+                    "a cold boiler shows its water temperature with realistic injectors off or on");
+            }
+            finally
+            {
+                harmony.UnpatchAll(harmony.Id);
+                displayGlassSpan = null;
+                displayGlassShow = null;
+            }
         }
 
         // The boiler water rig on a stock boiler with the S282's crown sheet,
@@ -2171,6 +2243,324 @@ namespace RealisticFiring.AdapterCheck
             }
         }
 
+        private static void CheckSteamPath(SimGameParams gameParams)
+        {
+            var harmony = new Harmony("RealisticFiring.AdapterCheck.SteamPath");
+            foreach (var patch in new[] { typeof(CylinderAdmissionPatch), typeof(CylinderMeanTorquePatch), typeof(CylinderPistonForcePatch),
+                typeof(CylinderExhaustPatch), typeof(SuperheaterTickPatch), typeof(SteamPathChestPatch), typeof(SteamPathSavePatch), typeof(SteamPathLoadPatch) })
+                harmony.CreateClassProcessor(patch).Patch();
+            var client = Net.ClientCheck;
+            try
+            {
+                Check(!EngineSteamPath.TryFit("LocoS060", 200, 2, out _) && !EngineSteamPath.TryFit("Jk3A", 300, 2.4f, out _)
+                      && !EngineSteamPath.TryFit("unknown", 1000, 6, out _),
+                    "saturated and unknown engines retain their original throttle path");
+                EngineSteamPath.TryFit("em_lms_8f_loc_black", 800, 5, out var black);
+                EngineSteamPath.TryFit("em_lms_8f_loc_grey", 800, 5, out var grey);
+                Check(black.PipeVolume == grey.PipeVolume && black.ChestVolume == grey.ChestVolume && black.MaxFlow == grey.MaxFlow
+                      && black.ChestVolume == 800 && black.PipeVolume == 120,
+                    "both 8F liveries keep their maker chest and share the dimensional circuit estimate");
+                foreach (var id in new[] { "LocoS282A", "em_lms_8f_loc_black", "S464-730", "FEF-3", "S484-840A", "A.T.&S.F. 2901-A" })
+                {
+                    var cases = new List<(float Throttle, float Cutoff, float Temperature, EngineRun Before, EngineRun After)>();
+                    foreach (var cutoff in new[] { 0.25f, 0.5f, 0.9f })
+                    foreach (var temperature in new[] { 195f, 350f })
+                    foreach (var throttle in new[] { 0.25f, 0.5f, 1f })
+                    {
+                        var notch = (cutoff - 0.05f) / 0.85f;
+                        var before = RunEngine(gameParams, true, notch, 180, livery: id, temperature: temperature, throttle: throttle);
+                        var after = RunEngine(gameParams, true, notch, 180, livery: id, storage: true, temperature: temperature, throttle: throttle);
+                        cases.Add((throttle, cutoff, temperature, before, after));
+                    }
+                    foreach (var value in cases)
+                    {
+                        // Only upstream circuits enlarge the regulated steam
+                        // space. Their ripple allowance is specific to this
+                        // grid; front-end chests retain the tighter point bound.
+                        var peak = cases.Where(c => c.Temperature == value.Temperature).Max(c => Math.Abs(c.Before.Torque));
+                        var frontCase = EngineSteamPath.TryFit(id, 1, 1, out var selected)
+                            && selected.Regulator == RegulatorLocation.AfterSuperheater;
+                        var torqueTolerance = Math.Max(25, frontCase ? Math.Abs(value.Before.Torque) * .01 : peak * .03);
+                        Check(Math.Abs(value.After.Torque - value.Before.Torque) < torqueTolerance
+                              && Math.Abs(value.After.Intake - value.Before.Intake) <= value.Before.Intake * .01 + .001,
+                            $"{id} throttle circuit bounds steady pull and steam use at throttle {value.Throttle:P0}, cutoff {value.Cutoff:P0}, {value.Temperature:F0} C: torque {value.Before.Torque:F0} -> {value.After.Torque:F0}, inlet {value.Before.Intake:F3} -> {value.After.Intake:F3} kg/s (peak {peak:F0})");
+                    }
+                }
+                var definition = new ReciprocatingSteamEngineDefinition { ID = "path", steamChestVolume = 800, throttleMaxFlow = 5, cylinderBore = .47f };
+                ReciprocatingSteamEngine Engine(ReciprocatingSteamEngineDefinition input = null)
+                {
+                    var engine = new ReciprocatingSteamEngine(input ?? definition);
+                    engine.SetGameParams(gameParams);
+                    engine.intakeTemperature.SetPortReference(new Port("temperature", new PortDefinition(PortType.READONLY_OUT, PortValueType.TEMPERATURE, "OUT"), 300));
+                    engine.intakePressure.SetPortReference(new Port("pressure", new PortDefinition(PortType.READONLY_OUT, PortValueType.PRESSURE, "OUT"), 14));
+                    engine.throttleControl.SetPortReference(new Port("throttle", new PortDefinition(PortType.READONLY_OUT, PortValueType.CONTROL, "OUT"), 1));
+                    return engine;
+                }
+                EngineSteamPath.TryFit("em_lms_8f_loc_black", 800, 5, out var spec);
+                var first = Engine(); var path = EngineSteamPath.Attach(first, spec);
+                var mass = AccessTools.Field(typeof(ReciprocatingSteamEngine), "steamChestSteamMass");
+                mass.SetValue(first, 5f);
+                EngineSteamPath.BeginTick(first);
+                Check(path.Active && Math.Abs(path.Model.Mass - 5) < 1e-8 && path.Model.Spec.ChestVolume == first.steamChestVolume
+                      && ReferenceEquals(path, EngineSteamPath.Attach(first, spec)),
+                    "adopting or reattaching a steam path keeps the native chest and counts its initial inventory only once");
+                ((Port)AccessTools.Field(typeof(PortReference), "port").GetValue(first.throttleControl)).Value = 0;
+                var beforeMass = path.Model.Mass;
+                path.Step(1, 0, 0, 0.25f);
+                Check(Math.Abs(path.Model.Mass - (beforeMass - 0.25)) < 1e-7 && first.intakeFlowReadOut.Value == 0
+                      && first.steamChestPressureReadOut.Value > 1,
+                    "a closed throttle supplies stored steam without drawing from the boiler or instantly zeroing chest pressure");
+                var saved = first.GetSaveStateData();
+                Check(saved.Properties().Any(p => p.Name == "RealisticFiring_SteamPath_v1"), "the stock engine save retains the complete throttle inventory under a separate optional key");
+                var loaded = Engine();
+                loaded.SetSaveStateData(saved);
+                var restored = EngineSteamPath.Attach(loaded, spec);
+                EngineSteamPath.BeginTick(loaded);
+                Check(Math.Abs(restored.Model.Mass - path.Model.Mass) < 1e-9 && Math.Abs(restored.Model.Heat - path.Model.Heat) < 1e-5,
+                    "throttle mass and transported heat restore before model creation without a second boiler charge");
+                restored.Model.Reset(1, 200); loaded.SetSaveStateData(saved);
+                Check(Math.Abs(restored.Model.Mass - path.Model.Mass) < 1e-9,
+                    "throttle inventory also restores after model creation");
+                var corrupt = (JObject)saved.DeepClone();
+                corrupt["RealisticFiring_SteamPath_v1"]["ChestMass"] = -1;
+                loaded.SetSaveStateData(corrupt);
+                EngineSteamPath.BeginTick(loaded);
+                Check(restored.Model.Mass == 0 && (float)mass.GetValue(loaded) == 0
+                      && restored.InletRate == 0 && restored.DeliveredRate == 0,
+                    "corrupt saved throttle state clears the previous world's inventory and rates on a reused graph");
+                foreach (var bad in new JToken[] { new JValue("invalid"), new JObject { ["PipeVolume"] = "not a number" } })
+                {
+                    loaded.SetSaveStateData(saved);
+                    loaded.SetSaveStateData(new JObject { ["RealisticFiring_SteamPath_v1"] = bad });
+                    EngineSteamPath.BeginTick(loaded);
+                    Check(restored.Model.Mass == 0, "a malformed throttle save cannot retain the previous world's steam");
+                }
+                var changedSpec = new SteamPathSpec(RegulatorLocation.BeforeSuperheater, spec.TotalVolume / 2, spec.TotalVolume / 2, spec.MaxFlow);
+                var changedEngine = Engine();
+                var changed = EngineSteamPath.Attach(changedEngine, changedSpec);
+                changedEngine.SetSaveStateData(saved);
+                var earlyEngine = Engine(); earlyEngine.SetSaveStateData(saved);
+                var earlyChanged = EngineSteamPath.Attach(earlyEngine, changedSpec);
+                Check(Math.Abs(changed.Model.Mass - path.Model.Mass) < 1e-9
+                      && Math.Abs(changed.Model.Heat - path.Model.Heat) < 1e-5
+                      && Math.Abs(earlyChanged.Model.Mass - path.Model.Mass) < 1e-9
+                      && Math.Abs(earlyChanged.Model.Heat - path.Model.Heat) < 1e-5,
+                    "repartitioning the same saved steam space preserves total mass and heat before or after receiver creation");
+                var incompatible = (JObject)saved.DeepClone();
+                incompatible["RealisticFiring_SteamPath_v1"]["PipeVolume"] = 0;
+                incompatible["RealisticFiring_SteamPath_v1"]["Layout"] = 2;
+                incompatible["RealisticFiring_SteamPath_v1"]["ChestVolume"] = 800;
+                incompatible["RealisticFiring_SteamPath_v1"]["PipeMass"] = 0;
+                incompatible["RealisticFiring_SteamPath_v1"]["PipeHeat"] = 0;
+                loaded.SetSaveStateData(saved); loaded.SetSaveStateData(incompatible);
+                EngineSteamPath.BeginTick(loaded);
+                Check(restored.Model.Mass == 0, "a different saved regulator layout clears stale steam instead of migrating it");
+                var invalidSourceEngine = Engine();
+                var invalidSourcePath = EngineSteamPath.Attach(invalidSourceEngine, spec);
+                var pressurePort = (Port)AccessTools.Field(typeof(PortReference), "port").GetValue(invalidSourceEngine.intakePressure);
+                foreach (var invalid in new[] { float.NaN, float.PositiveInfinity, 0.5f })
+                {
+                    pressurePort.Value = 14;
+                    invalidSourcePath.Model.Reset(1, 250);
+                    mass.SetValue(invalidSourceEngine, 1f);
+                    EngineSteamPath.BeginTick(invalidSourceEngine);
+                    invalidSourcePath.Step(0, 0, 0, 0.1f);
+                    var initial = invalidSourcePath.Model.Mass;
+                    pressurePort.Value = invalid;
+                    invalidSourcePath.Step(0.2f, 1, 0.1f, 0.5f);
+                    Check(Math.Abs(invalidSourcePath.Model.Mass - (initial - 0.2)) < 1e-6
+                          && invalidSourcePath.InletRate == 0 && invalidSourcePath.HeaterRate == 0
+                          && Math.Abs(invalidSourcePath.DeliveredRate - 0.4f) < 1e-6
+                          && invalidSourceEngine.intakeFlowReadOut.Value == 0,
+                        "an invalid inlet supplies no boiler flow while strokes and losses still debit stored steam");
+                }
+                var bytes = ClientMirror.Capture(null, null, null, null, null, path);
+                var replicaEngine = Engine(); var replica = EngineSteamPath.Attach(replicaEngine, spec);
+                ClientMirror.Apply(bytes, null, null, null, null, null, throttle: replica);
+                Check(replica.Active && Math.Abs(replica.Model.Mass - path.Model.Mass) < 1e-9
+                      && replicaEngine.steamChestPressureReadOut.Value == first.steamChestPressureReadOut.Value,
+                    "a throttle-only mirror section carries host inventory and chest pressure to a client");
+                var mismatched = (byte[])bytes.Clone();
+                mismatched[3] ^= 1;
+                var mirroredMass = replica.Model.Mass;
+                ClientMirror.Apply(mismatched, null, null, null, null, null, throttle: replica);
+                Check(replica.Model.Mass == mirroredMass, "a different throttle wire layout is rejected before touching inventory");
+                Net.ClientCheck = () => true;
+                var replicaMass = replica.Model.Mass;
+                replica.Step(20, 20, 10, 1);
+                EngineSteamPath.BeginTick(replicaEngine);
+                Check(replica.Model.Mass == replicaMass, "a multiplayer client never advances its own throttle receiver");
+                Net.ClientCheck = client;
+                var beforeOff = path.Model.Mass;
+                RealisticFiring.Main.Settings.RealisticCylinders = false;
+                EngineSteamPath.BeginTick(first);
+                var parked = path.Snapshot();
+                Check(!path.Active && Math.Abs((float)mass.GetValue(first) + parked.PipeMass - beforeOff) < 1e-6
+                      && Math.Abs(SteamPath.Pressure((float)mass.GetValue(first), first.steamChestVolume) - path.Model.ChestPressure) < 1e-5,
+                    "turning cylinders off parks the extra circuit without losing steam or compressing it into the stock chest");
+                var parkedSave = first.GetSaveStateData();
+                Check(parkedSave["RealisticFiring_SteamPath_v1"] != null, "parked throttle inventory is saved while realistic cylinders are disabled");
+                RealisticFiring.Main.Settings.RealisticCylinders = true;
+                EngineSteamPath.BeginTick(first);
+                Check(Math.Abs(path.Model.Mass - beforeOff) < 1e-6, "reenabling throttle storage adopts the stock inventory without duplicating it");
+                var clock = EngineSteamPath.ReadGameClock;
+                try
+                {
+                    var time = 100000.0;
+                    EngineSteamPath.ReadGameClock = () => time;
+                    var chargeEngine = Engine();
+                    var charged = EngineSteamPath.Attach(chargeEngine, spec);
+                    EngineSteamPath.BeginTick(chargeEngine);
+                    charged.Model.Reset(spec.TotalVolume / SteamPath.VolumePerKg(14), 300);
+                    ((Port)AccessTools.Field(typeof(PortReference), "port").GetValue(chargeEngine.throttleControl)).Value = 0;
+                    EngineSteamPath.BeginTick(chargeEngine, 1);
+                    var chargedSave = chargeEngine.GetSaveStateData();
+                    ReciprocatingSteamEngine Reload(JObject data)
+                    {
+                        var receiver = Engine();
+                        ((Port)AccessTools.Field(typeof(PortReference), "port").GetValue(receiver.throttleControl)).Value = 0;
+                        receiver.SetSaveStateData(data);
+                        EngineSteamPath.Attach(receiver, spec);
+                        EngineSteamPath.BeginTick(receiver);
+                        return receiver;
+                    }
+                    var shortReload = Reload(chargedSave);
+                    EngineSteamPath.TryGet(shortReload, out var shortPath);
+                    Check(Math.Abs(shortPath.Model.Mass - charged.Model.Mass) < 1e-8
+                          && Math.Abs(shortPath.Model.Heat - charged.Model.Heat) < 1e-5,
+                        "a charged shut engine resumes its actual mass and heat at the same saved game time");
+                    time += 8 * 3600;
+                    var skippedReload = Reload(chargedSave);
+                    EngineSteamPath.TryGet(skippedReload, out var skippedPath);
+                    Check(skippedPath.Model.ChestPressure == 1 && skippedPath.Model.PipePressure == 1,
+                        "an eight-hour in-world skip between save and restore cannot resurrect starting steam");
+                    EngineSteamPath.BeginTick(chargeEngine, 1800);
+                    var idleSave = chargeEngine.GetSaveStateData();
+                    // Attempt to put a fresh charge into an aged save. The
+                    // persisted closure envelope, not that mass, is authoritative.
+                    var idleToken = idleSave["RealisticFiring_SteamPath_v1"];
+                    idleToken["PipeMass"] = spec.PipeVolume / SteamPath.VolumePerKg(14);
+                    idleToken["ChestMass"] = spec.ChestVolume / SteamPath.VolumePerKg(14);
+                    idleToken["PipeHeat"] = idleToken["PipeMass"].Value<double>() * SteamPath.SpecificHeat(300);
+                    idleToken["ChestHeat"] = idleToken["ChestMass"].Value<double>() * SteamPath.SpecificHeat(300);
+                    var agedReload = Reload(idleSave);
+                    EngineSteamPath.TryGet(agedReload, out var agedPath);
+                    Check(agedPath.Model.ChestPressure == 1 && agedPath.Model.PipePressure == 1,
+                        "an aged save is capped by its bleed-down envelope even if its stored mass is a fresh charge");
+                    idleToken["PipeMass"] = 0; idleToken["PipeHeat"] = 0;
+                    idleToken["ChestMass"] = spec.TotalVolume / SteamPath.VolumePerKg(14);
+                    idleToken["ChestHeat"] = idleToken["ChestMass"].Value<double>() * SteamPath.SpecificHeat(300);
+                    var unevenReload = Reload(idleSave);
+                    EngineSteamPath.TryGet(unevenReload, out var unevenPath);
+                    Check(unevenPath.Model.ChestPressure == 1 && unevenPath.Model.PipePressure == 1,
+                        "the saved bleed-down limit applies per node, so concentrating all old steam in the chest cannot restore starting work");
+                    var coldEngine = Engine();
+                    ((Port)AccessTools.Field(typeof(PortReference), "port").GetValue(coldEngine.throttleControl)).Value = 0;
+                    ((Port)AccessTools.Field(typeof(PortReference), "port").GetValue(coldEngine.intakePressure)).Value = 1;
+                    ((Port)AccessTools.Field(typeof(PortReference), "port").GetValue(coldEngine.intakeTemperature)).Value = 25;
+                    time = 100000;
+                    coldEngine.SetSaveStateData(chargedSave);
+                    var coldPath = EngineSteamPath.Attach(coldEngine, spec);
+                    EngineSteamPath.BeginTick(coldEngine);
+                    Check(coldPath.Model.ChestPressure == 1 && coldPath.Model.PipePressure == 1,
+                        "a cold loaded boiler condenses stale vapor before the first cylinder admission");
+                    foreach (var (volume, bore) in new[] { (200f, .42f), (300f, .65f) })
+                    {
+                        var saturatedEngine = Engine(new ReciprocatingSteamEngineDefinition {
+                            ID = "path", steamChestVolume = volume, throttleMaxFlow = 2, cylinderBore = bore });
+                        ((Port)AccessTools.Field(typeof(PortReference), "port").GetValue(saturatedEngine.throttleControl)).Value = 0;
+                        mass.SetValue(saturatedEngine, (float)(volume / SteamPath.VolumePerKg(14)));
+                        EngineSteamPath.AttachSaturated(saturatedEngine);
+                        EngineSteamPath.BeginTick(saturatedEngine, 1800);
+                        Check(saturatedEngine.steamChestPressureReadOut.Value == 1,
+                            $"the {volume:F0} L saturated native chest also loses its idle starting pressure");
+                    }
+                }
+                finally { EngineSteamPath.ReadGameClock = clock; }
+                foreach (var invalid in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity })
+                {
+                    var invalidEngine = Engine();
+                    var invalidPath = EngineSteamPath.Attach(invalidEngine, spec);
+                    mass.SetValue(invalidEngine, 5f);
+                    EngineSteamPath.BeginTick(invalidEngine);
+                    RealisticFiring.Main.Settings.RealisticCylinders = false;
+                    EngineSteamPath.BeginTick(invalidEngine);
+                    var parkedMass = invalidPath.Snapshot().PipeMass;
+                    mass.SetValue(invalidEngine, .75f);
+                    ((Port)AccessTools.Field(typeof(PortReference), "port").GetValue(invalidEngine.intakePressure)).Value = invalid;
+                    ((Port)AccessTools.Field(typeof(PortReference), "port").GetValue(invalidEngine.intakeTemperature)).Value = invalid;
+                    var invalidSaved = invalidEngine.GetSaveStateData();
+                    var savedEngine = Engine(); savedEngine.SetSaveStateData(invalidSaved);
+                    var savedPath = EngineSteamPath.Attach(savedEngine, spec);
+                    var savedState = savedPath.Snapshot();
+                    Check(!savedPath.Active && Math.Abs(savedState.PipeMass - parkedMass) < 1e-8
+                          && Math.Abs(savedState.ChestMass - .75) < 1e-8
+                          && Math.Abs(savedPath.Model.State.ChestHeat - .75 * SteamPath.SpecificHeat(100)) < 1e-5,
+                        "saving with invalid inlet temperature retains parked steam and stock chest mass with bounded fallback heat");
+                    RealisticFiring.Main.Settings.RealisticCylinders = true;
+                    EngineSteamPath.BeginTick(invalidEngine);
+                    Check(invalidPath.Active && Math.Abs(invalidPath.Model.Mass - (parkedMass + .75)) < 1e-8
+                          && !double.IsNaN(invalidPath.Model.ChestTemperature) && !double.IsInfinity(invalidPath.Model.ChestTemperature),
+                        "reenabling with invalid inlet conditions retains parked plus current stock steam instead of stale pre-disable inventory");
+                }
+                var invalidMassEngine = Engine(); var invalidMassPath = EngineSteamPath.Attach(invalidMassEngine, spec);
+                mass.SetValue(invalidMassEngine, 5f); EngineSteamPath.BeginTick(invalidMassEngine);
+                RealisticFiring.Main.Settings.RealisticCylinders = false;
+                EngineSteamPath.BeginTick(invalidMassEngine);
+                var retainedPipe = invalidMassPath.Snapshot().PipeMass;
+                mass.SetValue(invalidMassEngine, float.NaN);
+                var invalidMassSave = invalidMassEngine.GetSaveStateData();
+                var validLoadEngine = Engine(); validLoadEngine.SetSaveStateData(invalidMassSave);
+                var validLoad = EngineSteamPath.Attach(validLoadEngine, spec).Snapshot();
+                Check(Math.Abs(validLoad.PipeMass - retainedPipe) < 1e-8 && validLoad.ChestMass == 0 && validLoad.ChestHeat == 0,
+                    "an invalid stock mass in a parked save cannot discard the valid separately stored circuit");
+                RealisticFiring.Main.Settings.RealisticCylinders = true;
+                var frontDefinition = new ReciprocatingSteamEngineDefinition { ID = "path", steamChestVolume = 1500, throttleMaxFlow = 10 };
+                EngineSteamPath.TryFit("FEF-3", 1500, 10, out var frontFit);
+                var frontEngine = Engine(frontDefinition);
+                var front = EngineSteamPath.Attach(frontEngine, frontFit);
+                ((Port)AccessTools.Field(typeof(PortReference), "port").GetValue(frontEngine.throttleControl)).Value = 0;
+                EngineSteamPath.BeginTick(frontEngine); front.Step(0, 0, 0, 2);
+                Check(front.Model.PipePressure > 13.99 && front.Model.State.ChestMass == 0 && front.AdmissionMass == 0,
+                    "the real front-end binding charges its header behind a shut throttle without phantom cylinder admission");
+                front.Model.Reset(frontFit.TotalVolume / SteamPath.VolumePerKg(14), 300);
+                var heldHeader = front.Model.State.PipeMass;
+                front.Step(1, 0, 0, 100);
+                Check(front.Model.State.ChestMass == 0 && Math.Abs(front.Model.State.PipeMass - heldHeader) < 1e-8
+                      && front.InletRate == 0 && front.AdmissionMass == 0,
+                    "cylinder demand cannot drain a charged front-end header through a closed throttle");
+                var legacyFront = new JObject { ["RealisticFiring_SteamPath_v1"] = JObject.FromObject(new SteamPathSnapshot {
+                    Active = true, PipeVolume = 0, ChestVolume = 1500, ChestMass = 5,
+                    ChestHeat = 5 * SteamPath.SpecificHeat(300), AdmissionPressure = (float)SteamPath.Pressure(5, 1500) }) };
+                var legacyFrontEngine = Engine(frontDefinition); legacyFrontEngine.SetSaveStateData(legacyFront);
+                var migratedFront = EngineSteamPath.Attach(legacyFrontEngine, frontFit);
+                Check(Math.Abs(migratedFront.Model.Mass - 5) < 1e-9
+                      && Math.Abs(migratedFront.Model.Heat - 5 * SteamPath.SpecificHeat(300)) < 1e-5,
+                    "a legacy front-end save migrates to the separate circuit without free steam or lost heat");
+                RealisticFiring.Main.Settings.RealisticCylinders = false;
+                EngineSteamPath.BeginTick(legacyFrontEngine);
+                var disabledSave = legacyFrontEngine.GetSaveStateData();
+                var disabledEngine = Engine(frontDefinition); disabledEngine.SetSaveStateData(disabledSave);
+                var disabledFront = EngineSteamPath.Attach(disabledEngine, frontFit);
+                Check(!disabledFront.Active && Math.Abs(disabledFront.Snapshot().PipeMass + (float)mass.GetValue(disabledEngine) - 5) < 1e-6,
+                    "an inactive saved front-end circuit restores parked and stock-owned steam separately");
+                RealisticFiring.Main.Settings.RealisticCylinders = true;
+                EngineSteamPath.BeginTick(disabledEngine);
+                Check(Math.Abs(disabledFront.Model.Mass - 5) < 1e-6,
+                    "re-enabling a restored parked circuit retains its complete saved inventory");
+                first.SetSaveStateData(new JObject());
+                EngineSteamPath.BeginTick(first);
+                Check(path.Model.Mass == 0 && (float)mass.GetValue(first) == 0,
+                    "loading an old save into a reused graph cannot retain the previous world's throttle inventory");
+            }
+            finally
+            {
+                Net.ClientCheck = client;
+                RealisticFiring.Main.Settings.RealisticCylinders = true;
+                harmony.UnpatchAll(harmony.Id);
+            }
+        }
+
         // The period blower on the game's exhaust, patched as in game: the
         // S060's stock exhaust, then with its fitted blower and natural draft.
         private static void CheckBlower(SimGameParams gameParams)
@@ -2438,11 +2828,13 @@ namespace RealisticFiring.AdapterCheck
             public float Exhaust;
             public float Chest;
             public float Flow;
+            public float Intake;
         }
 
         // The S282's engine at a steady crank speed and full throttle on 14 bar
         // of saturated steam for 20 s; its torque averaged over the last 4 s.
-        private static EngineRun RunEngine(SimGameParams gameParams, bool realistic, float reverser, float rpm, bool leftStock = false)
+        private static EngineRun RunEngine(SimGameParams gameParams, bool realistic, float reverser, float rpm, bool leftStock = false,
+            string livery = null, bool storage = false, float temperature = 195f, float throttle = 1f)
         {
             RealisticFiring.Main.Settings.RealisticCylinders = realistic;
             var def = new ReciprocatingSteamEngineDefinition
@@ -2456,24 +2848,39 @@ namespace RealisticFiring.AdapterCheck
                 throttleMaxFlow = 6f,
                 steamChestVolume = 1000f,
             };
+            if (livery != null)
+            {
+                // The baseline values read from the installed definitions on October 30.
+                switch (livery)
+                {
+                    case "em_lms_8f_loc_black": def.cylinderBore = 0.47f; def.pistonStroke = 0.711f; def.steamChestVolume = 800; def.throttleMaxFlow = 5; break;
+                    case "S464-730": def.cylinderBore = 0.696f; def.pistonStroke = 0.813f; def.steamChestVolume = 1500; def.throttleMaxFlow = 15; break;
+                    case "FEF-3": def.cylinderBore = 0.655f; def.pistonStroke = 0.833f; def.steamChestVolume = 1500; def.throttleMaxFlow = 10; break;
+                    case "S484-840A": def.cylinderBore = 0.645f; def.pistonStroke = 0.823f; def.steamChestVolume = 1400; def.throttleMaxFlow = 20; break;
+                    case "A.T.&S.F. 2901-A": def.cylinderBore = 0.715f; def.pistonStroke = 0.82f; def.steamChestVolume = 1200; def.throttleMaxFlow = 10; break;
+                }
+            }
             var engine = new ReciprocatingSteamEngine(def);
             engine.SetGameParams(gameParams);
+            if (storage && EngineSteamPath.TryFit(livery ?? "LocoS282A", def.steamChestVolume, def.throttleMaxFlow, out var fit))
+                EngineSteamPath.Attach(engine, fit);
             if (leftStock)
                 LeftStock.Keep(engine);
             void Wire(PortReferenceDefinition reference, PortValueType type, float value) =>
                 engine.GetAllPortReferences().Single(r => r.id == $"{def.ID}.{reference.ID}")
                     .SetPortReference(new Port(reference.ID.ToLowerInvariant(), new PortDefinition(PortType.READONLY_OUT, type, "OUT"), value));
-            Wire(def.throttleControl, PortValueType.CONTROL, 1f);
+            Wire(def.throttleControl, PortValueType.CONTROL, throttle);
             Wire(def.reverserControl, PortValueType.CONTROL, reverser);
             Wire(def.cylinderCockControl, PortValueType.CONTROL, 0f);
             Wire(def.intakePressure, PortValueType.PRESSURE, 14f);
-            Wire(def.intakeTemperature, PortValueType.TEMPERATURE, 195f);
+            Wire(def.intakeTemperature, PortValueType.TEMPERATURE, temperature);
             Wire(def.intakeQuality, PortValueType.GENERIC, 1f);
             Wire(def.crankRpm, PortValueType.RPM, rpm);
             Wire(def.lubricationNormalized, PortValueType.OIL, 1f);
             Port Out(PortDefinition port) => engine.GetAllPorts().Single(p => p.id == $"{def.ID}.{port.ID}");
             var torque = Out(def.torqueOut);
             var sum = 0.0;
+            var intakeSum = 0.0;
             var samples = 0;
             for (var t = 0f; t < 20f; t += 0.02f)
             {
@@ -2481,6 +2888,7 @@ namespace RealisticFiring.AdapterCheck
                 if (t >= 16f)
                 {
                     sum += torque.Value;
+                    intakeSum += engine.intakeFlowReadOut.Value;
                     samples++;
                 }
             }
@@ -2490,6 +2898,7 @@ namespace RealisticFiring.AdapterCheck
                 Exhaust = Out(def.exhaustPressureReadOut).Value,
                 Chest = Out(def.steamChestPressureReadOut).Value,
                 Flow = Out(def.exhaustFlowReadOut).Value,
+                Intake = (float)(intakeSum / samples),
             };
         }
 
@@ -2969,19 +3378,35 @@ namespace RealisticFiring.AdapterCheck
         }
 
         private static List<StartingItems.StartingItem> tabletStartingKit;
+        private static InventoryItemSpec tabletStartingSpec;
+        private static List<StartingItems.StartingItem> manualStartingKit;
+        private static InventoryItemSpec manualStartingSpec;
 
-        private static bool TabletStartingKitPrefix(ref List<StartingItems.StartingItem> __result)
+        private static bool ManualStartingKitPrefix(SaveGameData data, ref List<StartingItems.StartingItem> __result)
         {
-            __result = tabletStartingKit;
+            __result = Items.FiringManualStartingItems.WithManualOnce(data, manualStartingKit, () => manualStartingSpec);
+            return false;
+        }
+
+        private static bool TabletStartingKitPrefix(SaveGameData data, ref List<StartingItems.StartingItem> __result)
+        {
+            __result = Items.FiringTabletStartingItems.WithTabletOnce(data, tabletStartingKit, () => tabletStartingSpec);
+            return false;
+        }
+
+        private static bool BothEquipmentStartingKitPrefix(SaveGameData data, ref List<StartingItems.StartingItem> __result)
+        {
+            __result = Items.FiringTabletStartingItems.WithTabletOnce(data, tabletStartingKit, () => tabletStartingSpec);
+            __result = Items.FiringManualStartingItems.WithManualOnce(data, __result, () => manualStartingSpec);
             return false;
         }
 
         private static void CheckFiringManual()
         {
             var rows = Items.FiringManualContents.Entries;
-            Check(rows.Length == 15 && Items.FiringManualContents.PageCount == 17
+            Check(rows.Length == 16 && Items.FiringManualContents.PageCount == 18
                   && Items.FiringManualContents.ContentsPage == 1,
-                "the manual preserves O1's cover and fifteen lessons, with contents inserted after the cover");
+                "the manual preserves O1's cover and fifteen lessons, with contents and the appended throttle page");
             for (var i = 0; i < rows.Length; i++)
             {
                 Check(Items.FiringManualContents.TryDestination(i, 1, out var target) && target == i + 2
@@ -2990,7 +3415,7 @@ namespace RealisticFiring.AdapterCheck
                     $"manual contents row {i + 1} opens its printed page {i + 2}");
             }
             Check(!Items.FiringManualContents.TryDestination(-1, 1, out _)
-                  && !Items.FiringManualContents.TryDestination(15, 1, out _)
+                  && !Items.FiringManualContents.TryDestination(16, 1, out _)
                   && !Items.FiringManualContents.TryDestination(0, 0, out _)
                   && !Items.FiringManualContents.TryDestination(0, 2, out _),
                 "manual links reject non-contents pages and invalid rows");
@@ -3036,6 +3461,87 @@ namespace RealisticFiring.AdapterCheck
                   && ReferenceEquals(kit, Items.FiringManualStartingItems.WithManual(kit, () => throw new Exception("duplicate")))
                   && ReferenceEquals(steam, Items.FiringManualStartingItems.WithManual(steam, () => null)),
                 "steam starting kits gain one manual without mutating assets or duplicating an existing entry; missing templates are safe");
+            var catalog = new List<StartingItems.StartingItem>
+            {
+                new StartingItems.StartingItem { item = Spec(Items.FiringManual.SourcePrefab) },
+            };
+            var manuals = Items.FiringManualStartingItems.WithManual(catalog, () => manual);
+            Check(manuals.Count == 2 && catalog.Count == 1 && manuals[1].ItemPrefabName == Items.FiringManual.PrefabName
+                  && manuals[1].backpackPriority && manuals[1].allowDuplicates
+                  && ReferenceEquals(manuals, Items.FiringManualStartingItems.WithManual(manuals, () => throw new Exception("duplicate"))),
+                "a catalog starting kit without a steam shovel also gains the firing manual once");
+            var givenKey = Items.FiringManualStartingItems.GivenKey;
+            var data = new SaveGameData();
+            var offered = Items.FiringManualStartingItems.WithManualOnce(data, catalog, () => manual);
+            data.SetInt("unrelated", 42);
+            var reloaded = SaveGameData.LoadFromString(data.GetJsonString());
+            Check(offered.Count == 2 && catalog.Count == 1 && reloaded.GetBool(givenKey) == true
+                  && reloaded.GetInt("unrelated") == 42
+                  && ReferenceEquals(catalog, Items.FiringManualStartingItems.WithManualOnce(reloaded, catalog, () => throw new Exception("already given"))),
+                "the manual's per-save gift flag survives stock JSON save/reload and prevents rebuilding a discarded manual");
+            var fresh = new SaveGameData();
+            Check(Items.FiringManualStartingItems.WithManualOnce(fresh, steam, () => manual).Count == 2
+                  && fresh.GetBool(givenKey) == true,
+                "another save independently receives its first manual with the steam kit");
+            var retry = new SaveGameData();
+            Check(ReferenceEquals(catalog, Items.FiringManualStartingItems.WithManualOnce(null, catalog, () => throw new Exception("no save")))
+                  && Items.FiringManualStartingItems.WithManualOnce(retry, null, () => throw new Exception("no kit")) == null
+                  && ReferenceEquals(basic, Items.FiringManualStartingItems.WithManualOnce(retry, basic, () => throw new Exception("ineligible")))
+                  && ReferenceEquals(catalog, Items.FiringManualStartingItems.WithManualOnce(retry, catalog, () => null))
+                  && retry.GetBool(givenKey) != true,
+                "absent save data, ineligible kits and unavailable manual templates do not consume the gift");
+            var creationFailed = false;
+            try { Items.FiringManualStartingItems.WithManualOnce(retry, catalog, () => throw new InvalidOperationException("template unavailable")); }
+            catch (InvalidOperationException) { creationFailed = true; }
+            Check(creationFailed && retry.GetBool(givenKey) != true
+                  && Items.FiringManualStartingItems.WithManualOnce(retry, catalog, () => manual).Count == 2
+                  && retry.GetBool(givenKey) == true,
+                "a failed template can be retried on a later load without losing the one-time grant");
+            var included = new SaveGameData();
+            Check(ReferenceEquals(manuals, Items.FiringManualStartingItems.WithManualOnce(included, manuals, () => throw new Exception("already included")))
+                  && included.GetBool(givenKey) == true,
+                "an existing manual kit entry marks the gift without adding or building another");
+            var startingMethod = AccessTools.DeclaredMethod(typeof(StartingItemsController), "GetStartingItemsPrefabs");
+            var safeguard = AccessTools.DeclaredMethod(typeof(StartingItemsController), "StartingItemsSafeguard");
+            var harmony = new Harmony("RealisticFiring.AdapterCheck.ManualStartingKit");
+            try
+            {
+                manualStartingKit = catalog;
+                manualStartingSpec = manual;
+                harmony.Patch(startingMethod, prefix: new HarmonyMethod(typeof(Program), nameof(ManualStartingKitPrefix)));
+                harmony.CreateClassProcessor(typeof(Items.FiringManualStartingItems)).Patch();
+                var controller = System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(StartingItemsController));
+                StorageItemData Saved(string name, int slot = -1) => new StorageItemData(name,
+                    UnityEngine.Vector3.zero, UnityEngine.Quaternion.identity, true, inventorySlotIndex: slot);
+                var inventory = new List<StorageItemData>();
+                var combined = new List<StorageItemData> { Saved(Items.FiringManual.SourcePrefab, 0), Saved("other", 12) };
+                var save = new SaveGameData();
+                safeguard.Invoke(controller, new object[] { inventory, combined, save, true });
+                Check(inventory.Count == 1 && inventory[0].itemPrefabName == Items.FiringManual.PrefabName
+                      && inventory[0].inventorySlotIndex == 13 && inventory[0].belongsToPlayer
+                      && save.GetBool(givenKey) == true,
+                    "the stock manual safeguard puts a missing firing manual in a free backpack slot beside an existing catalog");
+                inventory.Clear();
+                save = SaveGameData.LoadFromString(save.GetJsonString());
+                safeguard.Invoke(controller, new object[] { inventory, combined, save, false });
+                Check(inventory.Count == 0 && combined.Count == 2,
+                    "the stock safeguard respects disposal after the gift, even when no firing manual remains in the save");
+                combined.Add(Saved(Items.FiringManual.PrefabName));
+                var existing = new SaveGameData();
+                safeguard.Invoke(controller, new object[] { inventory, combined, existing, false });
+                Check(inventory.Count == 0 && combined.Count == 3 && existing.GetBool(givenKey) == true,
+                    "a manual saved in world, lost-and-found or other storage satisfies the first gift without a replacement");
+                combined.Add(Saved(Items.FiringManual.PrefabName, 14));
+                safeguard.Invoke(controller, new object[] { inventory, combined, existing, false });
+                Check(inventory.Count == 0 && combined.Count == 4,
+                    "the manual safeguard preserves additional copies without granting another");
+            }
+            finally
+            {
+                harmony.UnpatchAll(harmony.Id);
+                manualStartingKit = null;
+                manualStartingSpec = null;
+            }
         }
 
         private static void CheckFiringTabletStartingItems()
@@ -3069,6 +3575,51 @@ namespace RealisticFiring.AdapterCheck
                   && Items.FiringTabletStartingItems.WithTablet(null, Tablet) == null,
                 "a missing tablet template or missing kit leaves the stock loader's result intact");
 
+            var givenKey = Items.FiringTabletStartingItems.GivenKey;
+            var data = new SaveGameData();
+            Check(Items.FiringTabletStartingItems.WithTabletOnce(data, steam, () => tablet).Count == 3
+                  && data.GetBool(givenKey) == true,
+                "the first steam kit marks the tablet gift in that save");
+            var reloaded = SaveGameData.LoadFromString(data.GetJsonString());
+            Check(ReferenceEquals(steam, Items.FiringTabletStartingItems.WithTabletOnce(reloaded, steam, () => throw new Exception("already given")))
+                  && reloaded.GetBool(givenKey) == true,
+                "the tablet gift survives stock JSON save/reload and does not rebuild a discarded tablet");
+            var retry = new SaveGameData();
+            Check(ReferenceEquals(steam, Items.FiringTabletStartingItems.WithTabletOnce(null, steam, () => throw new Exception("no save")))
+                  && Items.FiringTabletStartingItems.WithTabletOnce(retry, null, () => throw new Exception("no kit")) == null
+                  && ReferenceEquals(basic, Items.FiringTabletStartingItems.WithTabletOnce(retry, basic, () => throw new Exception("ineligible")))
+                  && ReferenceEquals(steam, Items.FiringTabletStartingItems.WithTabletOnce(retry, steam, () => null))
+                  && retry.GetBool(givenKey) != true,
+                "an ineligible kit, missing save or unavailable tablet template does not consume the tablet gift");
+            var creationFailed = false;
+            try { Items.FiringTabletStartingItems.WithTabletOnce(retry, steam, () => throw new InvalidOperationException("template unavailable")); }
+            catch (InvalidOperationException) { creationFailed = true; }
+            Check(creationFailed && retry.GetBool(givenKey) != true
+                  && Items.FiringTabletStartingItems.WithTabletOnce(retry, steam, () => tablet).Count == 3
+                  && retry.GetBool(givenKey) == true,
+                "a failed tablet template can be retried independently of other saves");
+            var included = new SaveGameData();
+            Check(ReferenceEquals(tabletStartingKit, Items.FiringTabletStartingItems.WithTabletOnce(included, tabletStartingKit, () => throw new Exception("already included")))
+                  && included.GetBool(givenKey) == true,
+                "an existing tablet kit entry consumes the gift without a duplicate");
+            var manual = Spec(Items.FiringManual.PrefabName);
+            var bothSave = new SaveGameData();
+            var both = Items.FiringManualStartingItems.WithManualOnce(bothSave, steam, () => manual);
+            both = Items.FiringTabletStartingItems.WithTabletOnce(bothSave, both, () => tablet);
+            var reverseSave = new SaveGameData();
+            var reverse = Items.FiringTabletStartingItems.WithTabletOnce(reverseSave, steam, () => tablet);
+            reverse = Items.FiringManualStartingItems.WithManualOnce(reverseSave, reverse, () => manual);
+            Check(both.Count == 4 && reverse.Count == 4 && steam.Count == 2
+                  && bothSave.GetBool(givenKey) == true && reverseSave.GetBool(givenKey) == true
+                  && bothSave.GetBool(Items.FiringManualStartingItems.GivenKey) == true
+                  && reverseSave.GetBool(Items.FiringManualStartingItems.GivenKey) == true,
+                "manual and tablet gifts coexist in either postfix order with independent save keys");
+            var manualGiven = new SaveGameData();
+            manualGiven.SetBool(Items.FiringManualStartingItems.GivenKey, true);
+            Check(Items.FiringTabletStartingItems.WithTabletOnce(manualGiven, steam, () => tablet).Count == 3
+                  && manualGiven.GetBool(givenKey) == true,
+                "a save that already received its manual can still receive its first tablet");
+
             var target = AccessTools.DeclaredMethod(typeof(StartingItemsController), "GetStartingItemsPrefabs");
             var safeguard = AccessTools.DeclaredMethod(typeof(StartingItemsController), "StartingItemsSafeguard");
             Check(target?.ReturnType == typeof(List<StartingItems.StartingItem>) && safeguard != null,
@@ -3078,33 +3629,42 @@ namespace RealisticFiring.AdapterCheck
             var harmony = new Harmony("RealisticFiring.AdapterCheck.TabletStartingKit");
             try
             {
-                // Feed the extended kit to the real stock safeguard, without loading Unity resources.
+                // Feed the save-aware kit to the real stock safeguard, without loading Unity resources.
+                tabletStartingKit = steam;
+                tabletStartingSpec = tablet;
                 harmony.Patch(target, prefix: new HarmonyMethod(typeof(Program), nameof(TabletStartingKitPrefix)));
+                harmony.CreateClassProcessor(typeof(Items.FiringTabletStartingItems)).Patch();
                 var controller = System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(StartingItemsController));
                 StorageItemData Saved(string name, int slot = -1) => new StorageItemData(name,
                     UnityEngine.Vector3.zero, UnityEngine.Quaternion.identity, true, inventorySlotIndex: slot);
                 var inventory = new List<StorageItemData>();
                 var combined = new List<StorageItemData> { Saved("Radio", 0), Saved("shovel", 3), Saved("other", 12) };
-                safeguard.Invoke(controller, new object[] { inventory, combined, null, true });
+                var save = new SaveGameData();
+                safeguard.Invoke(controller, new object[] { inventory, combined, save, true });
                 Check(inventory.Count == 1 && inventory[0].itemPrefabName == Items.FiringTablet.PrefabName
-                      && inventory[0].inventorySlotIndex == 13 && inventory[0].belongsToPlayer,
+                      && inventory[0].inventorySlotIndex == 13 && inventory[0].belongsToPlayer && save.GetBool(givenKey) == true,
                     "the stock safeguard grants the tablet in the next free backpack slot without displacing existing gear");
                 var fullBackpack = Enumerable.Range(0, 36).Where(slot => slot < 4 || slot == 11 || slot >= 12)
                     .Select(slot => Saved("gear-" + slot, slot)).ToList();
                 fullBackpack.Single(i => i.inventorySlotIndex == 0).itemPrefabName = "Radio";
                 fullBackpack.Single(i => i.inventorySlotIndex == 35).itemPrefabName = "shovel";
                 var overflow = new List<StorageItemData>();
-                safeguard.Invoke(controller, new object[] { overflow, fullBackpack, null, true });
+                safeguard.Invoke(controller, new object[] { overflow, fullBackpack, new SaveGameData(), true });
                 Check(overflow.Count == 1 && overflow[0].itemPrefabName == Items.FiringTablet.PrefabName
                       && overflow[0].inventorySlotIndex == 4 && fullBackpack.Count == 29,
                     "an Engineer-style full backpack puts the tablet in a free hotbar slot without replacing any starting gear");
                 inventory.Clear();
+                save = SaveGameData.LoadFromString(save.GetJsonString());
+                safeguard.Invoke(controller, new object[] { inventory, combined, save, false });
+                Check(inventory.Count == 0 && combined.Count == 3,
+                    "the stock safeguard respects tablet disposal after the gift and stock save/reload");
                 combined.Add(Saved(Items.FiringTablet.PrefabName));
-                safeguard.Invoke(controller, new object[] { inventory, combined, null, false });
-                Check(inventory.Count == 0 && combined.Count == 4,
-                    "a tablet saved outside inventory, including a mounted gadget, prevents another starter tablet");
+                var existing = new SaveGameData();
+                safeguard.Invoke(controller, new object[] { inventory, combined, existing, false });
+                Check(inventory.Count == 0 && combined.Count == 4 && existing.GetBool(givenKey) == true,
+                    "a saved tablet in world, lost-and-found or mounted storage satisfies and marks the first gift");
                 combined.Add(Saved(Items.FiringTablet.PrefabName, 14));
-                safeguard.Invoke(controller, new object[] { inventory, combined, null, false });
+                safeguard.Invoke(controller, new object[] { inventory, combined, existing, false });
                 Check(inventory.Count == 0 && combined.Count == 5,
                     "the stock starting-kit safeguard preserves additional purchased tablets");
             }
@@ -3112,6 +3672,35 @@ namespace RealisticFiring.AdapterCheck
             {
                 harmony.UnpatchAll(harmony.Id);
                 tabletStartingKit = null;
+                tabletStartingSpec = null;
+            }
+            foreach (var reversed in new[] { false, true })
+            {
+                var bothPatches = new Harmony("RealisticFiring.AdapterCheck.BothEquipment." + reversed);
+                try
+                {
+                    tabletStartingKit = steam; tabletStartingSpec = tablet; manualStartingSpec = manual;
+                    // The prefix supplies synthetic metadata without Unity resources.
+                    // The real postfixes must still bind the stock data parameter
+                    // and run safely after that prefix skips the original method.
+                    bothPatches.Patch(target, prefix: new HarmonyMethod(typeof(Program), nameof(BothEquipmentStartingKitPrefix)));
+                    var patches = new[] { typeof(Items.FiringManualStartingItems), typeof(Items.FiringTabletStartingItems) };
+                    foreach (var patch in reversed ? patches.Reverse() : patches)
+                        bothPatches.CreateClassProcessor(patch).Patch();
+                    var controller = System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(StartingItemsController));
+                    var save = new SaveGameData();
+                    var offered = (List<StartingItems.StartingItem>)target.Invoke(controller, new object[] { save });
+                    var reloadedSave = SaveGameData.LoadFromString(save.GetJsonString());
+                    var later = (List<StartingItems.StartingItem>)target.Invoke(controller, new object[] { reloadedSave });
+                    Check(offered.Count == 4 && later.Count == steam.Count
+                          && save.GetBool(givenKey) == true && save.GetBool(Items.FiringManualStartingItems.GivenKey) == true,
+                        "both real starting-item postfixes bind and run after a skipping prefix, in patch order " + reversed);
+                }
+                finally
+                {
+                    bothPatches.UnpatchAll(bothPatches.Id);
+                    tabletStartingKit = null; tabletStartingSpec = manualStartingSpec = null;
+                }
             }
         }
 

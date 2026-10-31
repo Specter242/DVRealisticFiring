@@ -14,7 +14,7 @@ namespace RealisticFiringFX
             var at = Array.IndexOf(args, "-outputPath");
             var output = at >= 0 ? args[at + 1] : "Build/AssetBundles";
             AssetDatabase.Refresh();
-            var files = new string[17];
+            var files = new string[18];
             for (var i = 0; i < files.Length; i++)
             {
                 var path = "Assets/RealisticFiring/Manual/manual_p" + i.ToString("D2") + ".png";
@@ -45,7 +45,7 @@ namespace RealisticFiringFX
                 BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.StrictMode,
                 BuildTarget.StandaloneWindows64);
             if (manifest == null) throw new InvalidOperationException("Firing manual bundle build failed");
-            Debug.Log("FIRING MANUAL BUILD PASS: 17 mipmapped page textures");
+            Debug.Log("FIRING MANUAL BUILD PASS: 18 mipmapped page textures");
         }
     }
 }

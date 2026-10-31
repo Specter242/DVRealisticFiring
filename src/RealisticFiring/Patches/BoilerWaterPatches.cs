@@ -20,7 +20,10 @@ namespace RealisticFiring.Patches
             // Multiplayer may suppress the original call. Harmony still runs
             // postfixes, so a requested skip is not proof that time advanced.
             if (__state && __runOriginal)
+            {
                 BoilerWaterRig.CoolEmptyBoilers(amountOfTimeToSkipInSeconds);
+                EngineSteamPath.AdvanceClosedCircuits(amountOfTimeToSkipInSeconds);
+            }
         }
     }
 

@@ -54,7 +54,7 @@ public sealed class ManualAssetRunner : MonoBehaviour
         var args = Environment.GetCommandLineArgs();
         RealisticFiring.Main.Mod.Path = Path.GetDirectoryName(args[Array.IndexOf(args, "-fxBundle") + 1]);
         var pages = FiringManualAssets.Pages;
-        Require(pages != null && pages.Length == 17 && pages.All(p => p != null), "all seventeen selected manual pages load");
+        Require(pages != null && pages.Length == FiringManualContents.PageCount && pages.All(p => p != null), "all selected manual pages load, including the throttle lesson");
         var textures = pages.Cast<Texture2D>().ToArray();
         Require(textures.All(t => t.width == 1024 && t.height == 2048 && t.mipmapCount > 1 && !t.isReadable
                              && t.format == TextureFormat.BC7 && t.filterMode == FilterMode.Trilinear),

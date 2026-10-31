@@ -169,6 +169,9 @@ namespace RealisticFiring.Sim
         /// <summary>The level the glass shows, foam included.</summary>
         public float GlassLevel => boiler.waterLevelReadOut.Value;
 
+        /// <summary>The boiler readout used by the cab's calibrated gauge glass.</summary>
+        public string WaterLevelPortId => boiler.waterLevelReadOut.id;
+
         // The game's boiler shifts its glass by its length over its diameter,
         // halved, times the tangent of its tilt (Boiler.SimulateWaterLevel).
         private static readonly AccessTools.FieldRef<Boiler, float> AspectRatio =

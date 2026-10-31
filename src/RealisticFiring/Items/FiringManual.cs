@@ -79,7 +79,7 @@ namespace RealisticFiring.Items
                 item.AddComponent<FiringManualDescription>();
                 FiringManualControl.Install(item);
                 item.AddComponent<FiringManualLinks>();
-                Main.Mod?.Logger.Log("Firing manual built from the portrait VehicleCatalog, with 17 pages and linked contents");
+                Main.Mod?.Logger.Log($"Firing manual built from the portrait VehicleCatalog, with {FiringManualContents.PageCount} pages and linked contents");
                 return item;
             }
             catch (Exception error)

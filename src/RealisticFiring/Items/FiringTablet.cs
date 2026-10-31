@@ -81,6 +81,8 @@ namespace RealisticFiring.Items
             var inventory = item.GetComponent<InventoryItemSpec>();
             AccessTools.Field(typeof(InventoryItemSpec), "itemPrefabName").SetValue(inventory, PrefabName);
             inventory.NameOverride = DisplayName;
+            inventory.IsEssential = false;
+            inventory.ImmuneToDumpster = false;
             inventory.PreviewBounds = new Bounds(Vector3.zero, Size);
             inventory.PreviewPrefab = FiringTabletBody.Build(holder.transform).gameObject;
             inventory.PreviewPrefab.name = "Firing tablet preview";

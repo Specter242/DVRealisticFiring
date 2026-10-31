@@ -209,16 +209,16 @@ namespace RealisticFiring
         // Glass and boiler, the same on every engine: the glass as the cab's
         // shows it, and the boiler's gauge against its working pressure, its
         // good band 85 to 100 %.
-        private static void WaterGauges(Card card, InjectorRig rig)
+        private static void WaterGauges(Card card, InjectorRig rig, BoilerWaterRig water)
         {
-            var glass = Visuals.GaugeGlass.Read(rig);
+            var glass = rig != null ? Visuals.GaugeGlass.Read(rig)
+                : water != null ? Visuals.GaugeGlass.Read(water.Car, water.WaterLevelPortId, water.GlassLevel) : 0f;
             card.Gauges[2] = new Gauge { Key = "glass", Label = "GLASS", Value = glass, Band0 = 0.4f, Band1 = 0.75f, Text = P0(glass), Level = GlassLevel(glass) };
-            var gauge = rig != null ? rig.BoilerPressure - 1f : 0f;
-            var working = rig != null ? Mathf.Max(1f, rig.WorkingPressure - 1f) : 1f;
+            var gauge = (rig != null ? rig.BoilerPressure : water != null ? water.BoilerPressure : 1f) - 1f;
+            var working = Mathf.Max(1f, (rig != null ? rig.WorkingPressure : water != null ? water.SafetyValve : 2f) - 1f);
             var share = gauge / working;
             // Heating from cold, the water's temperature until it boils.
-            var water = default(BoilerWaterRig);
-            var heating = rig != null && BoilerWaterRig.TryGet(rig.Car, out water) && water.BelowBoilingNow;
+            var heating = water != null && water.BelowBoilingNow;
             card.Gauges[3] = new Gauge
             {
                 Key = "boiler", Label = "BOILER", Value = share / 1.1f, Band0 = 0.85f / 1.1f, Band1 = 1f / 1.1f,
@@ -241,9 +241,9 @@ namespace RealisticFiring
                 Level = !fire.FireOn || heat < 0.15f ? AdviceLevel.Watch : AdviceLevel.Ok,
             };
             c.Gauges[1] = Draft(fire.FireOn, fire.AirRatio, "choked", "thin", CoalSmoke(fire.SmokeDensity));
-            WaterGauges(c, rig);
-            var door = firebox.HasDoorPort ? firebox.DoorOpening : 0f;
             BoilerWaterRig.TryGet(car, out var waterRig);
+            WaterGauges(c, rig, waterRig);
+            var door = firebox.HasDoorPort ? firebox.DoorOpening : 0f;
             c.Advice = Bursting(waterRig) ?? FiringAdvice.ForCoal(fire, door, rig != null ? Visuals.GaugeGlass.Read(rig) : 1f, Injectors(rig),
                 waterRig != null && waterRig.DriftingHookedUp);
             if (c.Advice.Level == AdviceLevel.Ok && firebox.StokerTableLoaded)
@@ -295,9 +295,10 @@ namespace RealisticFiring
             var stack = fire.StackSmoke;
             // The oil's air against its best mix, so 100 % is right here too.
             c.Gauges[1] = Draft(fire.FireOn, fire.ExcessAir / OilFire.BestExcessAir, "rich", "lean", StackSmoke(fire.FireOn, stack, fire.Vapor));
-            WaterGauges(c, rig);
+            BoilerWaterRig.TryGet(car, out var waterRig);
+            WaterGauges(c, rig, waterRig);
             var reading = FireController.ReadOil(oil);
-            c.Advice = Bursting(BoilerWaterRig.TryGet(car, out var waterRig) ? waterRig : null) ?? FiringAdvice.ForOil(reading);
+            c.Advice = Bursting(waterRig) ?? FiringAdvice.ForOil(reading);
 
             switch (page)
             {

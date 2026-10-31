@@ -6,21 +6,35 @@ using HarmonyLib;
 
 namespace RealisticFiring.Items
 {
-    /// <summary>Adds the tablet to the resolved starting kit when it includes the steam shovel.</summary>
+    /// <summary>Offers a tablet once per save when the starting kit includes the steam shovel.</summary>
     [HarmonyPatch(typeof(StartingItemsController), "GetStartingItemsPrefabs")]
     internal static class FiringTabletStartingItems
     {
-        private static void Postfix(ref List<StartingItems.StartingItem> __result)
+        internal const string GivenKey = "RealisticFiring_FiringTabletGiven";
+
+        private static void Postfix(SaveGameData data, ref List<StartingItems.StartingItem> __result)
         {
             try
             {
-                __result = WithTablet(__result, () => FiringTablet.Template?.GetComponent<InventoryItemSpec>());
+                __result = WithTabletOnce(data, __result, () => FiringTablet.Template?.GetComponent<InventoryItemSpec>());
             }
             catch (Exception error)
             {
                 // A tablet failure must not interrupt the stock saved-item loader.
                 Main.Mod?.Logger.LogException("Could not add the firing tablet to the starting equipment", error);
             }
+        }
+
+        internal static List<StartingItems.StartingItem> WithTabletOnce(SaveGameData data,
+            List<StartingItems.StartingItem> items, Func<InventoryItemSpec> create)
+        {
+            if (data == null || items == null || data.GetBool(GivenKey) == true) return items;
+            var result = WithTablet(items, create);
+            // Saved world, inventory, lost-and-found and mounted copies all
+            // satisfy the stock safeguard. Subsequent disposal stays respected.
+            if (!ReferenceEquals(result, items) || items.Any(i => i.item?.ItemPrefabName == FiringTablet.PrefabName))
+                data.SetBool(GivenKey, true);
+            return result;
         }
 
         internal static List<StartingItems.StartingItem> WithTablet(List<StartingItems.StartingItem> items,

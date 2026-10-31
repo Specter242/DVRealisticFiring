@@ -99,7 +99,8 @@ namespace RealisticFiring.Sim
         public void Step(ReciprocatingSteamEngine engine, float delta)
         {
             var fire = fullHeat > 0f ? Mathf.Max(0f, heat.Value) / fullHeat : 0f;
-            var steam = fullHeat > 0f ? Mathf.Max(0f, engine.intakeFlowReadOut.Value) * EvaporationHeat / fullHeat : 0f;
+            var rate = EngineSteamPath.TryGet(engine, out var path) && path.Active ? path.HeaterRate : engine.intakeFlowReadOut.Value;
+            var steam = fullHeat > 0f ? Mathf.Max(0f, rate) * EvaporationHeat / fullHeat : 0f;
             var quality = engine.intakeQuality.IsConnected ? engine.intakeQuality.Value : 1f;
             Model.Step(fire, steam, quality, delta);
         }

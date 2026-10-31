@@ -265,6 +265,9 @@ and use the cab's blower (the 8F has no fitting).
 - **Drifting:** throttle shut, put the reverser down to full gear (or keep
   the throttle cracked). Hooked up, the engine sucks smokebox grit into its
   cylinders and wears.
+- **Allow for stored steam:** closing the throttle does not empty the pipes
+  and steam chest. Watch the chest pressure as the engine uses that steam;
+  see [Throttle characteristics](#throttle-characteristics).
 - **Don't run the tender dry:** nearly empty, a climb or a hard start runs
   the water off the outlet and the injectors lose it until it runs back.
 - **Feed pump and heater** (Hudson, 844, S484-840, 2901): start on the
@@ -297,6 +300,64 @@ and use the cab's blower (the 8F has no fitting).
   build it.
 - **Bailing off moved to [Realistic Brakes](https://www.nexusmods.com/derailvalley/mods/1798)
   in 1.16.2.** Install that optional mod to keep the bail-off feature.
+
+## Throttle characteristics
+
+**The handle controls fresh steam; the chest pressure tells you what is
+available to the cylinders.** Opening the throttle fills the spaces between
+it and the cylinders. If those spaces have lost pressure, the pull takes
+time to build. Closing the throttle stops the supply but does not vent the
+steam already beyond it. That steam can keep the engine pulling and beating
+as the wheels turn. Reopening before it is used up starts from the pressure
+still there.
+
+The throttle's position relative to the superheater changes which spaces
+hold that steam:
+
+- **Regulator before the superheater:** boiler → regulator → superheater
+  and pipes → steam chest → cylinders. Closing the regulator leaves the
+  steam in the superheater and pipes connected to the chest.
+- **Front-end throttle after the superheater:** boiler → superheater →
+  throttle → steam chest → cylinders. Closing it separates the superheater
+  from the cylinders, but the pipes and chest beyond the throttle still
+  contain steam.
+
+| Engines in this test build | Throttle arrangement |
+| --- | --- |
+| S282 (provisional), LMS 8F | Before the superheater |
+| NYC Hudson (provisional), 844, S484-840, 2901 | After the superheater |
+| S060, JK3 | Existing response; no added superheater steam-storage model |
+
+These test fits retain each maker's chest and throttle capacity and add a
+separate, provisionally sized superheater circuit. On the S282 and 8F,
+that circuit fills when the regulator opens and runs down with the chest
+after closing: allow for a gradual change in pull. A front-end throttle
+isolates the charged circuit from the cylinders, so it answers sooner
+under comparable conditions. These are tuning profiles, not measured
+prototype response times. The S282 and Hudson arrangements remain
+provisional.
+
+**Give a change time to take effect.** Open gradually and watch the chest
+pressure before adding more throttle. Close ahead of the point where you
+want the pull to end. How quickly the engine answers depends on the steam
+space, pressure, speed, and cut-off; the mod does not impose a fixed delay.
+A long cut-off at speed uses steam quickly and may pull the chest pressure
+down even with good boiler pressure. Notch up rather than assuming more
+throttle will always cure it.
+
+**Superheater warm-up is a separate effect.** The elements heat up with the
+fire and steam flow over minutes. Cold steam condenses more on the cylinder
+walls, so a cold engine uses more steam for its work. The tablet or F6's
+**Engine** page shows the steam-chest pressure and superheat. Pressure
+building after a throttle movement and temperature building as the engine
+warms are two different things.
+
+When drifting with the throttle shut, still put the reverser in full gear
+or keep the throttle cracked. Stored steam running out does not remove the
+wear from drifting hooked up.
+
+Turning off **Realistic cylinders** restores the game's throttle response
+and disables the mod's cylinder and superheater behavior.
 
 ## Booster (NYC Hudson)
 

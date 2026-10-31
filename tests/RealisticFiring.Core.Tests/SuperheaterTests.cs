@@ -33,6 +33,31 @@ public class SuperheaterTests
         Assert.Equal(110f, Settled(0.5f, 0.5f).Superheat, 1);
     }
 
+    [Theory]
+    [InlineData(10)]
+    [InlineData(60)]
+    [InlineData(144)]
+    public void PulsedSteamWithTheSameAverageFlowCoolsLikeSteadySteam(int hz)
+    {
+        var steady = Settled(1f, 1f);
+        var pulsed = Settled(1f, 1f);
+        var dt = 1f / hz;
+        for (var tick = 0; tick < 600 * hz; tick++)
+        {
+            steady.Step(1f, 1f, 1f, dt);
+            pulsed.Step(1f, tick % 4 == 0 ? 4f : 0f, 1f, dt);
+        }
+        Assert.InRange(pulsed.Elements - steady.Elements, -1f, 1f);
+    }
+
+    [Fact]
+    public void SteamFlowAboveTheRatedRateContinuesToCoolTheElements()
+    {
+        var heater = new Superheater(Spec());
+        Assert.True(heater.Steady(1f, 4f) < heater.Steady(1f, 2f));
+        Assert.True(heater.Steady(1f, 2f) < heater.Steady(1f, 1f));
+    }
+
     [Fact]
     public void SuperheatRisesWithTheRate()
     {

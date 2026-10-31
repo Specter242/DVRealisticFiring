@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.17.2 (2026-10-31)
+
+- Throttle response now follows each supported locomotive's steam circuit.
+- Added a firing manual page explaining throttle response and stored steam.
+- The firing manual and steam kit's tablet are given once per save. Discarded copies stay discarded.
+- Fixed the overlay showing no water or pressure with Realistic injectors off.
+
 ## 1.17.1 (2026-10-30)
 
 - Fixed the fire showing through the locomotive body in external views.
