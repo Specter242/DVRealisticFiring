@@ -140,7 +140,7 @@ namespace RealisticFiring.Core
             var p = fire.Parameters;
             var coal = fire.CoalMass;
             var least = MinFire * p.MaxCoalCapacity;
-            // At the safety valve, more coal only blows off, unless it is for work ahead.
+            // At the safety valve, only the minimum live bed needs rescuing.
             var lifting = r.Pressure >= r.SafetyValve - LiftMargin;
 
             // He learns what the fire really gives from the gauge (door air,
@@ -148,7 +148,7 @@ namespace RealisticFiring.Core
             var atMark = fire.FireOn && CoalTarget > 0f && Math.Abs(coal - CoalTarget) <= AtMark * CoalTarget;
             LearnFromGauge(dt, r, j, atMark, lifting, WaitingOnSmoke);
 
-            // Building for work ahead, a full boiler does not hold him back.
+            // Pressure still checks the fire while preparing for work ahead.
             var error = PressureTarget - r.Pressure;
             var rate = RateFor(p, PlannedSteam * SteamHeat * Trim);
             var auxiliary = Math.Max(0f, r.AuxiliarySteam);
@@ -182,10 +182,14 @@ namespace RealisticFiring.Core
             var boosted = boost > 1.01f;
             var corners = Stoking && !boosted;
             var deficit = corners ? ZoneShortfall(fire, CoalTarget) : CoalTarget - coal;
+            // Re-read the gauge between throws instead of finishing a round
+            // ordered before the pressure rose or the demand eased.
+            if (lifting && coal >= least || deficit < 0.5f * shovel)
+                roundLeft = 0;
             // Far behind with the engine working he hurries; with it not
             // working the draft could not take a hurried round.
             var far = !Stoking && j.Working && deficit > HeavyRound * shovel;
-            if (roundLeft == 0 && fire.FireOn && !outOfWater && !WaitingOnSmoke && (!lifting || j.Building || coal < least)
+            if (roundLeft == 0 && fire.FireOn && !outOfWater && !WaitingOnSmoke && (!lifting || coal < least)
                 && deficit >= (corners ? 1f : 0.5f) * shovel && r.TenderCoal >= shovel
                 && sinceRound >= (far ? HurriedRoundGap : RoundGap) / boost)
             {

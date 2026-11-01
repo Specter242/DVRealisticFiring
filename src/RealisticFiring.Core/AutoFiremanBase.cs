@@ -405,6 +405,16 @@ namespace RealisticFiring.Core
                 plan = Math.Max(plan, HeavyShare * most);
             if (startComing)
                 plan = Math.Max(plan, StartShare * most);
+            // A bank ahead can ask for more fire, but cannot create room in
+            // an already full boiler. Ease only the extra forecast demand;
+            // keep the steam the engine is using now. A rising needle uses
+            // up that room before the fire has time to answer.
+            var present = Math.Min(plan, heard);
+            var ceiling = Math.Min(r.SafetyValve - LiftMargin, r.BurstPressure > 0f
+                ? Math.Max(1f, r.BurstPressure - BurstMargin) : float.MaxValue);
+            var foreseen = r.Pressure + Math.Max(0f, PressureTrend) * GaugeLook;
+            var room = Clamp((ceiling - foreseen) / Math.Max(0.1f, ceiling - PressureTarget), 0f, 1f);
+            plan = present + (plan - present) * room;
             return plan;
         }
 

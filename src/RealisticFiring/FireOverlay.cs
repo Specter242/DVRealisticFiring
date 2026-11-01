@@ -68,6 +68,7 @@ namespace RealisticFiring
         /// <summary>F6: shows the card at its first page, steps the pages, then hides it.</summary>
         public static void Step(Settings settings)
         {
+            if (HudPolicy.Hidden) return;
             if (!settings.ShowOverlay)
             {
                 settings.ShowOverlay = true;
@@ -81,6 +82,7 @@ namespace RealisticFiring
 
         public void Draw(RealisticFirebox firebox, float time)
         {
+            if (HudPolicy.Hidden) return;
             shownCoal = firebox;
             Styles();
             if (Stale(firebox))
@@ -90,6 +92,7 @@ namespace RealisticFiring
 
         public void DrawOil(RealisticOilFirebox oil)
         {
+            if (HudPolicy.Hidden) return;
             shownCoal = null;
             Styles();
             if (Stale(oil))

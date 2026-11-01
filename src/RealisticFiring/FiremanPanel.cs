@@ -73,10 +73,11 @@ namespace RealisticFiring
 
         public void Toggle() => SetOpen(!Open);
 
-        public void SetOpen(bool open) => Open = open;
+        public void SetOpen(bool open) => Open = open && !HudPolicy.Hidden;
 
         public void Draw(FiremanRig rig)
         {
+            if (HudPolicy.Hidden) return;
             shown = rig;
             var mode = FiremanOrders.ModeOf(rig);
             if (!Open && !(Main.Settings.ShowFiremanStatus && mode != FiremanMode.Off))

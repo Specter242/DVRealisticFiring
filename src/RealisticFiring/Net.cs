@@ -44,6 +44,10 @@ namespace RealisticFiring
         /// <summary>Whether this game is a multiplayer client; set by the add-on.</summary>
         internal static Func<bool> ClientCheck;
 
+        /// <summary>A connected host or client, excluding Multiplayer's single-player mode.</summary>
+        internal static Func<bool> SessionCheck;
+        public static bool InSession => SessionCheck != null && SessionCheck();
+
         /// <summary>Sends a fire action to the host; set by the add-on.</summary>
         internal static Action<TrainCar, FireAction, int, int, float> Sender;
 

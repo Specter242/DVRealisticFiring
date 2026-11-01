@@ -8,9 +8,12 @@ namespace RealisticFiring.Diagnostics
     internal enum PerfSection
     {
         Firebox,
+        Fireman,
+        EngineTick,
         Stoker,
         Injector,
         ChimneyPlume,
+        PlumeCamera,
         CoalBed,
         FireboxVolume,
         FireboxLighting,
@@ -21,7 +24,7 @@ namespace RealisticFiring.Diagnostics
     }
 
     /// <summary>
-    /// Wall-clock time the mod's own code takes on the main thread, per
+    /// Wall-clock time of instrumented main-thread sections, per
     /// timed section, against the frame rate, for the status log. Timing
     /// costs well under a microsecond a call. Not in it: the plume volume's
     /// worker thread, the GPU's drawing, and any part not timed (the sum was
@@ -31,14 +34,18 @@ namespace RealisticFiring.Diagnostics
     {
         private static readonly int Sections = System.Enum.GetValues(typeof(PerfSection)).Length;
         private static readonly long[] Elapsed = new long[Sections];
+        private static readonly int[] Calls = new int[Sections];
         private static int frames;
         private static int physicsSteps;
         private static float since = -1f;
 
         public static long Start() => Stopwatch.GetTimestamp();
 
-        public static void Stop(PerfSection section, long start) =>
+        public static void Stop(PerfSection section, long start)
+        {
             Elapsed[(int)section] += Stopwatch.GetTimestamp() - start;
+            Calls[(int)section]++;
+        }
 
         /// <summary>Counts a rendered frame; call once per frame.</summary>
         public static void Frame()
@@ -59,11 +66,12 @@ namespace RealisticFiring.Diagnostics
             var perFrame = frames > 0 ? 1000.0 / Stopwatch.Frequency / frames : 0.0;
             var total = Elapsed.Sum() * perFrame;
             var parts = string.Join(", ", Enumerable.Range(0, Sections)
-                .Select(i => $"{(PerfSection)i} {Elapsed[i] * perFrame:F2}"));
+                .Select(i => $"{(PerfSection)i} {Elapsed[i] * perFrame:F2} ({(frames > 0 ? (float)Calls[i] / frames : 0f):F1} calls/frame)"));
             var steps = frames > 0 ? (float)physicsSteps / frames : 0f;
             var text = $"frame rate {(seconds > 0f ? frames / seconds : 0f):F0} fps over {seconds:F0} s, {steps:F1} physics steps a frame; " +
-                       $"the mod's timed parts {total:F2} ms a frame on the main thread ({parts}; not the worker or the GPU)";
+                       $"timed sections {total:F2} ms a frame on the main thread ({parts}; EngineTick includes the stock engine; not the worker or the GPU)";
             System.Array.Clear(Elapsed, 0, Elapsed.Length);
+            System.Array.Clear(Calls, 0, Calls.Length);
             frames = 0;
             physicsSteps = 0;
             since = now;

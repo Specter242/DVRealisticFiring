@@ -1,18 +1,11 @@
 # Realistic Firing for Derail Valley
 
+**1.17.3** (2026-11-01): the fireman backs off near the safety valve, an empty oil pan accepts the lighter, faint chimney smoke completes its fade, and hosts can hide RF's on-screen helpers. Verification is offline: model tests, adapter checks, builds and package checks. None of these fixes have been run in game, in VR or in a live multiplayer session. No FPS improvement is claimed.
+
 A Unity Mod Manager mod with zoned coal fires, mechanical stokers, oil burners,
 live-steam injectors, boiler water simulation, automatic firemen, and chimney
 effects. Supports stock steam locomotives and selected Custom Car Loader
 locomotives, with optional Multiplayer integration.
-
-Read Fire, Water, and Engine on F6 or on the firing tablet. Starting gear
-that includes the shovel includes a tablet; shops sell it beside the
-clinometer, and the mod settings can give you one. Use mouse mode to press
-its tabs while holding it on desktop, or fit it to a large gadget mount.
-F6 remains available separately. Firebox quality presets apply live and
-control the fire inside the box independently of chimney smoke quality.
-With Realistic Stack Effects installed, it draws the chimney smoke using
-the realistic fires; its own chimney smoke settings then apply.
 
 Requires Derail Valley and Unity Mod Manager. Install custom locomotives through
 Custom Car Loader separately. Game and third-party mod assemblies are not included.

@@ -5,6 +5,14 @@ using UnityEngine;
 
 namespace RealisticFiring.Multiplayer
 {
+    /// <summary>The host's live display rule, sent reliably on join and whenever it changes.</summary>
+    public sealed class HudPolicyPacket : ISerializablePacket
+    {
+        public bool Hidden;
+        public void Serialize(BinaryWriter writer) => writer.Write(Hidden);
+        public void Deserialize(BinaryReader reader) => Hidden = reader.ReadBoolean();
+    }
+
     /// <summary>A joining client's mod version and the settings that shape its locos.</summary>
     public sealed class HelloPacket : ISerializablePacket
     {

@@ -99,7 +99,7 @@ namespace RealisticFiring
                         ? "Boiler renewed with a new fusible plug: relight the fire"
                         : "No boiler on this loco to renew");
             }
-            if (settings.ToggleOverlayKey.Down())
+            if (!HudPolicy.Hidden && settings.ToggleOverlayKey.Down())
                 FireOverlay.Step(settings);
             if (settings.PlumeTestBedEnabled && settings.DevPlumeTestBedKey.Down())
                 PlumeTestBed.Toggle();
@@ -107,7 +107,7 @@ namespace RealisticFiring
                 Visuals.SeatingBench.Toggle();
 
             var withFireman = FiremanRig.TryGetTended(PlayerManager.Car, out _);
-            if (settings.FiremanKey.Down())
+            if (!HudPolicy.Hidden && settings.FiremanKey.Down())
             {
                 if (withFireman)
                     firemanPanel.Toggle();
@@ -413,6 +413,8 @@ namespace RealisticFiring
                 FlueSoot = fire.FlueSoot,
                 BlowerOn = Blower(oil.Car) > 0.05f,
                 AtomizerOpen = oil.AtomizerValve > 0.01f,
+                DoorOpening = oil.DoorOpening,
+                FiremanActive = oil.Fireman != null && oil.Fireman.Fireman.Mode != FiremanMode.Off,
                 StandNearby = oil.StandReaches,
                 GlassLevel = rig != null ? Visuals.GaugeGlass.Read(rig) : 1f,
                 Injectors = rig == null ? NoInjectors : rig.Circuits.Select(c => new InjectorReading(c.Flow.State, c.Feed.Value, c.SteamValve != null, c.TenderValveShut)).ToArray(),
@@ -568,6 +570,8 @@ namespace RealisticFiring
                 return;
             if (notice != null && Time.time - noticeTime <= NoticeTime)
                 DrawLabel(notice, NoticeOffset, new Color(1f, 0.85f, 0.5f));
+            if (HudPolicy.Hidden)
+                return;
             if (FiremanRig.TryGetTended(PlayerManager.Car, out var fireman))
                 firemanPanel.Draw(fireman);
             PlumeTestBed.Draw();

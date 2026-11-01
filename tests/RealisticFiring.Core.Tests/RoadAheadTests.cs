@@ -101,6 +101,22 @@ namespace RealisticFiring.Core.Tests;
     }
 
     [Fact]
+    public void ALightTrainCanTeachHimWithoutLearningFromCoastingOrNoise()
+    {
+        var reckoner = new RoadReckoner(2e6f);
+        // 35 kW on level track is below the old 200 kW cutoff.
+        const float mass = 180_000f, speed = 10f;
+        var truth = .15f / RoadReckoner.Pull(mass, speed, 0f);
+        for (var t = 0; t < 3600; t++) reckoner.Learn(1f, .15f, mass, speed, 0f, true);
+        Assert.InRange(reckoner.WorkPerWatt / truth, .99f, 1.01f);
+        var learned = reckoner.WorkPerWatt;
+        reckoner.Learn(120f, .15f, mass, speed, -.01f, true);
+        reckoner.Learn(120f, .15f, mass, .1f, 0f, true);
+        reckoner.Learn(120f, 0f, mass, speed, 0f, true);
+        Assert.Equal(learned, reckoner.WorkPerWatt);
+    }
+
+    [Fact]
     public void HeLearnsWhatTheEngineTakesForItsPull()
     {
         // He starts thinking full work pulls 2 MW; the engine really works

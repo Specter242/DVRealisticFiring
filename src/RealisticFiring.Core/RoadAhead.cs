@@ -185,9 +185,11 @@ namespace RealisticFiring.Core
         /// <summary>He learns the ratio over this long of steady running, in s.</summary>
         public const float LearnTime = 120f;
 
-        // He learns only from a pull of at least this share of what he
-        // reckons full work pulls, and work he hears of at least this.
-        private const float LeastLoadShare = 0.1f;
+        // A light train still teaches him. Below 20 kW, rolling resistance
+        // and gradient noise dominate; between there and 10 % of his first
+        // full-work estimate, learn more slowly rather than ignoring it.
+        private const float LeastPull = 20_000f;
+        private const float ConfidentLoadShare = 0.1f;
         private const float LeastWork = 0.1f;
 
         /// <param name="fullWorkPower">What he reckons the engine pulls at full work, in W, to start from.</param>
@@ -226,12 +228,13 @@ namespace RealisticFiring.Core
             if (!steady || !(dt > 0f) || float.IsNaN(grade) || heardWork < LeastWork)
                 return;
             var pull = Pull(mass, speed, grade);
-            if (pull < LeastLoadShare * FullWorkPower)
+            if (!(pull >= LeastPull))
                 return;
             var seen = heardWork / pull;
             // Within reason: a tenth to ten times where he started.
             seen = Math.Max(0.1f / FullWorkPower, Math.Min(10f / FullWorkPower, seen));
-            WorkPerWatt += (seen - WorkPerWatt) * Math.Min(1f, dt / LearnTime);
+            var confidence = Math.Min(1f, pull / (ConfidentLoadShare * FullWorkPower));
+            WorkPerWatt += (seen - WorkPerWatt) * Math.Min(1f, confidence * dt / LearnTime);
         }
     }
 }

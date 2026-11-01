@@ -214,10 +214,14 @@ and use the cab's blower (the 8F has no fitting).
   20 °C it won't run at all; above 80 °C it sputters and smokes. Run the
   heater strong to warm it, then turn it down.
 - **Light up in order:** blower on to clear the firebox, atomizer open a
-  little, then your lighter, lit, held at the open fire door (it stands for
+  little, then your lighter, lit, held at the open main fire door (it stands for
   lit waste and burns 25 seconds), and within that the firing valve opened a
   little. Never let oil run in with the fire out: lighting into vapor or
   pooled oil flares back.
+  On a dead, cold fire, set the fireman **Off** if he keeps the door shut;
+  turn him back on once lit. The lighter works with an empty pan. The peep
+  hole does not admit it. If the boiler still has steam, you can use that
+  instead of the shed's line.
 - **Match the atomizer to the oil.** Open it more as you fire harder and work
   harder. Through the peep hole: smoky orange and spitting means too
   little; steady yellow-white is right; a throbbing drum is too much.

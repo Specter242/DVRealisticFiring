@@ -133,6 +133,9 @@ namespace RealisticFiring
         [Draw("Show fire overlay")]
         public bool ShowOverlay;
 
+        [Draw("Multiplayer host: hide RF's on-screen displays and aiming helpers for everyone")]
+        public bool HostHidesHud;
+
         // The overlay's page: 0 the fire (or burner), 1 the water, 2 the engine.
         public int OverlayPage;
 

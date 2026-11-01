@@ -464,8 +464,8 @@ namespace RealisticFiring.Sim
             }
             var start = PerfMeter.Start();
             Step(delta);
-            Fireman?.Step(delta);
             PerfMeter.Stop(PerfSection.Firebox, start);
+            Fireman?.Step(delta);
         }
 
         /// <summary>The automatic fireman on this loco, once its cab is set up.</summary>

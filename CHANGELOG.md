@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.17.3 (2026-11-01)
+
+- The fireman eases preparation for a climb near the safety valve and stops unnecessary shovel rounds.
+- An empty oil pan accepts the lighter. Lighting instructions explain the main fire door and fireman controls.
+- Faint chimney smoke fades out instead of disappearing at the cutoff.
+- Multiplayer hosts can hide RF's screen displays and aiming helpers for everyone, while keeping the physical tablet available.
+
 ## 1.17.2 (2026-10-31)
 
 - Throttle response now follows each supported locomotive's steam circuit.

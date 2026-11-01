@@ -10,6 +10,16 @@ namespace RealisticFiring.Core.Tests;
     private const float Dt = 0.1f;
     private const float HalfOil = 1f;
 
+    [Theory]
+    [InlineData(false, 1f, false, true)]
+    [InlineData(false, 0f, false, false)]
+    [InlineData(false, 1f, true, false)]
+    [InlineData(true, 1f, false, false)]
+    public void AnEmptyPanAcceptsTheTorchOnlyThroughAnOpenDryDoor(bool lit, float door, bool underwater, bool allowed)
+    {
+        Assert.Equal(allowed, OilFire.CanOfferTorch(lit, door, underwater));
+    }
+
     private static float Valve(float oil) => oil / (OilFire.MaxFeedFactor * Box.MaxCombustionRate);
 
     // Air for an oil rate at an excess-air ratio.

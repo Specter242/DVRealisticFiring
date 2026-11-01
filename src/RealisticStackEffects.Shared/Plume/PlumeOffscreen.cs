@@ -211,7 +211,11 @@ namespace RealisticStackEffects
         internal static void SortForCamera(Camera camera)
         {
             if (Drawing && Fits(camera))
+            {
+                var start = StackHost.CameraTimed != null ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
                 PlaceOverlay(true, camera);
+                StackHost.CameraTimed?.Invoke(start);
+            }
         }
 
         private static void BeforeCull(Camera camera) => SortForCamera(camera);
@@ -242,7 +246,9 @@ namespace RealisticStackEffects
                 camera.AddCommandBuffer(After, buffers.After);
                 Attached.Add(camera, buffers);
             }
+            var start = StackHost.CameraTimed != null ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
             Fill(buffers, camera);
+            StackHost.CameraTimed?.Invoke(start);
         }
 
         private static void Fill(Buffers buffers, Camera camera)

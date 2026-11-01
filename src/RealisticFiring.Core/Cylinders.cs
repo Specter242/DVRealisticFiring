@@ -407,13 +407,7 @@ namespace RealisticFiring.Core
             };
         }
 
-        /// <summary>
-        /// The steam a stroke takes in the stock engine, kg: the cut-off's
-        /// share of the cylinder filled from the steam chest as the two share
-        /// its steam, with no clearance, cushion, or condensation
-        /// (`ReciprocatingSteamEngine.SimulateValveFlow`).
-        /// </summary>
-        public static float StockAdmission(float cutoff, float chestSteam, float chestVolume, float cylinderVolume)
+ public static float StockAdmission(float cutoff, float chestSteam, float chestVolume, float cylinderVolume)
         {
             var filled = Math.Max(0f, cylinderVolume * cutoff);
             return filled > 0f ? filled / (filled + Math.Max(0f, chestVolume)) * Math.Max(0f, chestSteam) : 0f;

@@ -114,6 +114,28 @@ namespace RealisticFiring.Core.Tests;
     private static OilReading Cold => new OilReading { BoilerPressure = 1f, OilTemperature = 20f, GlassLevel = 0.7f };
 
     [Fact]
+    public void LightingExplainsTheDoorAndFiremanWithoutDemandingShopSteamOnAHotBoiler()
+    {
+        var oil = Cold;
+        oil.BoilerPressure = 20f;
+        oil.OilTemperature = 60f;
+        oil.BlowerOn = oil.AtomizerOpen = true;
+        Assert.Equal(5, FiringAdvice.ForOil(oil).LightingStep);
+        Assert.Contains("open the main fire door", FiringAdvice.ForOil(oil).Text);
+        oil.FiremanActive = true;
+        Assert.Contains("fireman Off", FiringAdvice.ForOil(oil).Text);
+        oil.Torch = 20f;
+        Assert.StartsWith("Lit: crack", FiringAdvice.ForOil(oil).Text);
+        oil.Torch = 0f;
+        oil.BrickTemperature = OilFire.BrickRelights + 10f;
+        Assert.Contains("brick's hot", FiringAdvice.ForOil(oil).Text);
+        oil.BrickTemperature = OilFire.ColdBrick;
+        oil.FiremanActive = false;
+        oil.DoorOpening = 1f;
+        Assert.Contains("no oil needs to be pooled first", FiringAdvice.ForOil(oil).Text);
+    }
+
+    [Fact]
     public void LightingAnOilFireGoesStepByStep()
     {
         var oil = Cold;

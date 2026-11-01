@@ -15,6 +15,7 @@ namespace RealisticFiring
 
         public static void Draw(DoorAimSample aim)
         {
+            if (HudPolicy.Hidden) return;
             var camera = Camera.main;
             if (camera == null || aim.Car == null || aim.Box.size == Vector3.zero)
                 return;

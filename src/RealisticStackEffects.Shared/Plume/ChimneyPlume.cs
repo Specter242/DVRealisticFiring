@@ -643,6 +643,13 @@ namespace RealisticStackEffects
 
         private void SortAtStack(Camera camera)
         {
+            var start = StackHost.CameraTimed != null ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
+            try { SortAtStackCore(camera); }
+            finally { StackHost.CameraTimed?.Invoke(start); }
+        }
+
+        private void SortAtStackCore(Camera camera)
+        {
             if (camera == null || smoke == null || (camera.cullingMask & (1 << smoke.gameObject.layer)) == 0)
                 return;
             AlignSteam(Look.MatchSteamOrder > 0.5f);

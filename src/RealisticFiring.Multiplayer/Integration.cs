@@ -44,6 +44,7 @@ namespace RealisticFiring.Multiplayer
             CabControlsCompatibility.Install(mod.Info.Id + ".cab-controls", mod.Logger.Log, mod.Logger.Warning);
             api.SetModCompatibility(mod.Info.Id, MultiplayerCompatibility.All);
             Net.ClientCheck = IsClient;
+            Net.SessionCheck = InSession;
             Net.Sender = Send;
             Net.Broadcaster = Broadcast;
             StandSync.Start();
@@ -52,6 +53,7 @@ namespace RealisticFiring.Multiplayer
             MultiplayerAPI.ClientStopped += () =>
             {
                 helloDue = false;
+                HudPolicy.Reset();
                 Shed.ShedNet.Reset();
             };
             api.OnTick += OnTick;
@@ -68,6 +70,12 @@ namespace RealisticFiring.Multiplayer
             return api != null && api.IsConnected && !api.IsHost;
         }
 
+        private static bool InSession()
+        {
+            var api = MultiplayerAPI.Instance;
+            return api != null && api.IsConnected && !(api.IsHost && api.IsSinglePlayer);
+        }
+
         /// <summary>
         /// The settings that shape a loco's sim, controls, and fittings, as
         /// this session was built with them (a change waits for a restart),
@@ -80,6 +88,7 @@ namespace RealisticFiring.Multiplayer
             return string.Join(";", new[]
             {
                 $"mirror layout {ClientMirror.LayoutSignature}",
+                SessionHudPolicy.Protocol,
                 $"realistic fireboxes {session.RealisticFireboxes}",
                 $"realistic injectors {session.RealisticInjectors}",
                 $"injector steam valves {session.InjectorSteamValves}",
@@ -96,6 +105,8 @@ namespace RealisticFiring.Multiplayer
 
         private static void OnServerStarted(IServer server)
         {
+            lastHudPolicy = null;
+            HudPolicy.Reset();
             Items.FireIron.RegisterAsGameItem();
             Items.FiringTablet.RegisterAsGameItem();
             Items.FiringManual.RegisterAsGameItem();
@@ -110,12 +121,14 @@ namespace RealisticFiring.Multiplayer
 
         private static void OnClientStarted(IClient client)
         {
+            HudPolicy.Reset();
             Items.FireIron.RegisterAsGameItem();
             Items.FiringTablet.RegisterAsGameItem();
             Items.FiringManual.RegisterAsGameItem();
             client.RegisterSerializablePacket<NoticePacket>(notice => FireController.Announce(notice.Text));
             client.RegisterSerializablePacket<SnapshotPacket>(OnSnapshot);
             client.RegisterSerializablePacket<FireEventPacket>(OnFireEvent);
+            client.RegisterSerializablePacket<HudPolicyPacket>(packet => HudPolicy.Receive(packet.Hidden));
             StandSync.OnClientStarted(client);
             helloDue = true;
         }
@@ -124,9 +137,25 @@ namespace RealisticFiring.Multiplayer
 
         private static void OnTick(uint tick)
         {
+            SendHudPolicy();
             SendSnapshots(tick);
             SendHello();
             WarnAndDisconnect(tick);
+        }
+
+        private static bool? lastHudPolicy;
+
+        private static void SendHudPolicy()
+        {
+            var server = MultiplayerAPI.Server;
+            var api = MultiplayerAPI.Instance;
+            if (server == null || api == null || !api.IsHost || !InSession())
+                return;
+            var hidden = Main.Settings.HostHidesHud;
+            if (lastHudPolicy == hidden)
+                return;
+            lastHudPolicy = hidden;
+            server.SendSerializablePacketToAll(new HudPolicyPacket { Hidden = hidden }, reliable: true, excludeSelf: true);
         }
 
         // A player who joined with another version or other settings: told why
@@ -230,6 +259,7 @@ namespace RealisticFiring.Multiplayer
             {
                 mod.Logger.Log($"{sender.DisplayName} joined with Realistic Firing {hello.Version}, settings matching");
                 StandSync.SendStands(sender);
+                MultiplayerAPI.Server?.SendSerializablePacketToPlayer(new HudPolicyPacket { Hidden = Main.Settings.HostHidesHud }, sender);
                 return;
             }
             var reason = hello.Version != version

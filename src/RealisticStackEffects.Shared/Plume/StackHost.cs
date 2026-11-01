@@ -58,6 +58,9 @@ namespace RealisticStackEffects
         /// <summary>Counts a plume's frame, from its <c>Stopwatch.GetTimestamp()</c> at the start, into the host's meter; null for none.</summary>
         public static Action<long> PlumeTimed;
 
+        /// <summary>Camera sorting and command-buffer preparation, separately from the plume update.</summary>
+        public static Action<long> CameraTimed;
+
         /// <summary>The scale of the developer tools' windows.</summary>
         public static Func<float> GuiScale = () => 1f;
     }

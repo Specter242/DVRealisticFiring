@@ -115,8 +115,11 @@ namespace RealisticFiring
                 "Place shovelfuls where you point in the open fire door.");
             s.Aim = Choice("Aiming method", s.Aim, Aim,
                 "Keypad: the door in thirds; the top throws to the front. Grate: the coal you look at, where visible.");
+            var aimEnabled = GUI.enabled;
+            GUI.enabled = aimEnabled && !HudPolicy.Hidden;
             s.ShowAimLabel = Toggle("Aimed zone label", s.ShowAimLabel, "Name the targeted grate zone under the crosshair.");
             s.ShowAimKeypad = Toggle("Aiming keypad", s.ShowAimKeypad, "Draw the grid while aiming with the keypad.");
+            GUI.enabled = aimEnabled;
             s.GrateLeverSensitivity = Slider("Grate lever sensitivity", s.GrateLeverSensitivity, 0.1f, 1f, 2, "×",
                 "Lower for finer rocking. A short rock wiggles the grate; a half stroke shakes it.");
             End();
@@ -189,8 +192,17 @@ namespace RealisticFiring
             End();
 
             Begin("ON-SCREEN DISPLAYS", "The firing tablet works independently of the optional overlay.");
+            var displayEnabled = GUI.enabled;
+            GUI.enabled = displayEnabled && !HudPolicy.Hidden;
             s.ShowOverlay = Toggle("Fire overlay", s.ShowOverlay, "Show the Fire, Water, and Engine pages on screen.");
             s.ShowFiremanStatus = Toggle("Fireman status", s.ShowFiremanStatus, "Show what the fireman is doing at the top of the screen.");
+            GUI.enabled = displayEnabled;
+            if (HudPolicy.Hidden)
+                GUILayout.Label("This host requires cab instruments. RF's on-screen displays and aiming helpers are hidden; your own preferences are kept.", help);
+            GUI.enabled = displayEnabled && !Net.IsClient;
+            s.HostHidesHud = Toggle("Host: require cab instruments", s.HostHidesHud,
+                "In multiplayer, hide RF's overlay, fireman's orders and status, and aiming helpers for everyone. Changes apply live. The physical tablet, manual, and safety alarms remain available.");
+            GUI.enabled = displayEnabled;
             End();
 
             Begin("EQUIPMENT", "Place an item in front of you in a loaded game.");

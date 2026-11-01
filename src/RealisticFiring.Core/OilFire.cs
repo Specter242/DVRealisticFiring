@@ -369,6 +369,14 @@ namespace RealisticFiring.Core
         }
 
         /// <summary>Throws in lit waste to light the oil.</summary>
+        /// <summary>
+        /// A lighter can put lit waste into an empty oil pan. Unlike a coal
+        /// grate, the pan need not contain fuel first. This only admits the
+        /// torch; Light still checks the fuel, atomizing steam and flareback.
+        /// </summary>
+        public static bool CanOfferTorch(bool ignited, float doorOpening, bool underwater) =>
+            !ignited && doorOpening > 0f && !underwater;
+
         public void Ignite() => Torch = TorchTime;
 
         /// <summary>Puts the fire out, as the stock extinguish request does.</summary>

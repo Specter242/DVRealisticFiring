@@ -78,6 +78,8 @@ namespace RealisticFiring.Core
         public float FlueSoot;
         public bool BlowerOn;
         public bool AtomizerOpen;
+        public float DoorOpening;
+        public bool FiremanActive;
         /// <summary>Whether a shed stand's blower line reaches the engine: the shed's steam comes only by plugging one in.</summary>
         public bool StandNearby;
         public float GlassLevel;
@@ -230,15 +232,27 @@ namespace RealisticFiring.Core
             };
             var titles = new[]
             {
-                ("Shed's steam on", "a roundhouse or engine shed stand's blower line in the smokebox's fitting, its valve open"),
+                ("Steam available", "the boiler's own steam, or a shed stand's blower line plugged in with its valve open"),
                 ("Oil warm", $"OIL HEATER open; runs from {OilFire.WarmOil:F0} °C (now {oil.OilTemperature:F0} °C)"),
                 ("Box clear", $"under {OilFire.SafeToLight:F2} kg of vapor and pooled oil (now {oil.Vapor + oil.PooledOil:F2}); the blower clears vapor, pooled oil drains from the pan"),
                 ("Blower on, atomizer cracked", "air through the box, steam at the burner"),
-                ("Light it", $"lighter in the open door, crack the firing valve within {OilFire.TorchTime:F0} s"),
+                ("Light it", LightingHow(oil)),
             };
             var current = Array.IndexOf(done, false);
             return titles.Select((t, i) => new LightingStep(t.Item1, t.Item2, done[i] && i < current, i == current)).ToList();
         }
+
+        private static string LightingHow(OilReading oil)
+        {
+            if (FiremanBlocksLighting(oil))
+                return "set the fireman Off while lighting; he keeps the main fire door shut. Turn him back on once lit";
+            if (!(oil.DoorOpening > 0f) && oil.Torch <= 0f && oil.BrickTemperature <= OilFire.BrickRelights)
+                return "open the main fire door for the lighter, then crack the firing valve; the peep hole does not admit the lighter";
+            return $"lighter in the open main door, then crack the firing valve within {OilFire.TorchTime:F0} s; no oil needs to be pooled first";
+        }
+
+        private static bool FiremanBlocksLighting(OilReading oil) =>
+            oil.FiremanActive && oil.Torch <= 0f && oil.BrickTemperature <= OilFire.BrickRelights;
 
         private static Advice Lighting(OilReading oil)
         {
@@ -260,11 +274,13 @@ namespace RealisticFiring.Core
                 case 4:
                     return new Advice(AdviceLevel.Watch, $"{of}: blower on and the atomizer cracked.", step);
                 default:
+                    if (FiremanBlocksLighting(oil))
+                        return new Advice(AdviceLevel.Act, $"{of}: {LightingHow(oil)}.", step);
                     if (oil.Torch > 0f)
                         return new Advice(AdviceLevel.Act, $"Lit: crack the firing valve now, atomizer on ({oil.Torch:F0} s).", step);
                     return new Advice(AdviceLevel.Watch, oil.BrickTemperature > OilFire.BrickRelights
                         ? $"{of}, the brick's hot: crack the firing valve and she relights."
-                        : $"{of}: your lighter in the open door, then crack the firing valve within {OilFire.TorchTime:F0} s.", step);
+                        : $"{of}: {LightingHow(oil)}.", step);
             }
         }
 

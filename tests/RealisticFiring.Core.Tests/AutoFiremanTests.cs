@@ -89,6 +89,7 @@ namespace RealisticFiring.Core.Tests;
             engine.Run(300f);
             engine.SteamAhead = ahead ? Climb : null;
             engine.Run(90f);
+            output.WriteLine($"approach ({ahead}): {engine.Pressure:F2} bar, {engine.Fire.CoalMass:F1} kg, firing for {engine.Fireman.PlannedSteam:F2} kg/s");
             engine.EngineSteam = Climb;
             var low = float.MaxValue;
             engine.Run(300f, e => low = Math.Min(low, e.Pressure));
@@ -98,7 +99,11 @@ namespace RealisticFiring.Core.Tests;
         var following = LowestOnTheClimb(ahead: false);
         var firingAhead = LowestOnTheClimb(ahead: true);
         output.WriteLine($"lowest on the climb: following {following:F2} bar, firing ahead {firingAhead:F2} bar");
-        Assert.True(firingAhead > following + 0.3f);
+        // Anticipation now gives up extra fuel as the gauge approaches the
+        // safety valve. It still helps on the bank, with a smaller reserve
+        // than the old rule that allowed building right through the limit.
+        Assert.True(firingAhead > following + 0.05f);
+        Assert.True(firingAhead >= AutoFireman.PressureFor(FiremanMode.Road, 15f) - 1.3f);
     }
 
     [Fact]

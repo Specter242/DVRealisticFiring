@@ -210,6 +210,7 @@ namespace RealisticFiring.AdapterCheck
             CheckFiremanOrders();
             CheckFiringTabletStartingItems();
             CheckNewDefaults();
+            CheckOilIgnitionBinding();
             CheckFireboxQualitySettings();
             CheckShedStandReload();
             CheckRetiredBrakeSetting();
@@ -234,6 +235,98 @@ namespace RealisticFiring.AdapterCheck
         {
             for (var t = 0f; t < seconds; t += 0.02f)
                 component.Tick(0.02f);
+        }
+
+        // The session's display rule, without Unity's native drawing or live networking.
+        private static void CheckHudPolicy()
+        {
+            var settings = RealisticFiring.Main.Settings;
+            var client = Net.ClientCheck;
+            var session = Net.SessionCheck;
+            try
+            {
+                var local = new Settings { ShowOverlay = true, OverlayPage = 1, ShowFiremanStatus = true,
+                    ShowAimLabel = true, ShowAimKeypad = true };
+                RealisticFiring.Main.Settings = local;
+                Net.SessionCheck = () => true;
+                Net.ClientCheck = () => true;
+                HudPolicy.Reset();
+                HudPolicy.Receive(true);
+                FireOverlay.Step(local);
+                var panel = new FiremanPanel();
+                panel.SetOpen(true);
+                // Restricted drawing must return before touching Unity or a
+                // model, including the full F7 panel and the aiming grid.
+                new FireOverlay().Draw(null, 0f);
+                new FireOverlay().DrawOil(null);
+                panel.Draw(null);
+                AimKeypad.Draw(default);
+                Check(HudPolicy.Hidden && !panel.Open && local.ShowOverlay && local.OverlayPage == 1
+                    && local.ShowFiremanStatus && local.ShowAimLabel && local.ShowAimKeypad,
+                    "the host hides RF displays and input without overwriting local preferences");
+                HudPolicy.Receive(false);
+                panel.SetOpen(true);
+                Check(!HudPolicy.Hidden && panel.Open, "live policy changes restore local displays and controls");
+                HudPolicy.Receive(true);
+                Net.SessionCheck = () => false;
+                Check(!HudPolicy.Hidden, "leaving multiplayer restores local display choices");
+                Net.SessionCheck = () => true;
+                HudPolicy.Reset();
+                Check(HudPolicy.Hidden, "a rejoining client waits for the new host's policy");
+                Net.ClientCheck = () => false;
+                local.HostHidesHud = true;
+                Check(HudPolicy.Hidden, "the host's display restriction applies to the host too");
+                local.HostHidesHud = false;
+                Check(!HudPolicy.Hidden, "the host can lift the restriction live");
+                var shape = Multiplayer.Integration.Shape();
+                local.HostHidesHud = true;
+                Check(shape.Contains(SessionHudPolicy.Protocol) && Multiplayer.Integration.Shape() == shape,
+                    "HUD support is required at join, while the host's live choice is not a local-settings mismatch");
+                foreach (var hide in new[] { false, true })
+                {
+                    using (var stream = new MemoryStream())
+                    {
+                        using (var writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, true))
+                            new Multiplayer.HudPolicyPacket { Hidden = hide }.Serialize(writer);
+                        stream.Position = 0;
+                        var packet = new Multiplayer.HudPolicyPacket();
+                        using (var reader = new BinaryReader(stream, System.Text.Encoding.UTF8, true)) packet.Deserialize(reader);
+                        Check(packet.Hidden == hide && stream.Position == stream.Length, "the HUD policy packet round-trips " + hide);
+                    }
+                }
+            }
+            finally
+            {
+                RealisticFiring.Main.Settings = settings;
+                Net.ClientCheck = client;
+                Net.SessionCheck = session;
+                HudPolicy.Reset();
+            }
+        }
+
+        private static void CheckOilIgnitionBinding()
+        {
+            // Patching Fire here runs its Shader.PropertyToID static
+            // initializer, which requires native Unity. Check the real
+            // getter/field and postfix signature without running it.
+            var getter = AccessTools.PropertyGetter(typeof(Fire), nameof(Fire.IgnitionAllowed));
+            var controller = AccessTools.Field(typeof(Fire), "fireboxController");
+            var postfix = AccessTools.Method(typeof(Patches.OilIgnitionPatch), "Postfix");
+            var parameters = postfix.GetParameters();
+            Check(getter?.ReturnType == typeof(bool) && controller?.FieldType == typeof(DV.Simulation.Cars.FireboxSimController)
+                && parameters.Length == 3 && parameters[0].ParameterType == typeof(Fire)
+                && parameters[1].ParameterType == typeof(bool).MakeByRefType()
+                && parameters[2].Name == "___fireboxController" && parameters[2].ParameterType == controller.FieldType,
+                "the oil lighter's stock getter, controller field and postfix signature match (native binding not run)");
+            const string id = "RealisticFiring.AdapterCheck.OilIgnition";
+            var harmony = new Harmony(id);
+            try
+            {
+                harmony.CreateClassProcessor(typeof(Patches.EngineTimingPatch)).Patch();
+                Check(Harmony.GetPatchInfo(AccessTools.Method(typeof(ReciprocatingSteamEngine), nameof(ReciprocatingSteamEngine.Tick)))
+                    ?.Owners.Contains(id) == true, "the engine timing prefix and postfix bind with per-call state");
+            }
+            finally { harmony.UnpatchAll(id); }
         }
 
         private static void CheckStandSync(Assembly multiplayer)
@@ -344,6 +437,7 @@ namespace RealisticFiring.AdapterCheck
             try
             {
                 var assembly = Assembly.LoadFrom(path);
+                CheckHudPolicy();
                 var type = assembly.GetType("Multiplayer.Components.Networking.Train.NetworkedTrainCar", throwOnError: true);
                 var targets = Multiplayer.CabControlsCompatibility.PatchTargets(type);
                 var helpers = targets.SelectMany(method => Multiplayer.CabControlsCompatibility.Transpile(
@@ -3121,6 +3215,10 @@ namespace RealisticFiring.AdapterCheck
                     {
                         var original = info.methodType == HarmonyLib.MethodType.Constructor
                             ? (MethodBase)HarmonyLib.AccessTools.DeclaredConstructor(info.declaringType, info.argumentTypes)
+                            : info.methodType == HarmonyLib.MethodType.Getter
+                            ? HarmonyLib.AccessTools.PropertyGetter(info.declaringType, info.methodName)
+                            : info.methodType == HarmonyLib.MethodType.Setter
+                            ? HarmonyLib.AccessTools.PropertySetter(info.declaringType, info.methodName)
                             : HarmonyLib.AccessTools.DeclaredMethod(info.declaringType, info.methodName, info.argumentTypes);
                         if (original == null)
                             bad.Add($"{type.Name}: no target for {info.methodName ?? "(unnamed)"}");
@@ -3213,30 +3311,6 @@ namespace RealisticFiring.AdapterCheck
             Check(retained, "all firebox and chimney quality combinations survive settings saves independently of the visual-off switch");
         }
 
-        private static void CheckRetiredBrakeSetting()
-        {
-            var serializer = new System.Xml.Serialization.XmlSerializer(typeof(Settings));
-            foreach (var oldValue in new[] { "true", "false" })
-            {
-                using (var reader = new StringReader("<Settings><ClickToBailOff>" + oldValue + "</ClickToBailOff>"
-                    + "<FireboxQuality>Low</FireboxQuality><ShovelfulMass>4.5</ShovelfulMass><ShowOverlay>true</ShowOverlay></Settings>"))
-                {
-                    var restored = (Settings)serializer.Deserialize(reader);
-                    using (var writer = new StringWriter())
-                    {
-                        serializer.Serialize(writer, restored);
-                        Check(restored.FireboxQuality == FireboxQuality.Low && restored.ShovelfulMass == 4.5f && restored.ShowOverlay
-                              && !writer.ToString().Contains("ClickToBailOff"),
-                            $"legacy brake setting ({oldValue}) is ignored on load and omitted on save; other preferences survive");
-                    }
-                }
-            }
-        }
-
-        // Both cores build the shared SmokeQuality, which this check sees twice:
-        // an enum's values by the type of a value at hand.
-        private static IEnumerable<T> EveryValue<T>(T _) where T : Enum => Enum.GetValues(typeof(T)).Cast<T>();
-
         private static void CheckFiremanOrders()
         {
             var oldClient = Net.ClientCheck;
@@ -3301,6 +3375,30 @@ namespace RealisticFiring.AdapterCheck
                   && spec.colliderGameObjects.Length == 1 && !spec.createRigidbody && !spec.useJoints,
                 "runtime tablet tabs initialize VR hand poses before control Awake and do not add a second rigidbody");
         }
+
+        private static void CheckRetiredBrakeSetting()
+        {
+            var serializer = new System.Xml.Serialization.XmlSerializer(typeof(Settings));
+            foreach (var oldValue in new[] { "true", "false" })
+            {
+                using (var reader = new StringReader("<Settings><ClickToBailOff>" + oldValue + "</ClickToBailOff>"
+                    + "<FireboxQuality>Low</FireboxQuality><ShovelfulMass>4.5</ShovelfulMass><ShowOverlay>true</ShowOverlay></Settings>"))
+                {
+                    var restored = (Settings)serializer.Deserialize(reader);
+                    using (var writer = new StringWriter())
+                    {
+                        serializer.Serialize(writer, restored);
+                        Check(restored.FireboxQuality == FireboxQuality.Low && restored.ShovelfulMass == 4.5f && restored.ShowOverlay
+                              && !writer.ToString().Contains("ClickToBailOff"),
+                            $"legacy brake setting ({oldValue}) is ignored on load and omitted on save; other preferences survive");
+                    }
+                }
+            }
+        }
+
+        // Both cores build the shared SmokeQuality, which this check sees twice:
+        // an enum's values by the type of a value at hand.
+        private static IEnumerable<T> EveryValue<T>(T _) where T : Enum => Enum.GetValues(typeof(T)).Cast<T>();
 
         private static void CheckFireIronLoading()
         {

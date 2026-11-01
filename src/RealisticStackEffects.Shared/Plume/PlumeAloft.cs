@@ -45,8 +45,7 @@ namespace RealisticStackEffects
             // What it turns as its white steam evaporates.
             public Color SmokeColor;
             public float Size;
-            // When it began fading out, retired as the plume widened; below 0 not yet.
-            public float RetiredAt;
+            public PlumeRetirement Retirement;
             // The white its steam makes in the air it left into (null: the frame's).
             public SteamCloud Cloud;
             // Emitted from the stack by the mod: shown at once, no fade in.
@@ -446,7 +445,6 @@ namespace RealisticStackEffects
                 Color = color,
                 SmokeColor = smokeColor,
                 Size = size,
-                RetiredAt = -1f,
                 Cloud = cloud,
                 FromStack = true,
                 Rate = emissionRate,
@@ -501,7 +499,6 @@ namespace RealisticStackEffects
                     Color = particle.startColor,
                     SmokeColor = particle.startColor,
                     Size = particle.startSize,
-                    RetiredAt = -1f,
                     Rate = emissionRate,
                 };
                 parcels.Expect(particle.randomSeed, parcel);
@@ -556,7 +553,6 @@ namespace RealisticStackEffects
                 // Spread on from where it was, so a train that slows leaves it as spread.
                 parcel.Spread = PlumeRise.SpreadOn(parcel.Spread, age - parcel.SpreadAge, air.Speed, air.Spread);
                 parcel.SpreadAge = age;
-                parcels.Keep(particle.randomSeed, parcel);
                 var spread = parcel.Spread;
                 var smokeHere = PlumeRise.OpacityOf(parcel.Thickness.SmokeDepth, height, spread);
                 var widening = PlumeRise.WidthPerHeight * rise + PlumeRise.SpreadRate(air.Speed, air.Spread);
@@ -604,16 +600,13 @@ namespace RealisticStackEffects
                 // out as well (Air.Faint), unless its white is still forming.
                 var formedAll = parcel.Thickness.SteamDepth < 1e-3f || cloud == null
                                 || cloud.PastThickest(age, air.Speed, air.Mixing, air.Forming);
-                if (parcel.RetiredAt < 0f && (Hash(particle.randomSeed) > PlumeRise.Survival(height, spread)
-                                              || age > FadeIn && plumeShown < air.Faint && formedAll))
-                {
-                    parcel.RetiredAt = Time.time;
-                    parcels.Keep(particle.randomSeed, parcel);
-                }
-                if (parcel.RetiredAt >= 0f)
-                    leaving = 1f - (Time.time - parcel.RetiredAt) / FadeOut;
-                // Too thin to see goes, unless its white is still forming.
-                if (age > FadeIn && plumeShown < PlumeRise.Invisible && formedAll || leaving <= 0f)
+                leaving = parcel.Retirement.Fade(Time.time,
+                    PlumeRetirement.ShouldRetire(age, FadeIn, plumeShown, air.Faint, formedAll,
+                        Hash(particle.randomSeed) <= PlumeRise.Survival(height, spread)), FadeOut);
+                parcels.Keep(particle.randomSeed, parcel);
+                // Faintness begins retirement; only the completed fade removes
+                // the parcel. Physical opacity is not the shader's visible alpha.
+                if (leaving <= 0f)
                 {
                     particle.remainingLifetime = 0f;
                     if (onTurn)

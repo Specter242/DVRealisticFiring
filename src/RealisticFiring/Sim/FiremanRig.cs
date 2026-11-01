@@ -7,6 +7,7 @@ using LocoSim.Definitions;
 using LocoSim.Implementations;
 using LocoSim.Resources;
 using RealisticFiring.Core;
+using RealisticFiring.Diagnostics;
 using RealisticFiring.Visuals;
 using UnityEngine;
 
@@ -299,6 +300,13 @@ namespace RealisticFiring.Sim
 
         /// <summary>Runs on the host's sim tick, after the fire's.</summary>
         public void Step(float dt)
+        {
+            var start = PerfMeter.Start();
+            try { StepCore(dt); }
+            finally { PerfMeter.Stop(PerfSection.Fireman, start); }
+        }
+
+        private void StepCore(float dt)
         {
             clock += dt;
             lastTick = dt;
