@@ -127,6 +127,10 @@ namespace RealisticFiring.Core
         // lever at once, by what he has learned each share of work takes,
         // learned over steady running with this time constant, in s.
         private const float WorkHearTime = 3f;
+        // A short opening is heard immediately, but does not justify a new
+        // reserve of coal and water. Automatic road plans rise over this long;
+        // unloading, pressure checks and explicit engineer's calls do not wait.
+        private const float ReserveRiseTime = 12f;
         private const float WorkStep = 0.05f;
         private const float LearnTime = 120f;
         private const float SteadyTrend = 0.0002f;
@@ -222,6 +226,7 @@ namespace RealisticFiring.Core
         private float fillSteam;
         // The steam he plans for the work and the water, without the auxiliaries'.
         private float plannedForWork;
+        private float roadPlan, reserveAhead;
         private bool soaking;
         private float brokenRest;
         private bool blowingDown;
@@ -238,7 +243,16 @@ namespace RealisticFiring.Core
         /// <summary>Which way the gauge's needle moves, in bar/s.</summary>
         protected float PressureTrend { get; private set; }
 
-        public FiremanMode Mode { get; set; }
+        private FiremanMode mode;
+        public FiremanMode Mode
+        {
+            get => mode;
+            set
+            {
+                if (mode != value) roadPlan = reserveAhead = 0f;
+                mode = value;
+            }
+        }
 
         /// <summary>The engineer's call; it lapses by itself (see <see cref="CallTime"/>).</summary>
         public FiremanCall Call
@@ -321,6 +335,7 @@ namespace RealisticFiring.Core
             var most = MostSteam(p);
             var full = r.FullWorkSteam > 0f ? r.FullWorkSteam : most;
             Hear(dt, r);
+            reserveAhead = SlowRise(reserveAhead, Math.Max(0f, r.WorkAhead), dt);
             var working = HeardWork > WorkingShare;
             averageWork += (HeardWork - averageWork) * Math.Min(1f, dt / ShuntingAverageTime);
             var startComing = r.Standing && r.Cutoff > StartCutoff && !r.Braking;
@@ -335,15 +350,16 @@ namespace RealisticFiring.Core
             // counting that made him build, so carry the glass high, so store
             // and fire for it, on level road until the safety valve lifted
             // (S282 in game, 2026-10-10: the fire short of air at 23 % work).
-            var forWork = Plan(r, most, full, startComing);
+            var forWork = Plan(dt, r, most, full, startComing);
             // With no work to fire for, he fires for the steam the auxiliaries
             // take, as he hears them or set them: standing he fired by the gauge
             // alone, so the air pump and the blower held a JK3 a bar and a half
             // short of his pressure (Mourningstar96, Nexus, 2026-10-23: stuck at
             // 11.7 bar). Not on top of the work: the blower he opens to build
             // for a start counted again built the fire a quarter heavier.
-            plannedForWork = forWork + fillSteam;
-            PlannedSteam = Math.Max(forWork, Math.Max(0f, r.AuxiliarySteam)) + fillSteam;
+            var reserveHeat = fillSteam * PressureRoom(r);
+            plannedForWork = forWork + reserveHeat;
+            PlannedSteam = Math.Max(forWork, Math.Max(0f, r.AuxiliarySteam)) + reserveHeat;
             return new Judgement
             {
                 Most = most,
@@ -392,10 +408,16 @@ namespace RealisticFiring.Core
 
         // The steam he fires for: the work he hears, as he knows his engine's
         // steam at full work, and what he expects of the road and the engineer.
-        private float Plan(FiremanReadings r, float most, float full, bool startComing)
+        private static float SlowRise(float previous, float wanted, float dt) =>
+            wanted <= previous ? wanted : previous + (wanted - previous) * (1f - (float)Math.Exp(-dt / ReserveRiseTime));
+
+        private float Plan(float dt, FiremanReadings r, float most, float full, bool startComing)
         {
             if (Mode == FiremanMode.KeepAlive || call == FiremanCall.EasingOff || StopComing)
+            {
+                roadPlan = 0f;
                 return 0f;
+            }
             var heard = HeardWork * full;
             var soon = Math.Max(0f, r.WorkSoon) * full;
             var plan = Mode == FiremanMode.Road
@@ -405,17 +427,29 @@ namespace RealisticFiring.Core
                 plan = Math.Max(plan, HeavyShare * most);
             if (startComing)
                 plan = Math.Max(plan, StartShare * most);
+            var immediate = plan;
+            roadPlan = Mode == FiremanMode.Road && r.RoadKnown && call != FiremanCall.HeavyAhead && !startComing
+                ? SlowRise(roadPlan, plan, dt) : plan;
+            // A falling boiler needs its present steam replaced, regardless
+            // of the slower decision to bank extra fuel for the road.
+            if (r.Pressure < PressureTarget - .3f)
+                roadPlan = Math.Max(roadPlan, Math.Min(plan, heard));
+            plan = roadPlan;
             // A bank ahead can ask for more fire, but cannot create room in
             // an already full boiler. Ease only the extra forecast demand;
             // keep the steam the engine is using now. A rising needle uses
             // up that room before the fire has time to answer.
             var present = Math.Min(plan, heard);
+            var room = PressureRoom(r);
+            return room <= 0f ? Math.Min(immediate, heard) : present + (plan - present) * room;
+        }
+
+        private float PressureRoom(FiremanReadings r)
+        {
             var ceiling = Math.Min(r.SafetyValve - LiftMargin, r.BurstPressure > 0f
                 ? Math.Max(1f, r.BurstPressure - BurstMargin) : float.MaxValue);
             var foreseen = r.Pressure + Math.Max(0f, PressureTrend) * GaugeLook;
-            var room = Clamp((ceiling - foreseen) / Math.Max(0.1f, ceiling - PressureTarget), 0f, 1f);
-            plan = present + (plan - present) * room;
-            return plan;
+            return Clamp((ceiling - foreseen) / Math.Max(0.1f, ceiling - PressureTarget), 0f, 1f);
         }
 
         /// <summary>
@@ -448,7 +482,7 @@ namespace RealisticFiring.Core
             seenGlass += (level - seenGlass) * Math.Min(1f, dt / GlassReadTime);
             glassTrend += ((seenGlass - before) / dt - glassTrend) * Math.Min(1f, dt / TrendTime);
 
-            var hardAhead = call == FiremanCall.HeavyAhead || j.Building || r.WorkAhead > SacrificeFromWork && Mode == FiremanMode.Road;
+            var hardAhead = call == FiremanCall.HeavyAhead || j.Building || reserveAhead > SacrificeFromWork && Mode == FiremanMode.Road;
             var goal = hardAhead ? GlassBeforeWork : GlassGoal;
             var struggling = r.Pressure < PressureTarget - SagDeficit;
             var short_ = PressureTarget - r.Pressure - SacrificeFrom;
@@ -638,8 +672,6 @@ namespace RealisticFiring.Core
             // The trend that brings the glass to his goal over a couple of
             // minutes, filling no faster than the fire can heat the water.
             var wantTrend = (goal - seenGlass) / ApproachTime;
-            // And the heat that water takes, for no more than the feed can deliver.
-            fillSteam = storing ? Math.Min(Math.Max(0f, wantTrend) * glassMass, full) * FeedWarming / SteamHeat : 0f;
             if (wantTrend > 0f && seenGlass > GlassLeast)
                 wantTrend *= Clamp(1f - (PressureTarget - r.Pressure) / FillShortfall, 0f, 1f);
             if (float.IsNaN(lever))
@@ -661,6 +693,13 @@ namespace RealisticFiring.Core
                 lever += GlanceShare * (wantTrend - glassTrend) * glassMass / full;
             }
             lever = Clamp(lever, least, 1f);
+
+            // Charge only the optional water he still intends to store, and
+            // no more than his chosen feed can supply beyond replacing steam.
+            // This is his estimate from the valve and learned feed setting,
+            // not an omniscient reading of the pump's actual delivery.
+            var spareFeed = Math.Max(0f, full * (lever - perWork * HeardWork));
+            fillSteam = storing ? Math.Min(Math.Max(0f, wantTrend) * glassMass, spareFeed) * FeedWarming / SteamHeat : 0f;
 
             // Steady water at steady work: that is what the work takes.
             if (Math.Abs(glassTrend) < SteadyTrend && HeardWork > LearnFromWork && lever > least && lever < 1f)

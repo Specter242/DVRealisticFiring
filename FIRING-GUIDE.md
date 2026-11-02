@@ -148,7 +148,9 @@ and use the cab's blower (the 8F has no fitting).
   clinker forward, open the drop grate for a few seconds, shut it, spread
   the fire, and fire a few shovels.
 - **Empty the ashpan at half full** (the overlay shows it). A full pan chokes
-  the fire. From outside, a bright glow under the engine means clean grates.
+  the fire. Use a service, locomotive parking, shed, or roundhouse track;
+  dumping it elsewhere adds an environmental fee. Check the handle's hover
+  before opening it. From outside, a bright glow under the engine means clean grates.
 
 ## Stoker (S282 if fitted, NYC Hudson, 844, S484-840)
 

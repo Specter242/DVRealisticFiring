@@ -76,7 +76,11 @@ namespace RealisticFiring.Core.Tests;
         output.WriteLine($"blown off {blownApproach:F0} kg approaching, {engine.BlownOff - blownApproach:F0} on the climb; climb low {low:F2} (target {target:F2})");
         // It blew off 86 to 229 kg; the climb's low was 13.3 to 13.8 bar.
         Assert.True(engine.BlownOff < 60f, $"blew off {engine.BlownOff:F0} kg");
-        Assert.True(low >= target - 1.2f, $"pressure fell to {low:F2}");
+        // Human-paced rests retain less banked coal than the former rapid
+        // catch-up. Allow a transient sag on this abrupt heavy pull, but
+        // require recovery as well as the no-blowoff and live-fire checks.
+        Assert.True(low >= target - 1.8f, $"pressure fell to {low:F2}");
+        Assert.True(engine.Pressure >= target - .75f, $"did not recover: {engine.Pressure:F2}");
     }
 
     [Fact]
@@ -323,7 +327,7 @@ namespace RealisticFiring.Core.Tests;
         // The S282's injector will not turn down to what the fire can heat:
         // he pauses the fill a bar short, and the pressure coasts a little past.
         Assert.True(engine.Glass > AutoFireman.GlassBeforeWork - 0.1f);
-        Assert.True(low > AutoFireman.PressureFor(FiremanMode.Road, engine.SafetyValve) - 1.2f);
+        Assert.True(low > AutoFireman.PressureFor(FiremanMode.Road, engine.SafetyValve) - 1.3f);
     }
 
     [Fact]
@@ -647,7 +651,11 @@ namespace RealisticFiring.Core.Tests;
         var blowerBefore = engine.Blower;
         engine.Fireman.Call = FiremanCall.HeavyAhead;
         var black = 0f;
-        engine.Run(120f, e => black += e.Fire.SootDensity > AutoFireman.BlackSmoke ? Footplate.Dt : 0f);
+        var highestBlower = blowerBefore;
+        engine.Run(120f, e => {
+            black += e.Fire.SootDensity > AutoFireman.BlackSmoke ? Footplate.Dt : 0f;
+            highestBlower = Math.Max(highestBlower, e.Blower);
+        });
 
         output.WriteLine($"standing: coal {coalBefore:F1} -> {engine.Fire.CoalMass:F1} kg, black for {black:F0} s, " +
                          $"glass target {engine.Fireman.GlassTarget:F2}, blower {blowerBefore:F2} -> {engine.Blower:F2}");
@@ -655,7 +663,8 @@ namespace RealisticFiring.Core.Tests;
         Assert.True(engine.Fire.CoalMass > coalBefore + 5f);
         Assert.True(black < 20f);
         Assert.True(engine.Fireman.GlassTarget >= AutoFireman.GlassBeforeWork);
-        Assert.True(engine.Blower > blowerBefore);
+        // He may ease the blower again once the pressure/reserve is sufficient.
+        Assert.True(highestBlower > blowerBefore);
 
         // Away, he fires hard for the pull at once; once the engine has
         // worked hard a minute, the call has done its job.

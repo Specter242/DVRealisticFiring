@@ -212,6 +212,8 @@ namespace RealisticFiring.AdapterCheck
             CheckNewDefaults();
             CheckOilIgnitionBinding();
             CheckFireboxQualitySettings();
+            CheckInjectorModelPrototype();
+            CheckAshpanDisposal();
             CheckShedStandReload();
             CheckRetiredBrakeSetting();
             Check(AccessTools.Field(typeof(DV.Interaction.AGrabHandler), Visuals.FiringValvePassThrough.PassThroughField)?.FieldType
@@ -235,6 +237,92 @@ namespace RealisticFiring.AdapterCheck
         {
             for (var t = 0f; t < seconds; t += 0.02f)
                 component.Tick(0.02f);
+        }
+
+        private static void CheckAshpanDisposal()
+        {
+            var fire = Create(new FireboxDefinition { ID = Id }, new SimGameParams(false, false, false, 1f, 1f));
+            fire.SetSaveStateData(new JObject { ["rfAshpan"] = 50f, ["coalEnvDmg"] = 12f });
+            var hopper = new Port("rfAshpan", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"), 1f);
+            fire.AttachAshpanPort(hopper);
+            fire.Tick(.1f);
+            var dumped = 50f - fire.Model.Ashpan;
+            Check(dumped > 0f && Math.Abs(P(fire, "COAL_ENV_DAMAGE_METER").Value - (12f + dumped)) < .0001f,
+                "ash dumped outside a service track adds its actual mass to the stock environmental fee meter");
+
+            RealisticFirebox Pan()
+            {
+                var pan = Create(new FireboxDefinition { ID = Id }, new SimGameParams(false, false, false, 1f, 1f));
+                pan.SetSaveStateData(new JObject { ["rfAshpan"] = 50f, ["coalEnvDmg"] = 12f });
+                return pan;
+            }
+            var safe = Pan();
+            safe.EmptyAshpan(1f, .1f, atServiceTrack: true);
+            Check(safe.Model.Ashpan == fire.Model.Ashpan && P(safe, "COAL_ENV_DAMAGE_METER").Value == 12f,
+                "a service track empties the same ash without adding a disposal fee or clearing existing debt");
+            safe.EmptyAshpan(0f, 10f, atServiceTrack: false);
+            Check(P(safe, "COAL_ENV_DAMAGE_METER").Value == 12f,
+                "a closed hopper adds no disposal fee");
+            var beforeLeaving = safe.Model.Ashpan;
+            safe.EmptyAshpan(1f, 100f, atServiceTrack: false);
+            var allPaid = P(safe, "COAL_ENV_DAMAGE_METER").Value;
+            safe.EmptyAshpan(1f, 100f, atServiceTrack: false);
+            Check(safe.Model.Ashpan == 0f && Math.Abs(allPaid - (12f + beforeLeaving)) < .0001f
+                && P(safe, "COAL_ENV_DAMAGE_METER").Value == allPaid,
+                "leaving a service track charges only the remaining ash, and an empty pan cannot be charged again");
+
+            var restored = Pan();
+            restored.SetSaveStateData(fire.GetSaveStateData());
+            Check(restored.Model.Ashpan == fire.Model.Ashpan
+                && P(restored, "COAL_ENV_DAMAGE_METER").Value == P(fire, "COAL_ENV_DAMAGE_METER").Value,
+                "undumped ash and disposal debt round-trip through the existing rfAshpan and coalEnvDmg save keys");
+            var damager = (DV.Simulation.Controllers.EnvironmentDamager)System.Runtime.Serialization.FormatterServices
+                .GetUninitializedObject(typeof(DV.Simulation.Controllers.EnvironmentDamager));
+            AccessTools.Field(damager.GetType(), "damagerPort").SetValue(damager, P(restored, "COAL_ENV_DAMAGE_METER"));
+            Check(damager.Damage == P(fire, "COAL_ENV_DAMAGE_METER").Value,
+                "the stock environmental debt reader sees the ash disposal fee");
+            damager.ResetDamage();
+            var beforeReset = restored.Model.Ashpan;
+            restored.EmptyAshpan(1f, .1f, atServiceTrack: false);
+            Check(Math.Abs(damager.Damage - (beforeReset - restored.Model.Ashpan)) < .0001f,
+                "paying the stock debt clears old disposal charges and subsequent ash starts a new charge");
+
+            var clientCheck = Net.ClientCheck;
+            try
+            {
+                Net.ClientCheck = () => true;
+                var client = Pan();
+                client.EmptyAshpan(1f, .1f, atServiceTrack: false);
+                Check(client.Model.Ashpan == 50f && P(client, "COAL_ENV_DAMAGE_METER").Value == 12f,
+                    "a multiplayer client cannot drain ash or duplicate the host's environmental fee");
+            }
+            finally { Net.ClientCheck = clientCheck; }
+
+            DV.Logic.Job.TrackID Track(string id)
+            {
+                var parts = id.Split('-');
+                return new DV.Logic.Job.TrackID(parts[0], parts[1], parts[2], parts[3]);
+            }
+            var service = new[] { "SM-A-02-P", "CW-A-02-D", "OR-A-04-S", "OWN-A-02-D", "GF-A-01-D", "FF-A-04-D",
+                "HB-T1-01-S", "MF-T1-01-S", "CS-M-01-S", "OWC-T1-01-S", "IMW-T1-01-S", "SM-T1-01-S", "SW-T1-01-S" };
+            Check(service.All(id => Shed.ShedStands.IsAshDisposalTrack(Track(id))),
+                "parking/service tracks and every configured shop and roundhouse accept ash, even before hoses spawn");
+            var outside = new[] { "SM-A-01-M", "OR-A-03-S", "HB-A-01-L", "MF-A-01-I", "CS-A-01-O", "CS-A-01-SP", "CS-A-01-LP", "HB-T2-01-S" };
+            Check(outside.All(id => !Shed.ShedStands.IsAshDisposalTrack(Track(id)))
+                && !Shed.ShedStands.IsAshDisposalTrack(null)
+                && !Shed.ShedStands.IsAshDisposalTrack(Track("#Y-#S-01-P")),
+                "main lines, adjacent sidings, passenger tracks, unknown tracks and other turntable leads are not disposal sites");
+            var logic = (DV.Logic.Job.Car)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(DV.Logic.Job.Car));
+            var rear = AccessTools.PropertySetter(logic.GetType(), "RearBogieTrack");
+            var front = AccessTools.PropertySetter(logic.GetType(), "FrontBogieTrack");
+            front.Invoke(logic, new object[] { new DV.Logic.Job.Track(50, Track("SM-A-02-P")) });
+            rear.Invoke(logic, new object[] { new DV.Logic.Job.Track(50, Track("SM-A-01-M")) });
+            var panOutside = !Shed.ShedStands.CanDisposeAsh(logic);
+            rear.Invoke(logic, new object[] { new DV.Logic.Job.Track(50, Track("SM-A-02-P")) });
+            var panInside = Shed.ShedStands.CanDisposeAsh(logic);
+            rear.Invoke(logic, new object[] { null });
+            Check(panOutside && panInside && !Shed.ShedStands.CanDisposeAsh(logic),
+                "the pan's rear track controls the exemption, including crossings into a shed and missing track data");
         }
 
         // The session's display rule, without Unity's native drawing or live networking.
@@ -3268,6 +3356,93 @@ namespace RealisticFiring.AdapterCheck
                 sites.Remove("adapter live");
                 AccessTools.Field(typeof(UnityEngine.Object), "m_CachedPtr").SetValue(live, IntPtr.Zero);
             }
+        }
+
+        private static void CheckInjectorModelPrototype()
+        {
+            var shippedPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                "../../../../../fx/models/S282Injector.json"));
+            var shipped = Newtonsoft.Json.JsonConvert.DeserializeObject<Visuals.S282InjectorData>(File.ReadAllText(shippedPath));
+            shipped.Validate();
+            Check(shipped.Credit == "Injector model: Lilla" && shipped.Meshes.Length == 9
+                && shipped.Meshes.Sum(p => p.Triangles.Length / 3) == 5378,
+                "the shipped injector contains Lilla's nine fitted parts, working linkage, and narrow stock masks");
+            var model = new Visuals.S282InjectorData
+            {
+                Version = 3, Prototype = true, Credit = "Injector model: Lilla", SourceSha256 = new string('a', 64),
+                WaterPivot = new float[3], SteamPivot = new float[3], WaterAxis = new[] { 0f, 0f, -1f },
+                SteamAxis = new[] { 1f, 0f, 0f }, WaterTravel = 300f, SteamTravel = 35f,
+                StemPin = new float[3], StemGuide = new[] { 0f, 0f, 1f },
+                CarrierPivot = new[] { 0f, 0f, 1f }, StemAxis = new[] { 0f, 0f, 1f },
+                Meshes = Enumerable.Range(0, 9).Select(i => new Visuals.S282InjectorData.Piece {
+                    Name = "part " + i, Role = i == 0 ? "water" : i == 1 ? "steam" : i == 2 ? "stem" : i == 3 ? "carrier" : "body",
+                    Material = "LocoS282A_Interior", Pivot = new float[3],
+                    Vertices = new[] { new[] { 0f, 0f, 0f }, new[] { 1f, 0f, 0f }, new[] { 0f, 1f, 0f } },
+                    Normals = Enumerable.Range(0, 3).Select(_ => new[] { 0f, 0f, 1f }).ToArray(),
+                    Uv = Enumerable.Range(0, 3).Select(_ => new float[2]).ToArray(),
+                    Uv2 = Enumerable.Range(0, 3).Select(_ => new float[2]).ToArray(), Triangles = new[] { 0, 1, 2 }
+                }).ToArray(),
+                Masks = new[] { new Visuals.S282InjectorData.Mask { Path = "Static/Cab", MeshName = "cab",
+                    GeometryHash = new string('b', 64), VertexCount = 300, TriangleCounts = new[] { 100 },
+                    RemovedTriangles = new[] { new[] { 1, 2 } } } }
+            };
+            model.Validate();
+            Check(true, "the separate S282 injector prototype accepts bounded parts and narrow stock-fitting masks");
+            void Reject(Action change, Action restore, string label)
+            {
+                var rejected = false;
+                change();
+                try { model.Validate(); } catch (InvalidDataException) { rejected = true; }
+                finally { restore(); }
+                Check(rejected, label);
+            }
+            Reject(() => model.Meshes[0].Triangles[0] = -1, () => model.Meshes[0].Triangles[0] = 0,
+                "injector prototype rejects invalid triangle indices");
+            Reject(() => model.WaterAxis[0] = float.NaN, () => model.WaterAxis[0] = 0f,
+                "injector prototype rejects non-finite control axes");
+            Reject(() => model.Masks[0].RemovedTriangles[0] = Enumerable.Range(0, 100).ToArray(),
+                () => model.Masks[0].RemovedTriangles[0] = new[] { 1, 2 }, "injector prototype cannot remove the whole cab");
+            Reject(() => model.Meshes[0].Material = "arbitrary material", () => model.Meshes[0].Material = "LocoS282A_Interior",
+                "injector prototype uses only the intended stock materials");
+            var wheel = (DV.CabControls.Spec.Rotary)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(DV.CabControls.Spec.Rotary));
+            var lever = (DV.CabControls.Spec.Lever)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(DV.CabControls.Spec.Lever));
+            Visuals.S282InjectorCab.Configure(wheel, model); Visuals.S282InjectorCab.Configure(lever, model);
+            Check(Visuals.S282InjectorCab.WaterSourcePath == "Left/Valves/Blower/C_Blower"
+                && wheel.jointAxis.x == model.WaterAxis[0] && wheel.jointAxis.y == model.WaterAxis[1]
+                && wheel.jointAxis.z == model.WaterAxis[2],
+                "injector water control clones the stock blower and aligns only its shaft axis");
+            var blower = (DV.CabControls.Spec.Rotary)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(DV.CabControls.Spec.Rotary));
+            blower.rigidbodyMass = 3f; blower.rigidbodyAngularDrag = 2f; blower.invertDirection = true;
+            blower.useSteppedJoint = true; blower.notches = 37; blower.useLimits = true; blower.jointLimitMin = -120f; blower.jointLimitMax = 120f;
+            blower.jointStartingPos = -90f; blower.scrollWheelHoverScroll = -2f; blower.scrollWheelUseSpringRotation = false;
+            blower.jointSpring = 5f; blower.jointDamper = .3f; blower.useSpring = false;
+            var nativeFields = typeof(DV.CabControls.Spec.Rotary).GetFields(BindingFlags.Public | BindingFlags.Instance)
+                .Where(f => f.Name != "jointAxis").ToDictionary(f => f, f => f.GetValue(blower));
+            Visuals.S282InjectorCab.Configure(blower, model);
+            Check(nativeFields.All(p => Equals(p.Value, p.Key.GetValue(blower))),
+                "injector model preserves every blower rotary setting except its geometry axis");
+            Check(Visuals.S282InjectorCab.WaterClosedAngle(blower) == 120f,
+                "water model closed pose respects the blower's inherited inverted range");
+            blower.invertDirection = false;
+            Check(Visuals.S282InjectorCab.WaterClosedAngle(blower) == -120f,
+                "water model closed pose respects a noninverted blower range");
+            blower.jointLimitMin = -180f;
+            Check(Visuals.S282InjectorCab.WaterClosedAngle(blower) == -177f,
+                "water model closed pose uses the same native hinge-angle clamp as the blower");
+            Check(lever.notches == 3 && !lever.useSteppedJoint && !lever.steppedValueUpdate && lever.jointLimitMin == 0f
+                && lever.jointLimitMax == 35f && lever.scrollWheelHoverScroll == 1f,
+                "new injector steam lever allows continuous hand movement with three mouse-wheel preset targets");
+            Check(NotchScroll.NextValue(0f, 3, 1) == .5f && NotchScroll.NextValue(.5f, 3, 1) == 1f
+                && NotchScroll.NextValue(1f, 3, -1) == .5f && NotchScroll.NextValue(.5f, 3, -1) == 0f,
+                "injector steam scroll advances Off/Prime/Feed one position at a time in either direction");
+            Check(NotchScroll.NextPreset(.63f, 3, -1) == .5f && NotchScroll.NextPreset(.37f, 3, 1) == .5f
+                && NotchScroll.NextPreset(.5f, 3, 1) == 1f && NotchScroll.NextPreset(.5f, 3, -1) == 0f,
+                "steam-wheel presets approach the next target in the requested direction from an arbitrary hand-set position");
+            Check(typeof(TrainCar).GetEvent("InteriorAboutToBeUnloaded")?.EventHandlerType == typeof(Action<UnityEngine.GameObject>),
+                "injector cleanup can mark cab destruction before stock destroys its objects");
+            Check(AccessTools.Field(typeof(DV.CabControls.LeverBase), "initialLocalRotation")?.FieldType == typeof(UnityEngine.Quaternion)
+                && AccessTools.Field(typeof(DV.CabControls.RotaryBase), "initialLocalRotation")?.FieldType == typeof(UnityEngine.Quaternion),
+                "native lever and rotary rest rotations support eased notch animation");
         }
 
         private static void CheckFireboxQualitySettings()

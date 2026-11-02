@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.17.4 (2026-11-02)
+
+- Added Lilla's S282 injector model with a working water wheel and steam lever.
+- Emptying the ashpan outside service, shed, or roundhouse tracks adds an environmental fee.
+- The fireman stops the stoker for smoke or high pressure, builds reserves more gradually, and takes longer rests between shovel rounds.
+- Fireman displays and the hand-pump notice now show the same pressure as the cab gauges.
+
 ## 1.17.3 (2026-11-01)
 
 - The fireman eases preparation for a climb near the safety valve and stops unnecessary shovel rounds.

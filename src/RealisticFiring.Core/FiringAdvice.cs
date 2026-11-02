@@ -163,7 +163,7 @@ namespace RealisticFiring.Core
             if (clean)
                 return new Advice(AdviceLevel.Watch, "Clinker's building: clean the fire.");
             if (pan)
-                return new Advice(AdviceLevel.Watch, "Ashpan's half full: empty it.");
+                return new Advice(AdviceLevel.Watch, "Ashpan's half full: empty it on a service or shed track.");
             return new Advice(AdviceLevel.Ok, "Steady fire. Keep firing light and often.");
         }
 

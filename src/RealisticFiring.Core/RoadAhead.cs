@@ -191,6 +191,8 @@ namespace RealisticFiring.Core
         private const float LeastPull = 20_000f;
         private const float ConfidentLoadShare = 0.1f;
         private const float LeastWork = 0.1f;
+        private const float QualifyTime = 30f;
+        private float steadyFor, steadyWork, steadySpeed, steadyPull;
 
         /// <param name="fullWorkPower">What he reckons the engine pulls at full work, in W, to start from.</param>
         public RoadReckoner(float fullWorkPower)
@@ -225,10 +227,30 @@ namespace RealisticFiring.Core
         /// <summary>Learns from steady running on <paramref name="grade"/>.</summary>
         public void Learn(float dt, float heardWork, float mass, float speed, float grade, bool steady)
         {
-            if (!steady || !(dt > 0f) || float.IsNaN(grade) || heardWork < LeastWork)
+            if (!steady || !(dt > 0f) || float.IsNaN(grade) || !(heardWork >= LeastWork))
+            {
+                steadyFor = 0f;
                 return;
+            }
             var pull = Pull(mass, speed, grade);
             if (!(pull >= LeastPull))
+            {
+                steadyFor = 0f;
+                return;
+            }
+            // Adjacent two-second scans can look steady throughout a slow
+            // acceleration or throttle change. Qualify against one operating
+            // point for a full half minute before changing the learned ratio.
+            if (steadyFor <= 0f || Math.Abs(heardWork - steadyWork) > .05f
+                || Math.Abs(Math.Abs(speed) - steadySpeed) > .3f || Math.Abs(pull - steadyPull) > .1f * steadyPull)
+            {
+                steadyFor = 0f;
+                steadyWork = heardWork;
+                steadySpeed = Math.Abs(speed);
+                steadyPull = pull;
+            }
+            steadyFor += dt;
+            if (steadyFor < QualifyTime)
                 return;
             var seen = heardWork / pull;
             // Within reason: a tenth to ten times where he started.

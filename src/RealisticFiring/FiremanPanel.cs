@@ -123,6 +123,10 @@ namespace RealisticFiring
 
         private static string P0(float v) => $"{Mathf.RoundToInt(v * 100f)}%";
 
+        // His pressures read as the cab gauge and the overlay do, above the
+        // atmosphere; the sim's are absolute.
+        private static float Gauge(float bar) => Mathf.Max(0f, bar - 1f);
+
         private static Card Read(FiremanRig rig, FiremanMode mode)
         {
             var c = new Card { Loco = rig.Car.ID };
@@ -142,7 +146,7 @@ namespace RealisticFiring
                 c.Notes.Add(new Note { Level = AdviceLevel.Watch, Text = $"{FiremanRig.Rivals} is running too: two firemen will fight; use one." });
 
             c.Plate = Modes.First(m => m.Mode == mode).Plate;
-            c.Line = $"{r.Pressure:F1} of {man.PressureTarget:F1} bar · glass {P0(rig.GlassShown)}" +
+            c.Line = $"{Gauge(r.Pressure):F1} of {Gauge(man.PressureTarget):F1} bar · glass {P0(rig.GlassShown)}" +
                      (man.Call == FiremanCall.HeavyAhead ? " · building for heavy work" : man.Call == FiremanCall.EasingOff ? " · easing off" : "");
             c.Warnings.AddRange(warnings.Select(w => new Note { Level = w.Level, Text = w.Text }));
             return c;
@@ -169,7 +173,7 @@ namespace RealisticFiring
         {
             var man = rig.Fireman;
             var r = rig.Readings;
-            rows.Add(new Row { Label = "Pressure", Value = $"{r.Pressure:F1} bar · holding {man.PressureTarget:F1} · lifts {r.SafetyValve:F1}" });
+            rows.Add(new Row { Label = "Pressure", Value = $"{Gauge(r.Pressure):F1} bar · holding {Gauge(man.PressureTarget):F1} · lifts {Gauge(r.SafetyValve):F1}" });
             if (rig.CoalFireman is AutoFireman coal)
             {
                 rows.Add(new Row
@@ -450,7 +454,7 @@ namespace RealisticFiring
             if (notices.HasFlag(FiremanNotice.CleanFire))
                 yield return (AdviceLevel.Watch, "Clinker: the fire wants cleaning at the next stop.");
             if (notices.HasFlag(FiremanNotice.EmptyAshpan))
-                yield return (AdviceLevel.Watch, "The ashpan is half full: empty it at the next stop.");
+                yield return (AdviceLevel.Watch, "The ashpan is half full: empty it on a service or shed track.");
             if (notices.HasFlag(FiremanNotice.ColdOil))
                 yield return (AdviceLevel.Watch, "The oil is cold: he has the heater open; it fires poorly until it warms.");
             if (notices.HasFlag(FiremanNotice.NoSand))

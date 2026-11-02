@@ -304,7 +304,8 @@ namespace RealisticFiring.Visuals
             var model = firebox.Model;
             var open = port.Value > 0.05f;
             return $"{RealisticFirebox.AshpanControl.Label}: {(open ? "open, ashes falling" : "hold to let the ashes out")}; " +
-                   $"ashpan {model.Ashpan:F0} kg ({model.AshpanFill:P0}{(model.AshpanFill >= 0.5f ? ", clean it" : "")})";
+                   $"ashpan {model.Ashpan:F0} kg ({model.AshpanFill:P0}{(model.AshpanFill >= 0.5f ? ", clean it" : "")}); " +
+                   (Shed.ShedStands.CanDisposeAsh(car) ? "service area: no disposal fee" : "outside service area: environmental fee");
         }
     }
 }

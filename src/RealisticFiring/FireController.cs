@@ -179,7 +179,7 @@ namespace RealisticFiring
             }
             LetGoOfPump(rig);
             if (pumping && !rig.HandPumping && !rig.CanHandPump)
-                Notify($"The hand pump cannot force water in above {InjectorRig.HandPumpMaxPressure:F0} bar");
+                Notify($"The hand pump cannot force water in above {Gauge(InjectorRig.HandPumpMaxPressure):F0} bar");
             rig.HandPumping = pumping;
             pumpedRig = pumping ? rig : null;
         }

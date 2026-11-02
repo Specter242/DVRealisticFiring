@@ -1,6 +1,6 @@
 # Realistic Firing for Derail Valley
 
-**1.17.3** (2026-11-01): the fireman backs off near the safety valve, an empty oil pan accepts the lighter, faint chimney smoke completes its fade, and hosts can hide RF's on-screen helpers. Verification is offline: model tests, adapter checks, builds and package checks. None of these fixes have been run in game, in VR or in a live multiplayer session. No FPS improvement is claimed.
+**1.17.4** (2026-11-02): Lilla's S282 injector has a working water wheel and steam lever; ash disposal outside service areas incurs an environmental fee; the fireman handles smoke, pressure and shovel rests more carefully; pressure readings match the cab gauges. The owner tested the injector's desktop controls in game. Ash-disposal fees, the fireman changes and pressure-display corrections were checked offline, not in game. VR and live multiplayer were not tested for this update.
 
 A Unity Mod Manager mod with zoned coal fires, mechanical stokers, oil burners,
 live-steam injectors, boiler water simulation, automatic firemen, and chimney
@@ -41,7 +41,9 @@ DV_INSTALL_DIR="/path/to/Derail Valley" scripts/package.sh
 The package is written to `dist/RealisticFiring-<version>.zip`. Extract its
 `RealisticFiring` folder into the game's `Mods` directory.
 
-Source code is available under the [MIT license](LICENSE).
+Source code is available under the [MIT license](LICENSE). The S282 injector
+model is by Lilla, supplied through Cruzer and used with permission and credit
+to Lilla. Game textures and locomotive assets are not included.
 
 ## Illustrated firing manual
 
@@ -51,3 +53,6 @@ desktop use mouse mode while holding it. Normal booklet page controls still
 work, and your page is saved. It comes with starting equipment that includes
 the steam shovel. You can also use **Controls → Equipment → Give firing
 manual** in the mod settings (F8); in multiplayer, ask the host for a copy.
+
+
+Only the supported locomotive fits are included in this release.

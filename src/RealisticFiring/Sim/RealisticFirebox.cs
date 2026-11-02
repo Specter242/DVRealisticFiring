@@ -680,7 +680,22 @@ namespace RealisticFiring.Sim
                 Main.Mod.Logger.Log($"{Car?.ID}: ashpan hopper shut; {Model.AshpanEmptied - ashpanEmptiedBefore:F0} kg of ashes let out, " +
                                     $"{Model.Ashpan:F0} kg left ({Model.AshpanFill:P0})");
             ashpanWasOpen = open;
-            Model.OpenAshpan(open ? opening : 0f, delta);
+            if (open && Model.Ashpan > 0f)
+                EmptyAshpan(opening, delta, Shed.ShedStands.CanDisposeAsh(Car));
+        }
+
+        /// <summary>
+        /// Emptying outside a servicing track adds the ash actually let out
+        /// to the game's coal environmental meter. Its normal debt, payment,
+        /// and coalEnvDmg save path then handle the charge.
+        /// </summary>
+        internal void EmptyAshpan(float opening, float delta, bool atServiceTrack)
+        {
+            if (Net.IsClient)
+                return;
+            var emptied = Model.OpenAshpan(opening, delta);
+            if (!atServiceTrack && emptied > 0f)
+                coalEnvDamage.Value += emptied;
         }
 
         private void Shake(ShakeStroke stroke)

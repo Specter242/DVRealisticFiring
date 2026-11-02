@@ -15,6 +15,73 @@ namespace RealisticFiring.Core.Tests;
     // The S282's retrofit stoker, at full speed, in firebox kg/s.
     private const float S282Stoker = 1.56f;
 
+    private static (FireModel Fire, AutoFireman Man, FiremanReadings Readings) FeedingStoker(float coal = 30f)
+    {
+        var fire = FireTestKit.BurningFire(Footplate.S282, coal, FireTestKit.CleanCoal);
+        var man = new AutoFireman { Mode = FiremanMode.Road };
+        var r = new FiremanReadings {
+            Pressure = 14f, SafetyValve = 15f, Glass = .55f, Work = .8f, FullWorkSteam = 6f,
+            Throttle = .8f, Cutoff = .25f, HasStoker = true, StokerFullFeed = S282Stoker,
+            TenderWater = 20000f, TenderCoal = 10000f, ShovelMass = 3f
+        };
+        FiremanActions a = default;
+        for (var i = 0; i < 1200; i++) a = man.Step(.1f, fire, r);
+        Assert.True(a.StokerThrottle > .1f);
+        return (fire, man, r);
+    }
+
+    [Fact]
+    public void WaitingForSmokeStopsTheStokerAndItResumesWhenTheStackClears()
+    {
+        var (fire, man, r) = FeedingStoker();
+        fire.AddCoal(10f, GrateZone.UnderDoor);
+        FireTestKit.Run(fire, FireTestKit.Inputs(.2f), 30f);
+        Assert.True(fire.SootDensity > AutoFireman.BlackSmoke, $"soot {fire.SootDensity}");
+        var a = man.Step(.1f, fire, r);
+        Assert.True(man.WaitingOnSmoke);
+        Assert.Equal(0f, a.StokerThrottle);
+        Assert.Equal(0f, a.Shovelful);
+        Assert.False(man.Stoking);
+        FireTestKit.Run(fire, FireTestKit.Inputs(25f, .2f), 60f);
+        Assert.True(fire.SootDensity < AutoFireman.BlackSmoke);
+        a = man.Step(.1f, fire, r);
+        Assert.True(a.StokerThrottle > 0f);
+    }
+
+    [Theory]
+    [InlineData(14.9f)]
+    [InlineData(15.1f)]
+    public void PressureStopsStokerFeedImmediatelyAsItStopsHandFiring(float pressure)
+    {
+        var (fire, man, r) = FeedingStoker();
+        r.Pressure = pressure;
+        var a = man.Step(.1f, fire, r);
+        Assert.Equal(0f, a.StokerThrottle);
+        Assert.Equal(0f, a.Shovelful);
+        Assert.False(man.Stoking);
+        r.Pressure = 14f;
+        for (var i = 0; i < 300; i++) a = man.Step(.1f, fire, r);
+        Assert.True(a.StokerThrottle > 0f);
+    }
+
+    [Fact]
+    public void APressureStopStillAllowsJamReversalTableClearingAndRescuingAThinBed()
+    {
+        var (fire, man, r) = FeedingStoker();
+        r.Pressure = 14.9f; r.StokerJammed = true;
+        var a = man.Step(.1f, fire, r);
+        Assert.Equal(StokerDirection.Reverse, a.StokerDirection);
+        Assert.True(a.StokerThrottle > 0f);
+        r.StokerJammed = false; r.StokerTableLoaded = true;
+        a = man.Step(.1f, fire, r);
+        Assert.Equal(0f, a.StokerThrottle);
+        Assert.True(a.ClearStokerTable && a.MasterJet > .35f && a.Door == 1f);
+        r.StokerTableLoaded = false;
+        fire.Restore(true, 5f);
+        a = man.Step(.1f, fire, r);
+        Assert.True(a.StokerThrottle > 0f);
+    }
+
     [Fact]
     public void AStoppedStokerStillOpensEveryJetToClearItsTable()
     {

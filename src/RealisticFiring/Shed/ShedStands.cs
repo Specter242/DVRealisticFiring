@@ -132,6 +132,35 @@ namespace RealisticFiring.Shed
             new Roundhouse("T_SW_1", "SW-T1-", 36f, 2.47f),
         };
 
+        /// <summary>
+        /// Ash disposal belongs on locomotive parking/service tracks and
+        /// the shed's own stalls and shop tracks, not the lines beside them.
+        /// This uses track IDs, so it also works before the stand objects load.
+        /// </summary>
+        internal static bool IsAshDisposalTrack(DV.Logic.Job.TrackID track)
+        {
+            if (track == null || track.IsGeneric())
+                return false;
+            var id = track.FullID;
+            if (id.EndsWith("-P", StringComparison.Ordinal) || id.EndsWith("-D", StringComparison.Ordinal))
+                return true;
+            foreach (var shop in Shops)
+                if (id == shop.Track)
+                    return true;
+            foreach (var house in Roundhouses)
+                if (id.StartsWith(house.StallPrefix, StringComparison.Ordinal))
+                    return true;
+            return false;
+        }
+
+        // The ashpan is at the firebox end, by the rear bogie. Checking that
+        // occupied track avoids exempting a main line near a service station,
+        // or an engine whose front has entered the shed but its pan has not.
+        internal static bool CanDisposeAsh(TrainCar car) => car != null
+            && CanDisposeAsh(car.logicCar);
+
+        internal static bool CanDisposeAsh(DV.Logic.Job.Car car) => IsAshDisposalTrack(car?.RearBogieTrack?.ID);
+
         // The station's diesel stand, in its own frame, m: its riser's foot
         // (the standpipe mesh sits 0.905 m behind the frame's origin), and
         // the stem on its low branch's valve, 0.29 m out along it and topping

@@ -84,6 +84,8 @@ namespace RealisticFiring.Visuals
                 return null;
             if (!rig.Circuits.Any(c => c.Added != null))
                 return null;
+            if (S282InjectorCab.TryAttach(car, interior, rig, out var injectorModel))
+                return injectorModel;
             var root = new GameObject(RootName).transform;
             root.SetParent(interior, false);
             var notes = new List<string>();

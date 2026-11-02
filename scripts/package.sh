@@ -37,15 +37,18 @@ fi
 
 mkdir -p "$repo/dist"
 stage="$(mktemp -d "$repo/dist/package.XXXXXX")"
-trap 'rm -rf "$stage"' EXIT
+trap 'rm -rf "${stage:?}"' EXIT
 mkdir "$stage/RealisticFiring"
 cp "$out/Info.json" "$out/RealisticFiring.dll" "$out/RealisticFiring.Core.dll" \
     "$bundle" "$manual" "$repo/LICENSE" "$stage/RealisticFiring/"
+cp "$repo/fx/models/S282Injector.json" "$stage/RealisticFiring/"
+cp "$repo/README.md" "$repo/CHANGELOG.md" "$stage/RealisticFiring/"
 # The players' firing guide, one page that opens in any browser.
 python3 -I "$repo/scripts/build-guide.py" "$stage/RealisticFiring/FIRING-GUIDE.html" >/dev/null
 files=(RealisticFiring/Info.json RealisticFiring/RealisticFiring.dll
        RealisticFiring/RealisticFiring.Core.dll RealisticFiring/realisticfiring_fx RealisticFiring/realisticfiring_manual
-       RealisticFiring/LICENSE RealisticFiring/FIRING-GUIDE.html)
+       RealisticFiring/LICENSE RealisticFiring/FIRING-GUIDE.html RealisticFiring/S282Injector.json
+       RealisticFiring/README.md RealisticFiring/CHANGELOG.md)
 # The overlay's typeface rides in the effects bundle; its license goes beside it.
 fonts="$repo/fx/RealisticFiringFX/Assets/RealisticFiring/Fonts"
 if compgen -G "$fonts/*.ttf" >/dev/null; then
@@ -61,7 +64,7 @@ files+=(RealisticFiring/RealisticFiring.StackEffects.dll)
 
 # Select the archive's contents explicitly; never include assemblies copied
 # for adapter checks, local settings, logs, or development documents.
-rm -f "$zipfile"
+rm -f "${zipfile:?}"
 (cd "$stage" && zip -q -X "$zipfile" "${files[@]}")
 echo "Built $zipfile"
 (cd "$(dirname "$zipfile")" && sha256sum "$(basename "$zipfile")")

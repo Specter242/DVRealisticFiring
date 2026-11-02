@@ -4,6 +4,34 @@ namespace RealisticFiring.Core.Tests;
 
  public class RoadAheadTests
 {
+    [Fact]
+    public void ABriefApparentlySteadyBurstCannotTeachAnExaggeratedGradeCost()
+    {
+        var r = new RoadReckoner(3e6f);
+        var before = r.WorkPerWatt;
+        // Both samples pass the adapter's adjacent-sample stability check.
+        for (var t = 0; t < 12; t += 2) r.Learn(2f, .8f, 581000f, 16f, 0f, true);
+        Assert.Equal(before, r.WorkPerWatt);
+        // A change of operating condition restarts qualification.
+        r.Learn(2f, .2f, 581000f, 16f, 0f, false);
+        for (var t = 0; t < 12; t += 2) r.Learn(2f, .8f, 581000f, 16f, 0f, true);
+        Assert.Equal(before, r.WorkPerWatt);
+    }
+
+    [Fact]
+    public void GradualChangesCannotMasqueradeAsASteadyCalibrationPoint()
+    {
+        var r = new RoadReckoner(3e6f);
+        var before = r.WorkPerWatt;
+        // Less than .05 work and .3 m/s change at every two-second scan,
+        // but the engine is continuously changing work or speed.
+        for (var i = 0; i < 24; i++) r.Learn(2f, .15f + i * .03f, 581000f, 16f, 0f, true);
+        Assert.Equal(before, r.WorkPerWatt);
+        for (var i = 0; i < 24; i++) r.Learn(2f, .8f, 581000f, 8f + i * .25f, 0f, true);
+        Assert.Equal(before, r.WorkPerWatt);
+        Assert.True(r.WorkAt(.9f, 581000f, 19f, -.002f, .006f) > 1f);
+    }
+
     // A track of points every metre from its start, at heights given by distance from its start.
     private sealed class Track : IRoadTrack
     {

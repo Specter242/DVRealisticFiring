@@ -29,14 +29,16 @@ namespace RealisticFiring.Core
         public const int HeavyRound = 6;
         public const float ThrowInterval = 2.5f;
         public const float HurriedThrowInterval = 2f;
-        public const float RoundGap = 8f;
-        public const float HurriedRoundGap = 3f;
+        public const float RoundGap = 12f;
+        public const float HurriedRoundGap = 5f;
         private const float DoorLead = 0.4f;
 
         /// <summary>With the stoker feeding, he fires by hand only a corner it starves, at most this many shovelfuls a round.</summary>
         public const int StokerRound = 2;
 
         public const float BoostedThrowInterval = 1f;
+        private const float BoostedRoundGap = 8f;
+        private const float BoostedHurriedRoundGap = 3f;
         private const float BoostStokes = 1.5f;
 
         /// <summary>He fires no more while the stack is this black (the fire's soot density).</summary>
@@ -169,7 +171,11 @@ namespace RealisticFiring.Core
                 roundLeft = 0;
 
             var boost = Math.Max(1f, r.StartupMultiplier);
-            Stoking = r.HasStoker && (j.Working || boost >= BoostStokes) && fire.FireOn && !outOfWater && Mode != FiremanMode.KeepAlive;
+            // Both ways of adding coal obey the same smoke and pressure stops.
+            // Below the minimum live bed, the pressure stop still permits rescue.
+            var mayFire = !WaitingOnSmoke && (!lifting || coal < least);
+            Stoking = r.HasStoker && (j.Working || boost >= BoostStokes) && fire.FireOn && !outOfWater
+                      && Mode != FiremanMode.KeepAlive && mayFire;
             if (r.HasStoker)
                 Stoker(dt, fire, r, boost * rate, coal, ref actions);
 
@@ -184,23 +190,38 @@ namespace RealisticFiring.Core
             var deficit = corners ? ZoneShortfall(fire, CoalTarget) : CoalTarget - coal;
             // Re-read the gauge between throws instead of finishing a round
             // ordered before the pressure rose or the demand eased.
-            if (lifting && coal >= least || deficit < 0.5f * shovel)
+            if (roundLeft > 0 && (lifting && coal >= least || deficit < 0.5f * shovel))
+            {
                 roundLeft = 0;
+                sinceRound = 0f;
+            }
             // Far behind with the engine working he hurries; with it not
             // working the draft could not take a hurried round.
-            var far = !Stoking && j.Working && deficit > HeavyRound * shovel;
+            var far = !Stoking && j.Working && (deficit > HeavyRound * shovel || r.Pressure < PressureTarget - .5f);
+            // Larger shovelfuls take longer to handle; the accelerated startup
+            // remains a separate aid, keeping its original cadence.
+            var massTime = boosted ? 1f : Math.Max(1f, shovel / 3f);
+            var rest = boosted ? (far ? BoostedHurriedRoundGap : BoostedRoundGap)
+                : (far ? HurriedRoundGap : RoundGap) * massTime;
             if (roundLeft == 0 && fire.FireOn && !outOfWater && !WaitingOnSmoke && (!lifting || coal < least)
                 && deficit >= (corners ? 1f : 0.5f) * shovel && r.TenderCoal >= shovel
-                && sinceRound >= (far ? HurriedRoundGap : RoundGap) / boost)
+                && sinceRound >= rest / boost)
             {
                 var most = corners ? StokerRound : far || boosted ? HeavyRound : LightRound;
                 roundLeft = Math.Max(1, Math.Min(most, (int)Math.Round(deficit / shovel)));
-                roundInterval = Math.Max(boosted ? BoostedThrowInterval : 0f, (far ? HurriedThrowInterval : ThrowInterval) / boost);
+                roundInterval = Math.Max(boosted ? BoostedThrowInterval : 0f, (far ? HurriedThrowInterval : ThrowInterval) * massTime / boost);
                 roundClock = 0f;
             }
 
             if (roundLeft > 0)
             {
+                // Wait without throwing away the rest of the round. Restarting
+                // its full rest after each smoky shovel can starve a working fire.
+                if (WaitingOnSmoke)
+                {
+                    actions.Door = DoorCrack;
+                    return;
+                }
                 // Each throw comes a door's lead into its interval; the door
                 // is open from the lead before it to the lead after.
                 var before = roundClock;
