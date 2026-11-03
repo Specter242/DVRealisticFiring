@@ -1,6 +1,6 @@
 # Realistic Firing for Derail Valley
 
-**1.17.4** (2026-11-02): Lilla's S282 injector has a working water wheel and steam lever; ash disposal outside service areas incurs an environmental fee; the fireman handles smoke, pressure and shovel rests more carefully; pressure readings match the cab gauges. The owner tested the injector's desktop controls in game. Ash-disposal fees, the fireman changes and pressure-display corrections were checked offline, not in game. VR and live multiplayer were not tested for this update.
+**1.17.5** (2026-11-02): the S282's cab-mounted injector now lifts water with priming steam. With steam Off, opening the water wheel no longer spills water by gravity. The change was verified offline with model tests, game-adapter checks and package checks. It has not been play-tested; no new desktop, VR or live multiplayer test was run. The injector model and its controls are unchanged from 1.17.4.
 
 A Unity Mod Manager mod with zoned coal fires, mechanical stokers, oil burners,
 live-steam injectors, boiler water simulation, automatic firemen, and chimney

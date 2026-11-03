@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.17.5 (2026-11-02)
+
+- The S282's cab-mounted injector now lifts water with priming steam instead of drawing it by gravity.
+
 ## 1.17.4 (2026-11-02)
 
 - Added Lilla's S282 injector model with a working water wheel and steam lever.

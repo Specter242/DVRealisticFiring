@@ -248,10 +248,13 @@ and use the cab's blower (the 8F has no fitting).
 
 ## Water
 
-- **Injectors:** with at least 2.5 bar, open the water valve (the injector
-  lever), then the steam lever to Prime; when the overflow quiets, steam to
+- **Injectors:** with at least 2.5 bar, open the water valve (the S282's
+  handwheel, or the injector water lever), then the steam lever to Prime; when the overflow quiets, steam to
   Feed. Opened to Feed too soon, the jet breaks. A hot injector won't take:
   hold it at Prime to cool it. Stopping, steam Off, then shut the water.
+- **S282 and JK3 lifting injectors:** water does not run from the overflow
+  with steam Off, even with the water valve open. Prime lifts it from the
+  tender; wait for it to take hold before selecting Feed.
 - **Feed steadily** with the water valve: it turns down only to about two
   fifths open (a little more at full pressure); below that it wastes a
   trickle of water at the overflow. Run it continuously, set to what the

@@ -36,10 +36,9 @@ namespace RealisticFiring.Sim
             "em_lms_8f_loc_black", "em_lms_8f_loc_grey",
         };
 
-        // Lifting injectors, above the tender's water: the JK3's, as Finnish
-        // engines carried (Friedmann). The American engines' are non-lifters,
-        // and so are the LMS 8F's, under the cab footsteps.
-        private static readonly HashSet<string> Lifters = new HashSet<string> { "Jk3A" };
+        // The S282's cab-mounted replacement and the JK3's lift their water.
+        // The other supported engines keep their non-lifting equipment.
+        private static readonly HashSet<string> Lifters = new HashSet<string> { "LocoS282A", "Jk3A" };
 
         /// <summary>Whether this session fits <paramref name="livery"/> with steam valves.</summary>
         public static bool Fits(string livery) => livery != null && Main.Session.InjectorSteamValves && Fitted.Contains(livery);

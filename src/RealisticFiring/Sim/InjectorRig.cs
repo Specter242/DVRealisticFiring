@@ -112,12 +112,6 @@ namespace RealisticFiring.Sim
 
  private static readonly Dictionary<string, float> PeriodDelivery = new Dictionary<string, float>
         {
-            // USRA light Mikado: "Nathan non-lifting injectors", size not
-            // given (RME Aug 1918 p.438); the heavy Mikado had "Hancock No. 11
-            // non-lifting injectors" (RME Sept 1918 p.494). Its 24 in. (0.61 m)
-            // cylinders take a No. 11 by Baldwin's rule, and its big boiler
-            // the next size larger: a No. 12, 5,700 gal/h (inferred). Its boiler
-            // boils about 7.5 kg/s at full rate, its throttle 6. The game's is 20.
             ["LocoS282A"] = 6f,
             // A small tank engine's: its 16.5 in. cylinders take a No. 7 by
             // Baldwin's rule, "next size larger with specially large boilers"
@@ -507,6 +501,7 @@ namespace RealisticFiring.Sim
                 new Injector(new InjectorSpec(maxRate / controls.Length, rated)
                 {
                     LeastScale = livery != null && OneLeverForTwo.Contains(livery) ? OneOfTwoLeast : 1f,
+                    Lifting = InjectorValves.Lifting(livery),
                 }),
                 controls.Length == 1 ? "" : i == 0 ? "right" : "left",
                 ports?.SingleOrDefault(p => p.id == $"injectorParticles.INJECTOR_{(i == 0 ? "R" : "L")}_PARTICLES_CLAMP")))
@@ -522,7 +517,6 @@ namespace RealisticFiring.Sim
                     if (circuits[i].Added == null)
                         continue;
                     circuits[i].OwnLeverIsSteam = InjectorValves.OwnLeverIsSteam(livery);
-                    circuits[i].Injector.Spec.Lifting = InjectorValves.Lifting(livery);
                     steamValves++;
                 }
             }

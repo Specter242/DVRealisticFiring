@@ -161,6 +161,7 @@ namespace RealisticFiring.AdapterCheck
 
             CheckInjector(gameParams);
             CheckInjectorSteamValve(gameParams);
+            CheckInjectorSteamValve(gameParams, "LocoS282A");
             CheckJk3Injectors(gameParams);
             CheckLms8FInjectors(gameParams);
             CheckJk3Firebox(gameParams);
@@ -1851,7 +1852,7 @@ namespace RealisticFiring.AdapterCheck
 
         // An engine fitted with its own injector steam valve: the stock lever
         // is the water valve, the new control shut, primed, or wide open.
-        private static void CheckInjectorSteamValve(SimGameParams gameParams)
+        private static void CheckInjectorSteamValve(SimGameParams gameParams, string livery = "LocoS060")
         {
             var water = new Port("injector", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"));
             var tenderWater = new Port("tender", new PortDefinition(PortType.READONLY_OUT, PortValueType.WATER, "AMOUNT"), 40000f);
@@ -1868,7 +1869,7 @@ namespace RealisticFiring.AdapterCheck
             boiler.GetAllPortReferences().Single(r => r.id == "boiler.INJECTOR").SetPortReference(water);
             boiler.GetAllPortReferences().Single(r => r.id == "boiler.WATER").SetPortReference(tenderWater);
             boiler.GetAllPortReferences().Single(r => r.id == "boiler.WATER_CONSUMPTION").SetPortReference(consumed);
-            var made = InjectorRig.TryCreate(null, boiler, "LocoS060", new SimComponent[] { boiler, steamControl }, out var note);
+            var made = InjectorRig.TryCreate(null, boiler, livery, new SimComponent[] { boiler, steamControl }, out var note);
             InjectorRig.TryGet(boiler, out var rig);
             var steam = steamControl.controlExtIn;
             InjectorFlow Run(float steamAt, float waterAt, float seconds)
@@ -1885,17 +1886,51 @@ namespace RealisticFiring.AdapterCheck
             }
             if (!made || rig == null || rig.Circuits[0].Added == null)
             {
-                Check(false, $"the S060 gets its injector steam valve ({note})");
+                Check(false, $"{livery} gets its injector steam valve ({note})");
                 return;
             }
+            rig.EndResume();
             var gravity = Run(0f, 1f, 1f);
-            Run(InjectorSpec.SteamPrime, 1f, 3f);
+            var priming = Run(InjectorSpec.SteamPrime, 1f, .5f);
+            Run(InjectorSpec.SteamPrime, 1f, 2.5f);
             var full = Run(1f, 1f, 2f);
             var part = Run(1f, 0.6f, 2f);
-            Check(gravity.State == InjectorState.Off && gravity.Overflow > 0f && full.State == InjectorState.Working
+            var lifting = livery == "LocoS282A";
+            Check(gravity.State == InjectorState.Off
+                  && (lifting ? gravity.Overflow == 0f && gravity.TenderDraw == 0f : gravity.Overflow > 0f)
+                  && rig.Circuits[0].Injector.Spec.Lifting == lifting
+                  && priming.State == InjectorState.Priming && priming.Overflow > 0f && priming.SteamUsed > 0f && priming.WaterIn == 0f
+                  && full.State == InjectorState.Working
                   && part.State == InjectorState.Working && Math.Abs(part.WaterIn / full.WaterIn - 0.6f) < 0.05f,
-                $"with its own steam valve the S060's water runs from the overflow until it is primed ({gravity.Overflow:F2} kg/s), " +
+                $"{livery}: {(lifting ? "lifting steam is required before water appears" : "water runs by gravity before priming")} ({gravity.Overflow:F2} kg/s), " +
                 $"then feeds as its water valve sets ({part.WaterIn:F2} kg/s at 60 %, {full.WaterIn:F2} wide open)");
+            var stopped = Run(0f, 1f, 1f);
+            Check(lifting ? stopped.TenderDraw == 0f && stopped.Overflow == 0f && stopped.WaterIn == 0f
+                          : stopped.Overflow > 0f && stopped.WaterIn == 0f,
+                $"{livery}: shutting steam {(lifting ? "stops lifting water with the handwheel still open" : "leaves gravity flow while the water valve is open")}");
+            Check(rig.MaxDelivery == (lifting ? 6f : 2.7f), $"{livery} retains its existing rated injector capacity");
+            if (lifting)
+            {
+                var portsBefore = Describe(boiler);
+                InjectorRig.TryCreate(null, boiler, livery, new SimComponent[] { boiler }, out _);
+                InjectorRig.TryGet(boiler, out var single);
+                Check(single.Circuits[0].Added == null && single.Circuits[0].Injector.Spec.Lifting
+                    && single.MaxDelivery == 6f && ReferenceEquals(single.Circuits[0].Control, water)
+                    && Describe(boiler) == portsBefore,
+                    "the S282 remains a lifting injector in single-control fallback without changing stock ports or delivery capacity");
+                steam.Value = 1f;
+                water.Value = .6f;
+                InjectorRig.TryCreate(null, boiler, livery, new SimComponent[] { boiler, steamControl }, out _);
+                InjectorRig.TryGet(boiler, out var resumed);
+                resumed.Simulate(.02f);
+                Check(resumed.Circuits[0].Injector.Spec.Lifting && resumed.Circuits[0].Flow.State == InjectorState.Working
+                    && resumed.Circuits[0].Flow.WaterIn > 0f && steam.Value == 1f && water.Value == .6f,
+                    "an S282 injector reconstructed with saved feeding controls resumes without re-priming or moving either valve");
+                Check(InjectorValves.Lifting("Jk3A")
+                    && new[] { "LocoS060", "em_lms_8f_loc_black", "em_lms_8f_loc_grey", "S464-730", "FEF-3", "S484-840A", "A.T.&S.F. 2901-A", "unknown", null }
+                        .All(id => !InjectorValves.Lifting(id)),
+                    "the JK3 keeps lifting and other released injector families stay unchanged");
+            }
         }
 
         private static void CheckJk3Injectors(SimGameParams gameParams)
