@@ -49,6 +49,8 @@ namespace RealisticFiring.Visuals
             // The Hudson's valve is its fireman's injector lever; the gauge
             // six inches above the manifold and three inboard, below the lever.
             ["S464-730"] = new Spot(Vector2.zero, new Vector2(0.076f, 0.24f)),
+            // Beside the QJ's triangle, clear of the speedometer above it.
+            [QjStokerCab.Livery] = new Spot(new Vector2(0.26f, -0.28f), new Vector2(0.26f, -0.14f)),
         };
 
         private static readonly Spot DefaultSpot = new Spot(new Vector2(-0.165f, -0.12f), new Vector2(-0.165f, 0.03f));

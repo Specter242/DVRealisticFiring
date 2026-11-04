@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.17.7 (2026-11-04)
+
+- Added support for LittleNiko36's S2102-870 QJ, with its own firing character, stoker controls, feed pump, injector and throttle response.
+- Paying locomotive fees now shuts the injector's steam valve along with its water control.
+
 ## 1.17.6 (2026-11-03)
 
 - Fixed stoker coal feed relying on stale tender readings in multiplayer.

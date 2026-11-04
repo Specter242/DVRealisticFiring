@@ -33,7 +33,7 @@ namespace RealisticFiring.Sim
         private static readonly HashSet<string> Fitted = new HashSet<string>
         {
             "LocoS282A", "LocoS060", "Jk3A", "S464-730", "FEF-3", "S484-840A", "A.T.&S.F. 2901-A",
-            "em_lms_8f_loc_black", "em_lms_8f_loc_grey",
+            "em_lms_8f_loc_black", "em_lms_8f_loc_grey", "S2102-870",
         };
 
         // The S282's cab-mounted replacement and the JK3's lift their water.

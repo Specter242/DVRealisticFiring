@@ -33,9 +33,14 @@ namespace RealisticFiring.AdapterCheck
             const string owner = "RealisticFiring.AdapterCheck.StokerCoal";
             var harmony = new Harmony(owner);
             var wasClient = Net.ClientCheck;
+            var hadJams = RealisticFiring.Main.Settings.StokerJams;
             var piles = new List<CoalPileSimController>();
             try
             {
+                // This checks resource transport, not random screw jams.
+                // A jam during its six-second delivery window masks the
+                // network result; jam handling has separate Core coverage.
+                RealisticFiring.Main.Settings.StokerJams = false;
                 harmony.Patch(AccessTools.Method(typeof(RealisticStoker), "TenderPile"), prefix: new HarmonyMethod(typeof(MultiplayerStokerChecks), nameof(FindPile)));
                 harmony.Patch(AccessTools.PropertyGetter(typeof(CoalPileSimController), "ConsumptionModifier"), prefix: new HarmonyMethod(typeof(MultiplayerStokerChecks), nameof(ConsumptionModifier)));
                 foreach (var scale in new[] { 0f, .5f, 1f, 2f })
@@ -127,6 +132,7 @@ namespace RealisticFiring.AdapterCheck
             }
             finally
             {
+                RealisticFiring.Main.Settings.StokerJams = hadJams;
                 Net.ClientCheck = wasClient;
                 harmony.UnpatchAll(owner);
                 Piles.Clear();

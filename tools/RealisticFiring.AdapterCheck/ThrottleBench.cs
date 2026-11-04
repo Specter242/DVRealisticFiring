@@ -25,7 +25,7 @@ namespace RealisticFiring.AdapterCheck
             public bool StockSteam, NoWetWalls;
         }
 
-        // Installed-definition ledger, October 30. These are effective game
+        // Installed-definition ledger, October 30; QJ added November 4. These are effective game
         // volumes, not measured prototype piping dimensions.
         private static readonly Profile[] Profiles =
         {
@@ -37,6 +37,7 @@ namespace RealisticFiring.AdapterCheck
             new Profile { Name = "2901", Livery = "A.T.&S.F. 2901-A", Volume = 1200, Flow = 10, Bore = .715f, Stroke = .82f },
             new Profile { Name = "S060", Livery = "LocoS060", Volume = 200, Flow = 2, Bore = .42f, Stroke = .61f, StockSteam = true, NoWetWalls = true },
             new Profile { Name = "JK3", Livery = "Jk3A", Volume = 300, Flow = 2.4f, Bore = .65f, Stroke = .51f, StockSteam = true },
+            new Profile { Name = "QJ", Livery = "S2102-870", Volume = 1200, Flow = 9, Bore = .65f, Stroke = .8f },
         };
 
         internal sealed class Sample
@@ -59,7 +60,7 @@ namespace RealisticFiring.AdapterCheck
             public List<Sample> Trace;
         }
 
-        internal static int Calibration(string destination)
+        internal static int Calibration(string destination, string livery = null, float pressure = 14)
         {
             if (Directory.Exists(destination) && Directory.EnumerateFileSystemEntries(destination).Any())
                 throw new IOException("Calibration output must be empty.");
@@ -73,15 +74,15 @@ namespace RealisticFiring.AdapterCheck
                     typeof(CylinderExhaustPatch), typeof(SuperheaterTickPatch), typeof(SteamPathChestPatch) })
                     harmony.CreateClassProcessor(patch).Patch();
                 var results = new List<Measurement>(); var number = 0;
-                foreach (var profile in Profiles)
+                foreach (var profile in Profiles.Where(p => livery == null || p.Livery == livery))
                 foreach (var rpm in new[] { 0f, 120f })
                 foreach (var opening in new[] { .1f, .25f, .5f, 1f })
                 {
                     var heat = profile.Name == "S282" ? 136 : profile.Name == "8F" ? 100 : profile.Name == "Hudson" ? 175
-                        : profile.Name == "2901" ? 180 : profile.StockSteam ? 0 : 158;
-                    results.Add(Measure(++number, profile, 14, rpm, .5f, opening, heat, true, calibration: true));
+                        : profile.Name == "2901" ? 180 : profile.Name == "QJ" ? 195 : profile.StockSteam ? 0 : 158;
+                    results.Add(Measure(++number, profile, pressure, rpm, .5f, opening, heat, true, calibration: true));
                     if (profile.Name == "S282")
-                        results.Add(Measure(number, profile, 14, rpm, .5f, opening, heat, true, calibration: true, oldCircuit: true));
+                        results.Add(Measure(number, profile, pressure, rpm, .5f, opening, heat, true, calibration: true, oldCircuit: true));
                 }
                 foreach (var result in results.Where(r => r.Rpm == 0))
                     if (result.FinalGaugeBar > .00001 || Math.Abs(result.FinalTorqueNm) > .001)
@@ -89,13 +90,14 @@ namespace RealisticFiring.AdapterCheck
                 File.WriteAllText(Path.Combine(destination, "calibration.json"), JsonConvert.SerializeObject(results, Formatting.Indented));
                 File.WriteAllText(Path.Combine(destination, "metadata.json"), JsonConvert.SerializeObject(new {
                     Source = typeof(EngineSteamPath).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion,
-                    Protocol = "Actual patched engine.Tick, 60 Hz, 14 bar absolute, 50% cutoff, each engine's nominal full-rate superheat, stationary and imposed 120 rpm. Three seconds shut preconditioning; open 30 s; shut 900 s. No train or boiler feedback.",
+                    Protocol = $"Actual patched engine.Tick, 60 Hz, {pressure:F1} bar absolute, 50% cutoff, each engine's nominal full-rate superheat, stationary and imposed 120 rpm. Three seconds shut preconditioning; open 30 s; shut 900 s. No train or boiler feedback.",
                     Opening = "1 bar gauge first-useful pressure, and 90% boiler gauge; null means not attained.",
                     Closing = "10% of last three seconds' mean gauge pressure, from handle closure. Final stationary torque must be zero after 900 s.",
                     Fits = "Maker effective chest and flow retained; added circuits replaced by dimensional/density estimates. S282 old-circuit comparison uses 918's 75% volume with the corrected loss model.",
                     Runs = results.Count,
                 }, Formatting.Indented));
-                Console.WriteLine("Throttle calibration: " + results.Count + " runs; all eight stopped engines have zero final starting torque.");
+                Console.WriteLine("Throttle calibration: " + results.Count + " runs; "
+                    + results.Select(r => r.Engine).Distinct().Count() + " engine types have zero final stationary starting torque.");
                 return 0;
             }
             finally { harmony.UnpatchAll(harmony.Id); Net.ClientCheck = client; }

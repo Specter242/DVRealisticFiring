@@ -1,7 +1,9 @@
+using System.Collections.Generic;
 using System.Linq;
 using DV.Simulation.Cars;
 using HarmonyLib;
 using LocoSim.Definitions;
+using LocoSim.Implementations;
 using RealisticFiring.Sim;
 
 namespace RealisticFiring.Patches
@@ -46,6 +48,32 @@ namespace RealisticFiring.Patches
             control.defaultValue = valve.Default;
             control.saveState = true;
             graph.executionOrder = new SimComponentDefinition[] { control }.Concat(graph.executionOrder).ToArray();
+        }
+    }
+
+    /// <summary>
+    /// Fee payment resets the stock injector control through SetNeutralState.
+    /// Include its added valve so closing water does not leave steam blowing.
+    /// The 8F's stock handles are steam, so its added water valves close too.
+    /// </summary>
+    [HarmonyPatch(typeof(BaseControlsOverrider), nameof(BaseControlsOverrider.SetNeutralState))]
+    internal static class InjectorNeutralStatePatch
+    {
+        private static readonly HashSet<string> AddedValves = new HashSet<string>
+        {
+            InjectorValves.Steam.PortId, InjectorValves.SteamLeft.PortId,
+            InjectorValves.Water.PortId, InjectorValves.WaterLeft.PortId,
+        };
+
+        private static void Postfix(SimulationFlow ___simFlow, bool __runOriginal)
+        {
+            if (!__runOriginal || ___simFlow == null)
+                return;
+            // Scan existing ports: TryGetPort logs errors for absent valves.
+            // Normal port updates also move the handles and notify multiplayer.
+            foreach (var port in ___simFlow.AllPorts)
+                if (port.type == PortType.EXTERNAL_IN && port.valueType == PortValueType.CONTROL && AddedValves.Contains(port.id))
+                    port.ExternalValueUpdate(0f);
         }
     }
 }

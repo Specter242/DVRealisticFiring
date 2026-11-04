@@ -33,6 +33,10 @@ namespace RealisticFiring.Sim
             // at the full rate is inferred.
             ["em_lms_8f_loc_black"] = Superheat("Type A", 100f, 0.72f),
             ["em_lms_8f_loc_grey"] = Superheat("Type A", 100f, 0.72f),
+            // China Railways QJ: Schmidt Type A, 69 elements, 144.1 m² on
+            // 255.3; steam "close to 400 °C" at its design rate (the works
+            // book), about 195 °C over saturation at 15 kgf/cm².
+            ["S2102-870"] = Superheat("Type A", 195f, 0.75f),
         };
 
         private static readonly HashSet<string> Exempt = new HashSet<string> { "LocoS060" };

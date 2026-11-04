@@ -32,6 +32,10 @@ namespace RealisticFiring.Sim
             // 2026-10-14; the WD Photographic scheme is a paint, not a livery.
             "em_lms_8f_loc_black",
             "em_lms_8f_loc_grey",
+            // LittleNiko36's S2102-870 (Nexus 1779, 1.0.0), a China Railways
+            // QJ 2-10-2 with CCL's steam stoker, read from its bundle
+            // 2026-10-19. S2102-870B is its tender.
+            "S2102-870",
         };
 
         private static readonly Dictionary<TrainCar, RealisticFirebox> Fireboxes = new Dictionary<TrainCar, RealisticFirebox>();

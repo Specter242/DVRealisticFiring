@@ -49,6 +49,7 @@ namespace RealisticFiring.Visuals
         private static Vector2 scroll;
         private static float height = 640f;
         private static float rebuiltAt;
+        private static bool previewFirehole;
 
         /// <summary>A part the bench seats: its sliders and how its seat is read, set, and written.</summary>
         private sealed class Part
@@ -84,6 +85,42 @@ namespace RealisticFiring.Visuals
 
         private static readonly Part[] Parts =
         {
+            new Part
+            {
+                Title = "QJ overhead auxiliary valves",
+                Table = "QjStokerCab.Seats",
+                Labels = new[] { "Across, m (interior frame, + right)", "Up, m", "Along, m (+ forward)", "Tilt, °", "Turn, °", "Twist, °" },
+                Spans = new[] { 1f, 1f, 1f, 90f, 90f, 90f },
+                Present = car => car.carLivery.id == QjStokerCab.Livery && InCab(car, StokerCab.RootName),
+                Read = (part, car, id) =>
+                {
+                    var seat = QjStokerCab.SeatFor(id);
+                    part.Values = new[] { seat.At.x, seat.At.y, seat.At.z, seat.Turns.x, seat.Turns.y, seat.Turns.z };
+                    return true;
+                },
+                Apply = (id, v) => QjStokerCab.DevSeats[id] = new QjStokerCab.Seat(new Vector3(v[0], v[1], v[2]), new Vector3(v[3], v[4], v[5])),
+                Clear = id => QjStokerCab.DevSeats.Remove(id),
+                Rebuild = RebuildManifold,
+                Line = (id, v) => $"[\"{id}\"] = new Seat(new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}), new Vector3({Deg(v[3])}, {Deg(v[4])}, {Deg(v[5])})),",
+            },
+            new Part
+            {
+                Title = "QJ stoker engine steam valve (beside the jet bank)",
+                Table = "QjStokerCab.StokerSeats",
+                Labels = new[] { "Across, m (from instruments)", "Up, m", "Out, m (+ into the backhead)" },
+                Spans = new[] { 0.5f, 0.5f, 0.2f },
+                Present = car => car.carLivery.id == QjStokerCab.Livery && InCab(car, StokerCab.RootName),
+                Read = (part, car, id) =>
+                {
+                    var at = QjStokerCab.StokerSeatFor(id);
+                    part.Values = new[] { at.x, at.y, at.z };
+                    return true;
+                },
+                Apply = (id, v) => QjStokerCab.DevStokerSeats[id] = new Vector3(v[0], v[1], v[2]),
+                Clear = id => QjStokerCab.DevStokerSeats.Remove(id),
+                Rebuild = RebuildManifold,
+                Line = (id, v) => $"[\"{id}\"] = new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}),",
+            },
             new Part
             {
                 Title = "Stoker manifold (from the fireman's stoker valve's mount)",
@@ -235,7 +272,7 @@ namespace RealisticFiring.Visuals
             },
             new Part
             {
-                Title = "Firehole for the aim (car frame; the keypad on the door shows it)",
+                Title = "Firehole opening (keypad, stoker chunks and jets)",
                 Table = "FireholeOpening.Holes",
                 Unknown = "not known yet: aim the shovel at the open door once (keypad on)",
                 Labels = new[] { "Middle across, m (+ right)", "Foot, m", "Width, m", "Height, m", "Its plane along, m (+ forward, deeper)" },
@@ -244,15 +281,14 @@ namespace RealisticFiring.Visuals
                 Present = car => FireboxRegistry.TryGet(car, out _),
                 Read = (part, car, id) =>
                 {
-                    if (!FireholeOpening.TryHole(id, out var hole))
+                    if (!FireholeOpening.SeedForBench(car) || !FireholeOpening.TryHole(id, out var hole))
                         return false;
                     part.Values = new[] { hole.Middle, hole.Foot, hole.Width, hole.Height, hole.Plane };
                     return true;
                 },
                 Apply = (id, v) => FireholeOpening.DevHoles[id] = (v[0], v[1], v[2], v[3], v[4]),
                 Clear = id => FireholeOpening.DevHoles.Remove(id),
-                // Worked out at each aim: nothing to rebuild.
-                Rebuild = car => { },
+                Rebuild = car => StokerSpray.Recalibrate(car),
                 Line = (id, v) => $"[\"{id}\"] = ({Firehole(v[0])}, {Firehole(v[1])}, {Firehole(v[2])}, {Firehole(v[3])}, {Firehole(v[4])}),",
             },
             ShedPart(false),
@@ -261,7 +297,7 @@ namespace RealisticFiring.Visuals
 
         private static Part ShedPart(bool water) => new Part
         {
-            Title = water ? "Shed water hose connection (its flange, car frame)" : "Shed blower line connection (its flange, car frame)",
+            Title = water ? "Shed water hose connection (car frame)" : "Shed blower line connection (its flange, car frame)",
             Table = water ? "ShedConnections.WaterSeated" : "ShedConnections.Seated",
             Labels = new[] { "Across, m (− left, + right: its side)", "Up, m", "Along, m (+ forward)", "Swung toward the front, °",
                 "Turned down, °", "Spun about its axis, °", "Further out along its axis, m" },
@@ -340,6 +376,11 @@ namespace RealisticFiring.Visuals
             if (target == null && livery != null)
                 Target(null);
             RebuildMoved();
+            if (previewFirehole && target != null && FireholeOpening.SeedForBench(target) && FireholeOpening.TryHole(livery, out var hole))
+            {
+                var bounds = new Bounds(new Vector3(hole.Middle, hole.Foot + hole.Height / 2f, hole.Plane), new Vector3(hole.Width, hole.Height, 0f));
+                AimKeypad.Draw(new DoorAimSample(Core.GrateLayout.At(1, 1), 0.5f, 0.5f, false, Time.time, target.transform, bounds));
+            }
 
             var k = OverlayStyle.Scale;
             var matrix = GUI.matrix;
@@ -393,6 +434,8 @@ namespace RealisticFiring.Visuals
         private static void DrawPart(Part part)
         {
             Header(part.Title);
+            if (part.Table == "FireholeOpening.Holes")
+                previewFirehole = GUILayout.Toggle(previewFirehole, "Show placement keypad (no shovel needed)");
             if (!part.Present(target))
             {
                 GUILayout.Label("Not on this engine, or its cab or outside not loaded.");

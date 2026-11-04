@@ -98,17 +98,20 @@ namespace RealisticFiring.Visuals
         }
 
         /// <summary>Builds the gauges in the manifold's frame, which must still be inactive.</summary>
-        public static Built Build(Transform frame, Transform cabPrefab, TrainCar car)
+        public static Built Build(Transform frame, Transform cabPrefab, TrainCar car, IReadOnlyList<Vector3> positions = null)
         {
+            if (positions != null && positions.Count != Gauges.Length)
+                throw new System.ArgumentException("Each stoker gauge needs one seat", nameof(positions));
             var built = new Built();
             if (!Sources(cabPrefab, out var source, out var font))
                 return built;
 
             var driver = frame.gameObject.AddComponent<StokerGaugeDriver>();
             driver.Car = car;
-            foreach (var spec in Gauges)
+            for (var n = 0; n < Gauges.Length; n++)
             {
-                var needles = Clone(frame, source, font, built, new Vector3(Column, spec.Y, Depth), spec.Title, spec.FullScale, spec.Step,
+                var spec = Gauges[n];
+                var needles = Clone(frame, source, font, built, positions != null ? positions[n] : new Vector3(Column, spec.Y, Depth), spec.Title, spec.FullScale, spec.Step,
                     spec.Hands.Select(h => h.Tint).ToArray());
                 for (var i = 0; i < needles.Count; i++)
                     driver.Add(needles[i], spec.Hands[i].Reading);

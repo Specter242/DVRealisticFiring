@@ -40,6 +40,7 @@ namespace RealisticFiring.Visuals
             ["S484-840A"] = (new Vector3(-0.25f, -0.19f, -0.01f), new Vector3(-180f, 0f, 2f)), // 2026-10-11
             ["S464-730"] = (new Vector3(0f, -0.22f, 0f), new Vector3(-180f, 0f, 2f)), // 2026-10-11
             ["FEF-3"] = (new Vector3(-0.14f, -0.48f, -0.03f), new Vector3(-180f, 0f, 2f)), // 2026-10-11
+            [QjStokerCab.Livery] = (new Vector3(-0.2f, 0f, 0f), new Vector3(-180f, 0f, 2f)), 
         };
 
         private static readonly Vector3 SeatTurns = new Vector3(-180f, 0f, 2f);
@@ -97,7 +98,7 @@ namespace RealisticFiring.Visuals
                     continue;
                 var valve = InjectorValves.For(i, car.carLivery.id);
                 var feeders = interior.GetComponentsInChildren<InteractablePortFeeder>(true)
-                    .Where(f => f.portId == circuit.Control.id && !f.transform.IsChildOf(root))
+                    .Where(f => f.portId == circuit.Control.id && !f.transform.IsChildOf(root) && !QjStokerCab.HiddenOriginal(f))
                     .ToList();
                 if (feeders.Count == 0)
                     notes.Add($"no cab control works '{circuit.Control.id}'");

@@ -25,6 +25,7 @@ namespace RealisticFiring
                 // The 8F: fitted on the black livery; the grey is the same cab.
                 ["em_lms_8f_loc_black"] = (0.000f, 2.018f, 0.540f, 0.410f, -4.379f),
                 ["em_lms_8f_loc_grey"] = (0.000f, 2.018f, 0.540f, 0.410f, -4.379f),
+                ["S2102-870"] = (0.000f, 2.407f, 0.650f, 0.350f, -0.358f),
             };
 
         // Holes set this session on the seating bench (Visuals.SeatingBench, a
@@ -35,6 +36,8 @@ namespace RealisticFiring
             new Dictionary<string, (float, float, float, float, float)>();
         private static readonly Dictionary<string, (float Middle, float Foot, float Width, float Height, float Plane)> LastUnfitted =
             new Dictionary<string, (float, float, float, float, float)>();
+        private static readonly Dictionary<string, (float Middle, float Foot, float Width, float Height, float Plane)> NativeHoles =
+            new Dictionary<string, (float, float, float, float, float)>();
 
         /// <summary>
         /// <paramref name="livery"/>'s hole: the bench's, the table's, or the
@@ -42,11 +45,55 @@ namespace RealisticFiring
         /// one is known.
         /// </summary>
         internal static bool TryHole(string livery, out (float Middle, float Foot, float Width, float Height, float Plane) hole) =>
-            DevHoles.TryGetValue(livery, out hole) || Holes.TryGetValue(livery, out hole) || LastUnfitted.TryGetValue(livery, out hole);
+            DevHoles.TryGetValue(livery, out hole) || Holes.TryGetValue(livery, out hole) || NativeHoles.TryGetValue(livery, out hole) || LastUnfitted.TryGetValue(livery, out hole);
 
         // The bench's hole, then the table's.
         private static bool TryFitted(string livery, out (float Middle, float Foot, float Width, float Height, float Plane) hole) =>
-            DevHoles.Count > 0 && DevHoles.TryGetValue(livery, out hole) || Holes.TryGetValue(livery, out hole);
+            DevHoles.Count > 0 && DevHoles.TryGetValue(livery, out hole) || Holes.TryGetValue(livery, out hole) || NativeHoles.TryGetValue(livery, out hole);
+
+        // The QJ's shovel target reaches into the box. Its two closed door
+        // leaves in the prefab are a better starting rectangle, independent
+        // of the live door's opening angle. The bench can refine this fit.
+        private static bool SeedNative(TrainCar car)
+        {
+            if (car == null || car.carLivery == null || car.carLivery.id != Visuals.QjStokerCab.Livery)
+                return false;
+            if (TryFitted(car.carLivery.id, out _)) return true;
+            var prefab = car.carLivery.interiorPrefab != null ? car.carLivery.interiorPrefab.transform : null;
+            var door = prefab != null ? prefab.Find("fireboxdoor ") : null;
+            if (door == null) return false;
+            Bounds? bounds = null;
+            foreach (var renderer in door.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                var part = CarSpace.LocalBounds(prefab, renderer);
+                if (bounds.HasValue) { var all = bounds.Value; all.Encapsulate(part); bounds = all; }
+                else bounds = part;
+            }
+            if (!bounds.HasValue || bounds.Value.size.x < 0.1f || bounds.Value.size.y < 0.1f) return false;
+            var b = bounds.Value;
+            NativeHoles[car.carLivery.id] = (b.center.x, b.min.y, b.size.x, b.size.y, b.min.z);
+            return true;
+        }
+
+ internal static bool SeedForBench(TrainCar car)
+        {
+            if (car == null || car.carLivery == null) return false;
+            if (TryHole(car.carLivery.id, out _) || SeedNative(car)) return true;
+            if (!Sim.FireboxRegistry.TryGet(car, out var firebox) || !Visuals.ZonedCoalBed.TryGet(firebox, out var bed)) return false;
+            var target = bed.GetComponent<ItemUseTarget>();
+            if (target == null || target.targetColliders == null) return false;
+            Bounds? bounds = null;
+            foreach (var collider in target.targetColliders)
+            {
+                if (collider == null) continue;
+                var part = CarSpace.LocalBounds(car.transform, collider);
+                if (bounds.HasValue) { var all = bounds.Value; all.Encapsulate(part); bounds = all; }
+                else bounds = part;
+            }
+            if (!bounds.HasValue) return false;
+            For(car, bounds.Value);
+            return TryHole(car.carLivery.id, out _);
+        }
 
         private FireholeOpening(Vector3 min, Vector3 max)
         {
@@ -87,6 +134,7 @@ namespace RealisticFiring
         /// <summary>The hole of <paramref name="car"/>'s cab, where <paramref name="target"/> is its shovel target, moved and sized by the calibration settings.</summary>
         public static FireholeOpening For(TrainCar car, Bounds target)
         {
+            SeedNative(car);
             var livery = car != null && car.carLivery != null ? car.carLivery.id : null;
             if (livery != null && TryFitted(livery, out var fitted))
                 return new FireholeOpening(new Vector3(fitted.Middle - fitted.Width / 2f, fitted.Foot, fitted.Plane),

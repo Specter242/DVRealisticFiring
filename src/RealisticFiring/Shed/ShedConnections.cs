@@ -33,6 +33,11 @@ namespace RealisticFiring.Shed
         private const string CapName = "FuelTankCap";
         private const string FittingName = "RealisticFiring Barco fitting";
         private const string FillingName = "RealisticFiring filling connection";
+        // QJ 1.0.2's existing hollow fitting, including its backing plate.
+        // The mouth was measured from the end-ring vertices, not the mesh's
+        // overall center (its side branch makes that center 17 mm off-axis).
+        internal const string QjWaterFitting = "Model/QJ body/colliders/Cube.044";
+        internal static readonly Vector3 QjWaterMouth = new Vector3(-1.5431395f, 1.5876111f, 2.4728939f);
 
  private static readonly Dictionary<string, (Vector3 At, float Swing, float Down, float Spin, float Out)> Seated =
             new Dictionary<string, (Vector3, float, float, float, float)>
@@ -44,6 +49,7 @@ namespace RealisticFiring.Shed
             ["S484-840A"] = (new Vector3(-0.79f, 2.45f, 7.57f), 0f, 54f, 0f, 0f),
             ["A.T.&S.F. 2901-A"] = (new Vector3(-0.64f, 2.31f, 8.08f), 0f, 79f, 0f, 0f),
             ["Jk3A"] = (new Vector3(-0.90f, 1.35f, 3.25f), 0f, -13f, 0f, 0f),
+            [QjStokerCab.Livery] = (new Vector3(-1.25f, 2.11f, 11.69f), 0f, -15f, 0f, 0f), 
         };
 
  private static readonly Dictionary<string, (Vector3 At, float Swing, float Down, float Spin, float Out)> WaterSeated =
@@ -61,6 +67,7 @@ namespace RealisticFiring.Shed
             ["S484-840A"] = (new Vector3(-0.72f, 1.41f, -7.23f), 0f, 0f, 0f, 0f),
             // The Santa Fe 2901: far back on its long boiler.
             ["A.T.&S.F. 2901-A"] = (new Vector3(-1.22f, 2.03f, -7.98f), 0f, 0f, 0f, 0f),
+            [QjStokerCab.Livery] = (QjWaterMouth, 0f, 0f, 0f, 0f), 
         };
 
         // Seats set this session on the seating bench (Visuals.SeatingBench, a
@@ -82,6 +89,7 @@ namespace RealisticFiring.Shed
             public PlugSocket Socket;
             public Transform Fitting;
             public Vector3 Guessed;
+            public bool NativeFitting;
         }
 
         private static readonly Dictionary<SteamExhaust, Connection> BlowerSockets = new Dictionary<SteamExhaust, Connection>();
@@ -209,10 +217,13 @@ namespace RealisticFiring.Shed
             var turned = Quaternion.AngleAxis(-side * swing, Vector3.up) * Quaternion.AngleAxis(-side * down, Vector3.forward) * facing;
             var go = connection.Socket.transform;
             go.localRotation = turned * Quaternion.AngleAxis(spin, Vector3.up);
-            go.localPosition = at + go.localRotation * Vector3.up * ((water ? WaterFittings.Proud : FittingProud) + further);
+            var proud = connection.NativeFitting ? 0f : water ? WaterFittings.Proud : FittingProud;
+            go.localPosition = at + go.localRotation * Vector3.up * (proud + further);
+            if (connection.NativeFitting && connection.Socket.plugMarker != null)
+                go.position += connection.Car.transform.TransformPoint(at + go.localRotation * Vector3.up * further) - connection.Socket.plugMarker.position;
             if (!water)
                 BlowerFittings.Orient(connection.Fitting, connection.Car.transform);
-            return $"{connection.Kind.Name} connection with its flange at ({at.x:F2}, {at.y:F2}, {at.z:F2}) m in the car frame on its {(side > 0f ? "right" : "left")}" +
+            return $"{connection.Kind.Name} connection {(connection.NativeFitting ? "at the native spigot mouth" : "with its flange")} at ({at.x:F2}, {at.y:F2}, {at.z:F2}) m in the car frame on its {(side > 0f ? "right" : "left")}" +
                    (further != 0f ? $" and {further * 100f:F0} cm further out" : "") +
                    $", swung {swing:F0} toward the front, turned {down:F0} down, and spun {spin:F0} degrees, {how}";
         }
@@ -273,10 +284,12 @@ namespace RealisticFiring.Shed
                 var z = stackGuess.HasValue ? stackGuess.Value.z - BehindSmokebox : 0f;
                 local = new Vector3(-Side(car, new Vector3(0f, FallbackFirebox, z), false), FallbackFirebox, z);
             }
-            var socket = Fitting(car, HoseKind.Water);
+            var native = car.carLivery.id == QjStokerCab.Livery ? car.transform.Find(QjWaterFitting) : null;
+            if (native != null && native.GetComponent<MeshRenderer>() == null) native = null;
+            var socket = Fitting(car, HoseKind.Water, native);
             if (socket == null)
                 return "no diesel fuel cap to copy for the water connection";
-            var fitting = socket.transform.Find(FillingName);
+            var fitting = native != null ? native : socket.transform.Find(FillingName);
             // Its cock open with the hose on, shut without.
             socket.PluggedIn += (plug, at) =>
             {
@@ -294,7 +307,7 @@ namespace RealisticFiring.Shed
                     : ""));
             };
             WaterFittings.Cock(fitting, socket.IsPluggedIn);
-            var connection = new Connection { Car = car, Kind = HoseKind.Water, Socket = socket, Fitting = fitting, Guessed = local };
+            var connection = new Connection { Car = car, Kind = HoseKind.Water, Socket = socket, Fitting = fitting, Guessed = local, NativeFitting = native != null };
             WaterSockets[car] = connection;
             return Place(connection);
         }
@@ -368,7 +381,7 @@ namespace RealisticFiring.Shed
         // A copy of a diesel's fuel cap and its socket on the engine, retagged
         // for the hose of kind, drawn as its fitting: the Barco fitting on the
         // smokebox for the blower line, the filling connection for water.
-        private static PlugSocket Fitting(TrainCar car, HoseKind kind)
+        private static PlugSocket Fitting(TrainCar car, HoseKind kind, Transform native = null)
         {
             Transform cap = null;
             foreach (var id in CapLiveries)
@@ -403,8 +416,8 @@ namespace RealisticFiring.Shed
             var layer = copy.GetComponentsInChildren<Renderer>(true).Select(r => r.gameObject.layer).DefaultIfEmpty(copy.layer).First();
             foreach (var renderer in copy.GetComponentsInChildren<Renderer>(true))
                 renderer.enabled = false;
-            var fitting = kind == HoseKind.Water ? WaterFittings.Filling(copy.transform, layer, kind.Scale) : BlowerFittings.Barco(copy.transform, layer);
-            fitting.name = kind == HoseKind.Water ? FillingName : FittingName;
+            var fitting = native != null ? native : kind == HoseKind.Water ? WaterFittings.Filling(copy.transform, layer, kind.Scale) : BlowerFittings.Barco(copy.transform, layer);
+            if (native == null) fitting.name = kind == HoseKind.Water ? FillingName : FittingName;
             BlowerFittings.Outline(copy.transform, fitting);
             copy.transform.SetParent(car.transform, false);
             Object.Destroy(holder);

@@ -27,6 +27,13 @@ namespace RealisticFiring.Sim
             // the chimney.
             ["em_lms_8f_loc_black"] = (0.4f, 0.26f, AirPump.NineAndHalf, 1, 0f),
             ["em_lms_8f_loc_grey"] = (0.4f, 0.26f, AirPump.NineAndHalf, 1, 0f),
+            // China Railways QJ: a 6.8 m² (73.2 sq ft) grate; its blower
+            // between the S282's and the Hudson's by grate area, natural draft
+            // by grate area (both inferred). One steam cross-compound pump low
+            // on the right of the smokebox, its exhaust into the blast pipe
+            // from No. 6243 (the LV's МТЗ pump, 3,100 L/min, close to the
+            // 8½-in.'s); the maker's 1,000 L reservoir, the LV's two 500 L.
+            ["S2102-870"] = (0.6f, 0.66f, AirPump.CrossCompound, 1, 0f),
         };
 
         // The FEF-1's 91,000 cu in, L.

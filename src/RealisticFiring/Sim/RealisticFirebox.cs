@@ -100,8 +100,9 @@ namespace RealisticFiring.Sim
             Model.Character = Character.Grate;
             Model.GrateSlope = FireboxCharacters.Slope(car,
                 car != null && car.carLivery != null && GrateSlopes.TryGetValue(car.carLivery.id, out var slope) ? slope : 0f);
-            if (car != null && car.carLivery != null && GrateAreas.TryGetValue(car.carLivery.id, out var area))
-                Model.GrateArea = area;
+            var livery = car?.carLivery?.id;
+            Model.GrateArea = FireboxCharacters.GrateAreaForLivery(livery,
+                livery != null && GrateAreas.TryGetValue(livery, out var area) ? area : 0f);
 
             // Same ports, IDs, and default values as the stock Firebox.
             intakeWaterContent = AddPortReference(fDef.intakeWaterContent);
@@ -156,8 +157,8 @@ namespace RealisticFiring.Sim
         }
 
         /// <summary>
-        /// Each livery's grate area, in m², as measured from its coal pile when
-        /// a cab first loads; later fireboxes of that livery start with it.
+        /// Each livery's physical grate area, in m²: a known prototype area
+        /// takes precedence over its coal mesh. Later fireboxes reuse it.
         /// </summary>
         public static readonly System.Collections.Generic.Dictionary<string, float> GrateAreas =
             new System.Collections.Generic.Dictionary<string, float>();
@@ -180,12 +181,12 @@ namespace RealisticFiring.Sim
                 GrateBoxes[Car.carLivery.id] = carFrame;
         }
 
-        /// <summary>Records the grate's measured area for this firebox and its livery.</summary>
+        /// <summary>Accepts a mesh measurement while preserving a known physical grate area.</summary>
         public void SetGrateArea(float squareMetres)
         {
-            Model.GrateArea = squareMetres;
+            Model.GrateArea = FireboxCharacters.GrateAreaForLivery(Car?.carLivery?.id, squareMetres);
             if (Car != null && Car.carLivery != null)
-                GrateAreas[Car.carLivery.id] = squareMetres;
+                GrateAreas[Car.carLivery.id] = Model.GrateArea;
         }
 
         public FireModel Model { get; }

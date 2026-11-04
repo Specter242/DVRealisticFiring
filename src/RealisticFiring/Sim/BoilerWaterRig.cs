@@ -29,6 +29,9 @@ namespace RealisticFiring.Sim
             // British practice: lead plugs in the firebox crown.
             ["em_lms_8f_loc_black"] = Guard.FusiblePlug,
             ["em_lms_8f_loc_grey"] = Guard.FusiblePlug,
+            // China Railways QJ: fusible plugs in the crown sheet (three, by an
+            // ex-crewman; the LV it came from had two).
+            ["S2102-870"] = Guard.FusiblePlug,
         };
 
         /// <summary>What players near the loco are told when its plug melts.</summary>

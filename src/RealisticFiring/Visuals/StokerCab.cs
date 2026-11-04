@@ -45,6 +45,7 @@ namespace RealisticFiring.Visuals
         {
             ["S464-730"] = new Vector3(0.45f, 0f, -0.15f), // a foot and a half inboard, six inches aft
             ["LocoS282A"] = new Vector3(0f, 0f, -0.3f), // a foot aft
+            [QjStokerCab.Livery] = new Vector3(-0.38f, 0f, 0f), 
         };
 
         // The label is a plate lying flat on the floor, face up, in line with
@@ -134,6 +135,11 @@ namespace RealisticFiring.Visuals
             // The 844's stoker valve sits low beside its blower valve; the
             // manifold stands 80 cm above it.
             ["FEF-3"] = new Placement(new Vector3(-34f, 80f, 8f), 0f, 0f),
+            // Initial instrument bracket for the QJ placement session. Its
+            // existing six-wheel bank stays in place and needs no manifold.
+            // A row above the triangle, below the speedometer, standing
+            // clear of the cladding. The pump sits to the bank's right.
+            [QjStokerCab.Livery] = new Placement(new Vector3(0f, 10f, -4f), 0f, 0f),
         };
 
         private static readonly Dictionary<string, string> StokerValveCopies = new Dictionary<string, string>
@@ -193,6 +199,12 @@ namespace RealisticFiring.Visuals
             if (flow == null || !flow.OrderedSimComps.Any(c => c != null && c.id == StokerJetControls.Master.Id)
                 || !flow.TryGetPort(StokerJetControls.Master.PortId, out _))
                 return null;
+
+            if (car.carLivery.id == QjStokerCab.Livery)
+            {
+                Interiors[car] = interior;
+                return QjStokerCab.Attach(car, interior, flow);
+            }
 
             // The anchor valve on the fireman's side: the one furthest to the left.
             var anchorPort = AnchorPorts.TryGetValue(car.carLivery.id, out var listed) ? listed : StokerPort;
@@ -302,6 +314,7 @@ namespace RealisticFiring.Visuals
                     if (old != null)
                         Object.DestroyImmediate(old.gameObject);
                     var result = Attach(car, interior);
+                    QjStokerCab.RefreshAttachments(car, interior);
                     if (result != null && Main.Settings.LogFireboxCreation)
                         Main.Mod.Logger.Log($"{car.LogName()}: {result}");
                 }
@@ -332,6 +345,7 @@ namespace RealisticFiring.Visuals
                 if (interior == null || interior.Find(RootName) != null)
                     continue;
                 var result = Attach(car, interior);
+                QjStokerCab.RefreshAttachments(car, interior);
                 if (result != null && Main.Settings.LogFireboxCreation)
                     Main.Mod.Logger.Log($"{car.ID}: the cab had lost its stoker manifold; {result}");
             }
@@ -358,11 +372,15 @@ namespace RealisticFiring.Visuals
         // The operating lever on the floor: the S282's cylinder cock lever with
         // three named notches, working the lever's port. Returns where it
         // went, for the log, or null.
-        private static string PlaceLever(Transform cabPrefab, Transform frame, Port port, TrainCar car, Transform sourceControl, Transform sourceLabel)
+        internal static string PlaceLever(Transform cabPrefab, Transform frame, Port port, TrainCar car, Transform sourceControl, Transform sourceLabel)
         {
             var move = LeverMoveFor(car.carLivery.id);
             var above = frame.TransformPoint(LeverAbove) + car.transform.TransformVector(move);
-            var onFloor = TryFindFloor(car, above, out var floor);
+            var qj = car.carLivery.id == QjStokerCab.Livery;
+            Vector3 floor;
+            var onFloor = qj;
+            if (qj) floor = QjStokerCab.LeverFloor(car, move);
+            else onFloor = TryFindFloor(car, above, out floor);
             if (!onFloor)
                 floor = above - car.transform.up * FallbackDrop;
 

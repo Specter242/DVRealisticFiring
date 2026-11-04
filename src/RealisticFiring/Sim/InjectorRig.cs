@@ -151,6 +151,12 @@ namespace RealisticFiring.Sim
             // 2 June 1945 p.974), rather than the road's bigger 2-10-4s' 13,500
             // (RME Feb 1939 p.51). Inferred, low confidence. The game's is 35.
             ["A.T.&S.F. 2901-A"] = 12.6f,
+            // China Railways QJ: the cab's one lever is the driver's, on the
+            // left, the large FX16.5 non-lifting injector under his seat (the
+            // fireman's small X10 lifter is not in the model). Its delivery
+            // not found: by its 16.5 against the JK3's 8.5 mm, 2.5 kg/s
+            // scaled by the area, about 9.4 kg/s (inferred).
+            ["S2102-870"] = 9.4f,
         };
 
         private static readonly HashSet<string> OneLeverForTwo = new HashSet<string> { "LocoS282A", "LocoS060" };

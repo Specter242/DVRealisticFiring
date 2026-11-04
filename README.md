@@ -1,5 +1,7 @@
 # Realistic Firing for Derail Valley
 
+**1.17.7** (2026-11-04): added LittleNiko36's S2102-870 QJ 1.0.2 and closed the injector steam valve when locomotive fees shut its water control. The owner fitted and accepted the QJ cab in game. Its final physical grate sizing and throttle circuit, and the fee-shutdown fix, were checked offline, without new in-game tests. No new loaded-road, save/reload, hose-filling, VR or live multiplayer check was run. The updated booklet was rebuilt and asset-checked; its revised pages were not checked for readability in game.
+
 **1.17.6** (2026-11-03): quieter injector overflow, more reliable multiplayer stoker coal feed, the 2901's tender sandbox, town smoke fees, and clearer hose-location guidance. The owner tested the tender sandbox on desktop. The new injector sound, stoker fix, and smoke-fee behavior were checked offline and have not been tested in game; no new VR or live multiplayer test was run. The booklet page was rebuilt and asset-checked, but its in-game readability remains untested. Additional plume timings do not change smoke behavior or claim an FPS improvement.
 
 A Unity Mod Manager mod with zoned coal fires, mechanical stokers, oil burners,

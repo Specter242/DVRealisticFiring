@@ -18,6 +18,9 @@ namespace RealisticFiring.Sim
 
             public GrateCharacter Grate { get; }
 
+            /// <summary>Known physical grate area, m², when the visible coal mesh represents only part of it.</summary>
+            public float? PrototypeGrateArea { get; set; }
+
             /// <summary>The prototype's grate slope in degrees (negative falling to the front), used when the coal pile measures level.</summary>
             public float? PrototypeSlope { get; set; }
 
@@ -134,6 +137,15 @@ namespace RealisticFiring.Sim
             {
                 PrototypeSlope = -4f,
             },
+
+            ["S2102-870"] = new Firebox("the QJ's box: 1,200 mm chamber, arch tubes; inclined; ashy Chinese coal; the C-3 stoker leaves the back corners short",
+                new GrateCharacter { ClinkerFactor = 1.2f, AshFactor = 1.5f })
+            {
+                PrototypeGrateArea = 6.8f,
+                PrototypeSlope = -5f,
+                StokerBackLanes = 0.6f,
+            },
+
         };
 
         public static Firebox For(TrainCar car) =>
@@ -141,6 +153,10 @@ namespace RealisticFiring.Sim
 
         internal static Firebox ForLivery(string livery) =>
             livery != null && ByLivery.TryGetValue(livery, out var firebox) ? firebox : Typical;
+
+        /// <summary>Physical grate area when known; otherwise the measured mesh area, including 0 before it loads.</summary>
+        internal static float GrateAreaForLivery(string livery, float measured) =>
+            ForLivery(livery).PrototypeGrateArea ?? measured;
 
         /// <summary>The grate's slope: as measured from the coal pile, or the prototype's where the pile is modeled level.</summary>
         public static float Slope(TrainCar car, float measured)

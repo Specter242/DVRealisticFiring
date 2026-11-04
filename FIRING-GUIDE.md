@@ -118,6 +118,7 @@ on the smokebox, usually facing down; water sockets are low on the firebox near 
 | 844 | Left, low on smokebox | Left, outside the firebox below the cab |
 | S484-840 | Left, low on smokebox | Left, below the cab at the rear of the boiler |
 | 2901 | Left, low on smokebox | Left, below the cab at the rear of the boiler |
+| QJ | Left, low on smokebox; tilts up | Left, plain gray spigot ahead of the cab |
 
 Use a shed or service location; tow a dead engine there if needed.
 
@@ -148,6 +149,30 @@ Use a shed or service location; tow a dead engine there if needed.
   starves both back corners.
 - **S484-840:** the same firebox as the 844, with ordinary coal. Its stoker
   reaches the back corners.
+- **QJ:** a big box with a combustion chamber and arch tubes. Its ashy coal
+  leaves more ash and clinker; the stoker runs the back corners short, so
+  keep them up by hand, as the real QJ's crews did.
+  The triangular six-wheel bank works the stoker jets: master at the top
+  middle, front jets at the upper corners, back jets in the middle row,
+  and fines at the bottom. STOKER and FEED PUMP are beside the bank;
+  compressor, blowdown, dynamo and blower are overhead. The engineer's
+  water wheel and steam lever work the non-lifting injector. Start on
+  that injector, then use the pump as the feedwater heater warms.
+
+## Smoke in towns
+
+Keep the stack to a light haze through town passenger districts. White steam
+is fine. Sustained heavy smoke earns a warning after a minute, with three
+minutes free before an extra environmental fee begins: about $100 a minute,
+capped at $500 per engine per visit at standard prices. A clean spell restores
+the allowance. Fire little and often, give fresh coal enough air, and ease an
+overfed stoker; on the 2901, balance oil, atomizing steam and draft. Normal
+shovelful smoke and a brief hard start usually clear before any fee.
+
+Standing light-ups on town passenger storage sidings are exempt; designated
+service and shed tracks remain free. Reloading or
+paying a debt does not reset the visit cap. The controls guide lists the
+covered districts and the full allowance rules.
 
 ## Keeping the fire clean
 
@@ -168,7 +193,7 @@ Use a shed or service location; tow a dead engine there if needed.
   dumping it elsewhere adds an environmental fee. Check the handle's hover
   before opening it. From outside, a bright glow under the engine means clean grates.
 
-## Stoker (S282 if fitted, NYC Hudson, 844, S484-840)
+## Stoker (S282 if fitted, NYC Hudson, 844, S484-840, QJ)
 
 - **Start** with steam up: floor lever at Forward, open the stoker engine
   valve, and set the feed to hold the coal steady.
@@ -295,7 +320,7 @@ Use a shed or service location; tow a dead engine there if needed.
   see [Throttle characteristics](#throttle-characteristics).
 - **Don't run the tender dry:** nearly empty, a climb or a hard start runs
   the water off the outlet and the injectors lose it until it runs back.
-- **Feed pump and heater** (Hudson, 844, S484-840, 2901): start on the
+- **Feed pump and heater** (Hudson, 844, S484-840, 2901, QJ): start on the
   injector, then switch to the pump once the engine has worked a few
   minutes. It feeds hot water and holds the pressure better. Ease it before
   you shut off.
@@ -347,14 +372,14 @@ hold that steam:
   from the cylinders, but the pipes and chest beyond the throttle still
   contain steam.
 
-| Engines in this test build | Throttle arrangement |
+| Engines | Throttle arrangement |
 | --- | --- |
-| S282 (provisional), LMS 8F | Before the superheater |
+| S282 (provisional), LMS 8F, QJ | Before the superheater |
 | NYC Hudson (provisional), 844, S484-840, 2901 | After the superheater |
 | S060, JK3 | Existing response; no added superheater steam-storage model |
 
-These test fits retain each maker's chest and throttle capacity and add a
-separate, provisionally sized superheater circuit. On the S282 and 8F,
+These fits retain each maker's chest and throttle capacity and add a
+separate, provisionally sized superheater circuit. On the S282, 8F and QJ,
 that circuit fills when the regulator opens and runs down with the chest
 after closing: allow for a gradual change in pull. A front-end throttle
 isolates the charged circuit from the cylinders, so it answers sooner

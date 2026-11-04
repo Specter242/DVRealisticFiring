@@ -31,6 +31,7 @@ namespace RealisticFiring.Sim
             // The 8F's 225 psi, which its maker set as 15.5 bar, gauge.
             ["em_lms_8f_loc_black"] = (16.5f, 4f),
             ["em_lms_8f_loc_grey"] = (16.5f, 4f),
+            ["S2102-870"] = (17.3f, 7.5f),
         };
 
         /// <summary>

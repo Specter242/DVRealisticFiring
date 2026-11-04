@@ -54,6 +54,13 @@ namespace RealisticFiring.Sim
             // the NYC, the fireman's works the pump and the engineman's the
             // injector.
             ["A.T.&S.F. 2901-A"] = new Fit(FeedHeaterType.Open, "Worthington 6-SA", 12.6f, onInjectorLever: true),
+            // China Railways QJ: an open heater on part of the exhaust, its
+            // mixer at the top front of the boiler (a Worthington SA copy, by
+            // one account), and a piston hot-water pump under the smokebox
+            // that the fireman works by its own valve; it ran at about 400
+            // L/min in service (Schaefer). Its capacity not found: the SA's
+            // 9,000 gal/h, above that and the boiler's tested 8 kg/s (inferred).
+            ["S2102-870"] = new Fit(FeedHeaterType.Open, "open heater (Worthington SA type)", 9.46f, onInjectorLever: false),
         };
 
         public static bool TryGet(string liveryId, out Fit fit)

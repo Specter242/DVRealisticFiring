@@ -23,7 +23,13 @@ namespace RealisticFiring.AdapterCheck
 
         private static int Main(string[] args)
         {
+            if (args.Length == 1 && args[0] == "--qj-backend")
+            {
+                QjBackendChecks.Run(Check);
+                return failures == 0 ? 0 : 1;
+            }
             if (args.Length == 2 && args[0] == "--throttle-calibration") return ThrottleBench.Calibration(args[1]);
+            if (args.Length == 2 && args[0] == "--qj-calibration") return ThrottleBench.Calibration(args[1], "S2102-870", 17.3f);
             if (args.Length > 0 && (args[0] == "--throttle-bench" || args[0] == "--throttle-sensitivity"))
             {
                 if (args.Length < 2 || args.Length > 3 || (args.Length == 3 && args[2] != "--quick"))
@@ -162,6 +168,7 @@ namespace RealisticFiring.AdapterCheck
             CheckInjector(gameParams);
             CheckInjectorSteamValve(gameParams);
             CheckInjectorSteamValve(gameParams, "LocoS282A");
+            CheckInjectorNeutralState();
             CheckJk3Injectors(gameParams);
             CheckLms8FInjectors(gameParams);
             CheckJk3Firebox(gameParams);
@@ -171,6 +178,8 @@ namespace RealisticFiring.AdapterCheck
             CheckOverlayBoilerFallback();
             CheckVrShedHoseParts();
             CheckStoker(gameParams, def);
+            QjCabChecks.Run(Check);
+            QjBackendChecks.Run(Check);
             PlumeTimingChecks.Run(Check);
             InjectorAudioChecks.Run(Check);
             CheckOilBurner(gameParams);
@@ -1975,6 +1984,85 @@ namespace RealisticFiring.AdapterCheck
                 "a changed LMS 8F injector calculation is not taken for its two injectors");
         }
 
+        private static bool SkipInjectorNeutralState() => false;
+
+        private static void CheckInjectorNeutralState()
+        {
+            const string owner = "RealisticFiring.AdapterCheck.InjectorNeutralState";
+            var harmony = new Harmony(owner);
+            var reset = AccessTools.Method(typeof(DV.Simulation.Cars.BaseControlsOverrider), "SetNeutralState");
+            var patch = typeof(InjectorSteamPatch).Assembly.GetType("RealisticFiring.Patches.InjectorNeutralStatePatch");
+            if (patch != null) harmony.CreateClassProcessor(patch).Patch();
+            Port Control(string id, float value) => new Port(id, new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"), value);
+            DV.Simulation.Cars.BaseControlsOverrider Fixture(Port[] ports, params Port[] stockResets)
+            {
+                // Run the actual stock reset with managed shells for its scene
+                // objects; no Unity native methods or fee balances are needed.
+                object Shell(Type type) => System.Runtime.Serialization.FormatterServices.GetUninitializedObject(type);
+                var flow = (SimulationFlow)Shell(typeof(SimulationFlow));
+                AccessTools.Field(typeof(SimulationFlow), "AllPorts").SetValue(flow, ports);
+                AccessTools.Field(typeof(SimulationFlow), "fullPortIdToPort").SetValue(flow,
+                    new System.Collections.ObjectModel.ReadOnlyDictionary<string, Port>(ports.ToDictionary(p => p.id)));
+                var car = (TrainCar)Shell(typeof(TrainCar));
+                car.couplers = new[] { (Coupler)Shell(typeof(Coupler)), (Coupler)Shell(typeof(Coupler)) };
+                var controls = (DV.Simulation.Cars.BaseControlsOverrider)Shell(typeof(DV.Simulation.Cars.BaseControlsOverrider));
+                controls.car = car;
+                controls.neutralStateSetters = stockResets.Select(p => new DV.Simulation.Cars.BaseControlsOverrider.PortSetter(p.id, 0f)).ToArray();
+                AccessTools.Field(controls.GetType(), "simFlow").SetValue(controls, flow);
+                return controls;
+            }
+            try
+            {
+                var debtReset = AccessTools.Method(typeof(DV.ServicePenalty.SimulatedCarDebtTracker), "TurnOffDebtSources");
+                Check(PatchProcessor.GetOriginalInstructions(debtReset).Any(i => i.Calls(reset)),
+                    "paying locomotive fees reaches the stock neutral-state reset");
+                var water = Control("injector", .6f);
+                var steam = Control(InjectorValves.Steam.Id, 1f);
+                var unrelated = Control("rfStokerEngine", .7f);
+                var controls = Fixture(new[] { water, steam, unrelated }, water);
+                water.ExternalValueUpdate(0f);
+                Check(steam.Value == 1f, "closing water by hand leaves separate steam available for manual operation");
+                water.Value = .6f;
+                var changes = 0;
+                steam.ValueUpdatedInternally += _ => changes++;
+                controls.SetNeutralState();
+                Check(water.Value == 0f && steam.Value == 0f && unrelated.Value == .7f && changes == 1,
+                    "fee shutdown closes water and added injector steam through normal port events, without changing unrelated controls");
+                controls.SetNeutralState();
+                Check(steam.Value == 0f && changes == 1, "repeated fee shutdown leaves injector steam shut without duplicate changes");
+
+                var leftWater = Control("injector2", .7f);
+                var leftSteam = Control(InjectorValves.SteamLeft.Id, .5f);
+                water.Value = .6f; steam.Value = 1f;
+                Fixture(new[] { water, leftWater, steam, leftSteam }, water, leftWater).SetNeutralState();
+                Check(water.Value == 0f && leftWater.Value == 0f && steam.Value == 0f && leftSteam.Value == 0f,
+                    "fee shutdown closes both separate injector steam levers on paired-injector engines");
+
+                var addedWater = Control(InjectorValves.Water.Id, .6f);
+                var addedLeftWater = Control(InjectorValves.WaterLeft.Id, .7f);
+                water.Value = 1f; leftWater.Value = .5f;
+                Fixture(new[] { water, leftWater, addedWater, addedLeftWater }, water, leftWater).SetNeutralState();
+                Check(water.Value == 0f && leftWater.Value == 0f && addedWater.Value == 0f && addedLeftWater.Value == 0f,
+                    "fee shutdown also closes the 8F's added water regulators when its stock steam levers are reset");
+
+                water.Value = .6f;
+                Fixture(new[] { water, unrelated }, water).SetNeutralState();
+                Check(water.Value == 0f && unrelated.Value == .7f, "engines without separate injector valves keep the stock fee shutdown");
+                AccessTools.Field(controls.GetType(), "simFlow").SetValue(controls, null);
+                controls.neutralStateSetters = new DV.Simulation.Cars.BaseControlsOverrider.PortSetter[0];
+                controls.SetNeutralState();
+                Check(true, "neutral-state reset tolerates a missing simulation flow");
+
+                water.Value = .6f; steam.Value = 1f;
+                controls = Fixture(new[] { water, steam }, water);
+                harmony.Patch(reset, prefix: new HarmonyMethod(typeof(Program), nameof(SkipInjectorNeutralState)));
+                controls.SetNeutralState();
+                Check(water.Value == .6f && steam.Value == 1f,
+                    "a neutral-state reset canceled by another patch leaves injector controls unchanged");
+            }
+            finally { harmony.UnpatchAll(owner); }
+        }
+
         // An engine fitted with its own injector steam valve: the stock lever
         // is the water valve, the new control shut, primed, or wide open.
         private static void CheckInjectorSteamValve(SimGameParams gameParams, string livery = "LocoS060")
@@ -2602,7 +2690,7 @@ namespace RealisticFiring.AdapterCheck
                 Check(black.PipeVolume == grey.PipeVolume && black.ChestVolume == grey.ChestVolume && black.MaxFlow == grey.MaxFlow
                       && black.ChestVolume == 800 && black.PipeVolume == 120,
                     "both 8F liveries keep their maker chest and share the dimensional circuit estimate");
-                foreach (var id in new[] { "LocoS282A", "em_lms_8f_loc_black", "S464-730", "FEF-3", "S484-840A", "A.T.&S.F. 2901-A" })
+                foreach (var id in new[] { "LocoS282A", "em_lms_8f_loc_black", "S464-730", "FEF-3", "S484-840A", "A.T.&S.F. 2901-A", "S2102-870" })
                 {
                     var cases = new List<(float Throttle, float Cutoff, float Temperature, EngineRun Before, EngineRun After)>();
                     foreach (var cutoff in new[] { 0.25f, 0.5f, 0.9f })
@@ -3200,6 +3288,7 @@ namespace RealisticFiring.AdapterCheck
                     case "FEF-3": def.cylinderBore = 0.655f; def.pistonStroke = 0.833f; def.steamChestVolume = 1500; def.throttleMaxFlow = 10; break;
                     case "S484-840A": def.cylinderBore = 0.645f; def.pistonStroke = 0.823f; def.steamChestVolume = 1400; def.throttleMaxFlow = 20; break;
                     case "A.T.&S.F. 2901-A": def.cylinderBore = 0.715f; def.pistonStroke = 0.82f; def.steamChestVolume = 1200; def.throttleMaxFlow = 10; break;
+                    case "S2102-870": def.cylinderBore = 0.65f; def.pistonStroke = 0.8f; def.steamChestVolume = 1200; def.throttleMaxFlow = 9; break;
                 }
             }
             var engine = new ReciprocatingSteamEngine(def);

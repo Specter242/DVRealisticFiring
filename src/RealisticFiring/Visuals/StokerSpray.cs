@@ -109,6 +109,7 @@ namespace RealisticFiring.Visuals
         private bool culled;
         private float nextReport;
         private Vector3 plateBox = DefaultPlate;
+        private float nozzleAside = NozzleAside;
         private MaterialPropertyBlock lumpGlow;
         private static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
 
@@ -485,6 +486,17 @@ namespace RealisticFiring.Visuals
         // door's shovel target's face toward the fire.
         private void FindPlate()
         {
+            var car = firebox.Car;
+            if (car != null && (car.carLivery.id == QjStokerCab.Livery || FireholeOpening.DevHoles.ContainsKey(car.carLivery.id))
+                && FireholeOpening.SeedForBench(car) && FireholeOpening.TryHole(car.carLivery.id, out var fitted))
+            {
+                var at = new Vector3(fitted.Middle, fitted.Foot - PlateBelowHole, fitted.Plane);
+                var point = bed.BoxPoint(car.transform.TransformPoint(at));
+                plateBox = point + new Vector3(0f, PlateInside, 0f);
+                var side = bed.BoxPoint(car.transform.TransformPoint(at + Vector3.right * (fitted.Width * 0.25f)));
+                nozzleAside = Mathf.Abs(side.x - point.x);
+                return;
+            }
             var target = bed.GetComponent<DV.Interaction.ItemUseTarget>();
             var colliders = target != null && target.targetColliders != null
                 ? System.Array.FindAll(target.targetColliders, c => c != null)
@@ -514,7 +526,6 @@ namespace RealisticFiring.Visuals
                 return;
             }
             plateBox = new Vector3(0.5f * (min.x + max.x), Mathf.Max(max.y, 0f) + PlateInside, min.z);
-            var car = firebox.Car;
             if (car != null)
             {
                 var reach = CarSpace.LocalBounds(car.transform, colliders[0]);
@@ -527,6 +538,17 @@ namespace RealisticFiring.Visuals
             if (Main.Settings.LogFireboxCreation && firebox.Car != null)
                 Main.Mod.Logger.Log($"{firebox.Car.ID}: stoker plate under the door at {firebox.Car.transform.InverseTransformPoint(bed.BedPoint(plateBox.x, plateBox.y, plateBox.z)):F2} m " +
                                     $"(across {plateBox.x:F2}, along {plateBox.y:F2}, up {plateBox.z:F2} of the bed's box)");
+        }
+
+        /// <summary>Moves the distributor, chunk origins and jet origins with a live firehole calibration.</summary>
+        internal static void Recalibrate(TrainCar car)
+        {
+            if (!FireboxRegistry.TryGet(car, out var firebox) || !ZonedCoalBed.TryGet(firebox, out var bed)) return;
+            var spray = bed.GetComponent<StokerSpray>();
+            if (spray == null) return;
+            spray.plateBox = DefaultPlate;
+            spray.nozzleAside = NozzleAside;
+            spray.SetDraft();
         }
 
         // The draft's pull on the fines, along the bed toward the tubes and up, in the spray's frame.
@@ -555,7 +577,7 @@ namespace RealisticFiring.Visuals
 
         // The jet a column's lane leaves from: the side jets either side of the plate's middle.
         private Vector3 Nozzle(int column) =>
-            InFrame(new Vector3(plateBox.x + (column - 1) * NozzleAside, plateBox.y, plateBox.z));
+            InFrame(new Vector3(plateBox.x + (column - 1) * nozzleAside, plateBox.y, plateBox.z));
 
         // A landing point for the next piece, by the stoker's last
         // distribution, in the spray's frame, and its column; coal lost goes
@@ -637,7 +659,7 @@ namespace RealisticFiring.Visuals
             {
                 var lane = JetLanes[j];
                 var pressure = JetPressure(flow, lane.Jet);
-                var from = InFrame(new Vector3(plateBox.x + lane.Aside * NozzleAside, plateBox.y, plateBox.z));
+                var from = InFrame(new Vector3(plateBox.x + lane.Aside * nozzleAside, plateBox.y, plateBox.z));
                 var heading = InFrame(lane.Toward) - from;
                 if (streams)
                 {

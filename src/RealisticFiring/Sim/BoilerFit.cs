@@ -28,6 +28,9 @@ namespace RealisticFiring.Sim
             // Santa Fe 3766, 82,000 lb/h (AT&SF Test Report 87312, in
             // Stagner, Trains, Feb 1987); no 2900 was tested.
             ["A.T.&S.F. 2901-A"] = 82000f * LbPerHour,
+            // China Railways QJ, "up to 95 kg steam per square meter and
+            // hour" on 255.3 m² (Hans Schaefer's QJ pages; Datong's figures).
+            ["S2102-870"] = 95f * 255.3f / 3600f,
         };
 
         /// <summary>

@@ -63,6 +63,7 @@ namespace RealisticFiring.Visuals
             ["Jk3A"] = new Vector3(-0.86f, 1.01f, -0.87f),
             ["em_lms_8f_loc_black"] = new Vector3(-1.00f, 1.42f, -2.39f), // 2026-10-14
             ["em_lms_8f_loc_grey"] = new Vector3(-1.00f, 1.42f, -2.39f),
+            [QjStokerCab.Livery] = new Vector3(-1.4f, 1.53f, -0.11f), 
         };
 
         // Seats set this session on the seating bench (SeatingBench, a

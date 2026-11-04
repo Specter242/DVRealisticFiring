@@ -24,7 +24,10 @@ namespace RealisticFiring.Visuals
         // right, z forward), in m: a foot aft of it, unless seated for the
         // loco.
         private static readonly Vector3 DefaultFromDump = new Vector3(0f, 0f, -0.3f);
-        private static readonly Dictionary<string, Vector3> Placements = new Dictionary<string, Vector3>();
+        private static readonly Dictionary<string, Vector3> Placements = new Dictionary<string, Vector3>
+        {
+            [QjStokerCab.Livery] = new Vector3(0.95f, -0.17f, -0.3f), 
+        };
 
         // Seats set this session on the seating bench (SeatingBench, a
         // development tool), by livery, as Placements: they come first and

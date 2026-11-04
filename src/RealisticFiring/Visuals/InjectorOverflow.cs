@@ -74,7 +74,7 @@ namespace RealisticFiring.Visuals
             // Every lever working the injector, one a side; else the one the
             // game's controls reader names.
             var levers = roots.SelectMany(r => r.GetComponentsInChildren<InteractablePortFeeder>(true))
-                .Where(f => rig.CircuitFor(f.portId) != null)
+                .Where(f => rig.CircuitFor(f.portId) != null && !QjStokerCab.HiddenOriginal(f))
                 .Select(f => f.transform)
                 .ToList();
             if (levers.Count == 0)
