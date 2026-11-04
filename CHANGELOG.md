@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.17.6 (2026-11-03)
+
+- Fixed stoker coal feed relying on stale tender readings in multiplayer.
+- Injector overflow sounds are quieter and fade in and out smoothly.
+- The firing guide and manual now include a compact table for finding each engine's shed hose connections.
+- The 2901's flue sand now comes from its tender's working sandbox, replacing the extra box on the cab floor.
+- Added smoke-nuisance fees for sustained heavy smoke in town districts, with a warning, a long grace period, and a modest visit cap.
+
 ## 1.17.5 (2026-11-02)
 
 - The S282's cab-mounted injector now lifts water with priming steam instead of drawing it by gravity.

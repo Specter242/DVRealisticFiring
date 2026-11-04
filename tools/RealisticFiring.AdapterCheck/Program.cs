@@ -171,7 +171,10 @@ namespace RealisticFiring.AdapterCheck
             CheckOverlayBoilerFallback();
             CheckVrShedHoseParts();
             CheckStoker(gameParams, def);
+            PlumeTimingChecks.Run(Check);
+            InjectorAudioChecks.Run(Check);
             CheckOilBurner(gameParams);
+            TenderSandChecks.Run(Check);
             CheckClientMirror(gameParams, def);
             CheckBooster();
             CheckCylinders(gameParams);
@@ -215,6 +218,7 @@ namespace RealisticFiring.AdapterCheck
             CheckFireboxQualitySettings();
             CheckInjectorModelPrototype();
             CheckAshpanDisposal();
+            CheckSmokeFees();
             CheckShedStandReload();
             CheckRetiredBrakeSetting();
             Check(AccessTools.Field(typeof(DV.Interaction.AGrabHandler), Visuals.FiringValvePassThrough.PassThroughField)?.FieldType
@@ -238,6 +242,126 @@ namespace RealisticFiring.AdapterCheck
         {
             for (var t = 0f; t < seconds; t += 0.02f)
                 component.Tick(0.02f);
+        }
+
+        private static void CheckSmokeFees()
+        {
+            DV.Logic.Job.TrackID Track(string id)
+            {
+                var parts = id.Split('-');
+                return new DV.Logic.Job.TrackID(parts[0], parts[1], parts[2], parts[3]);
+            }
+            var towns = new[] { "HB-F-01-LP", "CW-B-03-LP", "CS-A-01-LP", "MF-D-02-LP", "FF-B-01-LP" };
+            Check(towns.All(id => SmokeFees.DistrictFor(Track(id)) != SmokeDistrict.None),
+                "smoke fees recognize only the five explicitly named town passenger districts");
+            var free = new[] { "CS-A-03-L", "HB-A-01-L", "CW-A-01-M", "MF-A-01-I", "FF-A-01-S", "GF-C-02-LP", "SM-A-01-M", "OR-A-01-S", "#Y-#S-01-M" };
+            Check(free.All(id => SmokeFees.DistrictFor(Track(id)) == SmokeDistrict.None)
+                && SmokeFees.DistrictFor(null) == SmokeDistrict.None,
+                "industrial-only sections, rural stations, main lines and missing tracks have no smoke fee");
+
+            var storage = Track("HB-F-03-SP");
+            var platform = Track("HB-F-01-LP");
+            var allowance = new SmokeFees();
+            Check(SmokeFees.IsLightUpTrack(storage) && !SmokeFees.IsLightUpTrack(platform)
+                && SmokeFees.IsLightUpTrack(Track("CS-M-01-S")) && !SmokeFees.IsLightUpTrack(null),
+                "cold light-up is exempt on town passenger storage and existing service tracks, but not platforms or missing tracks");
+            Check(allowance.LightUpAllowed(storage) && allowance.LightUpAllowed(storage)
+                && !allowance.LightUpAllowed(platform) && !allowance.LightUpAllowed(null),
+                "the cached light-up exemption follows rear-track changes without leaking onto a platform");
+
+            var coal = Create(new FireboxDefinition { ID = Id }, new SimGameParams(false, false, false, 1f, 1f));
+            var oil = new RealisticOilFirebox(new FireboxDefinition { ID = Id }, null);
+            var meter = P(coal, "COAL_ENV_DAMAGE_METER");
+            meter.Value = 12f;
+            var account = coal.SmokeFees;
+            var flow = account.Assess(240, meter, SmokeDistrict.CitySouth, 1, true, false, 2f);
+            Check(meter.Value == 62f && account.Model.State.Charged == 100,
+                "a 100-dollar smoke surcharge adds 50 resource units at a 2-dollar stock tariff without replacing existing debt");
+            var saved = coal.GetSaveStateData();
+            var restored = Create(new FireboxDefinition { ID = Id }, new SimGameParams(false, false, false, 1f, 1f));
+            restored.SetSaveStateData(saved);
+            Check(restored.SmokeFees.Model.State.Equals(account.Model.State) && P(restored, "COAL_ENV_DAMAGE_METER").Value == 62,
+                "coal save/load retains the smoke grace, warning, district, visit cap and stock environmental debt exactly once");
+            oil.SetSaveStateData(saved);
+            var oilAgain = new RealisticOilFirebox(new FireboxDefinition { ID = Id }, null);
+            oilAgain.SetSaveStateData(oil.GetSaveStateData());
+            Check(oilAgain.SmokeFees.Model.State.Equals(account.Model.State)
+                && P(oilAgain, "COAL_ENV_DAMAGE_METER").Value == 62,
+                "oil fireboxes retain the same smoke allowance and environmental debt through their own save path");
+            var oldSave = new JObject { ["coalEnvDmg"] = 5f };
+            restored.SetSaveStateData(oldSave);
+            Check(restored.SmokeFees.Model.State.District == SmokeDistrict.None && P(restored, "COAL_ENV_DAMAGE_METER").Value == 5,
+                "loading an older save clears any previous world's allowance without adding or losing its debt");
+            restored.SetSaveStateData(new JObject { [SmokeFees.SaveKey] = new JObject { ["Charged"] = "bad", ["District"] = 1 } });
+            Check(restored.SmokeFees.Model.State.District == SmokeDistrict.None,
+                "malformed smoke allowance data cannot break a firebox save load or manufacture debt");
+
+            var damager = (DV.Simulation.Controllers.EnvironmentDamager)System.Runtime.Serialization.FormatterServices
+                .GetUninitializedObject(typeof(DV.Simulation.Controllers.EnvironmentDamager));
+            AccessTools.Field(damager.GetType(), "damagerPort").SetValue(damager, meter);
+            damager.ResetDamage();
+            account.Assess(1000, meter, SmokeDistrict.CitySouth, 1, true, false, 2f);
+            Check(damager.Damage == 200f && account.Model.State.Charged == SmokeNuisance.VisitCap,
+                "paying the stock debt clears assessed smoke fees but does not reset the 500-dollar visit cap");
+            foreach (var price in new[] { 0f, -1f, float.NaN, float.PositiveInfinity }) SmokeFees.Apply(meter, 100, price);
+            Check(meter.Value == 200f, "missing or invalid tariffs cannot add smoke debt");
+            var unavailable = new SmokeFees();
+            foreach (var price in new[] { 0f, -1f, float.NaN, float.PositiveInfinity })
+            {
+                var noBill = unavailable.Assess(300, meter, SmokeDistrict.CitySouth, 1, true, false, price);
+                Check(!noBill.Warning && noBill.Fee == 0 && unavailable.Model.State.District == SmokeDistrict.None,
+                    "an unavailable tariff does not record an unbilled charge or consume a warning (" + price + ")");
+            }
+            var lostPrecision = new SmokeFees();
+            var held = meter.Value;
+            meter.Value = float.MaxValue;
+            var refused = lostPrecision.Assess(240, meter, SmokeDistrict.CitySouth, 1, true, false, 2f);
+            Check(refused.Fee == 0 && !refused.Warning && lostPrecision.Model.State.District == SmokeDistrict.None,
+                "a meter unable to represent a charge does not consume the visit cap or emit an unbilled notice");
+            meter.Value = held;
+            var coldStore = new SmokeFees();
+            var lightUp = coldStore.Assess(3600, meter, SmokeDistrict.HarborTown, 1, true,
+                coldStore.LightUpAllowed(storage), 2f);
+            var warmStore = coldStore.Assess(240, meter, SmokeDistrict.HarborTown, 1, true, false, 2f);
+            Check(lightUp.Fee == 0 && !lightUp.Warning && warmStore.Fee == 100,
+                "passenger storage light-up exemption ends when the engine is warm; it is not a permanent smoke-free siding");
+            meter.Value = held;
+
+            var counter = typeof(GC).GetMethod("GetAllocatedBytesForCurrentThread", BindingFlags.Public | BindingFlags.Static);
+            if (counter != null)
+            {
+                var allocated = (Func<long>)Delegate.CreateDelegate(typeof(Func<long>), counter);
+                var warm = new SmokeFees();
+                for (var i = 0; i < 1000; i++)
+                {
+                    warm.LightUpAllowed(storage);
+                    warm.Assess(.02f, meter, SmokeDistrict.HarborTown, 1, true, false, 2f);
+                }
+                var beforeBytes = allocated();
+                for (var i = 0; i < 10000; i++)
+                {
+                    warm.LightUpAllowed(storage);
+                    warm.Assess(.02f, meter, SmokeDistrict.HarborTown, 1, true, false, 2f);
+                }
+                var bytes = allocated() - beforeBytes;
+                Check(bytes == 0, "cached light-up location and the smoke billing hot path allocate " + bytes + " bytes under Mono");
+            }
+            meter.Value = held;
+            var client = Net.ClientCheck;
+            try
+            {
+                Net.ClientCheck = () => true;
+                SmokeFees.Apply(meter, 100, 2);
+                var state = account.Model.State;
+                account.Tick(1000, meter, null, 1, true, false);
+                Check(meter.Value == 200f && state.Equals(account.Model.State),
+                    "multiplayer clients cannot assess duplicate smoke fees or advance the host's allowance");
+            }
+            finally { Net.ClientCheck = client; }
+            account.Model.Step(600, SmokeDistrict.None, 1, true, false);
+            var fresh = account.Model.Step(60, SmokeDistrict.CitySouth, 1, true, false);
+            Check(fresh.Warning && fresh.Fee == 0,
+                "ten minutes away starts a new visit with the full warning and three-minute grace");
         }
 
         private static void CheckAshpanDisposal()
@@ -548,6 +672,7 @@ namespace RealisticFiring.AdapterCheck
                 load.Invoke(System.Runtime.Serialization.FormatterServices.GetUninitializedObject(type), new object[] { null });
                 Check(true, "a null interior notification skips Multiplayer's load coroutine");
                 CheckStandSync(assembly);
+                MultiplayerStokerChecks.Run(assembly, Check);
             }
             catch (Exception e)
             {

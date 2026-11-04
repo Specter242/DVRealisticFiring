@@ -58,6 +58,7 @@ namespace RealisticFiring.Visuals
         private ParticleSystem steam;
         private AudioSource waterSound;
         private AudioSource steamSound;
+        private readonly InjectorOverflowAudio sound = new InjectorOverflowAudio();
 
         /// <summary>
         /// Puts the overflow on <paramref name="car"/> beside its injector lever
@@ -260,9 +261,11 @@ namespace RealisticFiring.Visuals
             var share = spilling ? 1f : 0f;
             SetRate(water, Mathf.Min(MaxWaterParticles, share * flow.Overflow * WaterParticlesPerKg));
             SetRate(steam, Mathf.Min(MaxSteamParticles, share * flow.OverflowSteam * SteamParticlesPerKg));
-            var loudness = share * Mathf.Max(0f, Main.Settings.SteamVentVolume);
-            SetVolume(waterSound, loudness * Mathf.Clamp01(flow.Overflow / (0.3f * full)));
-            SetVolume(steamSound, loudness * Mathf.Clamp01(flow.OverflowSteam / (0.05f * full)));
+            var ratedSteam = full / (1f + circuit.Injector.Spec.WaterPerSteam);
+            sound.Step(Time.unscaledDeltaTime, share * flow.Overflow, share * flow.OverflowSteam,
+                full, ratedSteam, Main.Settings.SteamVentVolume);
+            SetVolume(waterSound, sound.Water);
+            SetVolume(steamSound, sound.Steam);
         }
 
         // Whether this side spills: with a lever each side, the one whose lever
@@ -311,9 +314,9 @@ namespace RealisticFiring.Visuals
             if (source == null)
                 return;
             source.volume = volume;
-            if (volume > 0.01f && !source.isPlaying)
+            if (volume > 0.001f && !source.isPlaying)
                 source.Play();
-            else if (volume <= 0.01f && source.isPlaying)
+            else if (volume <= 0.001f && source.isPlaying)
                 source.Stop();
         }
     }

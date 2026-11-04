@@ -202,15 +202,17 @@ namespace RealisticFiring.Sim
                 return;
 
             var modifier = gameParams != null ? gameParams.ResourceConsumptionModifier : 1f;
+            // The real pile is authoritative on the host, as for shoveling.
+            // A CCL tender relay can be stale but still positive: that used
+            // to limit each tick's feed while bypassing the empty-port
+            // fallback. Only use the relay when no real pile is available.
             var portCoal = coalAmount.IsConnected ? Mathf.Max(0f, coalAmount.Value) / (coalMultiplier * (modifier > 0f ? modifier : 1f)) : 0f;
-            var pile = !coalAmount.IsConnected || portCoal <= 0f ? TenderPile() : null;
-            if (pile != null && coalAmount.IsConnected && pile.CoalAvailable() > 0f && !saidPortEmpty)
+            var pile = TenderPile();
+            if (pile != null && coalAmount.IsConnected && portCoal <= 0f && pile.CoalAvailable() > 0f && !saidPortEmpty)
             {
                 saidPortEmpty = true;
                 Main.Mod?.Logger.Log($"{car?.ID}: the stoker's tender port reads no coal; it takes the coal pile's ({pile.CoalAvailable() / coalMultiplier:F0} kg), as the shovel does");
             }
-            if (pile != null && !(pile.CoalAvailable() > 0f) && coalAmount.IsConnected)
-                pile = null;
             var available = pile != null ? pile.CoalAvailable() / coalMultiplier : portCoal;
             CoalReached = available;
             CoalFrom = pile != null ? "the coal pile" : coalAmount.IsConnected ? "the tender port" : "none";
@@ -244,6 +246,10 @@ namespace RealisticFiring.Sim
 
             if (pile != null)
             {
+                // Do not leave a consumption request on the engine's relay
+                // as well as debiting the actual pile. Multiplayer already
+                // replicates the pile's resulting amount and normalized fill.
+                coalConsume.Value = 0f;
                 if (flow.Drawn > 0f)
                     pile.TryRemoveCoal(flow.Drawn * coalMultiplier);
             }

@@ -34,6 +34,8 @@ namespace RealisticFiring
     {
         Flareback,
         PlugMelted,
+        SmokeWarning,
+        SmokeFeeStarted,
     }
 
  internal static class Net
@@ -70,6 +72,10 @@ namespace RealisticFiring
             {
                 case FireEvent.Flareback:
                     Visuals.OilFlareback.PlayEffects(car, value);
+                    break;
+                case FireEvent.SmokeWarning:
+                case FireEvent.SmokeFeeStarted:
+                    Sim.SmokeFees.ShowNotice(car, fireEvent);
                     break;
                 case FireEvent.PlugMelted:
                     FireController.Announce(Sim.BoilerWaterRig.PlugMeltedNotice);

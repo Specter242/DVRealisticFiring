@@ -22,6 +22,8 @@ namespace RealisticFiring.Sim
     /// </summary>
     internal sealed class RealisticOilFirebox : SimComponent
     {
+        internal SmokeFees SmokeFees { get; } = new SmokeFees();
+
         private const string BrickSaveKey = "rfBrick";
         private const string OilTemperatureSaveKey = "rfOilTemp";
         private const string FlueSootSaveKey = "rfFlueSoot";
@@ -336,6 +338,8 @@ namespace RealisticFiring.Sim
             // puffs thick black from 0.3 (the 2901's color readers): the
             // stack's darkness, not the stock's six times the unburned share.
             smokeDensityReadOut.Value = StackDarkness;
+            SmokeFees.Tick(delta, coalEnvDamage, Car, SmokeNuisance.OilSmoke(Model), Model.FireOn && Model.BurnRate > 0f,
+                boilerPressure.Value < startupMaxPressure && Mathf.Abs(forwardSpeed.Value) < 1f);
             combustionRateNormalizedReadOut.Value = Model.CombustionRateNormalized;
             temperatureReadOut.Value = Model.Temperature;
             oxygenAvailabilityReadOut.Value = Model.FireOn ? Mathf.Clamp01(Model.ExcessAir / OilFire.BestExcessAir) : 1f;
@@ -394,6 +398,7 @@ namespace RealisticFiring.Sim
         public override JObject GetSaveStateData()
         {
             var data = new JObject();
+            SmokeFees.Save(data);
             if (Model.FireOn)
                 data.SetBool(RealisticFirebox.FireOnSaveKey, true);
             data.SetFloat(RealisticFirebox.CoalMassSaveKey, Model.PooledOil);
@@ -415,6 +420,7 @@ namespace RealisticFiring.Sim
 
         public override void SetSaveStateData(JObject savedData)
         {
+            SmokeFees.Restore(savedData);
             var fireOn = savedData.GetBool(RealisticFirebox.FireOnSaveKey) == true;
             // The stock coal-mass key carries the pooled oil; with the vapor,
             // it keeps the flareback a reload would otherwise clear.

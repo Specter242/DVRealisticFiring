@@ -105,6 +105,22 @@ blower line into the fitting on the smokebox and open its handwheel a
 little as you lay the fire, more as it catches; take it off at about 50 psi
 and use the cab's blower (the 8F has no fitting).
 
+Left and right below mean looking toward the chimney. Steam sockets sit low
+on the smokebox, usually facing down; water sockets are low on the firebox near the cab.
+
+| Engine | Steam socket | Water socket and landmark |
+| --- | --- | --- |
+| S282 | Left, low on smokebox | Left, low behind the rear driver |
+| S060 | Right, low on smokebox | Left, ahead of the cab below the firebox |
+| JK3 | Left, low on smokebox; tilts slightly up | Left, ahead of the cab below the firebox |
+| 8F | No steam fitting | Left, low on the firebox below the cab |
+| Hudson | Left, low on smokebox | Left, below the cab at the rear of the boiler |
+| 844 | Left, low on smokebox | Left, outside the firebox below the cab |
+| S484-840 | Left, low on smokebox | Left, below the cab at the rear of the boiler |
+| 2901 | Left, low on smokebox | Left, below the cab at the rear of the boiler |
+
+Use a shed or service location; tow a dead engine there if needed.
+
 ### Each engine
 
 - **S282:** draws hardest at the back, and the grate slopes forward, so at
@@ -236,9 +252,9 @@ and use the cab's blower (the 8F has no fitting).
 - **Set the stop** for the drifting fire: with the firing valve where the
   fire holds lit with the throttle shut, click it. Then you can cut the fire
   hard to the stop without putting it out. Click again to take it out.
-- **Sand the flues** when steaming falls off after smoking: click the sand
-  box on the cab floor (by the fire door, fireman's side) with the empty
-  shovel to load a quart of sand, open the peep hole, and throw it in while
+- **Sand the flues** when steaming falls off after smoking: open the
+  sandbox lid at the front of the 2901's coupled tender and click the sand
+  inside with the empty shovel to load a quart. Open the peep hole and throw it in while
   working hard. Black clouds at the stack mean it's scouring.
 - **A dead engine** fires up on the shed's steam at a roundhouse stall or
   engine shed (tow it there): plug the stand's blower line into the

@@ -1089,7 +1089,8 @@ namespace RealisticStackEffects
         private void Update()
         {
             var start = Stopwatch.GetTimestamp();
-            PlumeOffscreen.Decide();
+            using (StackHost.TimePhase(PlumePhase.OffscreenSetup))
+                PlumeOffscreen.Decide();
             UpdatePlume();
             StackHost.PlumeTimed?.Invoke(start);
         }
@@ -1131,55 +1132,63 @@ namespace RealisticStackEffects
             fire.Read(dt, exhaustSim, ref fireNow);
             shakeCinders = Mathf.Min(shakeCinders + fireNow.ShakenCoal, MaxShakeCinderBacklog);
             var inputs = testing != null ? TestInputs(testing) : FireInputs();
-            Weather(ref inputs, dt);
+            using (StackHost.TimePhase(PlumePhase.Weather))
+                Weather(ref inputs, dt);
             beatHard = PlumeModel.BeatStrength(tuning, inputs.ExhaustPressure);
 
-            // A beat with no steam behind it (drifting, regulator shut) makes no puff.
-
-            if (inputs.ExhaustPressure > PlumeModel.MinBeatPressure)
+            using (StackHost.TimePhase(PlumePhase.Emission))
             {
-                for (var i = 0; i < Mathf.Min(crossed, MaxBeatsPerFrame); i++)
-                    EmitPuff(PlumeModel.ForBeat(tuning, inputs), carVelocity);
+                // A beat with no steam behind it (drifting, regulator shut) makes no puff.
+
+                if (inputs.ExhaustPressure > PlumeModel.MinBeatPressure)
+                {
+                    for (var i = 0; i < Mathf.Min(crossed, MaxBeatsPerFrame); i++)
+                        EmitPuff(PlumeModel.ForBeat(tuning, inputs), carVelocity);
+                }
+
+                stokerCinders = Mathf.Min(stokerCinders + fireNow.Fines, MaxStokerCinderBacklog);
+
+                var haze = PlumeModel.Between(tuning, inputs);
+                // The blower's stream is steam; a clean fire's haze, its own water.
+                var hazeCloud = PlumeModel.SteamThroughStack(inputs.TotalFlowNormalized) > 0.3f ? streamCloud : waterCloud;
+                hazeDue += haze.Rate * ParticleShare * dt;
+                for (; hazeDue >= 1f; hazeDue -= 1f)
+                    Emit(smoke, haze.Speed, 1.2f * tuning.PuffSize, ToColor(haze.Color), carVelocity, HazeSpread, 0.85f, 1.15f,
+                        plume: Aloft(smoke), smokeShare: haze.SmokeShare, smokeColor: ToColor(haze.SmokeColor), cloud: hazeCloud);
+
+                // The hot gas's shimmer, plainest over a clean fire.
+                shimmerNow = PlumeModel.Shimmer(tuning, inputs);
+                if (heat != null)
+                {
+                    heatDue = shimmerNow > MinShimmer ? Mathf.Min(heatDue + Look.ShimmerRate * dt, MaxBeatsPerFrame) : 0f;
+                    var shimmerColor = new Color(1f, 1f, 1f, shimmerNow);
+                    var shimmerSize = Look.ShimmerSize * 2f * boreRadius / VisibleShare;
+                    for (; heatDue >= 1f; heatDue -= 1f)
+                        Emit(heat, Mathf.Max(haze.Speed, ShimmerSpeed), shimmerSize, shimmerColor, carVelocity, HazeSpread, 0.8f, 1.2f);
+                }
+
+                var vent = fireNow.PlugSteam;
+                plugSteamDue = vent > 0f ? Mathf.Min(plugSteamDue + PlugSteamPerKg * vent * ParticleShare * dt, MaxBeatsPerFrame * 4f) : 0f;
+                for (; plugSteamDue >= 1f; plugSteamDue -= 1f)
+                    Emit(smoke, PlugSteamSpeed, 1.2f * tuning.PuffSize, PlugSteamColor, carVelocity, HazeSpread, 0.7f, 1.3f,
+                        plume: Aloft(smoke), smokeShare: 0f, smokeColor: PlugSteamColor, cloud: plugCloud);
+
             }
-
-            stokerCinders = Mathf.Min(stokerCinders + fireNow.Fines, MaxStokerCinderBacklog);
-
-            var haze = PlumeModel.Between(tuning, inputs);
-            // The blower's stream is steam; a clean fire's haze, its own water.
-            var hazeCloud = PlumeModel.SteamThroughStack(inputs.TotalFlowNormalized) > 0.3f ? streamCloud : waterCloud;
-            hazeDue += haze.Rate * ParticleShare * dt;
-            for (; hazeDue >= 1f; hazeDue -= 1f)
-                Emit(smoke, haze.Speed, 1.2f * tuning.PuffSize, ToColor(haze.Color), carVelocity, HazeSpread, 0.85f, 1.15f,
-                    plume: Aloft(smoke), smokeShare: haze.SmokeShare, smokeColor: ToColor(haze.SmokeColor), cloud: hazeCloud);
-
-            // The hot gas's shimmer, plainest over a clean fire.
-            shimmerNow = PlumeModel.Shimmer(tuning, inputs);
-            if (heat != null)
+            using (StackHost.TimePhase(PlumePhase.Motion))
             {
-                heatDue = shimmerNow > MinShimmer ? Mathf.Min(heatDue + Look.ShimmerRate * dt, MaxBeatsPerFrame) : 0f;
-                var shimmerColor = new Color(1f, 1f, 1f, shimmerNow);
-                var shimmerSize = Look.ShimmerSize * 2f * boreRadius / VisibleShare;
-                for (; heatDue >= 1f; heatDue -= 1f)
-                    Emit(heat, Mathf.Max(haze.Speed, ShimmerSpeed), shimmerSize, shimmerColor, carVelocity, HazeSpread, 0.8f, 1.2f);
+                plumeTop = 0f;
+                volume?.Begin(Look.Volume);
+                Drift(smoke, dt, lift: true);
+                Drift(sootCore, dt, lift: true);
+                Drift(jet, dt, lift: true);
+                Drift(heat, dt, lift: true);
+                var sun = Sun();
+                using (StackHost.TimePhase(PlumePhase.VolumeSubmit))
+                    volume?.End(sun != null && sun.isActiveAndEnabled ? -sun.transform.forward : Vector3.zero,
+                        Look.Volume, Look.VolumeDensity, volumeMaterials);
+                foreach (var system in embers)
+                    Fly(system, dt);
             }
-
-            var vent = fireNow.PlugSteam;
-            plugSteamDue = vent > 0f ? Mathf.Min(plugSteamDue + PlugSteamPerKg * vent * ParticleShare * dt, MaxBeatsPerFrame * 4f) : 0f;
-            for (; plugSteamDue >= 1f; plugSteamDue -= 1f)
-                Emit(smoke, PlugSteamSpeed, 1.2f * tuning.PuffSize, PlugSteamColor, carVelocity, HazeSpread, 0.7f, 1.3f,
-                    plume: Aloft(smoke), smokeShare: 0f, smokeColor: PlugSteamColor, cloud: plugCloud);
-
-            plumeTop = 0f;
-            volume?.Begin(Look.Volume);
-            Drift(smoke, dt, lift: true);
-            Drift(sootCore, dt, lift: true);
-            Drift(jet, dt, lift: true);
-            Drift(heat, dt, lift: true);
-            var sun = Sun();
-            volume?.End(sun != null && sun.isActiveAndEnabled ? -sun.transform.forward : Vector3.zero,
-                Look.Volume, Look.VolumeDensity, volumeMaterials);
-            foreach (var system in embers)
-                Fly(system, dt);
 
             LogStatus(inputs);
         }
@@ -1372,7 +1381,7 @@ namespace RealisticStackEffects
                 }
                 buffer[i].velocity = velocity;
             }
-            system.SetParticles(buffer, count);
+            UploadParticles(system, count);
         }
 
         // In the narrow-jet zone: below its top along the stack's axis, and
@@ -1390,10 +1399,17 @@ namespace RealisticStackEffects
 
         private int Particles(ParticleSystem system)
         {
+            using var timing = StackHost.TimePhase(PlumePhase.Buffers);
             var capacity = system.main.maxParticles;
             if (buffer.Length < capacity)
                 buffer = new ParticleSystem.Particle[capacity];
             return system.GetParticles(buffer);
+        }
+
+        private void UploadParticles(ParticleSystem system, int count)
+        {
+            using var timing = StackHost.TimePhase(PlumePhase.Buffers);
+            system.SetParticles(buffer, count);
         }
 
         // In the narrow-jet zone a particle is held thin and carried with the
@@ -1579,7 +1595,7 @@ namespace RealisticStackEffects
                 jetParcels.Forget();
             if (system == heat)
                 heatStrengths.Forget();
-            system.SetParticles(buffer, count);
+            UploadParticles(system, count);
         }
 
         // The width the hot gas has spread to at a shimmer particle: the lip's
@@ -1631,38 +1647,41 @@ namespace RealisticStackEffects
             count = kept;
             plume.End();
             plumeTop = Mathf.Max(plumeTop, plume.Top);
-            system.SetParticles(buffer, count);
-            if (rollingPuffs > 0)
+            UploadParticles(system, count);
+            using (StackHost.TimePhase(PlumePhase.Buffers))
             {
-                // Rolling steam's wisp is one of the wisp flipbook's rows (x,
-                // rounded; its fraction its own start in the row × 0.49), at
-                // its own turn (y), how hard its beat was (z), its frames by
-                // age, played over the system's own lifetime as the flipbook
-                // was (PlumeAloft), the last held: its share of that time (w).
-                var longFrom = Mathf.Min(Look.LongPuffsFrom, Look.LongPuffsBy - 0.01f);
-                if (!beatsHard.TryGetValue(system, out var hardness))
-                    beatsHard[system] = hardness = new SeedMemory<float>();
-                system.GetCustomParticleData(shapeData, ParticleSystemCustomData.Custom1);
-                for (var i = 0; i < count && i < shapeData.Count; i++)
+                if (rollingPuffs > 0)
                 {
-                    var hard = Mathf.SmoothStep(0f, 1f, (hardness.Recall(buffer[i].randomSeed, beatHard) - longFrom) / (Look.LongPuffsBy - longFrom));
-                    shapeData[i] = new Vector4(PlumeAloft.WispRow(buffer[i]) + 0.49f * PlumeAloft.WispPhase(buffer[i]),
-                        PlumeAloft.WispTurn(buffer[i], Look.WispSpin, Look.WispSpinEase), hard, plume.FlipbookAt(buffer[i]));
+                    // Rolling steam's wisp is one of the wisp flipbook's rows (x,
+                    // rounded; its fraction its own start in the row × 0.49), at
+                    // its own turn (y), how hard its beat was (z), its frames by
+                    // age, played over the system's own lifetime as the flipbook
+                    // was (PlumeAloft), the last held: its share of that time (w).
+                    var longFrom = Mathf.Min(Look.LongPuffsFrom, Look.LongPuffsBy - 0.01f);
+                    if (!beatsHard.TryGetValue(system, out var hardness))
+                        beatsHard[system] = hardness = new SeedMemory<float>();
+                    system.GetCustomParticleData(shapeData, ParticleSystemCustomData.Custom1);
+                    for (var i = 0; i < count && i < shapeData.Count; i++)
+                    {
+                        var hard = Mathf.SmoothStep(0f, 1f, (hardness.Recall(buffer[i].randomSeed, beatHard) - longFrom) / (Look.LongPuffsBy - longFrom));
+                        shapeData[i] = new Vector4(PlumeAloft.WispRow(buffer[i]) + 0.49f * PlumeAloft.WispPhase(buffer[i]),
+                            PlumeAloft.WispTurn(buffer[i], Look.WispSpin, Look.WispSpinEase), hard, plume.FlipbookAt(buffer[i]));
+                    }
+                    system.SetCustomParticleData(shapeData, ParticleSystemCustomData.Custom1);
+                    hardness.Forget();
                 }
-                system.SetCustomParticleData(shapeData, ParticleSystemCustomData.Custom1);
-                hardness.Forget();
+                else if (air.Shape)
+                {
+                    system.GetCustomParticleData(shapeData, ParticleSystemCustomData.Custom1);
+                    for (var i = 0; i < count && i < shapeData.Count; i++)
+                        shapeData[i] = plume.ShapeOf(buffer[i].randomSeed);
+                    system.SetCustomParticleData(shapeData, ParticleSystemCustomData.Custom1);
+                }
+                system.GetCustomParticleData(extraData, ParticleSystemCustomData.Custom2);
+                for (var i = 0; i < count && i < extraData.Count; i++)
+                    extraData[i] = plume.ExtraOf(buffer[i]);
+                system.SetCustomParticleData(extraData, ParticleSystemCustomData.Custom2);
             }
-            else if (air.Shape)
-            {
-                system.GetCustomParticleData(shapeData, ParticleSystemCustomData.Custom1);
-                for (var i = 0; i < count && i < shapeData.Count; i++)
-                    shapeData[i] = plume.ShapeOf(buffer[i].randomSeed);
-                system.SetCustomParticleData(shapeData, ParticleSystemCustomData.Custom1);
-            }
-            system.GetCustomParticleData(extraData, ParticleSystemCustomData.Custom2);
-            for (var i = 0; i < count && i < extraData.Count; i++)
-                extraData[i] = plume.ExtraOf(buffer[i]);
-            system.SetCustomParticleData(extraData, ParticleSystemCustomData.Custom2);
             volume?.Gather(system, buffer, count);
         }
 

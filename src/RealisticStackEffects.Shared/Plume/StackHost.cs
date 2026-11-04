@@ -5,6 +5,9 @@ using UnityModManagerNet;
 
 namespace RealisticStackEffects
 {
+    /// <summary>Subsections within the plume's main-thread update; Motion includes its nested buffers and shadows.</summary>
+    internal enum PlumePhase { OffscreenSetup, Weather, Emission, Motion, Shadows, Buffers, VolumeSubmit }
+
     /// <summary>The settings the chimney's effects follow: the hosting mod's.</summary>
     internal interface IStackSettings
     {
@@ -60,6 +63,27 @@ namespace RealisticStackEffects
 
         /// <summary>Camera sorting and command-buffer preparation, separately from the plume update.</summary>
         public static Action<long> CameraTimed;
+
+        /// <summary>Optional nested timings; separate from the overall plume total.</summary>
+        public static Action<PlumePhase, long> PhaseTimed;
+
+        public static PhaseTiming TimePhase(PlumePhase phase) => new PhaseTiming(phase);
+
+        internal readonly struct PhaseTiming : IDisposable
+        {
+            private readonly PlumePhase phase;
+            private readonly long started;
+            internal PhaseTiming(PlumePhase phase)
+            {
+                this.phase = phase;
+                started = PhaseTimed != null && Settings != null && Settings.StatusLogInterval > 0
+                    ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
+            }
+            public void Dispose()
+            {
+                if (started != 0L) PhaseTimed?.Invoke(phase, started);
+            }
+        }
 
         /// <summary>The scale of the developer tools' windows.</summary>
         public static Func<float> GuiScale = () => 1f;

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using DV.CabControls;
 using DV.Interaction;
 using DV.Simulation.Cars;
 using HarmonyLib;
@@ -33,6 +34,12 @@ namespace RealisticFiring.Visuals
         public static float Loaded { get; private set; }
 
         private ResourceContainer sand;
+        private SimulationFlow boundFlow;
+        private bool usesTender;
+        private TrainCar carrier;
+        private ControlImplBase cover;
+        private Collider[] pickupColliders;
+        private Mesh surfaceMesh;
 
         public TrainCar Car { get; private set; }
 
@@ -50,14 +57,16 @@ namespace RealisticFiring.Visuals
         /// </summary>
         public static FlueSandBox Build(TrainCar car, Transform parent, Vector3 floor)
         {
-            var flow = car.SimController != null ? car.SimController.SimulationFlow : null;
-            var container = flow?.OrderedSimComps.OfType<ResourceContainer>().FirstOrDefault(c => c.resourceType == ResourceContainerType.SAND);
-            if (container == null)
-                return null;
-
             var root = new GameObject("flue sand box");
+            root.SetActive(false);
             root.transform.SetParent(parent, false);
             root.transform.SetPositionAndRotation(floor, car.transform.rotation);
+            var box = root.AddComponent<FlueSandBox>();
+            if (!box.BindEngine(car))
+            {
+                Object.Destroy(root);
+                return null;
+            }
             // An open box in the plate of the floor it stands on, the sand in it.
             var plate = FloorMaterial(car, floor) ?? PlainCrate();
             Part(root.transform, "bottom", new Vector3(0f, Wall / 2f, 0f), new Vector3(Size.x, Wall, Size.z), plate);
@@ -65,37 +74,104 @@ namespace RealisticFiring.Visuals
             Part(root.transform, "right", new Vector3((Size.x - Wall) / 2f, Size.y / 2f, 0f), new Vector3(Wall, Size.y, Size.z), plate);
             Part(root.transform, "front", new Vector3(0f, Size.y / 2f, (Size.z - Wall) / 2f), new Vector3(Size.x - 2f * Wall, Size.y, Wall), plate);
             Part(root.transform, "back", new Vector3(0f, Size.y / 2f, (Wall - Size.z) / 2f), new Vector3(Size.x - 2f * Wall, Size.y, Wall), plate);
-            SandSurface(root.transform, new Vector3(0f, Size.y - SandBelowRim, 0f), new Vector2(Size.x - 2f * Wall, Size.z - 2f * Wall));
+            box.SandSurface(new Vector3(0f, Size.y - SandBelowRim, 0f), new Vector2(Size.x - 2f * Wall, Size.z - 2f * Wall));
+            box.BuildPickup(new Vector3(0f, Size.y / 2f, 0f), Size);
+            root.SetActive(true);
+            return box;
+        }
 
+        /// <summary>Adds only a shovel target; the maker's sand surface and materials stay intact.</summary>
+        internal static FlueSandBox BuildInTender(TrainCar engine, TrainCar tender, Transform anchor,
+            ControlImplBase lid, Vector3 center, Vector2 size)
+        {
+            var root = new GameObject(TenderFlueSandBox.RootName);
+            root.SetActive(false);
+            root.transform.SetParent(anchor, false);
+            root.transform.localPosition = center;
+            // The native hatch opens around X. Its fixed parent's Z points up;
+            // turn the X/Z pickup into that parent's X/Y hatch plane.
+            root.transform.localRotation = TenderFlueSandBox.PickupRotation;
+            var box = root.AddComponent<FlueSandBox>();
+            box.usesTender = true;
+            box.carrier = tender;
+            box.cover = lid;
+            if (!box.BindEngine(engine))
+            {
+                Object.Destroy(root);
+                return null;
+            }
+            box.BuildPickup(new Vector3(0f, 0.035f, 0f), new Vector3(size.x, 0.08f, size.y));
+            box.RefreshAccess();
+            root.SetActive(true);
+            return box;
+        }
+
+        private void BuildPickup(Vector3 center, Vector3 size)
+        {
             // Built as the stock tender's pile is: the pile and its trigger on
             // the cab's layer, and a second trigger on the interactable layer,
             // which the item-use raycast sees, redirecting to the pile's target.
             var (pileLayer, useLayer) = PileLayers();
-            var trigger = root.AddComponent<BoxCollider>();
+            var trigger = gameObject.AddComponent<BoxCollider>();
             trigger.isTrigger = true;
-            trigger.center = new Vector3(0f, Size.y / 2f, 0f);
-            trigger.size = Size;
-            root.layer = pileLayer;
-            var use = root.AddComponent<ItemUseTarget>();
+            trigger.center = center;
+            trigger.size = size;
+            gameObject.layer = pileLayer;
+            var use = gameObject.AddComponent<ItemUseTarget>();
             var interactable = new GameObject("flue sand box interactable");
             interactable.layer = useLayer;
-            interactable.transform.SetParent(root.transform, false);
+            interactable.transform.SetParent(transform, false);
             var useTrigger = interactable.AddComponent<BoxCollider>();
             useTrigger.isTrigger = true;
             useTrigger.center = trigger.center;
             useTrigger.size = trigger.size;
             RedirectTarget(interactable.AddComponent<ItemUseRedirect>()) = use;
             use.targetColliders = new Collider[] { trigger, useTrigger };
-            var pile = root.AddComponent<ShovelCoalPile>();
+            pickupColliders = use.targetColliders;
+            var pile = gameObject.AddComponent<ShovelCoalPile>();
             pile.isInfinite = true;
             // Infinite piles report their own chunk mass; the standard shovel
             // holds three chunks (more for the bigger shovels).
             pile.coalChunkMass = Shovelful / 3f;
-            var box = root.AddComponent<FlueSandBox>();
-            box.Car = car;
-            box.sand = container;
-            root.AddComponent<HoverName>().Source = () => $"Flue sand: {container.amountReadOut.Value:F0} kg (load a quart on the shovel, throw it in under a hard pull)";
-            return box;
+            gameObject.AddComponent<HoverName>().Source = () => $"Flue sand: {Available:F0} kg (load a quart on the shovel, throw it in under a hard pull)";
+        }
+
+        internal bool BindEngine(TrainCar engine)
+        {
+            var flow = engine != null && engine.SimController != null ? engine.SimController.SimulationFlow : null;
+            if (Car != engine || !ReferenceEquals(boundFlow, flow))
+            {
+                Car = engine;
+                boundFlow = flow;
+                sand = flow?.OrderedSimComps.OfType<ResourceContainer>().FirstOrDefault(c => c.resourceType == ResourceContainerType.SAND);
+            }
+            return sand != null;
+        }
+
+        private bool SupplyConnected => sand != null && (!usesTender || (carrier != null && Car != null
+            && Car.SimController != null && ReferenceEquals(boundFlow, Car.SimController.SimulationFlow)
+            && carrier.frontCoupler.CoupledCar() == Car));
+
+        private bool Accessible => SupplyConnected && (!usesTender || (cover != null
+            && TenderFlueSandBox.CanScoop(true, cover.Value)));
+
+        private void Update()
+        {
+            if (usesTender)
+                RefreshAccess();
+        }
+
+        private void RefreshAccess()
+        {
+            var accessible = Accessible;
+            foreach (var collider in pickupColliders)
+                collider.enabled = accessible;
+        }
+
+        private void OnDestroy()
+        {
+            if (surfaceMesh != null)
+                Object.Destroy(surfaceMesh);
         }
 
         private static void Part(Transform parent, string name, Vector3 at, Vector3 size, Material material)
@@ -210,12 +286,13 @@ namespace RealisticFiring.Visuals
 
         // The sand: a flat bed of fine grains, drawn with the fire bed's shader
         // as all ash in the sand's color; flat-colored without the effects.
-        private static void SandSurface(Transform parent, Vector3 at, Vector2 size)
+        private void SandSurface(Vector3 at, Vector2 size)
         {
-            var surface = new GameObject("sand").transform;
-            surface.SetParent(parent, false);
-            surface.localPosition = at;
+            var sheet = new GameObject("sand").transform;
+            sheet.SetParent(transform, false);
+            sheet.localPosition = at;
             var mesh = new Mesh { name = "RealisticFiring flue sand" };
+            surfaceMesh = mesh;
             mesh.vertices = new[]
             {
                 new Vector3(-size.x / 2f, 0f, -size.y / 2f), new Vector3(size.x / 2f, 0f, -size.y / 2f),
@@ -227,8 +304,8 @@ namespace RealisticFiring.Visuals
             mesh.triangles = new[] { 0, 2, 1, 1, 2, 3 };
             mesh.RecalculateNormals();
             mesh.RecalculateTangents();
-            surface.gameObject.AddComponent<MeshFilter>().sharedMesh = mesh;
-            surface.gameObject.AddComponent<MeshRenderer>().sharedMaterial = SandMaterial();
+            sheet.gameObject.AddComponent<MeshFilter>().sharedMesh = mesh;
+            sheet.gameObject.AddComponent<MeshRenderer>().sharedMaterial = SandMaterial();
         }
 
         private static Material SandMaterial()
@@ -252,7 +329,7 @@ namespace RealisticFiring.Visuals
             return sandMaterial;
         }
 
-        public float Available => sand != null ? Mathf.Max(0f, sand.amountReadOut.Value) : 0f;
+        public float Available => Accessible ? Mathf.Max(0f, sand.amountReadOut.Value) : 0f;
 
         public float Take(float kg)
         {
@@ -265,7 +342,9 @@ namespace RealisticFiring.Visuals
 
         public float PutBack(float kg)
         {
-            var back = Mathf.Min(Loaded, Mathf.Max(0f, kg));
+            if (!Accessible)
+                return 0f;
+            var back = Mathf.Min(Mathf.Min(Loaded, Mathf.Max(0f, kg)), Mathf.Max(0f, sand.capacity - sand.amountReadOut.Value));
             Loaded -= back;
             if (back > 0f && sand != null)
                 sand.refillExtIn.Value = back;

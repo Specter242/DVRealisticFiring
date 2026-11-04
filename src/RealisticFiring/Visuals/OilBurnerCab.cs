@@ -54,13 +54,6 @@ namespace RealisticFiring.Visuals
         private const float PeepTargetOut = 0.1f;
         private static readonly Vector3 PeepTargetSize = new Vector3(0.25f, 0.25f, 0.15f);
 
-        // The sand box, seated per livery once placed: across (toward the car's
-        // right) and along (toward the front) from the fire door, m.
-        private static readonly Dictionary<string, Vector2> SandSeats = new Dictionary<string, Vector2>
-        {
-            ["A.T.&S.F. 2901-A"] = new Vector2(-0.64f, -0.85f),
-        };
-
         // The sand box: this far to the fireman's side of the fire door and
         // this far back from it, m.
         private const float SandBoxAside = 0.55f;
@@ -77,6 +70,9 @@ namespace RealisticFiring.Visuals
             foreach (var firebox in RealisticOilFirebox.All)
             {
                 var car = firebox.Car;
+                // The tender's external controls can reload independently of
+                // the cab, or arrive later after coupling. Always retry them.
+                TenderFlueSandBox.EnsureBuilt(car);
                 var interior = car != null && car.loadedInterior != null ? car.loadedInterior.transform : null;
                 if (interior == null || interior.Find(RootName) != null)
                     continue;
@@ -279,13 +275,15 @@ namespace RealisticFiring.Visuals
         // side (left), unless moved. Returns a note for the log.
         private static string PlaceSandBox(TrainCar car, Transform parent, Transform interior)
         {
+            if (TenderFlueSandBox.UsesTender(car.carLivery.id))
+                return "flue sand uses the tender's existing sandbox";
             var doorPort = car.SimController != null && car.SimController.firebox != null ? car.SimController.firebox.fireboxDoorPortId : null;
             var door = doorPort != null
                 ? interior.GetComponentsInChildren<InteractablePortFeeder>(true).FirstOrDefault(f => f.portId == doorPort)
                 : null;
             var frame = car.transform;
             var near = door != null ? door.transform.position : interior.position + frame.up * 1.5f;
-            var offset = SandSeats.TryGetValue(car.carLivery.id, out var seat) ? seat : new Vector2(-SandBoxAside, -SandBoxBack);
+            var offset = new Vector2(-SandBoxAside, -SandBoxBack);
             var above = near + frame.right * offset.x + frame.forward * offset.y;
             if (!StokerCab.TryFindFloor(car, above, out var floor))
                 floor = above - frame.up * 1.2f;

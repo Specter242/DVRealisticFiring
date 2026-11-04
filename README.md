@@ -1,6 +1,6 @@
 # Realistic Firing for Derail Valley
 
-**1.17.5** (2026-11-02): the S282's cab-mounted injector now lifts water with priming steam. With steam Off, opening the water wheel no longer spills water by gravity. The change was verified offline with model tests, game-adapter checks and package checks. It has not been play-tested; no new desktop, VR or live multiplayer test was run. The injector model and its controls are unchanged from 1.17.4.
+**1.17.6** (2026-11-03): quieter injector overflow, more reliable multiplayer stoker coal feed, the 2901's tender sandbox, town smoke fees, and clearer hose-location guidance. The owner tested the tender sandbox on desktop. The new injector sound, stoker fix, and smoke-fee behavior were checked offline and have not been tested in game; no new VR or live multiplayer test was run. The booklet page was rebuilt and asset-checked, but its in-game readability remains untested. Additional plume timings do not change smoke behavior or claim an FPS improvement.
 
 A Unity Mod Manager mod with zoned coal fires, mechanical stokers, oil burners,
 live-steam injectors, boiler water simulation, automatic firemen, and chimney

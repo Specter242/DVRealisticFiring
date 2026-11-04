@@ -16,6 +16,7 @@ namespace RealisticFiring.Visuals
             StackHost.Assets = new StackAssets();
             StackHost.PlumeTimed = start => PerfMeter.Stop(PerfSection.ChimneyPlume, start);
             StackHost.CameraTimed = start => PerfMeter.Stop(PerfSection.PlumeCamera, start);
+            StackHost.PhaseTimed = PerfMeter.StopPlumePhase;
             StackHost.GuiScale = () => OverlayStyle.Scale;
         }
 

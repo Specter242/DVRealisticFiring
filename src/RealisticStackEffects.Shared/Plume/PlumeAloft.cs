@@ -840,6 +840,7 @@ namespace RealisticStackEffects
         // Each particle's shade from the plume between it and the sun, from the turn's particles.
         private void Shadows()
         {
+            using var timing = StackHost.TimePhase(PlumePhase.Shadows);
             var toSun = air.ToSun;
             if (casters.Count == 0 || air.ShadowDensity <= 0f || toSun.sqrMagnitude < 0.5f)
             {

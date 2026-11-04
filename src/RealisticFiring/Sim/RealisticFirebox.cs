@@ -137,6 +137,8 @@ namespace RealisticFiring.Sim
         /// <summary>The visible smoke the fire makes, for the firebox view and the stack.</summary>
         public FireboxSmoke Smoke { get; } = new FireboxSmoke();
 
+        internal SmokeFees SmokeFees { get; } = new SmokeFees();
+
         /// <summary>
         /// Each livery's grate slope, in degrees, as measured from its coal
         /// pile when a cab first loads; later fireboxes of that livery start
@@ -518,6 +520,8 @@ namespace RealisticFiring.Sim
             if (consumed > 0f)
                 coalEnvDamage.Value += consumed;
             Smoke.Step(delta, Model);
+            SmokeFees.Tick(delta, coalEnvDamage, Car, SmokeNuisance.CoalSmoke(Model), Model.FireOn && Model.ConsumptionRate > 0f,
+                boilerPressure.Value < startupMaxPressure && Mathf.Abs(forwardSpeed.Value) < 1f);
 
             fireOnReadOut.Value = Model.FireOn ? 1f : 0f;
             heatReadOut.Value = Model.Heat;
@@ -754,6 +758,7 @@ namespace RealisticFiring.Sim
         public override JObject GetSaveStateData()
         {
             var data = new JObject();
+            SmokeFees.Save(data);
             if (Model.FireOn)
                 data.SetBool(FireOnSaveKey, true);
             data.SetFloat(CoalMassSaveKey, Model.CoalMass);
@@ -771,6 +776,7 @@ namespace RealisticFiring.Sim
 
         public override void SetSaveStateData(JObject savedData)
         {
+            SmokeFees.Restore(savedData);
             var fireOn = savedData.GetBool(FireOnSaveKey) == true;
             var coalMass = savedData.GetFloat(CoalMassSaveKey) ?? 0f;
 

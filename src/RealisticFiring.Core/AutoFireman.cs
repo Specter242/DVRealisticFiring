@@ -46,6 +46,8 @@ namespace RealisticFiring.Core
 
         // After a round that smokes, the door is cracked this far for this long.
         private const float SmokeToCrack = 0.2f;
+        private const float StandingSmokeToVent = 0.25f;
+        private const float StandingSmokeDoorLimit = 0.5f;
         public const float DoorCrack = 0.15f;
         public const float CrackTime = 10f;
 
@@ -385,6 +387,14 @@ namespace RealisticFiring.Core
             if (smoking)
                 blower = Math.Max(blower, IdleBlower);
             actions.Blower = blower;
+            // At a stop, use secondary air to burn the remaining tar before
+            // it becomes a prolonged dark stack. More blower would force
+            // the coal bed and lift the safety valve on an already full boiler.
+            if (r.Standing && fire.SootDensity > StandingSmokeToVent && actions.Door <= DoorCrack)
+            {
+                var smoke = Clamp((fire.SootDensity - StandingSmokeToVent) / (BlackSmoke - StandingSmokeToVent), 0f, 1f);
+                actions.Door = DoorCrack + (StandingSmokeDoorLimit - DoorCrack) * smoke;
+            }
         }
 
         private void Grate(float dt, FireModel fire, ref FiremanActions actions)
