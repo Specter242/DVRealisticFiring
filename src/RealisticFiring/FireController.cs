@@ -219,7 +219,7 @@ namespace RealisticFiring
                 Notify(washed ? "Water hose: boiler washed out, filling it with fresh water" : "Water hose filling the boiler");
             else if (rig.HoseIn && rig.HoseOpening > 0f)
                 Notify(rig.BoilerPressure > InjectorRig.HoseMaxPressure
-                    ? $"Water hose stopped: the boiler has pressure; a hose fills only a cold boiler, under about {InjectorRig.HoseMaxGauge:F0} psi"
+                    ? $"Water hose stopped: the boiler has pressure; a hose fills only a cold boiler, under about {InjectorRig.HoseMaxGauge:F1} bar"
                     : "Water hose stopped: the boiler is full to the top of the glass; shut the stand's valve");
         }
 
@@ -237,9 +237,9 @@ namespace RealisticFiring
                 return;
             wasSteaming = rig.Steaming;
             if (rig.Steaming)
-                Notify($"Direct steam: the plant's steam into the boiler, up to its {InjectorRig.PlantGauge:F0} psi; its water raises the glass");
+                Notify($"Direct steam: the plant's steam into the boiler, up to its {InjectorRig.PlantGauge:F1} bar; its water raises the glass");
             else if (!rig.SteamFull && rig.HoseIn && rig.HoseSteam > 0f && rig.BoilerPressure >= InjectorRig.PlantPressure - 0.2f)
-                Notify($"Direct steam: the boiler stands at the plant's {InjectorRig.PlantGauge:F0} psi; light the fire, shut the valve, and take the hose off");
+                Notify($"Direct steam: the boiler stands at the plant's {InjectorRig.PlantGauge:F1} bar; light the fire, shut the valve, and take the hose off");
         }
 
         private InjectorRig pumpedRig;

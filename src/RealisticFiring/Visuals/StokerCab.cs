@@ -278,6 +278,7 @@ namespace RealisticFiring.Visuals
             var feedPump = FeedPumpCab.BuildInManifold(car, flow, frame, livery.interiorPrefab.transform, sourceValve, sourceControl, sourceLabel, plateFacing);
 
             root.SetActive(true);
+            S282InteractionAreas.Attach(car, interior);
             gauges.WriteScales();
             feedPump.Gauge?.WriteScales();
             var local = car.transform.InverseTransformPoint(frame.position);
@@ -709,6 +710,7 @@ namespace RealisticFiring.Visuals
         private InteractablePortFeeder feeder;
         private Port port;
         private bool bound;
+        internal bool Bound => bound;
 
         public void Bind(InteractablePortFeeder portFeeder, Port simPort)
         {

@@ -319,10 +319,10 @@ namespace RealisticFiring.Shed
             var pressure = Sim.InjectorRig.TryGet(car, out var rig) && rig.BoilerPressure > Sim.InjectorRig.HoseMaxPressure;
             if (repair)
                 return pressure
-                    ? $"{HoseKind.Water.Name} in at the repair stand: open its Direct steam handwheel and the plant's steam ({Sim.InjectorRig.PlantGauge:F0} psi) raises the boiler's; the water fills only a cold boiler"
-                    : $"{HoseKind.Water.Name} in at the repair stand: open Hot water to wash out and fill the boiler at 180 F, only to the bottom of the glass (the steam's water fills it, a fifth of the boiler again), then Direct steam to raise it to the plant's {Sim.InjectorRig.PlantGauge:F0} psi";
+                    ? $"{HoseKind.Water.Name} in at the repair stand: open its Direct steam handwheel and the plant's steam ({Sim.InjectorRig.PlantGauge:F1} bar) raises the boiler's; the water fills only a cold boiler"
+                    : $"{HoseKind.Water.Name} in at the repair stand: open Hot water to wash out and fill the boiler at 180 F, only to the bottom of the glass (the steam's water fills it, a fifth of the boiler again), then Direct steam to raise it to the plant's {Sim.InjectorRig.PlantGauge:F1} bar";
             return pressure
-                ? $"{HoseKind.Water.Name} in, but the boiler has pressure: the hose fills only a cold boiler, under about {Sim.InjectorRig.HoseMaxGauge:F0} psi"
+                ? $"{HoseKind.Water.Name} in, but the boiler has pressure: the hose fills only a cold boiler, under about {Sim.InjectorRig.HoseMaxGauge:F1} bar"
                 : $"{HoseKind.Water.Name} in: open the stand's valve and the shed's water washes the boiler out and fills it; shut it at the top of the glass";
         }
 
@@ -365,8 +365,8 @@ namespace RealisticFiring.Shed
             {
                 HoseGrip.Reach(plug, car);
                 Said(car, socket, Sim.RealisticOilFirebox.TryGet(car, out _)
-                    ? $"{HoseKind.BlowerLine.Name} in: open the stand's valve and the shed's steam (100 psi) works the blower, atomizer, and oil heater; take it off once the engine makes about 20 psi of its own"
-                    : $"{HoseKind.BlowerLine.Name} in: open the stand's valve and the shed's steam (100 psi) works the blower; take it off once the engine makes about 50 psi of its own");
+                    ? $"{HoseKind.BlowerLine.Name} in: open the stand's valve and the shed's steam (about {HousePressure - 1f:F0} bar) works the blower, atomizer, and oil heater; take it off once the engine makes about 1.4 bar of its own"
+                    : $"{HoseKind.BlowerLine.Name} in: open the stand's valve and the shed's steam (about {HousePressure - 1f:F0} bar) works the blower; take it off once the engine makes about 3.5 bar of its own");
             };
             socket.Unplugged += (plug, at) =>
             {

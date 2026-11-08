@@ -19,6 +19,14 @@ namespace RealisticFiring.Patches
         private static readonly AccessTools.FieldRef<RotaryBase, SteppedJoint> Joint =
             AccessTools.FieldRefAccess<RotaryBase, SteppedJoint>("steppedJoint");
 
+        [HarmonyPatch(nameof(RotaryBase.Scroll))]
+        [HarmonyPrefix]
+        private static void BeforeScroll(RotaryBase __instance, ScrollAction action)
+        {
+            if (action == ScrollAction.Release)
+                __instance.GetComponent<Visuals.S282ContinuousWaterWheel>()?.RememberPosition();
+        }
+
         [HarmonyPatch("ScrollWheelRotate")]
         [HarmonyPrefix]
         private static void BeforeScrollWheelRotate(RotaryBase __instance)

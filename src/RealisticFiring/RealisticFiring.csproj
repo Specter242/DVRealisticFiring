@@ -47,6 +47,7 @@
     <Reference Include="UnityEngine.AudioModule" HintPath="$(DvManagedDir)/UnityEngine.AudioModule.dll" Private="false" />
     <Reference Include="UnityEngine.AssetBundleModule" HintPath="$(DvManagedDir)/UnityEngine.AssetBundleModule.dll" Private="false" />
     <Reference Include="UnityEngine.CoreModule" HintPath="$(DvManagedDir)/UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="UnityEngine.JSONSerializeModule" HintPath="$(DvManagedDir)/UnityEngine.JSONSerializeModule.dll" Private="false" />
     <Reference Include="UnityEngine.IMGUIModule" HintPath="$(DvManagedDir)/UnityEngine.IMGUIModule.dll" Private="false" />
     <Reference Include="UnityEngine.ImageConversionModule" HintPath="$(DvManagedDir)/UnityEngine.ImageConversionModule.dll" Private="false" />
     <Reference Include="UnityEngine.ParticleSystemModule" HintPath="$(DvManagedDir)/UnityEngine.ParticleSystemModule.dll" Private="false" />

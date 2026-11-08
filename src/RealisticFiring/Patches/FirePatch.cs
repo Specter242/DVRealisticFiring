@@ -53,6 +53,7 @@ namespace RealisticFiring.Patches
                     }
                 }
                 var stokerCab = StokerCab.Attach(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
+                S282InteractionAreas.Attach(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
                 if (stokerCab != null && Main.Settings.LogFireboxCreation)
                     Main.Mod.Logger.Log($"{car.ID}: {stokerCab}");
                 var backheadPump = FeedPumpCab.AttachOnBackhead(car, car.loadedInterior != null ? car.loadedInterior.transform : null);

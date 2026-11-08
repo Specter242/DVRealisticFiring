@@ -102,7 +102,7 @@ as it heats, rising about a sixth of the glass: fill a cold boiler low. The game
 Startup setting speeds up a cold fire (×25 at 100 %). Set it to 2500 % for a
 real-time light-up. At a roundhouse stall or engine shed, plug the stand's
 blower line into the fitting on the smokebox and open its handwheel a
-little as you lay the fire, more as it catches; take it off at about 50 psi
+little as you lay the fire, more as it catches; take it off at about 3.5 bar
 and use the cab's blower (the 8F has no fitting).
 
 Left and right below mean looking toward the chimney. Steam sockets sit low
@@ -285,7 +285,7 @@ covered districts and the full allowance rules.
   engine shed (tow it there): plug the stand's blower line into the
   fitting on the smokebox and open the stand's valve (it feeds the blower,
   atomizer, and heater), warm the oil for about ten minutes, light up, and
-  take the line off at about 20 psi. The screen says each next step.
+  take the line off at about 1.4 bar. The screen says each next step.
 
 ## Water
 

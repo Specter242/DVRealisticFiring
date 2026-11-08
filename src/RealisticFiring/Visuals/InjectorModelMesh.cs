@@ -71,15 +71,15 @@ namespace RealisticFiring.Visuals
         internal bool StockControlWasActive;
         internal bool RestoreOriginalState = true;
         internal Action Detach;
+        internal Action RestoreInputs;
         internal readonly List<(GameObject Object, bool Active)> Hidden = new List<(GameObject, bool)>();
         internal readonly List<(Renderer Renderer, bool Enabled)> StockRenderers = new List<(Renderer, bool)>();
         internal readonly List<(Collider Collider, bool Enabled)> StockColliders = new List<(Collider, bool)>();
         internal void ConcealControl(GameObject value, params GameObject[] otherInteractionAreas)
         {
             StockControl = value; StockControlWasActive = value.activeSelf;
-            // Keep the original native control alive: stock keyboard and
-            // controller managers retain references to it. Its port is shared
-            // with the new wheel; only its old drawing and grip are hidden.
+            // Hide it immediately; retire its physics once its keyboard/HUD
+            // references have been transferred to the replacement wheel.
             var areas = new[] { value }.Concat(otherInteractionAreas ?? Array.Empty<GameObject>()).Where(a => a != null).Distinct().ToArray();
             foreach (var renderer in areas.SelectMany(a => a.GetComponentsInChildren<Renderer>(true)).Distinct())
             { StockRenderers.Add((renderer, renderer.enabled)); renderer.enabled = false; }
@@ -97,6 +97,7 @@ namespace RealisticFiring.Visuals
             Detach?.Invoke(); Detach = null;
             if (RestoreOriginalState)
             {
+                RestoreInputs?.Invoke();
                 foreach (var cut in Cuts)
                     if (cut.Filter != null && cut.Filter.sharedMesh == cut.Replacement) cut.Filter.sharedMesh = cut.Original;
                 if (StockControl != null && StockControl.activeSelf != StockControlWasActive) StockControl.SetActive(StockControlWasActive);
@@ -105,6 +106,7 @@ namespace RealisticFiring.Visuals
                 foreach (var hidden in Hidden)
                     if (hidden.Object != null && hidden.Object.activeSelf != hidden.Active) hidden.Object.SetActive(hidden.Active);
             }
+            RestoreInputs = null;
             StockControl = null;
             foreach (var mesh in Meshes)
                 if (mesh != null)

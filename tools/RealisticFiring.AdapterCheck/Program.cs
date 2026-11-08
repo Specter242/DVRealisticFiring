@@ -21,6 +21,14 @@ namespace RealisticFiring.AdapterCheck
 
         private static int failures;
 
+        private static void CheckGaugePressureHints()
+        {
+            Check(Math.Abs(InjectorRig.HoseMaxGauge - 0.5f) < 0.0001f,
+                "the cold-hose pressure hint is 0.5 gauge bar, using the cab's one-bar atmosphere");
+            Check(Math.Abs(InjectorRig.PlantGauge - 10.36f) < 0.0001f,
+                "the direct-steaming pressure hint is 10.36 gauge bar without changing its absolute limit");
+        }
+
         private static int Main(string[] args)
         {
             if (args.Length == 1 && args[0] == "--qj-backend")
@@ -37,6 +45,12 @@ namespace RealisticFiring.AdapterCheck
                 return args[0] == "--throttle-sensitivity" ? ThrottleBench.Sensitivity(args[1], args.Length == 3)
                     : ThrottleBench.Run(args[1], args.Length == 3);
             }
+            if (args.Length == 1 && args[0] == "--gauge-pressure")
+            {
+                CheckGaugePressureHints();
+                return failures == 0 ? 0 : 1;
+            }
+            CheckGaugePressureHints();
             RealisticFiring.Main.Settings = new Settings { LogCoalDeliveries = false };
             var gameParams = new SimGameParams(false, false, false, 1f, 1f);
             var def = new FireboxDefinition { ID = Id };
@@ -921,7 +935,7 @@ namespace RealisticFiring.AdapterCheck
                   && InjectorRig.DirectSteamFlow(1f, 0.8f * plant) < InjectorRig.DirectSteamMost && InjectorRig.DirectSteamFlow(1f, 0.8f * plant) > 0f
                   && InjectorRig.DirectSteamFlow(1f, plant) == 0f && InjectorRig.DirectSteamFlow(0f, 1f) == 0f,
                 $"direct steam is choked at {InjectorRig.DirectSteamMost:F1} kg/s wide open below half the plant's pressure, " +
-                $"{InjectorRig.DirectSteamFlow(1f, 0.8f * plant):F2} kg/s at 80 % of it, none at the plant's {InjectorRig.PlantGauge:F0} psi");
+                $"{InjectorRig.DirectSteamFlow(1f, 0.8f * plant):F2} kg/s at 80 % of it, none at the plant's {InjectorRig.PlantGauge:F1} bar");
 
             var repaired = NewBoiler(1f, lever);
             InjectorRig.TryCreate(null, repaired, out _);
@@ -3658,18 +3672,18 @@ namespace RealisticFiring.AdapterCheck
             Visuals.S282InjectorCab.Configure(wheel, model); Visuals.S282InjectorCab.Configure(lever, model);
             Check(Visuals.S282InjectorCab.WaterSourcePath == "Left/Valves/Blower/C_Blower"
                 && wheel.jointAxis.x == model.WaterAxis[0] && wheel.jointAxis.y == model.WaterAxis[1]
-                && wheel.jointAxis.z == model.WaterAxis[2],
-                "injector water control clones the stock blower and aligns only its shaft axis");
+                && wheel.jointAxis.z == model.WaterAxis[2] && !wheel.useSteppedJoint,
+                "injector water control uses native blower input without percentage detents");
             var blower = (DV.CabControls.Spec.Rotary)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(DV.CabControls.Spec.Rotary));
             blower.rigidbodyMass = 3f; blower.rigidbodyAngularDrag = 2f; blower.invertDirection = true;
             blower.useSteppedJoint = true; blower.notches = 37; blower.useLimits = true; blower.jointLimitMin = -120f; blower.jointLimitMax = 120f;
             blower.jointStartingPos = -90f; blower.scrollWheelHoverScroll = -2f; blower.scrollWheelUseSpringRotation = false;
             blower.jointSpring = 5f; blower.jointDamper = .3f; blower.useSpring = false;
             var nativeFields = typeof(DV.CabControls.Spec.Rotary).GetFields(BindingFlags.Public | BindingFlags.Instance)
-                .Where(f => f.Name != "jointAxis").ToDictionary(f => f, f => f.GetValue(blower));
+                .Where(f => f.Name != "jointAxis" && f.Name != "useSteppedJoint").ToDictionary(f => f, f => f.GetValue(blower));
             Visuals.S282InjectorCab.Configure(blower, model);
             Check(nativeFields.All(p => Equals(p.Value, p.Key.GetValue(blower))),
-                "injector model preserves every blower rotary setting except its geometry axis");
+                "continuous injector wheel retains native blower scroll, drag, limits and spring settings");
             Check(Visuals.S282InjectorCab.WaterClosedAngle(blower) == 120f,
                 "water model closed pose respects the blower's inherited inverted range");
             blower.invertDirection = false;

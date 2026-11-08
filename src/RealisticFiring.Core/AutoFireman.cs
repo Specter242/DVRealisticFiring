@@ -377,8 +377,6 @@ namespace RealisticFiring.Core
             if (j.Working)
                 return;
             var blower = Mode == FiremanMode.KeepAlive ? KeepAliveBlower : IdleBlower;
-            if (r.Pressure >= r.SafetyValve - SoakMargin)
-                blower = QuietBlower;
             if (r.Standing && (j.Building || r.Pressure < PressureTarget - 1f))
                 blower = RaisingBlower;
             if (actions.Door > DoorCrack)
@@ -386,6 +384,10 @@ namespace RealisticFiring.Core
             // A black stack standing wants draft to burn its smoke.
             if (smoking)
                 blower = Math.Max(blower, IdleBlower);
+            // Pressure protection wins over firing and smoke-clearing draft.
+            // Use the secondary-air door below to clear smoke at a full boiler.
+            if (r.Pressure >= r.SafetyValve - SoakMargin)
+                blower = QuietBlower;
             actions.Blower = blower;
             // At a stop, use secondary air to burn the remaining tar before
             // it becomes a prolonged dark stack. More blower would force

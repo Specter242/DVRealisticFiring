@@ -42,8 +42,8 @@ namespace RealisticFiring.Sim
         /// <summary>A hose only fills a boiler with no pressure in it, absolute bar.</summary>
         public const float HoseMaxPressure = 1.5f;
 
-        /// <summary>That pressure on the gauge, psi.</summary>
-        public const float HoseMaxGauge = (HoseMaxPressure - 1.01325f) * 14.5038f;
+        /// <summary>That pressure in gauge bar, matching the cab and overlay.</summary>
+        public const float HoseMaxGauge = HoseMaxPressure - 1f;
 
         /// <summary>The hose fill stops at this water level, as a fireman fills to the top of the glass.</summary>
         public const float HoseFillLevel = 0.85f;
@@ -61,8 +61,8 @@ namespace RealisticFiring.Sim
         /// </summary>
         public const float PlantPressure = 11.36f;
 
-        /// <summary>That pressure on the gauge, psi.</summary>
-        public const float PlantGauge = (PlantPressure - 1.01325f) * 14.5038f;
+        /// <summary>That pressure in gauge bar, matching the cab and overlay.</summary>
+        public const float PlantGauge = PlantPressure - 1f;
 
         /// <summary>
         /// Direct steam through the repair stand's hose and the engine's

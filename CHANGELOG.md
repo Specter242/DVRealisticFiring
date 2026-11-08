@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.17.8 (2026-11-08)
+
+- Improved access to the S282's brakes and stoker valves from across the cab.
+- Pressure hints and firing instructions now use bar to match the cab gauges.
+
 ## 1.17.7 (2026-11-04)
 
 - Added support for LittleNiko36's S2102-870 QJ, with its own firing character, stoker controls, feed pump, injector and throttle response.

@@ -1,9 +1,12 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using DV.CabControls;
 using DV.CabControls.Spec;
+using DV.HUD;
+using DV.KeyboardInput;
 using DV.Simulation.Ports;
 using LocoSim.Implementations;
 using Newtonsoft.Json;
@@ -77,6 +80,10 @@ namespace RealisticFiring.Visuals
                 var steam = Control(steamSource, root.transform, car, V(data.SteamPivot), circuit.SteamValve,
                     () => InjectorSteamCab.SteamHover(circuit, InjectorValves.Steam));
                 Configure(water.GetComponent<Rotary>(), data);
+                var waterInput = water.gameObject.AddComponent<S282ContinuousWaterWheel>();
+                waterInput.Original = stock;
+                waterInput.Car = car;
+                waterInput.Lifetime = lifetime;
                 Configure(steam.GetComponent<Lever>(), data);
                 steam.gameObject.AddComponent<S282ContinuousValve>();
                 var scrolling = steam.gameObject.AddComponent<Patches.NotchScroll>();
@@ -112,7 +119,13 @@ namespace RealisticFiring.Visuals
                         highlights[p.Role == "water" ? water : steam].Add(renderer);
                     }
                 }
-                Grip(water, highlights[water], .08f);
+                // Keep the working valve's sphere and rotational inertia.
+                // A box around the replacement mesh made the same torque scroll
+                // accelerate much more slowly than the blower/stoker wheels.
+                var waterGrip = waterSource.GetComponent<Rotary>().colliderGameObjects
+                    .Where(g => g != null).SelectMany(g => g.GetComponentsInChildren<SphereCollider>(true)).FirstOrDefault();
+                if (waterGrip == null) throw new InvalidDataException("Stock blower sphere grip changed");
+                Grip(water, highlights[water], .08f, sphereRadius: waterGrip.radius);
                 Grip(steam, highlights[steam], .035f, handle);
                 // Preserve the blower's native range and direction. Offset
                 // only the model/grip so zero still has the modeled pose.
@@ -142,7 +155,10 @@ namespace RealisticFiring.Visuals
 
         internal static void Configure(Rotary spec, S282InjectorData model)
         {
+            // Keep the working blower/stoker wheel's native input, but no
+            // detents: water delivery must retain arbitrary intermediate values.
             spec.jointAxis = V(model.WaterAxis);
+            spec.useSteppedJoint = false;
         }
 
         internal static float WaterClosedAngle(Rotary spec) => !spec.useLimits ? 0f
@@ -180,7 +196,7 @@ namespace RealisticFiring.Visuals
             return control;
         }
 
-        private static void Grip(Transform control, List<Renderer> renderers, float minimum, Transform movingFrame = null)
+        private static void Grip(Transform control, List<Renderer> renderers, float minimum, Transform movingFrame = null, float? sphereRadius = null)
         {
             if (renderers.Count == 0) throw new InvalidDataException("Missing moving valve geometry");
             var bounds = new Bounds(); var first = true;
@@ -198,8 +214,17 @@ namespace RealisticFiring.Visuals
             }
             var grip = new GameObject("valve grip");
             grip.transform.SetParent(movingFrame != null ? movingFrame : control, false); grip.layer = control.gameObject.layer;
-            var box = grip.AddComponent<BoxCollider>(); box.center = bounds.center;
-            box.size = Vector3.Max(bounds.size, Vector3.one * minimum);
+            if (sphereRadius.HasValue)
+            {
+                var sphere = grip.AddComponent<SphereCollider>();
+                sphere.center = bounds.center;
+                sphere.radius = sphereRadius.Value;
+            }
+            else
+            {
+                var box = grip.AddComponent<BoxCollider>(); box.center = bounds.center;
+                box.size = Vector3.Max(bounds.size, Vector3.one * minimum);
+            }
             control.GetComponent<ControlSpec>().colliderGameObjects = new[] { grip };
             var highlight = control.GetComponent<HighlightTag>() ?? control.gameObject.AddComponent<HighlightTag>();
             highlight.renderers = renderers;
@@ -221,6 +246,111 @@ namespace RealisticFiring.Visuals
         }
 
         private static Vector3 V(float[] v) => new Vector3(v[0], v[1], v[2]);
+    }
+
+    /// <summary>Retains a continuous water wheel after native scrolling or dragging.</summary>
+    internal sealed class S282ContinuousWaterWheel : MonoBehaviour
+    {
+        internal InteractablePortFeeder Original;
+        internal TrainCar Car;
+        internal S282InjectorLifetime Lifetime;
+        private Rotary spec;
+        private HingeJointAngleFix angle;
+        private DV.Interaction.GrabHandlerHingeJoint grab;
+
+        private IEnumerator Start()
+        {
+            var binder = GetComponent<SimControlBinder>();
+            var manager = Original.GetComponentInParent<InteriorControlsManager>();
+            while (!binder.Bound || manager != null && !manager.Initialized)
+                yield return null;
+            // The native feeder and keyboard implementations also finish Start.
+            yield return null;
+            yield return null;
+            var keyboard = Original.GetComponentInParent<InteractablesKeyboardControl>();
+            var reader = Original.GetComponentInParent<LocoControlsReader>();
+            var copies = new Dictionary<AKeyboardInput, AKeyboardInput>();
+            foreach (var input in Original.GetComponents<AKeyboardInput>())
+            {
+                var copy = (AKeyboardInput)gameObject.AddComponent(input.GetType());
+                JsonUtility.FromJsonOverwrite(JsonUtility.ToJson(input), copy);
+                copies.Add(input, copy);
+            }
+            yield return null;
+            try
+            {
+                TransferInput(manager, keyboard, reader, copies);
+            }
+            catch (Exception e)
+            {
+                Main.Mod.Logger.Warning("S282 injector control transfer failed; keeping stock: " + e.Message);
+                Lifetime.Clean();
+                Object.Destroy(Lifetime.gameObject);
+            }
+        }
+
+        private void TransferInput(InteriorControlsManager manager, InteractablesKeyboardControl keyboard,
+            LocoControlsReader reader, Dictionary<AKeyboardInput, AKeyboardInput> copies)
+        {
+            if (manager == null || keyboard == null || reader == null || reader.injector != Original.gameObject)
+                throw new InvalidDataException("Stock injector input references changed");
+            var oldEntries = keyboard.entries;
+            if (!Car.SimController.SimulationFlow.TryGetPort(Original.portId, out var port))
+                throw new InvalidDataException("Missing injector water port");
+            var blocker = Car.SimController.controlsBlocker?.GetBlockDefinition(Original.portId);
+            var originalControl = Original.GetComponent<ControlImplBase>();
+            var originalBody = Original.GetComponent<Rigidbody>();
+            var originalSteps = Original.GetComponent<SteppedJoint>();
+            if (originalControl == null || originalBody == null)
+                throw new InvalidDataException("Stock injector implementation did not initialize");
+            var wasEnabled = originalControl.enabled;
+            var wasKinematic = originalBody.isKinematic;
+            var stepsEnabled = originalSteps != null && originalSteps.enabled;
+            // Only one physical control owns the water port. Keeping a hidden
+            // stepped control alive lets its detents feed back into this wheel.
+            Lifetime.RestoreInputs = () =>
+            {
+                keyboard.entries = oldEntries;
+                reader.injector = Original.gameObject;
+                manager.SetupControl(Original.gameObject, InteriorControlsManager.ControlType.Injector);
+                originalBody.isKinematic = wasKinematic;
+                if (originalSteps != null) originalSteps.enabled = stepsEnabled;
+                originalControl.enabled = wasEnabled;
+            };
+            foreach (var copy in copies.Values) copy.SetupActions(manager);
+            keyboard.entries = oldEntries.Select(i => copies.TryGetValue(i, out var copy) ? copy : i).ToArray();
+            reader.injector = gameObject;
+            manager.SetupControl(gameObject, InteriorControlsManager.ControlType.Injector);
+            var feeder = GetComponent<InteractablePortFeeder>();
+            feeder.Deinit();
+            feeder.Init(port, blocker);
+            feeder.SetupControlChangedListeners();
+            // Keep its existing feeder for cached AI/network SetValue references,
+            // but stop its physical updates from sending detents back to the port.
+            // Do not disable the whole object: its hinge angle reference resets
+            // on reactivation and would break restoration after a cab rebuild.
+            originalControl.ForceEndInteraction();
+            originalControl.enabled = false;
+            if (originalSteps != null) originalSteps.enabled = false;
+            originalBody.angularVelocity = Vector3.zero;
+            originalBody.isKinematic = true;
+        }
+
+        internal void RememberPosition()
+        {
+            if (spec == null) spec = GetComponent<Rotary>();
+            if (angle == null) angle = GetComponent<HingeJointAngleFix>();
+            // Torque scrolling moves the wheel, not its spring target. The
+            // native release must hold the actual angle rather than the old target.
+            if (spec != null && angle != null)
+                spec.jointStartingPos = angle.Angle;
+        }
+
+        private void LateUpdate()
+        {
+            if (grab == null) grab = GetComponent<DV.Interaction.GrabHandlerHingeJoint>();
+            if (grab != null) grab.resetTargetPositionOnUngrab = false;
+        }
     }
 
     // An unstepped stock rotary otherwise resets its spring target to the
