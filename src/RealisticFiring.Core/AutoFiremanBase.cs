@@ -250,6 +250,13 @@ namespace RealisticFiring.Core
             set
             {
                 if (mode != value) roadPlan = reserveAhead = 0f;
+                // Off, he stops watching: what he last saw of the gauge and
+                // the glass is stale when he is set on again.
+                if (value == FiremanMode.Off)
+                {
+                    lastPressure = seenGlass = float.NaN;
+                    glassTrend = 0f;
+                }
                 mode = value;
             }
         }

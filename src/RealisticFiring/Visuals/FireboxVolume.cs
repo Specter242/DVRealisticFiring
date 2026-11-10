@@ -415,6 +415,18 @@ namespace RealisticFiring.Visuals
 
         private bool DoorOpen() => !firebox.HasDoorPort || firebox.DoorOpening > DoorShut;
 
+        // The pixels the fire is drawn over, against the screen its budget
+        // was set on: both eyes' in a headset.
+        private static float PixelLoad()
+        {
+            float pixels;
+            if (UnityEngine.XR.XRSettings.enabled)
+                pixels = 2f * UnityEngine.XR.XRSettings.eyeTextureWidth * UnityEngine.XR.XRSettings.eyeTextureHeight;
+            else
+                pixels = (float)Screen.width * Screen.height;
+            return pixels / FireboxSampling.ReferencePixels;
+        }
+
         private bool Near()
         {
             var camera = PlayerManager.ActiveCamera != null ? PlayerManager.ActiveCamera : Camera.main;
@@ -608,7 +620,7 @@ namespace RealisticFiring.Visuals
             // Read the local quality each frame, outside the closed door's
             // source-upload throttle. It changes only the ray sampling;
             // the fire's motion, lighting, and sources keep their budgets.
-            var sampling = FireboxSampling.For(Main.Settings.FireboxQuality, closed, Distance <= 0f, Steps, StepLength);
+            var sampling = FireboxSampling.For(Main.Settings.FireboxQuality, closed, Distance <= 0f, Steps, StepLength, PixelLoad());
             material.SetFloat(StepsId, sampling.MaxSteps);
             material.SetFloat(StepLengthId, sampling.StepLength);
             // The flow: up and toward the tube plate, faster with the draft and

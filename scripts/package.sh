@@ -34,6 +34,8 @@ elif [[ ! -f "$bundle" ]]; then
 fi
 
 [[ -f "$manual" ]] || { echo "No firing manual bundle at $manual" >&2; exit 1; }
+# A bundle older than its shaders, builders, generators, or pages cannot ship.
+python3 -I "$repo/scripts/bundle-inputs.py" check "$bundle" "$manual"
 
 mkdir -p "$repo/dist"
 stage="$(mktemp -d "$repo/dist/package.XXXXXX")"

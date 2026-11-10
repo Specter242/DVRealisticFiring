@@ -4,6 +4,8 @@
 # Regenerates the smoke textures, then runs the editor headless to build the
 # prefabs and pack them for Windows (the game's build).
 # Needs an activated Unity license (sign in to Unity Hub once).
+# Records each bundle's inputs beside it (scripts/bundle-inputs.py), which the
+# packaging scripts check so a stale bundle cannot ship.
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,6 +16,8 @@ out="$repo/fx/build"
 [[ -x "$unity" ]] || { echo "Unity 2019.4.40f1 not found at $unity (set UNITY_EDITOR)" >&2; exit 1; }
 
 mkdir -p "$out"
+# Taken before the build, so an input edited while Unity runs is caught.
+inputs="$(python3 -I "$repo/scripts/bundle-inputs.py" digest effects)"
 python3 -I "$repo/fx/textures/make_smoke_textures.py" "$project/Assets/RealisticFiring/Textures"
 python3 -I "$repo/fx/textures/make_firebox_textures.py" "$project/Assets/RealisticFiring/Textures"
 python3 -I "$repo/fx/textures/make_fire_volume.py" "$project/Assets/RealisticFiring/Textures"
@@ -30,6 +34,8 @@ if ! "$unity" -batchmode -nographics -quit -projectPath "$project" \
     echo "Unity build failed; full log in $out/unity-build.log" >&2
     exit 1
 fi
+python3 -I "$repo/scripts/bundle-inputs.py" write --built-from "$inputs" \
+    "$out/realisticfiring_fx" "$out/realisticstackeffects_fx"
 echo "Built $out/realisticfiring_fx and $out/realisticstackeffects_fx"
 
 # The selected booklet is a separate bundle and does not enter Stack Effects,

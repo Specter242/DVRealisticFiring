@@ -110,9 +110,19 @@ public class SmokeNuisanceTests
     {
         var model = new SmokeNuisance();
         for (var i = 0; i < 100; ++i) Heavy(model, .02);
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 10000; ++i) Heavy(model, .02);
-        Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
+        // The measured loop runs once unmeasured first. A first pass can
+        // allocate once for reasons that are not the step's own (the runtime
+        // recompiling a hot method partway through the loop), which failed
+        // this test now and then; a step that makes garbage makes it on
+        // every pass.
+        long Measure()
+        {
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            for (var i = 0; i < 10000; ++i) Heavy(model, .02);
+            return GC.GetAllocatedBytesForCurrentThread() - before;
+        }
+        Measure();
+        Assert.Equal(0, Measure());
     }
 
     private static SmokeNuisanceFlow Heavy(SmokeNuisance model, double seconds,

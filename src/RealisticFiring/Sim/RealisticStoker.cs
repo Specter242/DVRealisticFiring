@@ -145,14 +145,20 @@ namespace RealisticFiring.Sim
         public override void SetSaveStateData(JObject savedData)
         {
             savedJam = savedData != null && savedData.GetBool(JammedSaveKey) == true;
-            savedHandling = null;
-            if (savedData?[HandlingSaveKey] is JObject handlingData)
-            {
-                try { savedHandling = handlingData.ToObject<StokerState>(); }
-                catch (System.Exception e) when (e is System.FormatException || e is Newtonsoft.Json.JsonException || e is System.OverflowException)
-                { Main.Mod?.Logger.Warning("Invalid stoker handling data; using the legacy jam state"); }
-            }
+            savedHandling = savedData?[HandlingSaveKey] is JObject handlingData ? ReadHandling(handlingData) : null;
             if (stoker != null) RestoreHandling();
+        }
+
+        // In its own method: Harmony cannot put the tick guard's finalizer on
+        // a method with an exception filter in it (Patches.TickGuard).
+        private static StokerState? ReadHandling(JObject handlingData)
+        {
+            try { return handlingData.ToObject<StokerState>(); }
+            catch (System.Exception e) when (e is System.FormatException || e is Newtonsoft.Json.JsonException || e is System.OverflowException)
+            {
+                Main.Mod?.Logger.Warning("Invalid stoker handling data; using the legacy jam state");
+                return null;
+            }
         }
 
         private void RestoreHandling()

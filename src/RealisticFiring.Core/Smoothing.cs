@@ -5,6 +5,14 @@ namespace RealisticFiring.Core
     public static class Smoothing
     {
         /// <summary>
+        /// <paramref name="value"/>, or <paramref name="fallback"/> where it
+        /// is NaN or infinite: one bad reading from the game or a damaged
+        /// save must not poison a model's state for good (audit 2026-11-09).
+        /// </summary>
+        public static float Finite(float value, float fallback = 0f) =>
+            float.IsNaN(value) || float.IsInfinity(value) ? fallback : value;
+
+        /// <summary>
         /// Critically damped approach toward a target, with the same algorithm
         /// as UnityEngine.Mathf.SmoothDamp (no speed limit), so the model's
         /// dynamics match the stock firebox it replaces.

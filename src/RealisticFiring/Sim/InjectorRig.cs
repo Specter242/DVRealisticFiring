@@ -503,14 +503,23 @@ namespace RealisticFiring.Sim
             }
 
             var ports = controls.Length > 1 ? components.SelectMany(c => c.GetAllPorts()).ToList() : null;
-            var circuits = controls.Select((port, i) => new InjectorCircuit(port,
-                new Injector(new InjectorSpec(maxRate / controls.Length, rated)
+            var circuits = controls.Select((port, i) =>
+            {
+                var spec = new InjectorSpec(maxRate / controls.Length, rated)
                 {
                     LeastScale = livery != null && OneLeverForTwo.Contains(livery) ? OneOfTwoLeast : 1f,
                     Lifting = InjectorValves.Lifting(livery),
-                }),
-                controls.Length == 1 ? "" : i == 0 ? "right" : "left",
-                ports?.SingleOrDefault(p => p.id == $"injectorParticles.INJECTOR_{(i == 0 ? "R" : "L")}_PARTICLES_CLAMP")))
+                };
+                // GWI 2.0.0's limited five-notch lever reaches 0, .25, .5,
+                // .75 and 1. Its first opening must be able to prime; keep
+                // every other fit's threshold and the maker's rate/pressure.
+                if ((livery == "GWI40xx" || livery == "GWI_Manor")
+                    && boiler.id == "boiler" && controls.Length == 1 && port.id == "injector.EXT_IN")
+                    spec.CrackOpening = .25f;
+                return new InjectorCircuit(port, new Injector(spec),
+                    controls.Length == 1 ? "" : i == 0 ? "right" : "left",
+                    ports?.SingleOrDefault(p => p.id == $"injectorParticles.INJECTOR_{(i == 0 ? "R" : "L")}_PARTICLES_CLAMP"));
+            })
                 .ToList().AsReadOnly();
             // Each injector's own steam valve, where the engine has them: the stock lever is then its water valve.
             var steamValves = 0;

@@ -274,6 +274,9 @@ namespace RealisticFiring.Sim
                 };
         }
 
+        /// <summary>Puts the heat port at nothing, for a tick that failed (<see cref="Patches.TickGuard"/>).</summary>
+        internal void NoHeat() => heatReadOut.Value = 0f;
+
         public override void Tick(float delta)
         {
             // On a multiplayer client the host simulates; its ports carry the host's values.

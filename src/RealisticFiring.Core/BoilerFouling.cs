@@ -84,8 +84,8 @@ namespace RealisticFiring.Core
 
         public void Restore(float scaleMass, float sootLoss)
         {
-            ScaleMass = Math.Max(0f, scaleMass);
-            SootLoss = Math.Max(0f, Math.Min(MostLoss, sootLoss));
+            ScaleMass = Math.Max(0f, Smoothing.Finite(scaleMass));
+            SootLoss = Math.Max(0f, Math.Min(MostLoss, Smoothing.Finite(sootLoss)));
         }
     }
 

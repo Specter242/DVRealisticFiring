@@ -117,12 +117,12 @@ namespace RealisticFiring.Core
         /// <summary>Washes the boiler out and fills it with fresh water.</summary>
         public void Washout(float waterMass)
         {
-            var brought = Math.Max(0f, waterMass) * FeedConcentration * 1e-6f;
+            var brought = Math.Max(0f, Smoothing.Finite(waterMass)) * FeedConcentration * 1e-6f;
             Solids = brought * (1f - SludgeShare);
             SuspendedSludge = brought * SludgeShare;
             SettledSludge = 0f;
             BlownOut = 0f;
-            Measure(Math.Max(1f, waterMass));
+            Measure(Math.Max(1f, Smoothing.Finite(waterMass, 1f)));
             Foam = 0f;
             gathered = 1f;
         }
@@ -133,7 +133,7 @@ namespace RealisticFiring.Core
             Solids = Clean(solids);
             SettledSludge = Clean(settled);
             SuspendedSludge = Clean(suspended);
-            Measure(Math.Max(1f, waterMass));
+            Measure(Math.Max(1f, Smoothing.Finite(waterMass, 1f)));
             Foam = 0f;
         }
 
@@ -142,11 +142,11 @@ namespace RealisticFiring.Core
             if (!(dt > 0f))
                 return;
             clock += dt;
-            var water = Math.Max(1f, inputs.WaterMass);
-            var work = Smoothing.Clamp01(inputs.Work);
+            var water = Math.Max(1f, Smoothing.Finite(inputs.WaterMass, 1f));
+            var work = Smoothing.Clamp01(Smoothing.Finite(inputs.Work));
 
             // The feed's solids: dissolved, and part as sludge in the water.
-            var brought = Math.Max(0f, inputs.Fed) * FeedConcentration * 1e-6f;
+            var brought = Math.Max(0f, Smoothing.Finite(inputs.Fed)) * FeedConcentration * 1e-6f;
             Solids += brought * (1f - SludgeShare);
             SuspendedSludge += brought * SludgeShare;
 
@@ -158,7 +158,7 @@ namespace RealisticFiring.Core
 
             // The blowdown takes the water as it is, and the settled sludge
             // gathered at its cock, which it draws away as it blows on.
-            var blown = Math.Max(0f, inputs.BlownDown);
+            var blown = Math.Max(0f, Smoothing.Finite(inputs.BlownDown));
             if (blown > 0f)
             {
                 var share = Math.Min(1f, blown / (water + blown));

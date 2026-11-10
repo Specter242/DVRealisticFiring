@@ -104,6 +104,10 @@ namespace RealisticFiring.Patches
     [HarmonyPatch(typeof(ReciprocatingSteamEngine), nameof(ReciprocatingSteamEngine.Tick))]
     internal static class SuperheaterTickPatch
     {
+        // On a guest too (Net.IsClient): the steam path shows the host's
+        // mirrored state from BeginTick, and the superheater is stepped as
+        // the guest's own estimate for its overlay; neither writes a port
+        // the host sends.
         private static void Prefix(ReciprocatingSteamEngine __instance, float delta)
         {
             EngineSteamPath.BeginTick(__instance, delta);
@@ -122,6 +126,12 @@ namespace RealisticFiring.Patches
     {
         private static void Postfix(ReciprocatingSteamEngine __instance, float ___admissionPressure)
         {
+            // A guest's engine does not tick (the Multiplayer mod's prefix
+            // skips it), but a postfix still runs: from the admission
+            // pressure of an engine that never ran, it wrote over the host's
+            // exhaust pressure each tick (audit 2026-11-09).
+            if (Net.IsClient)
+                return;
             if (!EngineCylinders.Works(__instance) || !EngineCylinders.TryGet(__instance, out var cylinders))
                 return;
             // The pressure acting on the pistons, after the cocks' and a crack's leaks, as the stock works it out.

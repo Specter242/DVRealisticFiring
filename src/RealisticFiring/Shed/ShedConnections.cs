@@ -152,6 +152,52 @@ namespace RealisticFiring.Shed
             return nearest;
         }
 
+        // A coupling in the hand is told where it goes on an engine this near, in m.
+        private const float HintWithin = 40f;
+
+        /// <summary>
+        /// For a player who has just taken a stand's coupling in hand: where
+        /// the nearest engine with a free connection for it takes it, in
+        /// words; null with no such engine near. Where the hoses go was the
+        /// players' most asked question, and still asked after the booklet
+        /// gained its table (audit 2026-11-09).
+        /// </summary>
+        public static string WhereItGoes(HoseKind kind, Vector3 from)
+        {
+            Connection nearest = null;
+            var best = HintWithin * HintWithin;
+            foreach (var connection in Connections)
+            {
+                if (connection.Kind != kind || connection.Car == null || connection.Socket == null || connection.Socket.IsPluggedIn)
+                    continue;
+                var distance = (connection.Socket.transform.position - from).sqrMagnitude;
+                if (distance < best)
+                {
+                    best = distance;
+                    nearest = connection;
+                }
+            }
+            if (nearest == null)
+                return null;
+            var local = nearest.Car.transform.InverseTransformPoint(nearest.Socket.transform.position);
+            var name = char.ToUpper(kind.Name[0]) + kind.Name.Substring(1);
+            return $"{name}: it goes in the connection {Describe(local, nearest.Car.Bounds.extents.z)} on {Sim.CarNames.LogName(nearest.Car)}";
+        }
+
+        /// <summary>
+        /// A connection's place on its engine in words, from where it sits in
+        /// the engine's own frame (x to its right, y up, z to its front) and
+        /// the engine's half length, m.
+        /// </summary>
+        internal static string Describe(Vector3 local, float halfLength)
+        {
+            var height = local.y < 1.3f ? "low " : local.y > 2.6f ? "high " : "";
+            var side = local.x < -0.2f ? "on the left side" : local.x > 0.2f ? "on the right side" : "on the centerline";
+            var third = halfLength > 0f ? local.z / halfLength : 0f;
+            var along = third > 0.33f ? ", toward the front" : third < -0.33f ? ", toward the rear" : ", about the middle";
+            return height + side + along;
+        }
+
         /// <summary>The connection on <paramref name="car"/> for the hose whose plug carries <paramref name="tag"/>, or null where it has none (or none yet).</summary>
         public static PlugSocket SocketOf(TrainCar car, string tag)
         {

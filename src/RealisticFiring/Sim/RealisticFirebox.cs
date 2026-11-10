@@ -457,6 +457,9 @@ namespace RealisticFiring.Sim
             return aim.HasValue && !aim.Value.Raking && Time.time - aim.Value.Time <= AimHoldTime ? aim : null;
         }
 
+        /// <summary>Puts the heat port at nothing, for a tick that failed (<see cref="Patches.TickGuard"/>).</summary>
+        internal void NoHeat() => heatReadOut.Value = 0f;
+
         public override void Tick(float delta)
         {
             FollowCoal(delta);

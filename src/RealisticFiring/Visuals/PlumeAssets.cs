@@ -218,13 +218,13 @@ namespace RealisticFiring.Visuals
                 prefab = Keep(bundle.LoadAsset<GameObject>(PrefabName));
                 overflowPrefab = Keep(bundle.LoadAsset<GameObject>(OverflowPrefabName));
                 fireboxPrefab = Keep(bundle.LoadAsset<GameObject>(FireboxPrefabName));
-                fireIronMaterial = Keep(bundle.LoadAsset<Material>(FireIronMaterialName));
-                fireboxWallMaterial = Keep(bundle.LoadAsset<Material>(FireboxWallMaterialName));
-                fireboxVolumeMaterial = Keep(bundle.LoadAsset<Material>(FireboxVolumeMaterialName));
-                coalLumpsMaterial = Keep(bundle.LoadAsset<Material>(CoalLumpsMaterialName));
-                plumeCompositeMaterial = Keep(bundle.LoadAsset<Material>(PlumeCompositeMaterialName));
-                plumeDepthMaterial = Keep(bundle.LoadAsset<Material>(PlumeDepthMaterialName));
-                stokerJetMaterial = Keep(bundle.LoadAsset<Material>(StokerJetMaterialName));
+                fireIronMaterial = Usable(Keep(bundle.LoadAsset<Material>(FireIronMaterialName)));
+                fireboxWallMaterial = Usable(Keep(bundle.LoadAsset<Material>(FireboxWallMaterialName)));
+                fireboxVolumeMaterial = Usable(Keep(bundle.LoadAsset<Material>(FireboxVolumeMaterialName)));
+                coalLumpsMaterial = Usable(Keep(bundle.LoadAsset<Material>(CoalLumpsMaterialName)));
+                plumeCompositeMaterial = Usable(Keep(bundle.LoadAsset<Material>(PlumeCompositeMaterialName)));
+                plumeDepthMaterial = Usable(Keep(bundle.LoadAsset<Material>(PlumeDepthMaterialName)));
+                stokerJetMaterial = Usable(Keep(bundle.LoadAsset<Material>(StokerJetMaterialName)));
                 fireIronIcon = Keep(bundle.LoadAsset<Texture2D>("fire_iron_icon"));
                 fireIronIconDropped = Keep(bundle.LoadAsset<Texture2D>("fire_iron_icon_dropped"));
                 overlayFont = Keep(bundle.LoadAsset<Font>(OverlayFontName));
@@ -244,6 +244,20 @@ namespace RealisticFiring.Visuals
                 if (bundle != null)
                     bundle.Unload(false);
             }
+        }
+
+        // A material whose shader this graphics setup cannot run draws as
+        // Unity's magenta error shader. It counts as missing, and what uses
+        // it draws the stock way, as with no bundle (audit 2026-11-09: the
+        // fire volume needs shader model 5 and had no fallback, so there it
+        // would have been a magenta block in the firebox with the flame
+        // cards that stand in for it hidden).
+        private static Material Usable(Material material)
+        {
+            if (material == null || material.shader != null && material.shader.isSupported)
+                return material;
+            Main.Mod.Logger.Warning($"'{material.name}' is not supported by this graphics setup; what it draws falls back to the stock look");
+            return null;
         }
 
         // Retain only the assets we use. Their referenced materials, meshes,

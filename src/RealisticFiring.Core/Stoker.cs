@@ -450,7 +450,15 @@ namespace RealisticFiring.Core
                 throw new ArgumentNullException(nameof(fire));
             var flow = new StokerFlow();
             if (!(dt > 0f) || float.IsInfinity(dt))
+            {
+                // No time passed: what stands as it stood, not a stoker
+                // unjammed and its table empty.
+                flow.Jammed = Jammed;
+                flow.TableCoal = TableCoal;
+                flow.TableFill = TableFill;
+                flow.TableNeedsClearing = TableNeedsClearing;
                 return flow;
+            }
 
             var controls = inputs.Controls;
             var moisture = Math.Min(Core.CoalMoisture.Soaked, StokerHandling.Finite(inputs.CoalMoisture));

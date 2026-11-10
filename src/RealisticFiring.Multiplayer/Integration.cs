@@ -39,24 +39,22 @@ namespace RealisticFiring.Multiplayer
             if (api == null)
             {
                 mod.Logger.Warning("The Multiplayer mod's API is not available; the fire will not be shared in a session");
+                Net.AddOnProblem = "the Multiplayer mod's API is not available";
                 return;
             }
             CabControlsCompatibility.Install(mod.Info.Id + ".cab-controls", mod.Logger.Log, mod.Logger.Warning);
             api.SetModCompatibility(mod.Info.Id, MultiplayerCompatibility.All);
+            StandSync.Start();
+            MultiplayerAPI.ServerStarted += OnServerStarted;
+            MultiplayerAPI.ClientStarted += OnClientStarted;
+            MultiplayerAPI.ClientStopped += OnClientStopped;
+            api.OnTick += OnTick;
+            // Last (audit 2026-11-09): with these set the mod's fires follow
+            // the host on a guest, so nothing that can fail comes after them.
             Net.ClientCheck = IsClient;
             Net.SessionCheck = InSession;
             Net.Sender = Send;
             Net.Broadcaster = Broadcast;
-            StandSync.Start();
-            MultiplayerAPI.ServerStarted += OnServerStarted;
-            MultiplayerAPI.ClientStarted += OnClientStarted;
-            MultiplayerAPI.ClientStopped += () =>
-            {
-                helloDue = false;
-                HudPolicy.Reset();
-                Shed.ShedNet.Reset();
-            };
-            api.OnTick += OnTick;
             if (MultiplayerAPI.Server != null)
                 OnServerStarted(MultiplayerAPI.Server);
             if (MultiplayerAPI.Client != null)
@@ -98,49 +96,167 @@ namespace RealisticFiring.Multiplayer
                 $"boosters {session.FitBoosters}",
                 $"feed pumps {session.FitFeedPumps}",
                 $"oil burners {session.RealisticOilBurners}",
+                $"unlisted engines {session.UnlistedEngines}",
                 $"realistic cylinders {settings.RealisticCylinders}",
                 $"shovelful {settings.Shovelful.ToString("F1", CultureInfo.InvariantCulture)} kg",
             });
         }
 
+        // The handlers below run inside the Multiplayer mod's own events and
+        // tick. Each contains its failures (audit 2026-11-09): after a change
+        // in that mod's API, one would otherwise throw there, every tick.
         private static void OnServerStarted(IServer server)
         {
-            lastHudPolicy = null;
-            HudPolicy.Reset();
-            Items.FireIron.RegisterAsGameItem();
-            Items.FiringTablet.RegisterAsGameItem();
-            Items.FiringManual.RegisterAsGameItem();
-            PumpingBy.Clear();
-            server.RegisterSerializablePacket<HelloPacket>(OnHello);
-            server.RegisterSerializablePacket<FireActionPacket>(OnFireAction);
-            StandSync.OnServerStarted(server);
-            snapshotDue = 0u;
-            Leaving.Clear();
-            server.OnPlayerDisconnected += OnPlayerLeft;
+            try
+            {
+                lastHudPolicy = null;
+                HudPolicy.Reset();
+                Items.FireIron.RegisterAsGameItem();
+                Items.FiringTablet.RegisterAsGameItem();
+                Items.FiringManual.RegisterAsGameItem();
+                PumpingBy.Clear();
+                Guests.Clear();
+                Unheard.Clear();
+                server.RegisterSerializablePacket<HelloPacket>(OnHello);
+                server.RegisterSerializablePacket<FireActionPacket>(OnFireAction);
+                StandSync.OnServerStarted(server);
+                snapshotDue = 0u;
+                Leaving.Clear();
+                server.OnPlayerConnected += OnPlayerJoined;
+                server.OnPlayerDisconnected += OnPlayerLeft;
+            }
+            catch (Exception e)
+            {
+                Faults.Report("the multiplayer add-on's server start", null, e);
+            }
         }
 
         private static void OnClientStarted(IClient client)
         {
-            HudPolicy.Reset();
-            Items.FireIron.RegisterAsGameItem();
-            Items.FiringTablet.RegisterAsGameItem();
-            Items.FiringManual.RegisterAsGameItem();
-            client.RegisterSerializablePacket<NoticePacket>(notice => FireController.Announce(notice.Text));
-            client.RegisterSerializablePacket<SnapshotPacket>(OnSnapshot);
-            client.RegisterSerializablePacket<FireEventPacket>(OnFireEvent);
-            client.RegisterSerializablePacket<HudPolicyPacket>(packet => HudPolicy.Receive(packet.Hidden));
-            StandSync.OnClientStarted(client);
-            helloDue = true;
+            try
+            {
+                HudPolicy.Reset();
+                hudHeard = null;
+                hudWaitUntil = null;
+                Items.FireIron.RegisterAsGameItem();
+                Items.FiringTablet.RegisterAsGameItem();
+                Items.FiringManual.RegisterAsGameItem();
+                client.RegisterSerializablePacket<NoticePacket>(notice => FireController.Announce(notice.Text));
+                client.RegisterSerializablePacket<SnapshotPacket>(OnSnapshot);
+                client.RegisterSerializablePacket<FireEventPacket>(OnFireEvent);
+                client.RegisterSerializablePacket<HudPolicyPacket>(OnHudPolicy);
+                StandSync.OnClientStarted(client);
+                helloDue = true;
+            }
+            catch (Exception e)
+            {
+                Faults.Report("the multiplayer add-on's client start", null, e);
+            }
+        }
+
+        private static void OnClientStopped()
+        {
+            try
+            {
+                helloDue = false;
+                hudHeard = null;
+                hudWaitUntil = null;
+                HudPolicy.Reset();
+                Shed.ShedNet.Reset();
+            }
+            catch (Exception e)
+            {
+                Faults.Report("the multiplayer add-on's client stop", null, e);
+            }
         }
 
         private static uint snapshotDue;
 
         private static void OnTick(uint tick)
         {
-            SendHudPolicy();
-            SendSnapshots(tick);
-            SendHello();
-            WarnAndDisconnect(tick);
+            try
+            {
+                SendHudPolicy();
+                SendSnapshots(tick);
+                SendHello();
+                WarnAndDisconnect(tick);
+                TellOfUnheard(tick);
+                StopWaitingForHudPolicy(tick);
+            }
+            catch (Exception e)
+            {
+                Faults.Report("the multiplayer add-on's tick", null, e);
+            }
+        }
+
+        // The host's rule in the order it was sent, whatever order it lands in.
+        private static ushort hudSent;
+        private static ushort? hudHeard;
+        private static uint? hudWaitUntil;
+        private const float HudWaitSeconds = 20f;
+
+        private static void OnHudPolicy(HudPolicyPacket packet)
+        {
+            if (hudHeard.HasValue && !Shed.ShedNet.Newer(packet.Seq, hudHeard.Value))
+                return;
+            hudHeard = packet.Seq;
+            HudPolicy.Receive(packet.Hidden);
+        }
+
+        // A guest waits for the host's rule before showing its displays. A
+        // host whose add-on is not running never sends one, and the guest's
+        // displays stayed hidden for the session (audit 2026-11-09).
+        private static void StopWaitingForHudPolicy(uint tick)
+        {
+            var api = MultiplayerAPI.Instance;
+            if (api == null || !IsClient() || HudPolicy.Received)
+                return;
+            if (!hudWaitUntil.HasValue)
+            {
+                hudWaitUntil = tick + (uint)(HudWaitSeconds * Math.Max(1u, api.TICK_RATE));
+                return;
+            }
+            if (tick < hudWaitUntil.Value)
+                return;
+            HudPolicy.Receive(false);
+            mod.Logger.Warning($"No display rule from the host after {HudWaitSeconds:F0} s (is Realistic Firing's multiplayer add-on running there?); showing this player's own displays");
+        }
+
+        // A guest who has not said hello: missing the mod's add-on, or the
+        // mod. The host is told; such a guest was never checked, and its
+        // fires ran on their own (audit 2026-11-09). Not kicked: the
+        // Multiplayer mod's own mod list decides who may join.
+        private static readonly Dictionary<byte, (IPlayer Player, uint Due)> Unheard = new Dictionary<byte, (IPlayer, uint)>();
+        private const float HelloSeconds = 45f;
+
+        private static void OnPlayerJoined(IPlayer player)
+        {
+            try
+            {
+                var api = MultiplayerAPI.Instance;
+                if (player == null || player.IsHost || api == null)
+                    return;
+                Unheard[player.PlayerId] = (player, api.CurrentTick + (uint)(HelloSeconds * Math.Max(1u, api.TICK_RATE)));
+            }
+            catch (Exception e)
+            {
+                Faults.Report("the multiplayer add-on's player join", null, e);
+            }
+        }
+
+        private static void TellOfUnheard(uint tick)
+        {
+            if (Unheard.Count == 0)
+                return;
+            foreach (var pair in Unheard.Where(p => tick >= p.Value.Due).ToList())
+            {
+                Unheard.Remove(pair.Key);
+                var name = HelloPacket.Clean(pair.Value.Player.DisplayName, HelloPacket.MaxVersion);
+                mod.Logger.Warning($"{name} joined and Realistic Firing on their side has not answered in {HelloSeconds:F0} s; their fires may not match the host's");
+                FireController.Announce($"{name}: Realistic Firing on their side has not answered. Their fires may not match yours; they may be missing the mod's multiplayer add-on");
+                MultiplayerAPI.Server?.SendWhisperChatMessage(
+                    "Realistic Firing on your side has not answered the host. Your fires may not match theirs; reinstall the mod so its multiplayer add-on is there.", pair.Value.Player);
+            }
         }
 
         private static bool? lastHudPolicy;
@@ -155,7 +271,7 @@ namespace RealisticFiring.Multiplayer
             if (lastHudPolicy == hidden)
                 return;
             lastHudPolicy = hidden;
-            server.SendSerializablePacketToAll(new HudPolicyPacket { Hidden = hidden }, reliable: true, excludeSelf: true);
+            server.SendSerializablePacketToAll(new HudPolicyPacket { Hidden = hidden, Seq = ++hudSent }, reliable: true, excludeSelf: true);
         }
 
         // A player who joined with another version or other settings: told why
@@ -215,8 +331,15 @@ namespace RealisticFiring.Multiplayer
 
         private static void OnSnapshot(SnapshotPacket packet)
         {
-            if (MultiplayerAPI.Instance != null && MultiplayerAPI.Instance.TryGetObjectFromNetId(packet.Car, out TrainCar car) && car != null)
-                ClientMirror.Apply(car, packet.Data);
+            try
+            {
+                if (MultiplayerAPI.Instance != null && MultiplayerAPI.Instance.TryGetObjectFromNetId(packet.Car, out TrainCar car) && car != null)
+                    ClientMirror.Apply(car, packet.Data);
+            }
+            catch (Exception e)
+            {
+                Faults.Report("the host's state of a loco", null, e);
+            }
         }
 
         // On the host: what a loco's fire did, for everyone else.
@@ -231,8 +354,15 @@ namespace RealisticFiring.Multiplayer
 
         private static void OnFireEvent(FireEventPacket packet)
         {
-            if (MultiplayerAPI.Instance != null && MultiplayerAPI.Instance.TryGetObjectFromNetId(packet.Car, out TrainCar car) && car != null)
-                Net.Receive(car, (FireEvent)packet.Event, packet.Value);
+            try
+            {
+                if (MultiplayerAPI.Instance != null && MultiplayerAPI.Instance.TryGetObjectFromNetId(packet.Car, out TrainCar car) && car != null)
+                    Net.Receive(car, (FireEvent)packet.Event, packet.Value);
+            }
+            catch (Exception e)
+            {
+                Faults.Report("a fire event from the host", null, e);
+            }
         }
 
         // The hello goes once the client is connected; the host needs none.
@@ -251,15 +381,28 @@ namespace RealisticFiring.Multiplayer
 
         private static void OnHello(HelloPacket hello, IPlayer sender)
         {
+            try
+            {
+                Hello(hello, sender);
+            }
+            catch (Exception e)
+            {
+                Faults.Report("a joining player's hello", null, e);
+            }
+        }
+
+        private static void Hello(HelloPacket hello, IPlayer sender)
+        {
             if (sender == null || sender.IsHost)
                 return;
+            Unheard.Remove(sender.PlayerId);
             var version = mod.Info.Version;
             var shape = Shape();
             if (hello.Version == version && hello.Shape == shape)
             {
                 mod.Logger.Log($"{sender.DisplayName} joined with Realistic Firing {hello.Version}, settings matching");
                 StandSync.SendStands(sender);
-                MultiplayerAPI.Server?.SendSerializablePacketToPlayer(new HudPolicyPacket { Hidden = Main.Settings.HostHidesHud }, sender);
+                MultiplayerAPI.Server?.SendSerializablePacketToPlayer(new HudPolicyPacket { Hidden = Main.Settings.HostHidesHud, Seq = ++hudSent }, sender);
                 return;
             }
             var reason = hello.Version != version
@@ -301,15 +444,40 @@ namespace RealisticFiring.Multiplayer
                 Zone = (sbyte)Mathf.Clamp(zone, -1, GrateLayout.ZoneCount - 1),
                 Direction = (sbyte)Mathf.Clamp(direction, -1, 3),
                 Value = value,
+                Seq = ++actionsSent,
             });
         }
+
+        private static ushort actionsSent;
+
+        // What the host has heard from each guest, to take its actions in
+        // order and no faster than a hand works.
+        private static readonly GuestActions Guests = new GuestActions();
 
         // On the host: a client's action, carried out with the same methods
         // the host's own player uses, for a player on or near the loco.
         private static void OnFireAction(FireActionPacket packet, IPlayer sender)
         {
+            try
+            {
+                FireActionFrom(packet, sender);
+            }
+            catch (Exception e)
+            {
+                Faults.Report("a guest's action on a fire", null, e);
+            }
+        }
+
+        private static void FireActionFrom(FireActionPacket packet, IPlayer sender)
+        {
             var api = MultiplayerAPI.Instance;
             if (sender == null || api == null || !api.TryGetObjectFromNetId(packet.Car, out TrainCar car) || car == null)
+                return;
+            // A guest is not trusted (audit 2026-11-09): a value that is no
+            // number is dropped (a NaN went through the clamps and emptied
+            // the sand box), a hand pump's On and Off are taken in the order
+            // they were sent, and the rest no faster than a hand works.
+            if (!Guests.Accept(sender.PlayerId, (FireAction)packet.Action, packet.Value, packet.Seq, api.CurrentTick, api.TICK_RATE))
                 return;
             // Letting go of the hand pump is always allowed, from anywhere.
             if ((FireAction)packet.Action != FireAction.HandPumpOff && !Near(sender, car))
@@ -417,12 +585,23 @@ namespace RealisticFiring.Multiplayer
         // A player who leaves lets go of the hand pump.
         private static void OnPlayerLeft(IPlayer player)
         {
-            Leaving.RemoveAll(l => l.Player == player);
-            StandSync.PlayerLeft(player);
-            if (player != null && PumpingBy.TryGetValue(player.PlayerId, out var rig))
+            try
             {
-                rig.RemotePump(player.PlayerId, false);
-                PumpingBy.Remove(player.PlayerId);
+                Leaving.RemoveAll(l => l.Player == player);
+                StandSync.PlayerLeft(player);
+                if (player == null)
+                    return;
+                Unheard.Remove(player.PlayerId);
+                Guests.Forget(player.PlayerId);
+                if (PumpingBy.TryGetValue(player.PlayerId, out var rig))
+                {
+                    rig.RemotePump(player.PlayerId, false);
+                    PumpingBy.Remove(player.PlayerId);
+                }
+            }
+            catch (Exception e)
+            {
+                Faults.Report("the multiplayer add-on's player leave", null, e);
             }
         }
     }

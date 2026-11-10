@@ -17,6 +17,9 @@ namespace RealisticFiring.Patches
     {
         private static bool Prefix(SteamExhaust __instance)
         {
+            // The host's ports stand on a guest, whichever prefix runs first.
+            if (Net.IsClient)
+                return true;
             if (!BlowerFit.TryGet(__instance, out var draft))
                 return true;
             var pressure = __instance.boilerPressure.Value;
@@ -43,6 +46,8 @@ namespace RealisticFiring.Patches
     {
         private static void Postfix(SteamCompressor __instance)
         {
+            if (Net.IsClient)
+                return;
             if (BlowerFit.TryGetPump(__instance, out var maxSteam))
                 __instance.steamConsumptionReadOut.Value = Mathf.Clamp01(__instance.productionRateNormalizedReadOut.Value) * maxSteam;
         }

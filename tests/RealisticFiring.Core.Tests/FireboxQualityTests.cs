@@ -44,6 +44,24 @@ public class FireboxQualityTests
         Assert.Equal(high.MaxSteps * high.StepLength, low.MaxSteps * low.StepLength);
     }
 
+    // Audit 2026-11-09: the budget took no account of resolution or VR.
+    [Theory]
+    [InlineData(0.42f, 128f)]   // 1920 x 1080
+    [InlineData(1f, 128f)]      // the reference screen
+    [InlineData(1.67f, 76.6f)]  // 3840 x 2160
+    [InlineData(1.8f, 71.1f)]   // a headset's two eyes
+    [InlineData(5f, 64f)]       // never under half
+    [InlineData(float.NaN, 128f)]
+    [InlineData(float.PositiveInfinity, 128f)]
+    public void MorePixelsThanTheReferenceScreenThinTheSamplesAndKeepTheReach(float load, float steps)
+    {
+        var plain = FireboxSampling.For(FireboxQuality.High, false, false);
+        var sampling = FireboxSampling.For(FireboxQuality.High, false, false, pixelLoad: load);
+        Assert.Equal(steps, sampling.MaxSteps, 0.1f);
+        Assert.Equal(plain.MaxSteps * plain.StepLength, sampling.MaxSteps * sampling.StepLength, 0.001f);
+        Assert.Equal(24f, FireboxSampling.For(FireboxQuality.High, true, false, pixelLoad: load).MaxSteps);
+    }
+
     [Fact]
     public void ShutDoorRetainsItsFireAtEveryQuality()
     {

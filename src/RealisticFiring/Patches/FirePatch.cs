@@ -16,76 +16,53 @@ namespace RealisticFiring.Patches
     [HarmonyPatch(typeof(Fire), "Start")]
     internal static class FirePatch
     {
+        // Each fitting on its own (SetupGuard): one that fails on an odd
+        // firebox or beside another mod leaves the rest. Under one catch, a
+        // failed coal bed took the stoker's valves, the injector's steam
+        // levers, and the boiler's alarms with it (audits 2026-10-10 and
+        // 2026-11-09).
         private static void Postfix(Fire __instance)
         {
-            try
+            TrainCar car = null;
+            SetupGuard.Run(null, "firebox interior", () => car = TrainCar.Resolve(__instance.gameObject));
+            if (car == null)
+                return;
+            var interior = car.loadedInterior != null ? car.loadedInterior.transform : null;
+            // Every coal-fired loco, custom ones included, so new locos
+            // can be measured before the mod supports them.
+            if (Main.Settings.DumpFireboxGeometry)
+                SetupGuard.Run(car, "firebox geometry dump", () => FireboxGeometryDump.DumpOnce(car, __instance));
+            if (RealisticOilFirebox.TryGet(car, out var oil))
+                SetupGuard.Logged(car, "oil fire's look", () => OilFireLook.Attach(__instance, car, oil));
+            if (FireboxRegistry.TryGet(car, out var firebox))
             {
-                var car = TrainCar.Resolve(__instance.gameObject);
-                // Every coal-fired loco, custom ones included, so new locos
-                // can be measured before the mod supports them.
-                if (Main.Settings.DumpFireboxGeometry)
-                    FireboxGeometryDump.DumpOnce(car, __instance);
-                if (RealisticOilFirebox.TryGet(car, out var oil))
+                SetupGuard.Logged(car, "coal bed", () => ZonedCoalBed.Attach(__instance, car, firebox));
+                SetupGuard.Run(car, "stoker's spray", () => StokerSpray.Attach(__instance.GetComponent<ZonedCoalBed>(), firebox));
+                SetupGuard.Logged(car, "flames", () => FireboxFlames.Attach(__instance, __instance.GetComponent<ZonedCoalBed>(), firebox));
+                SetupGuard.Logged(car, "fire volume", () => FireboxVolume.Attach(__instance, __instance.GetComponent<ZonedCoalBed>(), firebox));
+                SetupGuard.Logged(car, "coal lumps", () => CoalLumps.Attach(__instance, __instance.GetComponent<ZonedCoalBed>()));
+                SetupGuard.Logged(car, "firebox lighting", () =>
                 {
-                    var look = OilFireLook.Attach(__instance, car, oil);
-                    if (look != null && Main.Settings.LogFireboxCreation)
-                        Main.Mod.Logger.Log($"{car.ID}: {look}");
-                }
-                if (FireboxRegistry.TryGet(car, out var firebox))
-                {
-                    var result = ZonedCoalBed.Attach(__instance, car, firebox);
-                    StokerSpray.Attach(__instance.GetComponent<ZonedCoalBed>(), firebox);
-                    var flames = FireboxFlames.Attach(__instance, __instance.GetComponent<ZonedCoalBed>(), firebox);
-                    var volume = FireboxVolume.Attach(__instance, __instance.GetComponent<ZonedCoalBed>(), firebox);
-                    var lumps = CoalLumps.Attach(__instance, __instance.GetComponent<ZonedCoalBed>());
                     var lighting = FireboxLighting.Attach(__instance, __instance.GetComponent<ZonedCoalBed>(), firebox);
-                    if (Main.Settings.LogFireboxCreation)
-                    {
-                        Main.Mod.Logger.Log($"{car.ID}: {result}");
-                        if (flames != null)
-                            Main.Mod.Logger.Log($"{car.ID}: {flames}");
-                        if (volume != null)
-                            Main.Mod.Logger.Log($"{car.ID}: {volume}");
-                        if (lumps != null)
-                            Main.Mod.Logger.Log($"{car.ID}: {lumps}");
-                        if (lighting != null)
-                            Main.Mod.Logger.Log($"{car.ID}: firebox {lighting}");
-                    }
-                }
-                var stokerCab = StokerCab.Attach(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
-                S282InteractionAreas.Attach(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
-                if (stokerCab != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{car.ID}: {stokerCab}");
-                var backheadPump = FeedPumpCab.AttachOnBackhead(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
-                if (backheadPump != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{car.ID}: {backheadPump}");
-                var boosterCab = BoosterCab.Attach(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
-                if (boosterCab != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{car.ID}: {boosterCab}");
-                var dropGrate = DropGrateCab.Attach(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
-                if (dropGrate != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{car.ID}: {dropGrate}");
-                var feedLever = FeedPumpCab.RebindInjectorLever(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
-                if (feedLever != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{car.ID}: {feedLever}");
-                // After the feed pump takes the fireman's lever on a cab with two.
-                var steamLevers = InjectorSteamCab.Attach(car, car.loadedInterior != null ? car.loadedInterior.transform : null);
-                if (steamLevers != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{car.ID}: {steamLevers}");
-                var guard = BoilerAlarms.Attach(car, __instance);
-                if (guard != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{car.ID}: {guard}");
-                if (InjectorRig.TryGet(car, out var rig))
-                {
-                    var roots = new[] { car.transform, __instance.transform.root, car.loadedInterior != null ? car.loadedInterior.transform : null };
-                    var overflow = InjectorOverflow.Attach(car, rig, roots.Where(t => t != null).Distinct());
-                    if (overflow != null && Main.Settings.LogFireboxCreation)
-                        Main.Mod.Logger.Log($"{car.ID}: {overflow}");
-                }
+                    return lighting != null ? $"firebox {lighting}" : null;
+                });
             }
-            catch (Exception e)
+            SetupGuard.Logged(car, "stoker's cab controls", () => StokerCab.Attach(car, interior));
+            SetupGuard.Run(car, "S282 interaction areas", () => S282InteractionAreas.Attach(car, interior));
+            SetupGuard.Logged(car, "feed pump on the backhead", () => FeedPumpCab.AttachOnBackhead(car, interior));
+            SetupGuard.Logged(car, "booster's cab controls", () => BoosterCab.Attach(car, interior));
+            SetupGuard.Logged(car, "drop grate lever", () => DropGrateCab.Attach(car, interior));
+            SetupGuard.Logged(car, "feed pump's lever", () => FeedPumpCab.RebindInjectorLever(car, interior));
+            // After the feed pump takes the fireman's lever on a cab with two.
+            SetupGuard.Logged(car, "injector steam levers", () => InjectorSteamCab.Attach(car, interior));
+            SetupGuard.Logged(car, "boiler alarms", () => BoilerAlarms.Attach(car, __instance));
+            if (InjectorRig.TryGet(car, out var rig))
             {
-                Main.Mod.Logger.LogException("Firebox interior setup failed", e);
+                SetupGuard.Logged(car, "injector overflow", () =>
+                {
+                    var roots = new[] { car.transform, __instance.transform.root, interior };
+                    return InjectorOverflow.Attach(car, rig, roots.Where(t => t != null).Distinct());
+                });
             }
         }
     }

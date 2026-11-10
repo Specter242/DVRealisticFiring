@@ -69,6 +69,15 @@ namespace RealisticFiring
 
         private void Display(Settings s, bool stackHandedOff)
         {
+            Begin("DIFFICULTY", s.IsRelaxed ? "Now: Relaxed. One click sets several options; each can still be changed on its own page."
+                : s.IsStandard ? "Now: Standard. One click sets several options; each can still be changed on its own page."
+                : "Now: your own mix. One click sets several options; each can still be changed on its own page.");
+            if (Action("Relaxed", "For learning. Injectors take without priming and never overheat, the boiler water stays clean, rain leaves the coal dry, clinker is slow, the stoker does not jam (after a restart), and the fire overlay is shown."))
+                s.ApplyRelaxed();
+            if (Action("Standard", "The mod as it comes: all of those back on."))
+                s.ApplyStandard();
+            End();
+
             Begin("FIREBOX", "Balance the detail inside the firebox against performance.");
             s.ShowZonedCoalBed = Toggle("Detailed firebox", s.ShowZonedCoalBed,
                 "Coal heaps, flames, smoke, and firelight. Turn off to use the stock visuals. Applies immediately.");
@@ -129,7 +138,7 @@ namespace RealisticFiring
         {
             Begin("INJECTORS", "Live-steam feed and its cab controls.");
             s.RealisticInjectors = Toggle("Realistic injectors", s.RealisticInjectors,
-                "Use live-steam injectors on every steam locomotive.", restart: true);
+                "Use live-steam injectors on the mod's steam locomotives.", restart: true);
             s.InjectorTechniqueAndHeat = Toggle("Priming & heat", s.InjectorTechniqueAndHeat,
                 "Prime before opening. A hot injector must cool before it will take.");
             s.SeparateInjectorSteamValve = Toggle("Separate steam valve", s.SeparateInjectorSteamValve,
@@ -150,13 +159,15 @@ namespace RealisticFiring
         {
             Begin("STEAM & FITTINGS", "Equipment fitted to the locomotives that support it.");
             s.RealisticCylinders = Toggle("Realistic cylinders", s.RealisticCylinders,
-                "Valve events, clearance, cushioning, port flow, and blast-pipe back pressure on every steam locomotive.");
+                "Valve events, clearance, cushioning, port flow, and blast-pipe back pressure.");
+            s.UnlistedLocomotives = Toggle("Unlisted steam locomotives", s.UnlistedLocomotives,
+                "Also put the injectors, boiler water, superheater, and cylinders on steam locomotives this mod does not list. Unchecked on them: they may steam or feed badly.", restart: true);
             s.RealisticOilBurners = Toggle("Santa Fe 2901 oil burner", s.RealisticOilBurners,
                 "Firing valve, atomizer, oil heater, flarebacks, and flue sanding.", restart: true);
             s.FitBoosters = Toggle("Hudson booster", s.FitBoosters,
                 "Fit the NYC Hudson's Franklin trailing-truck booster.", restart: true);
             s.FitFeedPumps = Toggle("Feedwater heaters & pumps", s.FitFeedPumps,
-                "Fit the Hudson, 844, S484-840, and Santa Fe 2901 with their prototype equipment.", restart: true);
+                "Fit the Hudson, 844, S484-840, QJ, and Santa Fe 2901 with their prototype equipment.", restart: true);
             End();
 
             Begin("MECHANICAL STOKER", "Feed, distribution, and cab controls.");

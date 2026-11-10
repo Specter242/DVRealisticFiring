@@ -312,16 +312,19 @@ namespace RealisticFiring.Visuals
         /// <summary>A zone's glow: dark iron when cold, through red and orange to white heat.</summary>
         public static Color Ember(float glow)
         {
-            var stops = new[]
-            {
-                (0f, new Color(46 / 255f, 36 / 255f, 30 / 255f)), (0.35f, new Color(120 / 255f, 42 / 255f, 16 / 255f)),
-                (0.65f, new Color(214 / 255f, 92 / 255f, 24 / 255f)), (0.85f, new Color(1f, 160 / 255f, 52 / 255f)), (1f, new Color(1f, 222 / 255f, 140 / 255f)),
-            };
             glow = Mathf.Clamp01(glow);
-            for (var i = 1; i < stops.Length; i++)
-                if (glow <= stops[i].Item1)
-                    return Color.Lerp(stops[i - 1].Item2, stops[i].Item2, (glow - stops[i - 1].Item1) / (stops[i].Item1 - stops[i - 1].Item1));
-            return stops[stops.Length - 1].Item2;
+            for (var i = 1; i < EmberStops.Length; i++)
+                if (glow <= EmberStops[i].Item1)
+                    return Color.Lerp(EmberStops[i - 1].Item2, EmberStops[i].Item2, (glow - EmberStops[i - 1].Item1) / (EmberStops[i].Item1 - EmberStops[i - 1].Item1));
+            return EmberStops[EmberStops.Length - 1].Item2;
         }
+
+        // Made once: built on each call, nine zones on each GUI event, it was
+        // most of the overlay's garbage (audit 2026-11-09).
+        private static readonly (float, Color)[] EmberStops =
+        {
+            (0f, new Color(46 / 255f, 36 / 255f, 30 / 255f)), (0.35f, new Color(120 / 255f, 42 / 255f, 16 / 255f)),
+            (0.65f, new Color(214 / 255f, 92 / 255f, 24 / 255f)), (0.85f, new Color(1f, 160 / 255f, 52 / 255f)), (1f, new Color(1f, 222 / 255f, 140 / 255f)),
+        };
     }
 }

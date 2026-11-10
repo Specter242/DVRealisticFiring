@@ -100,7 +100,10 @@ namespace RealisticFiring.Sim
 
         private static readonly Dictionary<Boiler, BoilerWaterRig> ByBoiler = new Dictionary<Boiler, BoilerWaterRig>();
         private static readonly Dictionary<TrainCar, BoilerWaterRig> ByCar = new Dictionary<TrainCar, BoilerWaterRig>();
-        private static readonly Dictionary<Boiler, JObject> PendingSaves = new Dictionary<Boiler, JObject>();
+        // Held weakly: a loco left stock never takes its save up, and its
+        // boiler stayed here for the session (audit 2026-11-09).
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Boiler, JObject> PendingSaves =
+            new System.Runtime.CompilerServices.ConditionalWeakTable<Boiler, JObject>();
 
         private readonly Boiler boiler;
         private readonly ReciprocatingSteamEngine engine;
@@ -711,7 +714,10 @@ namespace RealisticFiring.Sim
             if (TryGet(boiler, out var rig))
                 rig.Load(data);
             else
-                PendingSaves[boiler] = data;
+            {
+                PendingSaves.Remove(boiler);
+                PendingSaves.Add(boiler, data);
+            }
         }
 
         private void Log(string text) => Main.Mod?.Logger.Log($"{Car.LogName()}: {text}");

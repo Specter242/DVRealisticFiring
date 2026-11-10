@@ -29,4 +29,17 @@ public class SessionHudPolicyTests
         policy.Receive(false);
         Assert.False(policy.Hidden(true, true, true));
     }
+
+    // A host whose add-on is not running never sends its rule; the guest's
+    // add-on gives up waiting and shows the guest's own (audit 2026-11-09).
+    [Fact]
+    public void AGuestKnowsWhetherTheHostsRuleHasCome()
+    {
+        var policy = new SessionHudPolicy();
+        Assert.False(policy.Received);
+        policy.Receive(false);
+        Assert.True(policy.Received);
+        policy.Reset();
+        Assert.False(policy.Received);
+    }
 }

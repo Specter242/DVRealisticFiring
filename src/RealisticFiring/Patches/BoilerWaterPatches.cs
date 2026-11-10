@@ -38,6 +38,11 @@ namespace RealisticFiring.Patches
     {
         private static void Prefix(Boiler __instance, float delta)
         {
+            // Not on a guest, whose boiler the host simulates: this prefix
+            // runs though the tick is skipped, and it traded heat with, and
+            // wore, a vessel that is only a shadow (audit 2026-11-09).
+            if (Net.IsClient)
+                return;
             if (BoilerWaterRig.TryGet(__instance, out var rig))
                 rig.BeginTick(delta);
         }

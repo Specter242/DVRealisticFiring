@@ -9,5 +9,6 @@ namespace RealisticFiring
         public static bool Hidden => Policy.Hidden(Net.InSession, Net.IsClient, Main.Settings.HostHidesHud);
         public static void Reset() => Policy.Reset();
         public static void Receive(bool hide) => Policy.Receive(hide);
+        public static bool Received => Policy.Received;
     }
 }

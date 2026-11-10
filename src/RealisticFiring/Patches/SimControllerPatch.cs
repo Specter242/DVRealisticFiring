@@ -20,6 +20,13 @@ namespace RealisticFiring.Patches
             controller.connectionsDefinition != null && controller.connectionsDefinition.executionOrder != null
             && controller.connectionsDefinition.executionOrder.OfType<FireboxDefinition>().Any();
 
+        private static readonly System.Collections.Generic.HashSet<string> ToldLeftStock = new System.Collections.Generic.HashSet<string>();
+
+        // A steam loco: its sim graph has a boiler or a steam engine.
+        private static bool IsSteam(SimController controller) =>
+            controller.simFlow != null && controller.simFlow.OrderedSimComps.Any(c =>
+                c is LocoSim.Implementations.Boiler || c is LocoSim.Implementations.ReciprocatingSteamEngine);
+
         private static void Postfix(SimController __instance, TrainCar trainCar)
         {
             if (Main.Settings.DumpSimGraphs)
@@ -43,8 +50,12 @@ namespace RealisticFiring.Patches
             if (LeftStock.Is(trainCar))
             {
                 LeftStock.Keep(__instance.simFlow);
-                if (Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: left stock, not part of the mod");
+                // Said once for each steam loco left alone, so a player's log
+                // shows why an engine has none of the mod on it.
+                if (IsSteam(__instance) && ToldLeftStock.Add(trainCar.carLivery.id))
+                    Main.Mod.Logger.Log(LeftStock.Listed(trainCar) || Main.Session.UnlistedEngines
+                        ? $"{trainCar.carLivery.id}: left stock, not part of the mod"
+                        : $"{trainCar.carLivery.id}: left stock, not a locomotive the mod lists (Settings, Engine: 'Unlisted steam locomotives' puts its injectors, boiler water, superheater, and cylinders on it, unchecked)");
                 return;
             }
 

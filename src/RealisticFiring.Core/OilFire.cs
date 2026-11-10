@@ -198,6 +198,11 @@ namespace RealisticFiring.Core
         // cools to the air with this time constant, in s.
         private const float HeaterWarming = 0.06f;
         private const float OilCoolTime = 4f * 3600f;
+        // The heater takes the oil no hotter than this, °C, where its
+        // sputtering is at its worst: the model's limit. Without one, a
+        // heater left open took the oil past 200 °C in an hour, and the tank
+        // took the rest of the day to cool (audit 2026-11-09).
+        public const float HeaterCeiling = 110f;
 
         // Heavy fuel oil hardly runs below this, in °C, and runs freely once
         // warm: the tender feeds the burner by gravity, so only the heater's
@@ -399,7 +404,17 @@ namespace RealisticFiring.Core
             PooledOil = Math.Max(0f, Clean(pooledOil, 0f));
             Vapor = Math.Max(0f, Clean(vapor, 0f));
             burning = 0f;
+            // The feed is not saved: a lit fire comes back with it settled at
+            // its valve. Starting from nothing, the first tick's feed was
+            // under the least a cool brick holds, and the fire went out with
+            // its valve open (audit 2026-11-09).
+            FeedRate = 0f;
+            responseVelocity = 0f;
+            feedSettled = fireOn;
         }
+
+        // A restored lit fire's feed, to be put at its valve on the next step.
+        private bool feedSettled;
 
         /// <summary>Readies the fire as the shed would: lit, the brick hot, the oil warm.</summary>
         public void PrepareFire()
@@ -456,7 +471,16 @@ namespace RealisticFiring.Core
             var speedup = inputs.StartupMultiplier > 0f ? inputs.StartupMultiplier : 1f;
             var available = Math.Max(0f, inputs.TenderFuel) / (speedup * dt);
             target = Math.Min(target, available);
-            FeedRate = Smoothing.SmoothApproach(FeedRate, Math.Max(0f, target), ref responseVelocity, ResponseTime, dt);
+            if (feedSettled)
+            {
+                FeedRate = Math.Max(0f, target);
+                responseVelocity = 0f;
+                feedSettled = false;
+            }
+            else
+            {
+                FeedRate = Smoothing.SmoothApproach(FeedRate, Math.Max(0f, target), ref responseVelocity, ResponseTime, dt);
+            }
             FeedRate = Math.Min(FeedRate, available);
             if (FeedRate < 1e-5f)
                 FeedRate = 0f;
@@ -621,7 +645,10 @@ namespace RealisticFiring.Core
         {
             var steam = Smoothing.Clamp01(inputs.Heater) * SteamValveShare(valvePressure);
             HeaterSteamUsed = steam * HeaterSteam;
-            OilTemperature += (steam * HeaterWarming - (OilTemperature - inputs.AirTemperature) / OilCoolTime) * dt;
+            // The coil warms the oil toward its own steam's heat and no
+            // further: at full rate up to warm oil, less and less above it.
+            var room = Smoothing.Clamp01((HeaterCeiling - OilTemperature) / (HeaterCeiling - WarmOil));
+            OilTemperature += (steam * HeaterWarming * room - (OilTemperature - inputs.AirTemperature) / OilCoolTime) * dt;
         }
 
         private static float Clean(float value, float fallback) => float.IsNaN(value) || float.IsInfinity(value) ? fallback : value;

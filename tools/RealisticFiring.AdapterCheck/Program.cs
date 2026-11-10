@@ -180,6 +180,7 @@ namespace RealisticFiring.AdapterCheck
                 "a stoker's trickle feeds the fire as continuous feed, not as shovelfuls");
 
             CheckInjector(gameParams);
+            GwiInjectorChecks.Run(gameParams, Check);
             CheckInjectorSteamValve(gameParams);
             CheckInjectorSteamValve(gameParams, "LocoS282A");
             CheckInjectorNeutralState();
@@ -214,6 +215,7 @@ namespace RealisticFiring.AdapterCheck
             CheckStackEffectsFeed();
             CheckPlumeReinitialization();
             CheckPatchEachClass();
+            ContainmentChecks.Run(Check);
             CheckCarPoolGuard();
             var after = false;
             var contained = true;
@@ -674,6 +676,7 @@ namespace RealisticFiring.AdapterCheck
             {
                 var assembly = Assembly.LoadFrom(path);
                 CheckHudPolicy();
+                GuestChecks.Run(Check);
                 var type = assembly.GetType("Multiplayer.Components.Networking.Train.NetworkedTrainCar", throwOnError: true);
                 var targets = Multiplayer.CabControlsCompatibility.PatchTargets(type);
                 var helpers = targets.SelectMany(method => Multiplayer.CabControlsCompatibility.Transpile(
@@ -3773,17 +3776,22 @@ namespace RealisticFiring.AdapterCheck
                 Net.Sender = (car, action, zone, direction, value) => packets.Add((car, action, value));
                 FiremanOrders.Order(a, FiremanMode.Road);
                 FiremanOrders.Order(a, FiremanMode.Road);
-                Check(packets.Count == 1 && ReferenceEquals(packets[0].Car, a.Car)
+                // A guest's order always goes to the host, whatever the
+                // guest's view shows (audit 2026-11-09: with the host's
+                // fireman on and the view at Off, Off was not sent), and
+                // shows at once on the engine it was given to.
+                Check(packets.Count == 2 && ReferenceEquals(packets[0].Car, a.Car)
                       && packets[0].Action == FireAction.FiremanMode && packets[0].Value == (float)FiremanMode.Road
-                      && FiremanOrders.ModeOf(a) == FiremanMode.Road && FiremanOrders.ModeOf(b) == FiremanMode.Off
-                      && a.Fireman.Mode == FiremanMode.Off,
-                    "tablet and F7 share per-engine client orders, send once, and leave the client's local fireman alone");
+                      && FiremanOrders.ModeOf(a) == FiremanMode.Road && FiremanOrders.ModeOf(b) == FiremanMode.Off,
+                    "tablet and F7 share per-engine guest orders: each goes to the host and shows at once");
+                a.Fireman.Mode = FiremanMode.Off;
                 FiremanOrders.Order(a, FiremanMode.Off);
                 FiremanOrders.Call(b, FiremanCall.HeavyAhead);
-                Check(packets.Count == 3 && packets[1].Value == (float)FiremanMode.Off
-                      && ReferenceEquals(packets[2].Car, b.Car) && packets[2].Action == FireAction.FiremanCall
-                      && packets[2].Value == (float)FiremanCall.HeavyAhead && b.Fireman.Call == FiremanCall.None,
-                    "tablet orders can stop the host fireman and send engineer's calls to the selected engine");
+                Check(packets.Count == 4 && packets[2].Value == (float)FiremanMode.Off
+                      && ReferenceEquals(packets[3].Car, b.Car) && packets[3].Action == FireAction.FiremanCall
+                      && packets[3].Value == (float)FiremanCall.HeavyAhead && FiremanOrders.CallActive(b, FiremanCall.HeavyAhead),
+                    "a guest's Off reaches the host though its view already shows Off, and its calls go to the selected engine");
+                b.Fireman.Call = FiremanCall.None;
                 Net.ClientCheck = () => false;
                 FiremanOrders.Call(a, FiremanCall.HeavyAhead);
                 var called = FiremanOrders.CallActive(a, FiremanCall.HeavyAhead) && a.Fireman.CallLeft > 0f;
@@ -3791,7 +3799,7 @@ namespace RealisticFiring.AdapterCheck
                 var cancelled = a.Fireman.Call == FiremanCall.None;
                 FiremanOrders.Call(a, FiremanCall.EasingOff);
                 Check(called && cancelled && FiremanOrders.CallActive(a, FiremanCall.EasingOff)
-                      && packets.Count == 3 && b.Fireman.Call == FiremanCall.None,
+                      && packets.Count == 4 && b.Fireman.Call == FiremanCall.None,
                     "host engineer's calls activate, cancel on a second press, and stay local to their engine");
             }
             finally

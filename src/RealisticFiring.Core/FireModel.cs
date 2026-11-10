@@ -700,7 +700,7 @@ namespace RealisticFiring.Core
         public void Restore(bool fireOn, float coalMass)
         {
             Ashpan = 0f;
-            coalMass = Math.Max(0f, Math.Min(coalMass, parameters.MaxCoalCapacity));
+            coalMass = Math.Max(0f, Math.Min(Smoothing.Finite(coalMass), parameters.MaxCoalCapacity));
             foreach (var zone in zones)
             {
                 zone.Clear();
@@ -852,13 +852,25 @@ namespace RealisticFiring.Core
         /// Advances the fire by <paramref name="dt"/> seconds. Returns the coal
         /// consumed by combustion this tick, in kg.
         /// </summary>
+        // The share of the burning last tick's intake water left, 0 to 1:
+        // the zones' stored rates are what burned, this much of the dry rate.
+        private float wetted = 1f;
+
         public float Step(float dt, FireInputs inputs)
         {
-            if (!(dt > 0f))
+            if (!(dt > 0f) || float.IsInfinity(dt))
             {
                 Heat = 0f;
+                ConsumptionRate = 0f;
                 return 0f;
             }
+            // One NaN from the game must not stay in the fire for good.
+            inputs.AirFlow = Smoothing.Finite(inputs.AirFlow);
+            inputs.IntakeWater = Smoothing.Finite(inputs.IntakeWater);
+            inputs.DoorOpening = Smoothing.Finite(inputs.DoorOpening);
+            inputs.StartupMultiplier = Smoothing.Finite(inputs.StartupMultiplier, 1f);
+            inputs.BoilerTemperature = Smoothing.Finite(inputs.BoilerTemperature, Temperature);
+            inputs.Speed = Smoothing.Finite(inputs.Speed);
 
             var water = Smoothing.Clamp01(inputs.IntakeWater);
             if (water > 0.5f)
@@ -955,7 +967,14 @@ namespace RealisticFiring.Core
                 var zone = zones[i];
                 var rateTarget = target[i] * cap;
                 var velocity = zone.RateVelocity;
-                var rate = Smoothing.SmoothApproach(zone.CombustionRate, rateTarget, ref velocity, smoothTime, dt) * dryAir;
+                // Water in the intake cuts the burning by its share, once:
+                // taken from the stored rate each tick it compounded, so a
+                // tenth of water left a fiftieth of the fire at 100 ticks a
+                // second and a fifth at 10 (audit 2026-11-09). The stock
+                // firebox has the same line, but only ever sees 0 or 1; a
+                // melted plug's jet gives this one the shares between.
+                var dry = wetted > 0f ? zone.CombustionRate / wetted : 0f;
+                var rate = Smoothing.SmoothApproach(dry, rateTarget, ref velocity, smoothTime, dt) * dryAir;
                 if (rateTarget == 0f && rate < 1e-6f)
                 {
                     rate = 0f;
@@ -1023,6 +1042,7 @@ namespace RealisticFiring.Core
             Heat = Math.Max(0f, grossHeat - coldAirLoss - warmUp - DryingHeat);
 
             ConsumptionRate = consumed / dt;
+            wetted = dryAir;
             CombustionRateNormalized = baseRateTotal / parameters.MaxCombustionRate;
 
             if (CoalMass <= 0f && Temperature < MinFireTemperature)

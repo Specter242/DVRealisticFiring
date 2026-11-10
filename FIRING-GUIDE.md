@@ -333,9 +333,10 @@ covered districts and the full allowance rules.
 - **Wash out** with a shed stand's water hose (boiler cold) when blowdowns
   no longer keep it quiet.
 - **Never run low.** A bared crown sheet melts the fusible plug and kills the
-  engine (S282, S060, S484-840, 844) or bursts the boiler (Hudson, which
-  whistles a warning with an inch left). A repair or a washout at a pit
-  stop renews the plug. The JK3 keeps the game's own low-water failure.
+  engine (S282, S060, S484-840, 844, 8F, QJ) or bursts the boiler
+  (Hudson, which whistles a warning with an inch left). A repair at a
+  service station, or a washout with a shed stand's water hose, renews the
+  plug. The JK3 keeps the game's own low-water failure.
 - **A damaged engine bursts lower.** Badly damaged, its boiler bursts under
   the safety valve; the overlay warns at what pressure. Keep under it and
   get the engine repaired. The automatic fireman holds 1.5 bar under it.

@@ -9,8 +9,25 @@ namespace RealisticFiring.Multiplayer
     public sealed class HudPolicyPacket : ISerializablePacket
     {
         public bool Hidden;
-        public void Serialize(BinaryWriter writer) => writer.Write(Hidden);
-        public void Deserialize(BinaryReader reader) => Hidden = reader.ReadBoolean();
+
+        /// <summary>
+        /// One more each time the host sends its rule (wrapping): the
+        /// Multiplayer mod delivers reliably but not in order, so two quick
+        /// changes could land reversed (audit 2026-11-09).
+        /// </summary>
+        public ushort Seq;
+
+        public void Serialize(BinaryWriter writer)
+        {
+            writer.Write(Hidden);
+            writer.Write(Seq);
+        }
+
+        public void Deserialize(BinaryReader reader)
+        {
+            Hidden = reader.ReadBoolean();
+            Seq = reader.ReadUInt16();
+        }
     }
 
     /// <summary>A joining client's mod version and the settings that shape its locos.</summary>
@@ -25,10 +42,30 @@ namespace RealisticFiring.Multiplayer
             writer.Write(Shape ?? "");
         }
 
+        /// <summary>The most of each the host keeps, in characters: it shows them on its screen.</summary>
+        public const int MaxVersion = 32;
+        public const int MaxShape = 1024;
+
         public void Deserialize(BinaryReader reader)
         {
-            Version = reader.ReadString();
-            Shape = reader.ReadString();
+            Version = Clean(reader.ReadString(), MaxVersion);
+            Shape = Clean(reader.ReadString(), MaxShape);
+        }
+
+        // A guest's text, cut to length and with nothing but printable
+        // characters, before the host logs it or shows it.
+        internal static string Clean(string text, int most)
+        {
+            if (string.IsNullOrEmpty(text))
+                return "";
+            var kept = new System.Text.StringBuilder(System.Math.Min(text.Length, most));
+            foreach (var c in text)
+            {
+                if (kept.Length >= most)
+                    break;
+                kept.Append(char.IsControl(c) ? ' ' : c);
+            }
+            return kept.ToString();
         }
     }
 
@@ -41,6 +78,13 @@ namespace RealisticFiring.Multiplayer
         public sbyte Direction = -1;
         public float Value;
 
+        /// <summary>
+        /// One more for each action this client sends (wrapping), so the host
+        /// can tell a hand pump's On from the Off that followed it when they
+        /// land the other way round (audit 2026-11-09).
+        /// </summary>
+        public ushort Seq;
+
         public void Serialize(BinaryWriter writer)
         {
             writer.Write(Car);
@@ -48,6 +92,7 @@ namespace RealisticFiring.Multiplayer
             writer.Write(Zone);
             writer.Write(Direction);
             writer.Write(Value);
+            writer.Write(Seq);
         }
 
         public void Deserialize(BinaryReader reader)
@@ -57,6 +102,7 @@ namespace RealisticFiring.Multiplayer
             Zone = reader.ReadSByte();
             Direction = reader.ReadSByte();
             Value = reader.ReadSingle();
+            Seq = reader.ReadUInt16();
         }
     }
 

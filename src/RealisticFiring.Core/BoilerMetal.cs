@@ -38,7 +38,7 @@ namespace RealisticFiring.Core
         public float Temperature { get; private set; }
 
         /// <summary>Puts the steel at <paramref name="temperature"/>, as a new or reloaded boiler's.</summary>
-        public void Settle(float temperature) => Temperature = temperature;
+        public void Settle(float temperature) => Temperature = Smoothing.Finite(temperature, Temperature);
 
         /// <summary>
         /// Cools an empty boiler through its existing exterior conductance,

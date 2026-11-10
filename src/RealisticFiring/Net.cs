@@ -78,7 +78,8 @@ namespace RealisticFiring
                     Sim.SmokeFees.ShowNotice(car, fireEvent);
                     break;
                 case FireEvent.PlugMelted:
-                    FireController.Announce(Sim.BoilerWaterRig.PlugMeltedNotice);
+                    // Named: every guest hears of it, wherever they are.
+                    FireController.Announce($"{Sim.CarNames.LogName(car)}: {Sim.BoilerWaterRig.PlugMeltedNotice}");
                     break;
             }
         }
@@ -99,6 +100,14 @@ namespace RealisticFiring
             return true;
         }
 
+        /// <summary>
+        /// Why the fire is not shared in a session, when the Multiplayer mod
+        /// runs and the add-on does not; null when all is well. Shown once in
+        /// game: only the log said so, and such a guest's fires ran on their
+        /// own with no word to anyone (audit 2026-11-09).
+        /// </summary>
+        internal static string AddOnProblem;
+
         /// <summary>Loads the add-on when the Multiplayer mod runs. Never throws.</summary>
         public static void TryStartAddOn(UnityModManager.ModEntry mod)
         {
@@ -111,6 +120,7 @@ namespace RealisticFiring
                 if (!File.Exists(path))
                 {
                     mod.Logger.Warning($"Multiplayer is running but {AddOnFile} is missing; the fire will not be shared in a session");
+                    AddOnProblem = $"{AddOnFile} is missing from the mod's folder";
                     return;
                 }
                 var start = Assembly.LoadFrom(path).GetType(AddOnEntry)?.GetMethod("Start", BindingFlags.Public | BindingFlags.Static);
@@ -119,6 +129,7 @@ namespace RealisticFiring
             catch (Exception e)
             {
                 mod.Logger.LogException("The multiplayer add-on failed to start; the fire will not be shared in a session", e);
+                AddOnProblem = "its multiplayer add-on failed to start";
             }
         }
     }

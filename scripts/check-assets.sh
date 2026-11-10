@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Exercise production effects loading through Unity's native scene and asset
 # cleanup. Uses an isolated headless editor, never the running game. Checks
-# Realistic Firing's loader against its bundle (the installed one unless
-# given), then Realistic Stack Effects' against its bundle when there is one
-# (the last built unless given).
+# Realistic Firing's loader against its bundle, then Realistic Stack Effects'
+# against its bundle when there is one, then the firing manual's: each the
+# last built in fx/build unless another is given, so the check covers what
+# packaging ships and not whatever an older install holds.
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 unity="${UNITY_EDITOR:-$HOME/Unity/Hub/Editor/2019.4.40f1/Editor/Unity}"
-dv="${DV_INSTALL_DIR:-$HOME/.local/share/Steam/steamapps/common/Derail Valley}"
-bundle="${1:-$dv/Mods/RealisticFiring/realisticfiring_fx}"
+bundle="${1:-$repo/fx/build/realisticfiring_fx}"
 stack="${2:-$repo/fx/build/realisticstackeffects_fx}"
 manual="${3:-$repo/fx/build/realisticfiring_manual}"
 manual_only=0
@@ -36,11 +36,11 @@ check() {
     if [[ -n "${6:-}" ]]; then cp "$6" "$project/Assets/"; fi
     if ! DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 timeout 180 "$unity" -batchmode -nographics -projectPath "$project" \
             -executeMethod "$method" -fxBundle "$fx" -logFile "$log"; then
-        rm -rf "$project"
+        rm -rf "${project:?}"
         tail -45 "$log" >&2
         exit 1
     fi
-    rm -rf "$project"
+    rm -rf "${project:?}"
     rg 'ASSET CHECK PASS:|ALL ASSET LIFETIME CHECKS PASSED' "$log"
     rg -q 'ALL ASSET LIFETIME CHECKS PASSED' "$log"
 }

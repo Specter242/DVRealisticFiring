@@ -50,6 +50,7 @@ namespace RealisticFiring
         private void FixedUpdate() => PerfMeter.PhysicsStep();
 
         private bool toldFailedPatches;
+        private bool toldAddOnProblem;
 
         private void Update()
         {
@@ -62,13 +63,35 @@ namespace RealisticFiring
                 Notify($"Realistic Firing: {Main.FailedPatches.Count} of its patches failed to load (another mod or a game update?); " +
                        "some of it may misbehave. Please send the Unity Mod Manager log with a bug report");
             }
-            HandleKeys();
-            Visuals.StokerCab.EnsureBuilt();
-            Diagnostics.ShedSurvey.TryRun();
-            Diagnostics.ShedSurvey.ProbeRoofs();
-            Shed.ShedStands.Update();
-            Visuals.OilBurnerCab.EnsureBuilt();
-            Visuals.OilFlareback.Update();
+            if (!toldAddOnProblem && Net.AddOnProblem != null && PlayerManager.PlayerTransform != null)
+            {
+                toldAddOnProblem = true;
+                Notify($"Realistic Firing: {Net.AddOnProblem}; in a multiplayer session its fires will not match the other players'. " +
+                       "Reinstall the mod, or send the Unity Mod Manager log with a bug report");
+            }
+            // Each on its own (audit 2026-11-09): under one roof, a throw in
+            // the shed stands' update skipped the oil burner's cab and its
+            // flareback every frame after.
+            try
+            {
+                HandleKeys();
+                FirstSteps();
+            }
+            catch (System.Exception e) { Faults.Report("the mod's keys", null, e); }
+            try { Visuals.StokerCab.EnsureBuilt(); }
+            catch (System.Exception e) { Faults.Report("the stoker's cab controls", null, e); }
+            try
+            {
+                Diagnostics.ShedSurvey.TryRun();
+                Diagnostics.ShedSurvey.ProbeRoofs();
+            }
+            catch (System.Exception e) { Faults.Report("the shed survey", null, e); }
+            try { Shed.ShedStands.Update(); }
+            catch (System.Exception e) { Faults.Report("the shed stands", null, e); }
+            try { Visuals.OilBurnerCab.EnsureBuilt(); }
+            catch (System.Exception e) { Faults.Report("the oil burner's cab controls", null, e); }
+            try { Visuals.OilFlareback.Update(); }
+            catch (System.Exception e) { Faults.Report("the oil flareback", null, e); }
             PerfMeter.Stop(PerfSection.Controller, start);
         }
 
@@ -117,7 +140,7 @@ namespace RealisticFiring
             if (!withFireman)
                 firemanPanel.SetOpen(false);
 
-            if (settings.ShakeGrateKey.Down() && TimeUtil.IsFlowing
+            if (settings.ShakeGrateKey.Down() && TimeUtil.IsFlowing && !Typing()
                 && FireboxRegistry.TryGetTended(PlayerManager.Car, out var firebox)
                 && Time.time - lastShakeTime >= ShakeCooldown)
             {
@@ -165,13 +188,25 @@ namespace RealisticFiring
  internal static string ToggleSteamLine(RealisticOilFirebox oil) =>
             "The shed's steam comes by a stand's blower line: plug it into the fitting on the smokebox and open the stand's valve";
 
+        // Whether the keyboard is in a text field (a chat box, a name): its
+        // letters are not the grate's and the pump's keys then.
+        private static bool Typing()
+        {
+            if (GUIUtility.keyboardControl != 0)
+                return true;
+            var events = UnityEngine.EventSystems.EventSystem.current;
+            var selected = events != null ? events.currentSelectedGameObject : null;
+            return selected != null && (selected.GetComponent<TMPro.TMP_InputField>() != null
+                                        || selected.GetComponent<UnityEngine.UI.InputField>() != null);
+        }
+
         // The hand pump works while its key is held, on the loco being tended:
         // leaving it, or turning to another, lets go (audit 2026-10-10). The
         // shed's water hose fills by its stand's valve; its notices follow
         // the rig's reading, the host's on a client.
         private void UpdateFilling(InjectorRig rig, Settings settings)
         {
-            var pumping = settings.HandPumpKey.Pressed() && TimeUtil.IsFlowing;
+            var pumping = settings.HandPumpKey.Pressed() && TimeUtil.IsFlowing && !Typing();
             if (Net.IsClient)
             {
                 PumpRemotely(pumping ? rig.Car : null);
@@ -278,11 +313,33 @@ namespace RealisticFiring
  internal const string HydrantHint =
             "The shed's water comes by a stand's water hose: plug it into the connection low on the firebox and open the stand's valve";
 
-        private void Notify(string text)
+        private void Notify(string text, float seconds = NoticeTime)
         {
             notice = text;
             noticeTime = Time.time;
+            noticeFor = seconds;
             Main.Mod.Logger.Log(text);
+        }
+
+        private float noticeFor = NoticeTime;
+        // Long enough to read: it comes once.
+        private const float FirstStepsTime = 25f;
+
+        // Once, the first time the player tends one of the mod's fires:
+        // where its help is (audit 2026-11-09: a new player had the overlay
+        // off, the fireman off, and nothing on screen saying either existed).
+        private void FirstSteps()
+        {
+            var settings = Main.Settings;
+            if (settings.ToldFirstSteps || PlayerManager.Car == null || HudPolicy.Hidden)
+                return;
+            if (!FireboxRegistry.TryGetTended(PlayerManager.Car, out _) && !RealisticOilFirebox.TryGetTended(PlayerManager.Car, out _))
+                return;
+            settings.ToldFirstSteps = true;
+            settings.Save(Main.Mod);
+            Notify($"Realistic Firing: {settings.ToggleOverlayKey.keyCode} shows the fire and your next step. {settings.FiremanKey.keyCode} gives the fireman his orders: " +
+                   $"he fires and feeds for you once the fire is lit. {settings.OpenSettingsKey.keyCode} opens the settings: Relaxed, on its first page, makes it easier, and Controls gives you the firing manual.",
+                FirstStepsTime);
         }
 
         private void LateUpdate()
@@ -568,7 +625,7 @@ namespace RealisticFiring
             // Promotional firebox captures can retain the normal overlay.
             if (PlumeCapture.Running || (Visuals.FireboxCapture.Running && !Visuals.FireboxCapture.ShowOverlay))
                 return;
-            if (notice != null && Time.time - noticeTime <= NoticeTime)
+            if (notice != null && Time.time - noticeTime <= noticeFor)
                 DrawLabel(notice, NoticeOffset, new Color(1f, 0.85f, 0.5f));
             if (HudPolicy.Hidden)
                 return;
@@ -591,6 +648,8 @@ namespace RealisticFiring
                 AimKeypad.Draw(keypad);
         }
 
+        private static readonly GUIContent LabelContent = new GUIContent();
+
         private void DrawLabel(string text, float offset, Color color)
         {
             aimLabel = aimLabel ?? new GUIStyle(GUI.skin.label)
@@ -598,8 +657,14 @@ namespace RealisticFiring
                 alignment = TextAnchor.MiddleCenter,
                 fontSize = 20,
                 fontStyle = FontStyle.Bold,
+                // A long notice wraps under the crosshair, where it ran off
+                // both sides of a 1080p screen.
+                wordWrap = true,
             };
-            var area = new Rect(0f, Screen.height / 2f + offset, Screen.width, 30f);
+            var width = Screen.width * 0.8f;
+            LabelContent.text = text;
+            var height = Mathf.Max(30f, aimLabel.CalcHeight(LabelContent, width));
+            var area = new Rect((Screen.width - width) / 2f, Screen.height / 2f + offset, width, height);
             var shadow = new Rect(area.x + 1f, area.y + 1f, area.width, area.height);
             aimLabel.normal.textColor = Color.black;
             GUI.Label(shadow, text, aimLabel);

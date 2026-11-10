@@ -20,10 +20,22 @@ public class FireAllocationTests
         var inputs = FireTestKit.Inputs(airFlow: 3f, door: 0f);
         // Warmed up first: the first steps load and fill what they keep.
         FireTestKit.Run(fire, inputs, 1f);
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 200; i++)
-            fire.Step(FireTestKit.Dt, inputs);
-        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        // The measured loop then runs once unmeasured. A first pass can
+        // allocate once for reasons that are not the step's own (the runtime
+        // recompiling a hot method partway through the loop), which failed
+        // this test now and then; a step that makes garbage makes it on
+        // every pass.
+        long Measure()
+        {
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            for (var i = 0; i < 200; i++)
+                fire.Step(FireTestKit.Dt, inputs);
+            return GC.GetAllocatedBytesForCurrentThread() - before;
+        }
+        Measure();
+        var allocated = Measure();
         Assert.True(allocated == 0, $"200 steps allocated {allocated} bytes");
+        // The measured steps were still the costly case: fresh coal in every zone.
+        Assert.All(fire.Zones, zone => Assert.True(zone.Fresh > 0f));
     }
 }

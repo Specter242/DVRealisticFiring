@@ -36,7 +36,7 @@ namespace RealisticFiring.Core
         /// <summary>Restores a saved plug.</summary>
         public void Restore(bool melted, float temperature)
         {
-            CoreTemperature = temperature;
+            CoreTemperature = Smoothing.Finite(temperature);
             Melted = melted;
         }
 
@@ -49,6 +49,8 @@ namespace RealisticFiring.Core
             if (Melted || !(dt > 0f))
                 return false;
             var target = bared ? Math.Max(crownSheetTemperature, waterTemperature) : waterTemperature;
+            if (float.IsNaN(target) || float.IsInfinity(target))
+                return false;
             CoreTemperature += (target - CoreTemperature) * Math.Min(1f, dt / CoreTime);
             if (CoreTemperature < MeltingPoint)
                 return false;

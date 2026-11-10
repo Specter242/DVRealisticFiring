@@ -39,7 +39,11 @@ namespace RealisticFiring.Shed
                 control = plug.GetComponent<ControlImplBase>();
                 if (control != null)
                 {
-                    control.Grabbed += _ => held = true;
+                    control.Grabbed += _ =>
+                    {
+                        held = true;
+                        TellWhereItGoes();
+                    };
                     control.Ungrabbed += _ => { held = false; Restore(); };
                 }
             }
@@ -50,6 +54,17 @@ namespace RealisticFiring.Shed
                 lookAt = Time.time + LookEvery;
                 RecoverIfBuried();
             }
+        }
+
+        // As the coupling is taken in hand: where the nearest engine takes it.
+        private void TellWhereItGoes()
+        {
+            if (plug == null || HudPolicy.Hidden)
+                return;
+            var kind = HoseKind.ByTag(plug.connectionTag);
+            var where = kind != null ? ShedConnections.WhereItGoes(kind, plug.transform.position) : null;
+            if (where != null)
+                FireController.Announce(where);
         }
 
         private void RecoverIfBuried()

@@ -202,12 +202,18 @@ namespace RealisticFiring.Core
         /// <summary>The next step on an oil fire: lighting it up, then reading the burner.</summary>
         public static Advice ForOil(OilReading oil)
         {
+            // Water before fire: a fire lit over an empty glass burns the
+            // crown sheet (audit 2026-11-09: the lighting steps came first).
+            if (!oil.FireOn && oil.GlassLevel < LowGlass)
+                return new Advice(AdviceLevel.Act, "Water's low in the glass: fill her before you light the fire (a shed stand's water hose, or the hand pump).");
             if (!oil.FireOn)
                 return Lighting(oil);
             if (Injector(oil.Injectors) is Advice injector)
                 return injector;
             if (oil.GlassLevel < LowGlass)
                 return new Advice(AdviceLevel.Act, "Water's low in the glass: get the injector on.");
+            if (oil.OilTemperature > OilFire.HotOil)
+                return new Advice(AdviceLevel.Act, $"The oil's too hot ({oil.OilTemperature:F0} °C): it sputters and smokes. Shut the OIL HEATER and let it cool.");
             if (oil.OnSteamLine && oil.SteamLineOpening > 0f && oil.BoilerPressure >= OwnSteam)
                 return new Advice(AdviceLevel.Watch, $"She makes her own steam ({oil.BoilerPressure - 1f:F1} bar): shut the stand's valve and take its line off before you leave.", LightingSteps + 1);
             if (oil.StackSmoke >= BlackStack)
@@ -289,10 +295,14 @@ namespace RealisticFiring.Core
         {
             if (injectors == null)
                 return null;
+            var waiting = false;
             foreach (var injector in injectors)
             {
                 switch (injector.State)
                 {
+                    case InjectorState.LowPressure:
+                        waiting = true;
+                        break;
                     case InjectorState.Hot:
                         return new Advice(AdviceLevel.Act, injector.SteamValve
                             ? "Injector's too hot to take: hold the steam at Prime to cool it."
@@ -309,6 +319,10 @@ namespace RealisticFiring.Core
                             : "Injector's jet broke: shut it, then crack it till it picks up.");
                 }
             }
+            // Open, with too little steam to take: no other line said why
+            // nothing was going in (audit 2026-11-09).
+            if (waiting)
+                return new Advice(AdviceLevel.Watch, "Too little steam for the injector to take: it picks up by itself as the pressure rises. Till then, the hand pump or a shed stand's water hose.");
             return null;
         }
     }

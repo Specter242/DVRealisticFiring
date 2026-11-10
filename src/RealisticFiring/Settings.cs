@@ -30,13 +30,16 @@ namespace RealisticFiring
         [Draw("Realistic oil burner on the Santa Fe 2901: firing valve, atomizer, oil heater, flarebacks, flue sanding (needs a restart)")]
         public bool RealisticOilBurners = true;
 
-        [Draw("Realistic cylinders on every steam loco: valve events from the gear (lead, release, compression), clearance and cushion, steam through the opening port, and the blast pipe's back pressure")]
+        [Draw("Realistic cylinders on the mod's steam locos: valve events from the gear (lead, release, compression), clearance and cushion, steam through the opening port, and the blast pipe's back pressure")]
         public bool RealisticCylinders = true;
+
+        [Draw("Also on steam locos the mod does not list: the realistic injectors, boiler water, superheater, and cylinders, unchecked on them (needs a restart)")]
+        public bool UnlistedLocomotives;
 
         [Draw("Fit the NYC Hudson with its Franklin trailing-truck booster (needs a restart)")]
         public bool FitBoosters = true;
 
-        [Draw("Fit feedwater heaters and pumps where the prototypes had them: the Hudson, 844, S484-840, and Santa Fe 2901 (needs a restart)")]
+        [Draw("Fit feedwater heaters and pumps where the prototypes had them: the Hudson, 844, S484-840, QJ, and Santa Fe 2901 (needs a restart)")]
         public bool FitFeedPumps = true;
 
         [Draw("Rain wets the coal in open tenders and bunkers: wet coal catches slower and takes heat to dry, and sticks on a stoker's table")]
@@ -130,8 +133,14 @@ namespace RealisticFiring
         [Draw("Toggle fire overlay")]
         public KeyBinding ToggleOverlayKey = Bind(KeyCode.F6);
 
+        // On for a new install (audit 2026-11-09): its next-step line is what
+        // tells a new player why the fire is dying. Saved settings keep
+        // their own choice.
         [Draw("Show fire overlay")]
-        public bool ShowOverlay;
+        public bool ShowOverlay = true;
+
+        // Whether the one-time card naming the mod's keys has been shown.
+        public bool ToldFirstSteps;
 
         [Draw("Multiplayer host: hide RF's on-screen displays and aiming helpers for everyone")]
         public bool HostHidesHud;
@@ -265,6 +274,44 @@ namespace RealisticFiring
                 binding.Change(fresh.keyCode, fresh.modifiers);
         }
 
+
+        /// <summary>
+        /// For learning (audit 2026-11-09: a new player met every demand at
+        /// once, with the help switched off): the unforgiving parts off, and
+        /// the overlay on. Each stays a setting of its own afterward.
+        /// </summary>
+        internal void ApplyRelaxed()
+        {
+            InjectorTechniqueAndHeat = false;
+            BoilerWaterImpurities = false;
+            RainWetsCoal = false;
+            StokerJams = false;
+            ClinkerTendency = RelaxedClinker;
+            ShowOverlay = true;
+            ShowFiremanStatus = true;
+            OnChange();
+        }
+
+        /// <summary>The mod as it comes: what <see cref="ApplyRelaxed"/> turned off, back on.</summary>
+        internal void ApplyStandard()
+        {
+            InjectorTechniqueAndHeat = true;
+            BoilerWaterImpurities = true;
+            RainWetsCoal = true;
+            StokerJams = true;
+            ClinkerTendency = 1f;
+            OnChange();
+        }
+
+        internal const float RelaxedClinker = 0.3f;
+
+        /// <summary>Whether the difficulty options stand as <see cref="ApplyRelaxed"/> leaves them.</summary>
+        internal bool IsRelaxed => !InjectorTechniqueAndHeat && !BoilerWaterImpurities && !RainWetsCoal && !StokerJams
+                                   && ClinkerTendency <= RelaxedClinker;
+
+        /// <summary>Whether they stand as the mod comes.</summary>
+        internal bool IsStandard => InjectorTechniqueAndHeat && BoilerWaterImpurities && RainWetsCoal && StokerJams
+                                    && Mathf.Approximately(ClinkerTendency, 1f);
 
         public void OnChange()
         {

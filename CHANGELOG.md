@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.17.9 (2026-11-09)
+
+- Fixed GWI injector levers not priming from their first notch.
+- Fixed a recently lit oil fire going out when a save was loaded.
+- The oil heater now stops at 110 °C instead of overheating the oil. The next-step line and the fireman say when the oil is too hot, and the fireman no longer puts out a fire whose oil is overheated.
+- Fixed steam from a melted fusible plug damping the fire far more than it should at low pressure.
+- The next-step line says to fill the boiler before lighting an oil fire, and says when an injector is waiting for pressure.
+- Steam locomotives the mod does not list are now left as their makers built them. A new setting, Unlisted steam locomotives (Engine tab), gives them the mod's injectors, boiler water, superheater, and cylinders as before. GWI's 40xx and Manor are now listed.
+- Easier to start: the fire overlay is on for new installs, a one-time notice names the mod's keys, and the settings' first page has Relaxed and Standard presets. Long notices now wrap instead of running off the screen.
+- Picking up a shed stand's coupling now says where it goes on the nearest engine.
+- On screens larger than 3440×1440 and in VR, the firebox's fire is drawn with fewer samples to keep its cost down.
+- Multiplayer: guests see the host's fireman setting and can always switch him off, a quick tap of the hand pump can no longer leave it pumping, a guest's exhaust sound and smoke follow the host's engine, and the host is told when a guest's copy of the mod is not answering.
+- Loading a save from before the mod, or before one of its controls, no longer logs "Missing save data" errors.
+- An error in one of the mod's steps no longer stops an engine's simulation, and one broken cab fitting no longer takes the others with it. After a game update that changes what the mod reads, the mod switches itself off and says so.
+
 ## 1.17.8 (2026-11-08)
 
 - Improved access to the S282's brakes and stoker valves from across the cab.

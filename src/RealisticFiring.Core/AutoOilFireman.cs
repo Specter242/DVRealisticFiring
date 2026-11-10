@@ -135,7 +135,12 @@ namespace RealisticFiring.Core
             // he lets the fire die.
             var alight = fire.FireOn || fire.BrickTemperature > OilFire.BrickRelights;
             sinceBlack = StackBlack ? 0f : sinceBlack + dt;
-            if (StackBlack)
+            // Black from too much oil, he cuts it. Black from overheated oil
+            // sputtering is not: cutting for it took the valve to its least,
+            // and the draft blew the fire out (audit 2026-11-09). He has the
+            // heater shut by then, and waits for the oil to cool.
+            var sputtering = fire.OilTemperature > OilFire.HotOil;
+            if (StackBlack && !sputtering)
                 oilCap = Math.Max(LeastFire, Math.Min(oilCap, Valve) - BlackCut * dt);
             else if (sinceBlack >= CapHold)
                 oilCap = Math.Min(1f, oilCap + CapRecover * dt);
@@ -214,6 +219,8 @@ namespace RealisticFiring.Core
                 notices |= FiremanNotice.FireOut;
             if (fire.OilTemperature < OilFire.WarmOil - 5f)
                 notices |= FiremanNotice.ColdOil;
+            if (fire.OilTemperature > OilFire.HotOil)
+                notices |= FiremanNotice.HotOil;
             if (fire.FlueSoot >= SootToSand && r.Sand < SandThrow)
                 notices |= FiremanNotice.NoSand;
             return notices;

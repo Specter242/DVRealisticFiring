@@ -59,6 +59,9 @@ namespace RealisticFiring.Core
 
         /// <summary>The flues are sooted and the sand box is empty.</summary>
         NoSand = 128,
+
+        /// <summary>The oil is overheated and sputters: the heater wants shutting.</summary>
+        HotOil = 256,
     }
 
     /// <summary>What the fireman sees and hears each tick, besides the fire.</summary>

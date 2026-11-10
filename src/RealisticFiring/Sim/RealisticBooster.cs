@@ -81,7 +81,11 @@ namespace RealisticFiring.Sim
             reverser = AddPortReference(def.Reverser);
             sandCoefficient = AddPortReference(def.SandCoefficient);
             if (car != null)
+            {
+                foreach (var gone in ByCar.Keys.Where(c => c == null).ToList())
+                    ByCar.Remove(gone);
                 ByCar[car] = this;
+            }
         }
 
         public Booster Model { get; }
@@ -101,11 +105,9 @@ namespace RealisticFiring.Sim
         public static bool TryGet(TrainCar car, out RealisticBooster booster)
         {
             booster = null;
-            if (car == null)
-                return false;
-            foreach (var gone in ByCar.Keys.Where(c => c == null).ToList())
-                ByCar.Remove(gone);
-            return ByCar.TryGetValue(car, out booster);
+            // Destroyed cars are dropped as a new booster registers, not on
+            // each look: this is asked from the overlay's drawing.
+            return car != null && ByCar.TryGetValue(car, out booster);
         }
 
         public override void Tick(float delta)

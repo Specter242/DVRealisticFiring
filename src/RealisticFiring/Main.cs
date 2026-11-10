@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using HarmonyLib;
 using RealisticFiring.Sim;
 using RealisticStackEffects;
@@ -50,11 +51,23 @@ namespace RealisticFiring
         /// threw on every hover (a player's report with Remote Dispatch,
         /// 2026-10-17). Returns the classes that failed.
         /// </summary>
-        internal static List<string> PatchEachClass(Harmony harmony, IEnumerable<Type> types, Action<string> error)
+        internal static List<string> PatchEachClass(Harmony harmony, IEnumerable<Type> types, Action<string> error,
+            ICollection<Type> unbound = null)
         {
             var failed = new List<string>();
             foreach (var type in types)
             {
+                // A patch class whose game fields are gone would throw on
+                // every call of what it patches: it stays off.
+                if (unbound != null && GameMembers.Within(type, unbound))
+                {
+                    if (type.GetCustomAttributes(typeof(HarmonyPatch), false).Length > 0)
+                    {
+                        failed.Add(type.FullName);
+                        error?.Invoke($"Patch {type.FullName} left off: the game no longer has a field it reads");
+                    }
+                    continue;
+                }
                 try
                 {
                     harmony.CreateClassProcessor(type).Patch();
@@ -68,11 +81,37 @@ namespace RealisticFiring
             return failed;
         }
 
+        private static void Step(UnityModManager.ModEntry modEntry, string what, Action step)
+        {
+            try
+            {
+                step();
+            }
+            catch (Exception e)
+            {
+                modEntry.Logger.LogException($"Starting the {what} failed; the mod goes on without it", e);
+            }
+        }
+
         // Entry method named in Info.json. Patches stay applied until the game
         // restarts, so the mod has no OnToggle handler.
         public static bool Load(UnityModManager.ModEntry modEntry)
         {
             Mod = modEntry;
+            // Before anything is patched: with a field its simulation reads
+            // gone from the game, the mod stays off whole and the game runs
+            // stock, where it would have thrown in every engine's tick.
+            var types = AccessTools.GetTypesFromAssembly(typeof(Main).Assembly);
+            var unbound = GameMembers.Unbound(types);
+            foreach (var pair in unbound)
+                modEntry.Logger.Error($"{pair.Key.FullName} cannot read the game: {pair.Value}");
+            var essential = unbound.Keys.Where(GameMembers.Essential).Select(t => t.Name).ToList();
+            if (essential.Count > 0)
+            {
+                modEntry.Logger.Error($"Realistic Firing is off this session and the game runs stock: the game has changed under its simulation ({string.Join(", ", essential)}). " +
+                                      "A game update is the likely cause; please check for a newer Realistic Firing.");
+                return false;
+            }
             Settings = UnityModManager.ModSettings.Load<Settings>(modEntry);
             var changed = Settings.MoveOldKeys();
             changed |= Settings.ApplyNewDefaults();
@@ -94,22 +133,29 @@ namespace RealisticFiring
             // the settings' binding keeps a rebind in effect at once.
             modEntry.Hotkey = Settings.OpenSettingsKey;
 
-            FailedPatches = PatchEachClass(new Harmony(modEntry.Info.Id), AccessTools.GetTypesFromAssembly(typeof(Main).Assembly),
-                error => modEntry.Logger.Error(error));
+            var harmony = new Harmony(modEntry.Info.Id);
+            FailedPatches = PatchEachClass(harmony, types, error => modEntry.Logger.Error(error), unbound.Keys);
             if (FailedPatches.Count > 0)
                 modEntry.Logger.Error($"{FailedPatches.Count} of Realistic Firing's patches failed and the rest loaded: {string.Join(", ", FailedPatches)}. " +
                                       "Another mod, or a game update, may be in the way; please send this log with a bug report.");
-            Net.TryStartAddOn(modEntry);
-            StackEffectsLink.TryStart(modEntry);
-            StereoKeyword.Install();
+            Patches.TickGuard.Install(harmony, types, error => modEntry.Logger.Error(error));
 
-            var host = new GameObject("RealisticFiring");
-            Object.DontDestroyOnLoad(host);
-            host.AddComponent<FireController>();
-            host.AddComponent<PlumeCapture>();
-            host.AddComponent<Visuals.FireboxCapture>();
-
-            Sim.FiremanRig.NoteRivals();
+            // The patches are in by now and stay in: each step after them on
+            // its own, so one that fails leaves the mod with its controller,
+            // keys, and notices, not marked failed with its patches live.
+            // The controller first: it shows the notices.
+            Step(modEntry, "controller", () =>
+            {
+                var host = new GameObject("RealisticFiring");
+                Object.DontDestroyOnLoad(host);
+                host.AddComponent<FireController>();
+                host.AddComponent<PlumeCapture>();
+                host.AddComponent<Visuals.FireboxCapture>();
+            });
+            Step(modEntry, "multiplayer add-on", () => Net.TryStartAddOn(modEntry));
+            Step(modEntry, "Stack Effects link", () => StackEffectsLink.TryStart(modEntry));
+            Step(modEntry, "stereo keyword", StereoKeyword.Install);
+            Step(modEntry, "note of other firemen", Sim.FiremanRig.NoteRivals);
             modEntry.Logger.Log(ReplacementEnabled
                 ? $"Realistic fireboxes enabled for {string.Join(", ", FireboxRegistry.SupportedLiveries)}"
                 : "Realistic fireboxes disabled; every loco keeps the stock firebox");

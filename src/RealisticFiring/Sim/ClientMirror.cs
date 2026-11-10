@@ -13,7 +13,7 @@ namespace RealisticFiring.Sim
         // to older readers (tag 255, length 65535), so they drop this packet
         // before interpreting any changed struct fields.
         internal const int HeaderSize = 11;
-        private static readonly ulong LayoutHash = HashLayout("sections-v4;" + Codec<StokerFlow>.Layout
+        private static readonly ulong LayoutHash = HashLayout("sections-v5;" + Codec<StokerFlow>.Layout
             + Codec<InjectorFlow>.Layout + Codec<FeedPumpFlow>.Layout + Codec<BoosterFlow>.Layout + Codec<OilFireState>.Layout
             + Codec<SteamPathSnapshot>.Layout);
         internal static string LayoutSignature => LayoutHash.ToString("x16");
@@ -32,6 +32,7 @@ namespace RealisticFiring.Sim
         private const byte Oil = 5;
         private const byte InjectorCircuits = 6;
         private const byte Throttle = 7;
+        private const byte Fireman = 8;
 
         /// <summary>
         /// Every car with something of the mod's to mirror: each part that
@@ -57,7 +58,7 @@ namespace RealisticFiring.Sim
             RealisticBooster.TryGet(car, out var booster);
             RealisticOilFirebox.TryGet(car, out var oil);
             EngineSteamPath.TryGet(car, out var throttle);
-            return Capture(firebox, rig, water, booster, oil, throttle);
+            return Capture(firebox, rig, water, booster, oil, throttle, FiremanRig.TryGet(car, out var fireman) ? fireman.Fireman : null);
         }
 
         /// <summary>On a client: shows the host's state of <paramref name="car"/>.</summary>
@@ -71,12 +72,12 @@ namespace RealisticFiring.Sim
             RealisticBooster.TryGet(car, out var booster);
             RealisticOilFirebox.TryGet(car, out var oil);
             EngineSteamPath.TryGet(car, out var throttle);
-            Apply(data, firebox, rig, water, booster, oil, car.ID, throttle);
+            Apply(data, firebox, rig, water, booster, oil, car.ID, throttle, FiremanRig.TryGet(car, out var fireman) ? fireman.Fireman : null);
         }
 
         /// <summary>The state of these parts (any may be null); null with nothing to send.</summary>
         internal static byte[] Capture(RealisticFirebox firebox, InjectorRig rig, BoilerWaterRig water, RealisticBooster booster, RealisticOilFirebox oil,
-            EngineSteamPath throttle = null)
+            EngineSteamPath throttle = null, AutoFiremanBase fireman = null)
         {
             using (var stream = new MemoryStream())
             using (var writer = new BinaryWriter(stream))
@@ -145,6 +146,15 @@ namespace RealisticFiring.Sim
                     });
                 if (throttle != null)
                     Section(writer, Throttle, w => Codec<SteamPathSnapshot>.Write(w, throttle.Snapshot()));
+                // The fireman's mode and call: a guest's panel and tablet
+                // showed its own last order, Off until it gave one, whatever
+                // the host's fireman was doing (audit 2026-11-09).
+                if (fireman != null)
+                    Section(writer, Fireman, w =>
+                    {
+                        w.Write((byte)fireman.Mode);
+                        w.Write((byte)fireman.Call);
+                    });
                 writer.Flush();
                 // Keep the sentinel length impossible for an old section reader.
                 if (stream.Length >= ushort.MaxValue) throw new InvalidDataException("mirror packet too large");
@@ -154,7 +164,7 @@ namespace RealisticFiring.Sim
 
         /// <summary>Shows captured state on these parts (any may be null).</summary>
         internal static void Apply(byte[] data, RealisticFirebox firebox, InjectorRig rig, BoilerWaterRig water, RealisticBooster booster,
-            RealisticOilFirebox oil, string carName = null, EngineSteamPath throttle = null)
+            RealisticOilFirebox oil, string carName = null, EngineSteamPath throttle = null, AutoFiremanBase fireman = null)
         {
             if (data == null || data.Length < HeaderSize || data[0] != 255 || data[1] != 255 || data[2] != 255)
                 return;
@@ -182,21 +192,36 @@ namespace RealisticFiring.Sim
                 try
                 {
                     using (var reader = new BinaryReader(new MemoryStream(data, at, length, writable: false)))
-                        ApplySection(tag, reader, firebox, rig, water, booster, oil, throttle);
+                        ApplySection(tag, reader, firebox, rig, water, booster, oil, throttle, fireman);
                 }
-                catch (Exception e) when (e is EndOfStreamException || e is IOException || e is InvalidDataException)
+                catch (Exception e) when (e is EndOfStreamException || e is IOException || e is InvalidDataException || e is FormatException)
                 {
-                    Main.Mod?.Logger.Warning($"{carName}: the host's state section {tag} did not read");
+                    // Once for each car's section: it comes four times a second.
+                    if (Unread.Add($"{carName}/{tag}"))
+                        Main.Mod?.Logger.Warning($"{carName}: the host's state section {tag} did not read");
                 }
                 at += length;
             }
         }
 
+        private static readonly HashSet<string> Unread = new HashSet<string>();
+
         private static void ApplySection(byte tag, BinaryReader r, RealisticFirebox firebox, InjectorRig rig, BoilerWaterRig water,
-            RealisticBooster booster, RealisticOilFirebox oil, EngineSteamPath throttle)
+            RealisticBooster booster, RealisticOilFirebox oil, EngineSteamPath throttle, AutoFiremanBase fireman)
         {
             switch (tag)
             {
+                case Fireman when fireman != null:
+                {
+                    var mode = r.ReadByte();
+                    var call = r.ReadByte();
+                    if (!Enum.IsDefined(typeof(FiremanMode), (int)mode) || !Enum.IsDefined(typeof(FiremanCall), (int)call))
+                        throw new InvalidDataException("no such fireman mode or call");
+                    fireman.Mode = (FiremanMode)mode;
+                    if (fireman.Call != (FiremanCall)call)
+                        fireman.Call = (FiremanCall)call;
+                    break;
+                }
                 // Each section is read whole before any of it is shown.
                 case Firebox when firebox != null:
                 {

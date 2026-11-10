@@ -76,7 +76,11 @@ namespace RealisticFiring.Sim
         }
 
         /// <summary>Where <paramref name="boiler"/>'s safety valve lifts, absolute bar.</summary>
-        public static float Lift(Boiler boiler) => (float)Opening.GetValue(boiler);
+        public static float Lift(Boiler boiler) => OpeningNow(boiler);
+
+        // Read every fireman tick: unboxed, where FieldInfo.GetValue boxed it each time.
+        private static readonly AccessTools.FieldRef<Boiler, float> OpeningNow =
+            AccessTools.FieldRefAccess<Boiler, float>("safetyValveOpeningPressure");
 
         /// <summary>Gauge psi of an absolute pressure in bar.</summary>
         public static float Psi(float bar) => (bar - 1.01325f) * 14.5038f;

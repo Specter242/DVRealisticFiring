@@ -160,6 +160,41 @@ namespace RealisticFiring.Core.Tests;
         Assert.True(steps[4].Current);
     }
 
+    // Audit 2026-11-09: the lighting steps came before any look at the glass.
+    [Fact]
+    public void AnOilFireIsNotLitOverAnEmptyGlass()
+    {
+        var oil = Cold;
+        oil.GlassLevel = 0.1f;
+        var advice = FiringAdvice.ForOil(oil);
+        Assert.Equal(AdviceLevel.Act, advice.Level);
+        Assert.Contains("fill her before you light", advice.Text);
+        Assert.Equal(0, advice.LightingStep);
+    }
+
+    [Fact]
+    public void OverheatedOilIsToldToShutTheHeater()
+    {
+        var oil = new OilReading { FireOn = true, BoilerPressure = 15f, GlassLevel = 0.6f, StackSmoke = 0.7f, Injectors = Feeding, OilTemperature = OilFire.HotOil + 15f };
+        var advice = FiringAdvice.ForOil(oil);
+        Assert.Equal(AdviceLevel.Act, advice.Level);
+        Assert.Contains("Shut the OIL HEATER", advice.Text);
+        oil.OilTemperature = OilFire.HotOil - 5f;
+        Assert.Contains("too much oil for the air", FiringAdvice.ForOil(oil).Text);
+    }
+
+    [Fact]
+    public void AnInjectorWaitingForPressureSaysSo()
+    {
+        var waiting = new[] { new InjectorReading(InjectorState.LowPressure, 1f, true) };
+        var advice = FiringAdvice.ForCoal(Bed(Even(10f)), 0.1f, 0.2f, waiting);
+        Assert.Contains("Too little steam for the injector", advice.Text);
+        Assert.DoesNotContain("get the injector on", advice.Text);
+        // A worse trouble on the other injector comes first.
+        var both = new[] { waiting[0], new InjectorReading(InjectorState.Broken, 1f, true) };
+        Assert.Contains("jet broke", FiringAdvice.ForCoal(Bed(Even(10f)), 0.1f, 0.6f, both).Text);
+    }
+
     [Fact]
     public void ADeadEngineAwayFromAStandIsTowedToOne()
     {

@@ -457,6 +457,8 @@ namespace RealisticFiring
                 yield return (AdviceLevel.Watch, "The ashpan is half full: empty it on a service or shed track.");
             if (notices.HasFlag(FiremanNotice.ColdOil))
                 yield return (AdviceLevel.Watch, "The oil is cold: he has the heater open; it fires poorly until it warms.");
+            if (notices.HasFlag(FiremanNotice.HotOil))
+                yield return (AdviceLevel.Watch, "The oil is too hot and sputters: keep the heater shut till it cools.");
             if (notices.HasFlag(FiremanNotice.NoSand))
                 yield return (AdviceLevel.Watch, "The flues want sanding and the sand is out.");
         }

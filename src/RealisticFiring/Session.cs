@@ -19,6 +19,7 @@ namespace RealisticFiring
         public bool FitFeedPumps { get; private set; }
         public bool RetrofitS282Stoker { get; private set; }
         public bool StokerJams { get; private set; }
+        public bool UnlistedEngines { get; private set; }
 
         public static Session From(Settings settings) => new Session
         {
@@ -33,6 +34,7 @@ namespace RealisticFiring
             FitFeedPumps = settings.FitFeedPumps,
             RetrofitS282Stoker = settings.RetrofitS282Stoker,
             StokerJams = settings.StokerJams,
+            UnlistedEngines = settings.UnlistedLocomotives,
         };
     }
 }
