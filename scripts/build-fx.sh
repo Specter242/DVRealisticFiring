@@ -21,6 +21,7 @@ inputs="$(python3 -I "$repo/scripts/bundle-inputs.py" digest effects)"
 python3 -I "$repo/fx/textures/make_smoke_textures.py" "$project/Assets/RealisticFiring/Textures"
 python3 -I "$repo/fx/textures/make_firebox_textures.py" "$project/Assets/RealisticFiring/Textures"
 python3 -I "$repo/fx/textures/make_fire_volume.py" "$project/Assets/RealisticFiring/Textures"
+python3 -I "$repo/fx/textures/make_starting_fuel.py" "$project/Assets/RealisticFiring/Textures" "$project/Assets/RealisticFiring/Models"
 # The rolling steam takes a few minutes: only when its script is newer.
 roll="$project/Assets/RealisticFiring/Textures/smoke_roll_a.png"
 if [[ ! -f "$roll" || "$repo/fx/textures/make_rolling_steam.py" -nt "$roll" ]]; then

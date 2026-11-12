@@ -102,6 +102,8 @@ namespace RealisticFiring
                 "Use the mod's chimney effects when their assets are available.", restart: true);
             s.HeatShimmer = Toggle("Heat shimmer", s.HeatShimmer,
                 "Shimmer above the stack with custom smoke effects.", restart: true);
+            s.EngineSteam = Toggle("Steam around the engine", s.EngineSteam,
+                "Draw the dynamo, cylinder cocks, safety valves, whistle, and leaks as the chimney's steam, by the weather. Needs custom smoke effects.", restart: true);
             GUI.enabled = enabled;
             End();
         }

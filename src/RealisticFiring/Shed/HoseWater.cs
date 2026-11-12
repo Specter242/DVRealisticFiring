@@ -73,8 +73,39 @@ namespace RealisticFiring.Shed
             var emission = system.emission;
             emission.enabled = true;
             emission.rateOverTime = 0f;
-            system.Play();
+            // Its object rests until the valve is opened (LateUpdate): the
+            // map's hundred idle jets, playing with nothing to emit, cost
+            // half a millisecond a frame (performance audit, 2026-11-11).
+            system.gameObject.SetActive(false);
             return system;
+        }
+
+        // Wakes the water's particles as it starts to run, and rests them
+        // once it has stopped and the last of them has gone.
+        private void Run(bool running)
+        {
+            var go = stream.gameObject;
+            if (running && !go.activeSelf)
+            {
+                go.SetActive(true);
+                stream.Play();
+            }
+            else if (!running && go.activeSelf && stream.particleCount == 0)
+            {
+                go.SetActive(false);
+            }
+        }
+
+        // The stand is far off and hidden (ShedStands.HideFar): nothing runs
+        // or sounds. Not as its own object goes (the stand unloading), when
+        // its children cannot be switched.
+        private void OnDisable()
+        {
+            if (stream != null && gameObject.activeInHierarchy)
+                stream.gameObject.SetActive(false);
+            var source = sound;
+            if (source != null && source.isPlaying)
+                source.Stop();
         }
 
         private void LateUpdate()
@@ -85,10 +116,14 @@ namespace RealisticFiring.Shed
             var share = inEngine ? 0f : ShedStands.Opening(plug);
             if (stream != null)
             {
-                var emission = stream.emission;
-                emission.rateOverTime = MostParticles * share;
-                var main = stream.main;
-                main.startSpeedMultiplier = Mathf.Lerp(0.4f, 1f, share);
+                Run(share > 0f);
+                if (stream.gameObject.activeSelf)
+                {
+                    var emission = stream.emission;
+                    emission.rateOverTime = MostParticles * share;
+                    var main = stream.main;
+                    main.startSpeedMultiplier = Mathf.Lerp(0.4f, 1f, share);
+                }
             }
             if (sound == null && share > 0f && Time.time >= soundTryAt)
             {

@@ -13,6 +13,9 @@ namespace RealisticStackEffects
         [Draw("Heat shimmer over the stack (custom smoke effects; restart required)")]
         public bool HeatShimmer = true;
 
+        [Draw("Steam around the engine drawn as the chimney's is, by the weather: dynamo, cylinder cocks, safety valves, whistle, leaks (custom smoke effects; restart required)")]
+        public bool EngineSteam = true;
+
         [Draw("Smoke quality, for a slower graphics card: Medium draws the chimney's smoke at half resolution and drops its faintest smoke, Low with half its particles and more of the faint smoke besides (in VR or with forward rendering, half and a quarter of its particles instead)", DrawType.ToggleGroup)]
         public SmokeQuality SmokeQuality = SmokeQuality.High;
 

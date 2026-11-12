@@ -78,8 +78,39 @@ namespace RealisticFiring.Shed
             var emission = system.emission;
             emission.enabled = true;
             emission.rateOverTime = 0f;
-            system.Play();
+            // Its object rests until the valve is opened (LateUpdate): the
+            // map's hundred idle jets, playing with nothing to emit, cost
+            // half a millisecond a frame (performance audit, 2026-11-11).
+            system.gameObject.SetActive(false);
             return system;
+        }
+
+        // Wakes the steam's particles as it starts to run, and rests them
+        // once it has stopped and the last of them has gone.
+        private void Run(bool running)
+        {
+            var go = jet.gameObject;
+            if (running && !go.activeSelf)
+            {
+                go.SetActive(true);
+                jet.Play();
+            }
+            else if (!running && go.activeSelf && jet.particleCount == 0)
+            {
+                go.SetActive(false);
+            }
+        }
+
+        // The stand is far off and hidden (ShedStands.HideFar): nothing runs
+        // or sounds. Not as its own object goes (the stand unloading), when
+        // its children cannot be switched.
+        private void OnDisable()
+        {
+            if (jet != null && gameObject.activeInHierarchy)
+                jet.gameObject.SetActive(false);
+            var source = hiss;
+            if (source != null && source.isPlaying)
+                source.Stop();
         }
 
         private void LateUpdate()
@@ -90,10 +121,14 @@ namespace RealisticFiring.Shed
             var share = inEngine ? 0f : ShedStands.SteamOpening(plug);
             if (jet != null)
             {
-                var emission = jet.emission;
-                emission.rateOverTime = MostParticles * share;
-                var main = jet.main;
-                main.startSpeedMultiplier = Mathf.Lerp(0.3f, 1f, share);
+                Run(share > 0f);
+                if (jet.gameObject.activeSelf)
+                {
+                    var emission = jet.emission;
+                    emission.rateOverTime = MostParticles * share;
+                    var main = jet.main;
+                    main.startSpeedMultiplier = Mathf.Lerp(0.3f, 1f, share);
+                }
             }
             if (hiss == null && share > 0f && Time.time >= hissTryAt)
             {

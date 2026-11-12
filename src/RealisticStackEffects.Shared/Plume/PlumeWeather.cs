@@ -72,6 +72,18 @@ namespace RealisticStackEffects
         }
 
         private static float daylight = 1f;
+
+        /// <summary>The share of the game's directional light that falls on steam and smoke, 0 to 1 (<see cref="Twilight.DirectLight"/>): none from sunset through dusk.</summary>
+        public static float DirectLight
+        {
+            get
+            {
+                Update();
+                return directLight;
+            }
+        }
+
+        private static float directLight = 1f;
         private const float TwilightBelow = 96f;
         private const float TwilightAbove = 84f;
 
@@ -92,6 +104,7 @@ namespace RealisticStackEffects
             var weather = GameWeather.Driver;
             var sky = weather != null && weather.manager != null ? weather.manager.todSky : null;
             daylight = sky != null ? Mathf.Clamp01((TwilightBelow - sky.SunZenith) / (TwilightBelow - TwilightAbove)) : 1f;
+            directLight = sky != null ? Twilight.DirectLight(sky.SunZenith) : 1f;
             if (PlumeTestBed.Air is PlumeAir testAir)
             {
                 air = testAir;

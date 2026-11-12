@@ -202,7 +202,8 @@ namespace RealisticStackEffects.AdapterCheck
             var outer = typeof(StackFireReading).GetFields(BindingFlags.Instance | BindingFlags.Public).ToDictionary(f => f.Name, f => f.FieldType);
             var unmatched = inner.Where(f => !outer.TryGetValue(f.Key, out var type) || type != f.Value).Select(f => f.Key)
                 .Concat(outer.Keys.Where(name => !inner.ContainsKey(name))).ToList();
-            Check(unmatched.Count == 0 && StackSources.ApiVersion == 1,
+            Check(unmatched.Count == 0 && StackSources.ApiVersion == 2 && StackSources.EngineSteam(null) == null
+                  && typeof(IEngineSteam).GetMethod("Add") != null,
                 $"the contract's reading matches the plume's, {inner.Count} fields{(unmatched.Count > 0 ? $" (unmatched: {string.Join(", ", unmatched)})" : "")}, version {StackSources.ApiVersion}");
 
             StackSources.Register("Check", car => new Marked());

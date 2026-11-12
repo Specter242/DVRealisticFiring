@@ -86,6 +86,8 @@ namespace RealisticFiring
                 Diagnostics.ShedSurvey.ProbeRoofs();
             }
             catch (System.Exception e) { Faults.Report("the shed survey", null, e); }
+            try { Visuals.EngineSteam.Update(); }
+            catch (System.Exception e) { Faults.Report("the engine's steam", null, e); }
             try { Shed.ShedStands.Update(); }
             catch (System.Exception e) { Faults.Report("the shed stands", null, e); }
             try { Visuals.OilBurnerCab.EnsureBuilt(); }
@@ -444,7 +446,11 @@ namespace RealisticFiring
         // Gauge pressure, bar over the atmosphere, from absolute.
         private static float Gauge(float bar) => bar - 1f;
 
- internal static string OilLightingHint(RealisticOilFirebox oil)
+        /// <summary>The oil fire, for the status log and overlay: lines separated by semicolons.</summary>
+        /// <summary>
+        /// How to light an oil fire with physical burning waste. Null while it burns.
+        /// </summary>
+        internal static string OilLightingHint(RealisticOilFirebox oil)
         {
             var advice = FiringAdvice.ForOil(ReadOil(oil));
             return advice.LightingStep > 0 ? advice.Text : null;

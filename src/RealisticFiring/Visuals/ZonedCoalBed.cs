@@ -1132,7 +1132,11 @@ namespace RealisticFiring.Visuals
         /// <summary>The firebox's effects (flames and smoke live under it), or null without the bundle.</summary>
         public Transform Effects => effects;
 
-        /// <summary>Each zone's heat as the bed shows it, 0 black to 1 white-hot.</summary>
+        /// <summary>
+        /// Each zone's coal heat as the bed shows it, 0 black to 1 white-hot.
+        /// Wood draws its own char and flames (FuelFireboxIntake) and lights
+        /// the box through FireboxLighting: its heat here glowed bare bars.
+        /// </summary>
         public float ZoneHeat(GrateZone zone) => heat[(int)zone];
 
         /// <summary>Each zone's share of green coal.</summary>

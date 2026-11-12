@@ -114,12 +114,14 @@ namespace RealisticFiring.Multiplayer
                 Items.FireIron.RegisterAsGameItem();
                 Items.FiringTablet.RegisterAsGameItem();
                 Items.FiringManual.RegisterAsGameItem();
+                Items.FireStartingItems.Register();
                 PumpingBy.Clear();
                 Guests.Clear();
                 Unheard.Clear();
                 server.RegisterSerializablePacket<HelloPacket>(OnHello);
                 server.RegisterSerializablePacket<FireActionPacket>(OnFireAction);
                 StandSync.OnServerStarted(server);
+                StartingFuelSync.Server(server);
                 snapshotDue = 0u;
                 Leaving.Clear();
                 server.OnPlayerConnected += OnPlayerJoined;
@@ -141,11 +143,13 @@ namespace RealisticFiring.Multiplayer
                 Items.FireIron.RegisterAsGameItem();
                 Items.FiringTablet.RegisterAsGameItem();
                 Items.FiringManual.RegisterAsGameItem();
+                Items.FireStartingItems.Register();
                 client.RegisterSerializablePacket<NoticePacket>(notice => FireController.Announce(notice.Text));
                 client.RegisterSerializablePacket<SnapshotPacket>(OnSnapshot);
                 client.RegisterSerializablePacket<FireEventPacket>(OnFireEvent);
                 client.RegisterSerializablePacket<HudPolicyPacket>(OnHudPolicy);
                 StandSync.OnClientStarted(client);
+                StartingFuelSync.Client(client);
                 helloDue = true;
             }
             catch (Exception e)
@@ -178,6 +182,7 @@ namespace RealisticFiring.Multiplayer
             {
                 SendHudPolicy();
                 SendSnapshots(tick);
+                StartingFuelSync.Tick(tick);
                 SendHello();
                 WarnAndDisconnect(tick);
                 TellOfUnheard(tick);
@@ -593,6 +598,7 @@ namespace RealisticFiring.Multiplayer
                     return;
                 Unheard.Remove(player.PlayerId);
                 Guests.Forget(player.PlayerId);
+                StartingFuelSync.Forget(player.PlayerId);
                 if (PumpingBy.TryGetValue(player.PlayerId, out var rig))
                 {
                     rig.RemotePump(player.PlayerId, false);

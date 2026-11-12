@@ -51,6 +51,13 @@ namespace RealisticStackEffects
         public float NightGrey = 0.5f;
 
         /// <summary>
+        /// How far the sun's own light leaves the steam and smoke from sunset
+        /// through dusk (PlumeWeather.DirectLight), 0 (as before: all of the
+        /// game's light, however low its sun) to 1.
+        /// </summary>
+        public float TwilightSun = 1f;
+
+        /// <summary>
         /// A plume particle's size, × the plume's width where it is (0.75 until
         /// 2026-10-21, then 0.9, then 0.6: with the trail spreading faster,
         /// its wisps tens of meters wide drew soft; 0.75 again with 1.13's
@@ -235,6 +242,24 @@ namespace RealisticStackEffects
  public float Upright = 1f;
         public float Grow = 1f;
         public float WispReach = 1f;
+
+        /// <summary>
+        /// Steam around the engine (SteamVents): how hard every source
+        /// blows, ×; how fast the air mixes in, ×; each parcel's opacity's
+        /// depth, ×; its drawn width, × its mixture's; how fast its warmth
+        /// lifts it, ×; how fast it rolls, × the plume's; and how far its
+        /// edge frays into strands, 0 to 1.
+        /// </summary>
+        public float VentStrength = 1f;
+        public float VentMixing = 1f;
+        public float VentDensity = 1f;
+        public float VentFill = 1.6f;
+        public float VentRise = 1f;
+        public float VentRoll = 2f;
+        public float VentEdge = 0.5f;
+
+        /// <summary>Steam around the engine: a dry jet's clear core, × its kind's.</summary>
+        public float VentClear = 1f;
 
         /// <summary>Rolling steam: a fringe's strands' opacity, × its particle's wisp's, 0 to 1.</summary>
         public float FringeShare = 1f;
@@ -694,6 +719,14 @@ namespace RealisticStackEffects
             LookSlider("Lit as one volume", ref Look.Volume, 0f, 1f, "F2");
             LookSlider("The volume's shape in the light", ref Look.VolumeShape, 0f, 3f, "F2");
             LookSlider("The volume's shadow density, ×", ref Look.VolumeDensity, 0f, 2f, "F3");
+            LookSlider("Vents: every source, ×", ref Look.VentStrength, 0f, 3f, "F2");
+            LookSlider("Vents: air mixing in, ×", ref Look.VentMixing, 0.1f, 5f, "F2");
+            LookSlider("Vents: opacity's depth, ×", ref Look.VentDensity, 0f, 5f, "F2");
+            LookSlider("Vents: drawn width, × the mixture's", ref Look.VentFill, 0.5f, 4f, "F2");
+            LookSlider("Vents: rise, ×", ref Look.VentRise, 0f, 4f, "F2");
+            LookSlider("Vents: rolling, × the plume's", ref Look.VentRoll, 0f, 6f, "F2");
+            LookSlider("Vents: edge fraying", ref Look.VentEdge, 0f, 1f, "F2");
+            LookSlider("Vents: a dry jet's clear core, ×", ref Look.VentClear, 0f, 4f, "F2");
             LookSlider("Rolling: loops a second off the jet", ref Look.RollRate, 0f, 3f, "F2");
             LookSlider("Rolling: halves by, s", ref Look.RollSlows, 0f, 20f, "F1");
             LookSlider("Rolling: far side shaded", ref Look.SixPlume, 0f, 1f, "F2");
@@ -741,6 +774,7 @@ namespace RealisticStackEffects
             LookSlider("Fully shown from, m", ref Look.NearFadeTo, 0f, 20f, "F1");
             LookSlider("Night: sky light, ×", ref Look.NightSkyLight, 0f, 6f, "F2");
             LookSlider("Night: light greyed", ref Look.NightGrey, 0f, 1f, "F2");
+            LookSlider("Twilight: the set sun's light off the steam", ref Look.TwilightSun, 0f, 1f, "F2");
             Header("Heat shimmer");
             Slider("Shimmer, ×", () => Tuning.Shimmer, v => Tuning.Shimmer = v, 0f, 3f, "F2");
             LookSlider("Shimmer bend, share of view", ref Look.ShimmerStrength, 0f, 0.06f, "F3");

@@ -194,8 +194,7 @@ namespace RealisticStackEffects.Core
         /// </summary>
         public static float Survival(float height, float spreadWidth)
         {
-            var width = PlumeWidth(height, spreadWidth);
-            return width <= RetireFrom ? 1f : (float)Math.Pow(RetireFrom / width, 4.0 / 3.0);
+            return SurvivalAt(PlumeWidth(height, spreadWidth));
         }
 
         /// <summary>
@@ -227,7 +226,12 @@ namespace RealisticStackEffects.Core
             cloud == null ? parcel.SteamDepth : parcel.SteamDepth * cloud.Left(age, airSpeed, mixing, forming);
 
         /// <summary>The opacity of <paramref name="depth"/> (at the stack) thinned to <paramref name="height"/> and spread to <paramref name="spreadWidth"/>.</summary>
-        public static float OpacityOf(float depth, float height, float spreadWidth = 0f) =>
-            1f - (float)Math.Exp(-Math.Max(0f, depth) * Dilution(height, spreadWidth));
+        public static float OpacityOf(float depth, float height, float spreadWidth = 0f) => OpacityAt(depth, Dilution(height, spreadWidth));
+
+        /// <summary>The opacity of <paramref name="depth"/> (at the stack) where the plume is thinned by <paramref name="dilution"/> (<see cref="Dilution(float, float)"/>).</summary>
+        public static float OpacityAt(float depth, float dilution) => 1f - (float)Math.Exp(-Math.Max(0f, depth) * dilution);
+
+        /// <summary>The share of particles kept where the plume is <paramref name="width"/> m wide (<see cref="PlumeWidth"/>).</summary>
+        public static float SurvivalAt(float width) => width <= RetireFrom ? 1f : (float)Math.Pow(RetireFrom / width, 4.0 / 3.0);
     }
 }

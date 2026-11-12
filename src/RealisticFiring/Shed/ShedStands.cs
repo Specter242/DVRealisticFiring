@@ -243,6 +243,10 @@ namespace RealisticFiring.Shed
         // Each stand's hose plug and its valve's handwheel (its control made by
         // the game as the copy wakes, looked up as it is read).
         private static readonly Dictionary<PluggableObject, Transform> Valves = new Dictionary<PluggableObject, Transform>();
+        // Each handwheel's control, once the game has made it: looked up
+        // every frame by every hose's water and steam, it was a component
+        // search each time.
+        private static readonly Dictionary<Transform, ControlImplBase> Controls = new Dictionary<Transform, ControlImplBase>();
         private static float lookAt;
         private static Transform worldRoot;
 
@@ -256,6 +260,8 @@ namespace RealisticFiring.Shed
             ByRoundhouse.Clear();
             Valves.Clear();
             SteamValves.Clear();
+            Controls.Clear();
+            Hidden.Clear();
             HungStill.Clear();
             tracks = null;
             lookAt = refloorAt = sleepAt = lastSleepCheck = 0f;
@@ -296,8 +302,20 @@ namespace RealisticFiring.Shed
         {
             if (plug == null || !Valves.TryGetValue(plug, out var wheel) || wheel == null)
                 return 0f;
-            var control = wheel.GetComponent<ControlImplBase>();
-            return control != null ? Mathf.Clamp01(control.Value) : 0f;
+            return Turned(wheel);
+        }
+
+        // How far a handwheel is turned open, 0 to 1; 0 until the game has made its control.
+        private static float Turned(Transform wheel)
+        {
+            if (!Controls.TryGetValue(wheel, out var control) || control == null)
+            {
+                control = wheel.GetComponent<ControlImplBase>();
+                if (control == null)
+                    return 0f;
+                Controls[wheel] = control;
+            }
+            return Mathf.Clamp01(control.Value);
         }
 
         // The floor under a point, world height, or null where nothing of the
@@ -378,6 +396,72 @@ namespace RealisticFiring.Shed
         // How long each hose has hung on its stand with its rope running, s.
         private static readonly Dictionary<PropHose, float> HungStill = new Dictionary<PropHose, float>();
 
+        // A stand far from the player, its hose hanging on it, is not drawn
+        // and its own scripts rest (performance audit, 2026-11-11: the map's
+        // 108 stands cost 1.45 ms every frame with the nearest 2 km off, 0.65
+        // of it their thousand renderers and 0.55 their idle steam and water
+        // jets, which now wake only while they run; HoseWater, HoseSteam).
+        // Their valves' controls and joints are left as they are. Shown again
+        // well before it can be made out, a few pixels high.
+        private const float HiddenBeyond = 450f;
+        private const float ShownWithin = 400f;
+
+        // The renderers switched off on each hidden stand, to switch on again.
+        private static readonly Dictionary<GameObject, Renderer[]> Hidden = new Dictionary<GameObject, Renderer[]>();
+
+        // A hidden stand is looked over again in turn, a few a second: parts
+        // that come after it was hidden (the game finishing a copied hose or
+        // handwheel) were left drawn, 70 hoses' meshes over the map's stands
+        // in the first in-game check.
+        private const int LookedOverEachCheck = 4;
+        private static int lookOver;
+        private static readonly List<Renderer> LookedOver = new List<Renderer>();
+
+        private static void KeepHidden()
+        {
+            for (var n = 0; n < LookedOverEachCheck && Built.Count > 0 && Hidden.Count > 0; n++)
+            {
+                lookOver = (lookOver + 1) % Built.Count;
+                var stand = Built[lookOver];
+                if (stand == null || !Hidden.TryGetValue(stand, out var off))
+                    continue;
+                stand.GetComponentsInChildren(true, LookedOver);
+                LookedOver.RemoveAll(r => !r.enabled);
+                if (LookedOver.Count == 0)
+                    continue;
+                foreach (var renderer in LookedOver)
+                    renderer.enabled = false;
+                Hidden[stand] = off.Concat(LookedOver).ToArray();
+            }
+            LookedOver.Clear();
+        }
+
+        private static void HideFar(GameObject stand, Vector3 player, bool hanging)
+        {
+            var hidden = Hidden.ContainsKey(stand);
+            var away = Vector3.Distance(stand.transform.position, player);
+            var hide = hanging && away > (hidden ? ShownWithin : HiddenBeyond);
+            if (hide == hidden)
+                return;
+            if (hide)
+            {
+                var shown = stand.GetComponentsInChildren<Renderer>(true).Where(r => r.enabled).ToArray();
+                foreach (var renderer in shown)
+                    renderer.enabled = false;
+                Hidden[stand] = shown;
+            }
+            else
+            {
+                foreach (var renderer in Hidden[stand])
+                    if (renderer != null)
+                        renderer.enabled = true;
+                Hidden.Remove(stand);
+            }
+            foreach (var script in stand.GetComponentsInChildren<MonoBehaviour>(true))
+                if (script is WorldLayer || script is HoseWater || script is HoseSteam || script is StandPlugWatch)
+                    script.enabled = !hide;
+        }
+
         private static void SleepFar()
         {
             if (Time.unscaledTime < sleepAt || PlayerManager.PlayerTransform == null)
@@ -394,8 +478,10 @@ namespace RealisticFiring.Shed
             {
                 if (stand == null)
                     continue;
+                var allHanging = true;
                 foreach (var hose in stand.GetComponentsInChildren<PropHose>(true))
                 {
+                    allHanging &= Hanging(hose);
                     var solver = hose.GetComponent<VerletRope.VerletSolver>();
                     if (solver == null)
                         continue;
@@ -410,7 +496,9 @@ namespace RealisticFiring.Shed
                         solver.Complete();
                     solver.enabled = awake;
                 }
+                HideFar(stand, player, allHanging);
             }
+            KeepHidden();
         }
 
         // Whether a hose's plug hangs on its own stand, nobody's hand on it
@@ -442,6 +530,10 @@ namespace RealisticFiring.Shed
                 Valves.Remove(gone);
             foreach (var gone in SteamValves.Keys.Where(k => k == null).ToList())
                 SteamValves.Remove(gone);
+            foreach (var gone in Controls.Keys.Where(k => k == null).ToList())
+                Controls.Remove(gone);
+            foreach (var gone in Hidden.Keys.Where(k => k == null).ToList())
+                Hidden.Remove(gone);
             if (ByRoundhouse.Count >= Roundhouses.Length + Shops.Length || ShedHoses.Template() == null)
                 return;
             var found = Found(Object.FindObjectsOfType<TurntableController>());
@@ -493,6 +585,57 @@ namespace RealisticFiring.Shed
             }
         }
 
+ internal static IEnumerable<(string Key, RailTrack Track, float Along, int Side)> SupplyAnchors()
+        {
+            foreach (var (roundhouse, controller) in Found(Object.FindObjectsOfType<TurntableController>()))
+            {
+                var stalls = controller.turntable.trackEnds
+                    .Where(e => e != null && e.track != null)
+                    .Select(e => e.track)
+                    .Distinct()
+                    .Where(t => (t.LogicTrack()?.ID?.FullID ?? "").StartsWith(roundhouse.StallPrefix))
+                    .OrderBy(t => t.LogicTrack()?.ID?.FullID ?? t.name, StringComparer.Ordinal)
+                    .ToList();
+                if (stalls.Count == 0)
+                    continue;
+                var stall = stalls.FirstOrDefault(t => t.LogicTrack()?.ID?.FullID == roundhouse.RepairStall) ?? stalls[0];
+                var points = stall.GetKinkedPointSet()?.points;
+                if (points == null || points.Length < 2)
+                    continue;
+                var deck = DeckCentre(controller);
+                var start = (Vector3)points[0].position + WorldMover.currentMove;
+                var end = (Vector3)points[points.Length - 1].position + WorldMover.currentMove;
+                var fromStart = Vector3.Distance(start, deck) < Vector3.Distance(end, deck);
+                var span = (float)points[points.Length - 1].span;
+                var along = fromStart ? roundhouse.Along : span - roundhouse.Along;
+                var side = (roundhouse.Aside >= 0f ? 1 : -1) * (fromStart ? 1 : -1);
+                yield return (roundhouse.Turntable, stall, along, side);
+            }
+            foreach (var shop in Shops)
+            {
+                var track = TrackNamed(shop.Track);
+                if (track != null)
+                    yield return (shop.Key, track, shop.Along, shop.Aside >= 0f ? 1 : -1);
+            }
+        }
+
+        /// <summary>Whether the shed with this key (<see cref="SupplyAnchors"/>) has its stands built.</summary>
+        internal static bool HasStands(string key) => key != null && ByRoundhouse.ContainsKey(key);
+
+        /// <summary>Where each built stand's riser, frame, and spare hose's coil are, in the world: ground for supplies to keep off.</summary>
+        internal static IEnumerable<Vector3> Footprints()
+        {
+            foreach (var stand in Built)
+            {
+                if (stand == null)
+                    continue;
+                var frame = stand.transform;
+                yield return frame.TransformPoint(RiserFoot);
+                yield return frame.position;
+                yield return frame.TransformPoint(ShedHoses.CoilAt);
+            }
+        }
+
         private static void Keep(GameObject stand, HoseKind kind, List<GameObject> built)
         {
             if (stand == null)
@@ -517,8 +660,7 @@ namespace RealisticFiring.Shed
         {
             if (plug == null || !SteamValves.TryGetValue(plug, out var wheel) || wheel == null)
                 return 0f;
-            var control = wheel.GetComponent<ControlImplBase>();
-            return control != null ? Mathf.Clamp01(control.Value) : 0f;
+            return Turned(wheel);
         }
 
         /// <summary>The steam let into <paramref name="plug"/>'s hose, 0 to 1: a blower line's valve, a repair stand's direct steam.</summary>

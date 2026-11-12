@@ -86,6 +86,7 @@ namespace RealisticFiring.Visuals
                 waterInput.Lifetime = lifetime;
                 Configure(steam.GetComponent<Lever>(), data);
                 steam.gameObject.AddComponent<S282ContinuousValve>();
+                steam.gameObject.AddComponent<SpringFollowsHand>();
                 var scrolling = steam.gameObject.AddComponent<Patches.NotchScroll>();
                 scrolling.DegreesPerSecond = 140f; scrolling.ContinuousValue = true; scrolling.DirectionalPresets = true;
                 steam.gameObject.AddComponent<DV.HUD.NotchedControlCustomNames>().customNames = InjectorValves.Notches;

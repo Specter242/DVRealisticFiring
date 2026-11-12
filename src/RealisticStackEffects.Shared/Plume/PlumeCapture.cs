@@ -120,6 +120,13 @@ namespace RealisticStackEffects
             public bool DynamoOn;
 
             /// <summary>
+            /// The engine's other steam blown for the run whatever the engine
+            /// is doing, each kind as hard as given, 0 to 1
+            /// ("Dynamo=1;SafetyValve=0.5"; <see cref="SteamVents.Test"/>).
+            /// </summary>
+            public string Vents;
+
+            /// <summary>
             /// Frames timed before each still, their mean and slowest tenth
             /// put before its readout (0: none), for the plume's cost against
             /// a variant that hides it (Look.HidePlume).
@@ -283,6 +290,7 @@ namespace RealisticStackEffects
                 if (request.DynamoOn)
                     if (dynamoPort != null)
                         dynamoPort.Value = 1f;
+                plume.Vents?.Test(request.Vents);
                 if (resize)
                 {
                     Screen.SetResolution(request.RenderWidth, request.RenderHeight, modeBefore);
@@ -380,6 +388,8 @@ namespace RealisticStackEffects
                 testDynamoPressure = null;
                 testDynamoPlume = null;
                 testDynamoSteam = Array.Empty<ParticleSystem>();
+                if (plume != null)
+                    plume.Vents?.Test(null);
                 if (request.DynamoOn)
                 {
                     if (dynamoPort != null)
@@ -640,6 +650,46 @@ namespace RealisticStackEffects
                     at = stack - ahead * 40f + right * 6f;
                     at.y = rail + 1.7f;
                     look = stack + Vector3.up * 30f - ahead * 46f;
+                    break;
+                case "engine":
+                    // The engine's right side whole, for the steam around it.
+                    at = stack + right * 13f - ahead * 5f;
+                    at.y = rail + 2f;
+                    look = stack - ahead * 5f;
+                    look.y = rail + 2.6f;
+                    break;
+                case "engine-high":
+                    // Farther back, for what goes up from the boiler's top.
+                    at = stack + right * 30f - ahead * 6f;
+                    at.y = rail + 3f;
+                    look = stack - ahead * 6f;
+                    look.y = rail + 8f;
+                    break;
+                case "engine-left":
+                    at = stack - right * 13f - ahead * 5f;
+                    at.y = rail + 2f;
+                    look = stack - ahead * 5f;
+                    look.y = rail + 2.6f;
+                    break;
+                case "engine-front":
+                    at = stack + ahead * 12f + right * 8f;
+                    at.y = rail + 2.2f;
+                    look = stack - ahead * 4f;
+                    look.y = rail + 2.2f;
+                    break;
+                case "cylinders":
+                    // Low by the front of the engine: the cylinder cocks and glands.
+                    at = stack + right * 6.5f + ahead * 5f;
+                    at.y = rail + 1.4f;
+                    look = stack + right * 1.1f - ahead * 0.5f;
+                    look.y = rail + 0.9f;
+                    break;
+                case "fittings":
+                    // The boiler's top by the cab: the dynamo, whistle, and safety valves.
+                    at = stack - ahead * 5f + right * 8f;
+                    at.y = rail + 4.6f;
+                    look = stack - ahead * 7f;
+                    look.y = rail + 4.4f;
                     break;
                 case "cab":
                     // From the cab's roof, looking up and back at the plume over the train.

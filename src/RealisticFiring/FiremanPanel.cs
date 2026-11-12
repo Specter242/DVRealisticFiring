@@ -444,7 +444,7 @@ namespace RealisticFiring
         private static IEnumerable<(AdviceLevel Level, string Text)> Leveled(FiremanNotice notices)
         {
             if (notices.HasFlag(FiremanNotice.FireOut))
-                yield return (AdviceLevel.Act, "The fire is out: light it (your lighter, lit, at the open fire door), and he will tend it.");
+                yield return (AdviceLevel.Act, "The fire is out: start wood with a burning oiled rag, then add coal once the wood burns well. He will tend the established coal fire.");
             if (notices.HasFlag(FiremanNotice.TenderWaterOut))
                 yield return (AdviceLevel.Act, "The tender is dry: he has stopped firing.");
             if (notices.HasFlag(FiremanNotice.LowWater))

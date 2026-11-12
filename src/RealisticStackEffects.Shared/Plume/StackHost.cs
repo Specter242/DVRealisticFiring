@@ -5,8 +5,13 @@ using UnityModManagerNet;
 
 namespace RealisticStackEffects
 {
-    /// <summary>Subsections within the plume's main-thread update; Motion includes its nested buffers and shadows.</summary>
-    internal enum PlumePhase { OffscreenSetup, Weather, Emission, Motion, Shadows, Buffers, VolumeSubmit }
+    /// <summary>
+    /// Subsections within the plume's main-thread update. Motion includes the
+    /// rest from Shadows on: Carry is the particles' own working out (with
+    /// Shadows), Buffers their copying from and to the engine, CustomData the
+    /// values written for the shader beside them.
+    /// </summary>
+    internal enum PlumePhase { OffscreenSetup, Weather, Emission, Motion, Shadows, Buffers, VolumeSubmit, Carry, CustomData }
 
     /// <summary>The settings the chimney's effects follow: the hosting mod's.</summary>
     internal interface IStackSettings
@@ -18,6 +23,9 @@ namespace RealisticStackEffects
         SmokeSeason SmokeSeason { get; }
 
         bool HeatShimmer { get; }
+
+        /// <summary>Whether the engine's other steam (dynamo, cylinder cocks, safety valves, leaks) is drawn as the plume, as the session started.</summary>
+        bool EngineSteam { get; }
 
         /// <summary>Whether the custom effects draw the smoke, as the session started (a change needs a restart).</summary>
         bool CustomEffects { get; }

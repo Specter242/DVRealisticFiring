@@ -620,11 +620,6 @@ namespace RealisticFiring.Sim
         {
             if (ignitionExtIn.Value == 1f)
             {
-                if (IntakeWater <= 0.5f)
-                {
-                    Model.Ignite();
-                    fireOnReadOut.Value = 1f;
-                }
                 ignitionExtIn.Value = 0f;
             }
             else if (extinguishExtIn.Value == 1f)
@@ -770,6 +765,7 @@ namespace RealisticFiring.Sim
             if (envDamage > 0f)
                 data.SetFloat(CoalEnvDamageSaveKey, envDamage);
             data[ZonesSaveKey] = new JArray(Model.SaveZones());
+            data["rfStarters"] = new JArray(Model.SaveStarters());
             if (Model.Ashpan > 0f)
                 data.SetFloat(AshpanSaveKey, Model.Ashpan);
             var mode = Fireman != null ? Fireman.Fireman.Mode : SavedFiremanMode;
@@ -793,6 +789,8 @@ namespace RealisticFiring.Sim
             if (!restored)
                 Model.Restore(fireOn, coalMass);
             Model.RestoreAshpan(savedData.GetFloat(AshpanSaveKey) ?? 0f);
+            try { Model.RestoreStarters((savedData["rfStarters"] as JArray)?.Select(t => (float)t).ToArray()); }
+            catch (Exception) { Model.RestoreStarters(null); }
 
             var envDamage = savedData.GetFloat(CoalEnvDamageSaveKey);
             if (envDamage.HasValue)

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
@@ -25,6 +26,10 @@ namespace RealisticFiring.Visuals
         public const string PlumeDepthMaterialName = "PlumeDepth";
         public const string StokerJetMaterialName = "StokerJet";
         public const string OverlayFontName = "FiraSansCondensed-Medium";
+        public const string StartingFuelPrefabName = "StartingFuelFX";
+        private static readonly string[] StartingFuelMaterials = { "StartingFuelSplit", "StartingFuelBark", "StartingFuelEnd", "StartingFuelCloth" };
+        private static readonly string[] StartingFuelIcons = { "starting_wood_icon", "starting_rag_icon", "starting_crate_icon", "starting_tin_icon",
+            "starting_wood_icon_dropped", "starting_rag_icon_dropped", "starting_crate_icon_dropped", "starting_tin_icon_dropped" };
         public const string PlateFontName = "FiraSansCondensed-SemiBold";
 
         private static bool loaded;
@@ -40,6 +45,8 @@ namespace RealisticFiring.Visuals
         private static Material stokerJetMaterial;
         private static Texture2D fireIronIcon;
         private static Texture2D fireIronIconDropped;
+        private static GameObject startingFuelPrefab;
+        private static readonly System.Collections.Generic.Dictionary<string, Object> startingFuelAssets = new System.Collections.Generic.Dictionary<string, Object>();
         private static Font overlayFont;
         private static Font plateFont;
 
@@ -148,6 +155,26 @@ namespace RealisticFiring.Visuals
             }
         }
 
+        /// <summary>The starting fuel's authored bodies (wood, rags, crate, tin), or null in an older bundle.</summary>
+        public static GameObject StartingFuelPrefab
+        {
+            get { Ensure(); return startingFuelPrefab; }
+        }
+
+        /// <summary>The fire-lit copy of a starting fuel material, by the cab material's name; null if none.</summary>
+        public static Material StartingFuelFireMaterial(string cabMaterial)
+        {
+            Ensure();
+            return startingFuelAssets.TryGetValue(cabMaterial + "Fire", out var asset) ? asset as Material : null;
+        }
+
+        /// <summary>A starting fuel inventory icon by name, or null.</summary>
+        public static Texture2D StartingFuelIcon(string name)
+        {
+            Ensure();
+            return startingFuelAssets.TryGetValue(name, out var asset) ? asset as Texture2D : null;
+        }
+
         /// <summary>The fire overlay's typeface for its text and its plates; null without the bundle's fonts.</summary>
         public static Font OverlayFont
         {
@@ -189,14 +216,15 @@ namespace RealisticFiring.Visuals
         // An asset loaded once and since destroyed: Unity's null for a dead object.
         private static bool Unloaded() =>
             Lost(prefab) || Lost(overflowPrefab) || Lost(fireboxPrefab) || Lost(fireIronMaterial) || Lost(fireboxWallMaterial) || Lost(fireboxVolumeMaterial) || Lost(coalLumpsMaterial) || Lost(plumeCompositeMaterial) || Lost(plumeDepthMaterial) || Lost(fireIronIcon) || Lost(fireIronIconDropped)
-            || Lost(stokerJetMaterial) || Lost(overlayFont) || Lost(plateFont);
+            || Lost(stokerJetMaterial) || Lost(overlayFont) || Lost(plateFont) || Lost(startingFuelPrefab);
 
         private static bool Lost(Object asset) => !ReferenceEquals(asset, null) && asset == null;
 
         private static void Load()
         {
             loaded = true;
-            prefab = overflowPrefab = fireboxPrefab = null;
+            prefab = overflowPrefab = fireboxPrefab = startingFuelPrefab = null;
+            startingFuelAssets.Clear();
             fireIronMaterial = fireboxWallMaterial = fireboxVolumeMaterial = coalLumpsMaterial = plumeCompositeMaterial = plumeDepthMaterial = stokerJetMaterial = null;
             fireIronIcon = fireIronIconDropped = null;
             overlayFont = plateFont = null;
@@ -225,6 +253,22 @@ namespace RealisticFiring.Visuals
                 plumeCompositeMaterial = Usable(Keep(bundle.LoadAsset<Material>(PlumeCompositeMaterialName)));
                 plumeDepthMaterial = Usable(Keep(bundle.LoadAsset<Material>(PlumeDepthMaterialName)));
                 stokerJetMaterial = Usable(Keep(bundle.LoadAsset<Material>(StokerJetMaterialName)));
+                startingFuelPrefab = Keep(bundle.LoadAsset<GameObject>(StartingFuelPrefabName));
+                foreach (var name in StartingFuelMaterials)
+                {
+                    var material = Usable(Keep(bundle.LoadAsset<Material>(name + "Fire")));
+                    if (material != null) startingFuelAssets[name + "Fire"] = material;
+                }
+                foreach (var name in StartingFuelIcons)
+                {
+                    var icon = Keep(bundle.LoadAsset<Texture2D>(name));
+                    if (icon != null) startingFuelAssets[name] = icon;
+                }
+                if (startingFuelPrefab != null && startingFuelPrefab.GetComponentsInChildren<Renderer>(true).Any(r => r.sharedMaterials.Any(m => m == null || !m.shader.isSupported)))
+                {
+                    Main.Mod.Logger.Warning("The starting fuel's materials are not supported by this graphics setup; using simple bodies");
+                    startingFuelPrefab = null;
+                }
                 fireIronIcon = Keep(bundle.LoadAsset<Texture2D>("fire_iron_icon"));
                 fireIronIconDropped = Keep(bundle.LoadAsset<Texture2D>("fire_iron_icon_dropped"));
                 overlayFont = Keep(bundle.LoadAsset<Font>(OverlayFontName));

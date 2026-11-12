@@ -791,6 +791,9 @@ namespace RealisticFiring.Visuals
         private static Vector3 Wrap(Vector3 offset) =>
             new Vector3(Mathf.Repeat(offset.x, WrapTiles), Mathf.Repeat(offset.y, WrapTiles), Mathf.Repeat(offset.z, WrapTiles));
 
+        // A wood fire's flames at full strength against a coal zone's.
+        private const float WoodStrength = 0.8f;
+
         // Each zone's flames and smoke from its coal: how hard and how tall its
         // flames burn, its smoke, its coal's surface; its heat and glow.
         private int zonesFrame = -1;
@@ -832,11 +835,24 @@ namespace RealisticFiring.Visuals
                 // raised bed, saturating at the crown even at a light firing.
                 top[i] = strength[i] < 0.01f ? 0f
                     : Mathf.Clamp01(0.05f + CokeFlame * burn + GasFlame * gas * length) * Mathf.Max(0f, 1f - surface);
+                // Its wood and rag fire, in the same flames (WoodFlame): from
+                // the grate, over any coal laid on it, to the pile's flame top.
+                var starter = firebox.Model.Starters[i];
+                var wood = WoodFlame.Strength(starter);
+                var flameHeat = heat;
+                if (wood > 0f && boxSize.y > 0f)
+                {
+                    var grate = box.InverseTransformPoint(bed.BedPoint(x, z, 0f)).y + 0.5f;
+                    var woodTop = Mathf.Clamp01((WoodFlame.Top(starter, wood) - (surface - grate) * boxSize.y) / boxSize.y);
+                    strength[i] = Mathf.Max(strength[i], WoodStrength * wood);
+                    top[i] = Mathf.Max(top[i], woodTop);
+                    flameHeat = Mathf.Max(flameHeat, WoodFlame.ColorHeat * wood);
+                }
                 var glow = FireboxLighting.ZoneGlow(heat, green).maxColorComponent * FireboxLighting.BedLight;
                 // The texture's rows run along the bed (the door first), its columns across.
                 var texel = GrateLayout.Row(zone) * GrateLayout.Columns + GrateLayout.Column(zone);
                 pixelsA[texel] = new Color(strength[i], top[i], Mathf.Min(smoke, 1.5f), surface);
-                pixelsB[texel] = new Color(heat, glow, gas, 0f);
+                pixelsB[texel] = new Color(flameHeat, glow, gas, 0f);
             }
         }
 

@@ -87,7 +87,7 @@ namespace RealisticFiring.Diagnostics
             var steps = frames > 0 ? (float)physicsSteps / frames : 0f;
             var text = $"frame rate {(seconds > 0f ? frames / seconds : 0f):F0} fps over {seconds:F0} s, {steps:F1} physics steps a frame; " +
                        $"timed sections {total:F2} ms a frame on the main thread ({parts}; EngineTick includes the stock engine; not the worker or the GPU); " +
-                       $"plume breakdown within ChimneyPlume, not added to total ({PlumeBreakdown(perFrame, frames)}; Motion includes Shadows, Buffers and VolumeSubmit; VolumeSubmit excludes worker execution)";
+                       $"plume breakdown within ChimneyPlume, not added to total ({PlumeBreakdown(perFrame, frames)}; Motion includes Carry, Shadows, Buffers, CustomData and VolumeSubmit; VolumeSubmit excludes worker execution)";
             System.Array.Clear(Elapsed, 0, Elapsed.Length);
             System.Array.Clear(Calls, 0, Calls.Length);
             System.Array.Clear(PlumeElapsed, 0, PlumeElapsed.Length);

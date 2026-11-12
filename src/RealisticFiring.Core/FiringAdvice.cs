@@ -148,7 +148,27 @@ namespace RealisticFiring.Core
             if (glass < LowGlass)
                 return new Advice(AdviceLevel.Act, "Water's low in the glass: get the injector on.");
             if (!fire.FireOn)
-                return new Advice(AdviceLevel.Watch, "The fire's out: put some coal in and light it.");
+                return new Advice(AdviceLevel.Watch, fire.StarterMass > 0f
+                    ? "Wood is laid: oil a rag, light it with the lighter, and throw it onto the wood. Four or more pieces together keep each other burning."
+                    : "The fire's out: take wood and a rag from the supplies at an engine shed or loco track, and lay four or more pieces together through the open door.");
+            if (fire.StarterAlight && fire.BurningMass < 0.5f)
+            {
+                // Established: flames over most of a zone's wood, keeping
+                // themselves going without the rag.
+                var established = false;
+                var flaming = false;
+                for (var z = 0; z < GrateLayout.ZoneCount; z++)
+                {
+                    var s = fire.Starters[z];
+                    flaming |= s.Involved > 0f;
+                    established |= fire.WoodIgnitionSupport((GrateZone)z) > 0.3f
+                                   || s.Flaming > 0.8f && s.MassFlux >= StarterFuel.CriticalMassFlux && !s.RagLit;
+                }
+                return new Advice(AdviceLevel.Watch, established
+                    ? "The wood is burning well: add a little coal over it and let that catch."
+                    : flaming ? "The wood has caught: let the flames take all of it before adding coal. Keep air reaching the fire."
+                    : "The rag is heating the wood: give it a minute. Coal now would smother it.");
+            }
             if (driftingHookedUp)
                 return new Advice(AdviceLevel.Watch, "Drifting hooked up with the throttle shut: drop the reverser to full gear, or crack the throttle.");
             if (fire.SmokeDensity >= Smoking && door < CrackedDoor)
@@ -253,8 +273,8 @@ namespace RealisticFiring.Core
             if (FiremanBlocksLighting(oil))
                 return "set the fireman Off while lighting; he keeps the main fire door shut. Turn him back on once lit";
             if (!(oil.DoorOpening > 0f) && oil.Torch <= 0f && oil.BrickTemperature <= OilFire.BrickRelights)
-                return "open the main fire door for the lighter, then crack the firing valve; the peep hole does not admit the lighter";
-            return $"lighter in the open main door, then crack the firing valve within {OilFire.TorchTime:F0} s; no oil needs to be pooled first";
+                return "open the main fire door and throw in a burning oiled rag; then crack the firing valve";
+            return "throw a burning oiled rag through the main door, then crack the firing valve while it burns; do not pool oil first";
         }
 
         private static bool FiremanBlocksLighting(OilReading oil) =>

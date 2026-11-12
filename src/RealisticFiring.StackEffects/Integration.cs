@@ -16,7 +16,26 @@ namespace RealisticFiring.StackEffects
             if (StackSources.ApiVersion < 1)
                 return false;
             StackSources.Register(mod.Info.Id, car => StackEffectsLink.FireFor(car) is IStackFire fire ? new Source(fire) : null);
+            // The steam around the engine came with the contract's second
+            // version: an older Realistic Stack Effects has no such member,
+            // and a method that names it must not be compiled against it.
+            if (StackSources.ApiVersion >= 2)
+                LinkEngineSteam();
             return true;
+        }
+
+        // The mod's own steam sources (a booster's, an injector's overflow)
+        // drawn with Realistic Stack Effects' steam around the engine.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void LinkEngineSteam()
+        {
+            Visuals.EngineVents.External = car =>
+            {
+                var steam = StackSources.EngineSteam(car);
+                if (steam == null)
+                    return null;
+                return (steam, (name, kind, at, facing, strength) => steam.Add(name, kind.ToString(), at, facing, strength));
+            };
         }
     }
 

@@ -181,7 +181,44 @@ namespace RealisticFiring.Shed
                 return null;
             var local = nearest.Car.transform.InverseTransformPoint(nearest.Socket.transform.position);
             var name = char.ToUpper(kind.Name[0]) + kind.Name.Substring(1);
-            return $"{name}: it goes in the connection {Describe(local, nearest.Car.Bounds.extents.z)} on {Sim.CarNames.LogName(nearest.Car)}";
+            var livery = nearest.Car.carLivery != null ? nearest.Car.carLivery.id : null;
+            var place = Describe(livery, kind == HoseKind.Water, local, nearest.Car.Bounds.extents.z);
+            return $"{name}: it goes in the connection {place} on {Sim.CarNames.LogName(nearest.Car)}";
+        }
+
+        // The landmarks in the readme and booklet's socket table. Water and
+        // direct steam share the filling socket; the blower has its own line.
+        // Unknown engines retain the description of their actual socket position.
+        internal static string Describe(string livery, bool water, Vector3 local, float halfLength)
+        {
+            switch (livery)
+            {
+                case "LocoS282A":
+                    return water ? "low on the left behind the last driving wheel, just ahead of the cab"
+                        : "low on the left side of the smokebox";
+                case "LocoS060":
+                    return water ? "on the left ahead of the cab, below the firebox"
+                        : "low on the right side of the smokebox";
+                case "Jk3A":
+                    return water ? "on the left ahead of the cab, below the firebox"
+                        : "low on the left side of the smokebox, tilted slightly upward";
+                case "em_lms_8f_loc_grey":
+                case "em_lms_8f_loc_black":
+                    if (water) return "low on the left side of the firebox, below the cab";
+                    break; // No blower socket on the 8F.
+                case "S464-730":
+                case "S484-840A":
+                case "A.T.&S.F. 2901-A":
+                    return water ? "on the left below the cab, at the rear of the boiler"
+                        : "low on the left side of the smokebox";
+                case "FEF-3":
+                    return water ? "on the left outside the firebox, below the cab"
+                        : "low on the left side of the smokebox";
+                case QjStokerCab.Livery:
+                    return water ? "on the left at the plain gray spigot ahead of the cab"
+                        : "low on the left side of the smokebox, tilted upward";
+            }
+            return Describe(local, halfLength);
         }
 
         /// <summary>

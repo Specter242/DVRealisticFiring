@@ -1,22 +1,20 @@
 using DV.Simulation.Cars;
 using HarmonyLib;
-using RealisticFiring.Core;
 using RealisticFiring.Sim;
 
 namespace RealisticFiring.Patches
 {
-    /// <summary>The stock lighter requires coal; an oil pan takes lit waste before oil.</summary>
+    /// <summary>RF fireboxes take physical starter fuel; the lighter lights the rag.</summary>
     [HarmonyPatch(typeof(Fire), nameof(Fire.IgnitionAllowed), MethodType.Getter)]
     internal static class OilIgnitionPatch
     {
         private static void Postfix(Fire __instance, ref bool __result, FireboxSimController ___fireboxController)
         {
-            if (__result || !___fireboxController)
-                return;
+            if (!___fireboxController) return;
             var car = TrainCar.Resolve(__instance.gameObject);
-            if (RealisticOilFirebox.TryGet(car, out _))
-                __result = OilFire.CanOfferTorch(__instance.Ignited, ___fireboxController.FireboxDoorOpening,
-                    LevelInfo.IsUnderWater(__instance.transform.position));
+            // RF cold fires now take physical burning waste; other engines stay stock.
+            if (RealisticOilFirebox.TryGet(car, out _) || FireboxRegistry.TryGet(car, out _))
+                __result = false;
         }
     }
 }

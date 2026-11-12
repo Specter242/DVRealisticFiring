@@ -55,6 +55,28 @@ namespace RealisticStackEffects.Api
         public float NaturalFlow;
     }
 
+    /// <summary>
+    /// The steam around a locomotive other than its stack's, as Realistic
+    /// Stack Effects draws it by the weather (the dynamo, cylinder cocks,
+    /// safety valves, and so on), for another mod to add its own to: a
+    /// booster's exhaust, an injector's overflow. From contract version 2.
+    /// </summary>
+    public interface IEngineSteam
+    {
+        /// <summary>
+        /// Adds a source: steam of <paramref name="kind"/> leaving the engine
+        /// at <paramref name="at"/> toward <paramref name="facing"/>, both in the
+        /// car's own frame, as hard as <paramref name="strength"/> says each
+        /// frame, 0 to 1. Kinds are named: "CylinderCock", "BoosterExhaust",
+        /// "Overflow", "PumpExhaust", "Leak", "Gland", "Weep", "FittingWeep",
+        /// "Dynamo", "Whistle", "SafetyValve", "Blowdown". False for a kind
+        /// this version does not know. A source lasts as long as this object:
+        /// ask <see cref="StackSources.EngineSteam"/> again now and then, and
+        /// add again when it answers with another.
+        /// </summary>
+        bool Add(string name, string kind, UnityEngine.Vector3 at, UnityEngine.Vector3 facing, Func<float> strength);
+    }
+
     /// <summary>Another mod's fire under a locomotive's chimney.</summary>
     public interface IStackFireSource
     {
@@ -83,8 +105,55 @@ namespace RealisticStackEffects.Api
         // Providers that threw once, left out from then on.
         private static readonly HashSet<string> Failed = new HashSet<string>();
 
-        /// <summary>The contract's version: 1. It only grows; check it before using anything added later.</summary>
-        public static int ApiVersion => 1;
+        /// <summary>The contract's version: 2 (1 had the fires alone; 2 adds <see cref="EngineSteam"/>). It only grows; check it before using anything added later.</summary>
+        public static int ApiVersion => 2;
+
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<SteamVents, Steam> Steams =
+            new System.Runtime.CompilerServices.ConditionalWeakTable<SteamVents, Steam>();
+
+        /// <summary>
+        /// The steam around <paramref name="car"/> as this mod draws it now,
+        /// to add sources to; null where it draws none (no plume of its own
+        /// on that engine, or the player has it switched off). The same
+        /// object for as long as the engine's steam is the same.
+        /// </summary>
+        public static IEngineSteam EngineSteam(TrainCar car)
+        {
+            if (car == null || !ChimneyPlume.TryGet(car, out var plume) || plume.Vents == null)
+                return null;
+            return Steams.GetValue(plume.Vents, vents => new Steam(vents));
+        }
+
+        private sealed class Steam : IEngineSteam
+        {
+            private readonly SteamVents vents;
+
+            public Steam(SteamVents vents) => this.vents = vents;
+
+            public bool Add(string name, string kind, UnityEngine.Vector3 at, UnityEngine.Vector3 facing, Func<float> strength)
+            {
+                if (strength == null || !Enum.TryParse(kind, false, out Core.VentKind parsed) || facing.sqrMagnitude < 1e-6f)
+                    return false;
+                var failed = false;
+                // Another mod's function must not stop the plume: after one throw it reads as shut.
+                vents.Add(name ?? kind, parsed, vents.Place(at, facing), () =>
+                {
+                    if (failed)
+                        return 0f;
+                    try
+                    {
+                        return strength();
+                    }
+                    catch (Exception e)
+                    {
+                        failed = true;
+                        Main.Mod?.Logger.LogException($"A steam source '{name}' failed; it is left shut", e);
+                        return 0f;
+                    }
+                });
+                return true;
+            }
+        }
 
         /// <summary>
         /// Registers <paramref name="modId"/>'s provider. As each steam

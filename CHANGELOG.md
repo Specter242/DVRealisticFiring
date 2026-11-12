@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.18.0 (2026-11-11)
+
+- **New: light a cold coal fire with wood and an oiled rag.** Free firewood
+  crates and rag tins stand at engine sheds and beside the tracks where steam
+  engines spawn. Reach into one to take a piece and lay four or more pieces
+  through the open door. Oil a rag with the oil can, light it with the
+  lighter, and throw it onto the wood. Add coal once the wood is burning
+  well; a pile burns down in about ten minutes. A burning rag also lights a
+  prepared oil burner. The lighter now lights the rag, not the fire itself.
+- **New: steam around the engine.** The dynamo, cylinder cocks, safety
+  valves, whistle, glands, and small leaks now steam like the chimney's
+  plume, by the weather: long white trails on a frosty day, little or
+  nothing on a hot one. It needs Custom smoke effects; turn it off under
+  Settings, Display, Steam around the engine (restart required).
+- **Better frame rates.** The chimney smoke now costs about half as much
+  for the engine you are on and far less for engines out of view or far
+  away, and no longer gets heavier when the frame rate falls under 60.
+  The shed stands no longer cost frame time across the whole map.
+- Smoke and steam no longer stay lit by the sun after it has set.
+- Picking up a shed stand's coupling now names where its socket is on each
+  engine.
+- Fixed (VR): the S282's injector steam lever and the 8F's water regulators
+  sprang back when let go and had to be held.
+- Fixed an error in the log when quitting the game.
+
 ## 1.17.9 (2026-11-09)
 
 - Fixed GWI injector levers not priming from their first notch.

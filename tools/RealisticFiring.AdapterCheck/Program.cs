@@ -29,6 +29,39 @@ namespace RealisticFiring.AdapterCheck
                 "the direct-steaming pressure hint is 10.36 gauge bar without changing its absolute limit");
         }
 
+        private static void CheckHoseLandmarks()
+        {
+            // All nine engines in the player guide/booklet, including both 8F liveries.
+            var cases = new[]
+            {
+                ("LocoS282A", "low on the left side of the smokebox", "low on the left behind the last driving wheel, just ahead of the cab"),
+                ("LocoS060", "low on the right side of the smokebox", "on the left ahead of the cab, below the firebox"),
+                ("Jk3A", "low on the left side of the smokebox, tilted slightly upward", "on the left ahead of the cab, below the firebox"),
+                ("em_lms_8f_loc_grey", (string)null, "low on the left side of the firebox, below the cab"),
+                ("em_lms_8f_loc_black", (string)null, "low on the left side of the firebox, below the cab"),
+                ("S464-730", "low on the left side of the smokebox", "on the left below the cab, at the rear of the boiler"),
+                ("FEF-3", "low on the left side of the smokebox", "on the left outside the firebox, below the cab"),
+                ("S484-840A", "low on the left side of the smokebox", "on the left below the cab, at the rear of the boiler"),
+                ("A.T.&S.F. 2901-A", "low on the left side of the smokebox", "on the left below the cab, at the rear of the boiler"),
+                (Visuals.QjStokerCab.Livery, "low on the left side of the smokebox, tilted upward", "on the left at the plain gray spigot ahead of the cab"),
+            };
+            // A deliberately contradictory position proves known engines use the
+            // landmark instead of the old coordinate-based front/middle guess.
+            var at = new UnityEngine.Vector3(1f, 3f, -8f);
+            foreach (var row in cases)
+            {
+                Check(Shed.ShedConnections.Describe(row.Item1, true, at, 10f) == row.Item3,
+                    row.Item1 + ": water/direct-steam hint names its documented fitting");
+                Check(Shed.ShedConnections.Describe(row.Item1, false, at, 10f) ==
+                    (row.Item2 ?? Shed.ShedConnections.Describe(at, 10f)),
+                    row.Item1 + ": blower hint names its documented fitting, without inventing an 8F fitting");
+            }
+            foreach (var id in new[] { "unlisted-engine", "", null })
+                foreach (var water in new[] { false, true })
+                    Check(Shed.ShedConnections.Describe(id, water, at, 10f) == "high on the right side, toward the rear",
+                        "unknown or missing livery retains actual socket coordinates for either hose");
+        }
+
         private static int Main(string[] args)
         {
             if (args.Length == 1 && args[0] == "--qj-backend")
@@ -51,6 +84,7 @@ namespace RealisticFiring.AdapterCheck
                 return failures == 0 ? 0 : 1;
             }
             CheckGaugePressureHints();
+            CheckHoseLandmarks();
             RealisticFiring.Main.Settings = new Settings { LogCoalDeliveries = false };
             var gameParams = new SimGameParams(false, false, false, 1f, 1f);
             var def = new FireboxDefinition { ID = Id };
@@ -82,7 +116,8 @@ namespace RealisticFiring.AdapterCheck
 
             P(mine, "IGNITION_EXT_IN").ExternalValueUpdate(1f);
             mine.Tick(0.02f);
-            Check(P(mine, "FIRE_ON").Value == 1f && P(mine, "IGNITION_EXT_IN").Value == 0f, "ignition request lights the fire and resets");
+            Check(P(mine, "FIRE_ON").Value == 0f && P(mine, "IGNITION_EXT_IN").Value == 0f, "stock ignition request cannot bypass wood and rag lighting and resets");
+            mine.Model.Restore(true, mine.Model.CoalMass);
             for (var i = 0; i < 500; i++)
                 mine.Tick(0.02f);
             Check(P(mine, "COAL_ENV_DAMAGE_METER").Value > 0f, $"environmental damage meter accumulates ({P(mine, "COAL_ENV_DAMAGE_METER").Value:F2} kg)");
@@ -113,7 +148,7 @@ namespace RealisticFiring.AdapterCheck
 
             var save = mine.GetSaveStateData();
             Check(save.Value<bool>("fireOn") && save["coalMass"] != null && save["coalEnvDmg"] != null && save["rfZones"] is JArray
-                  && save["rfFireman"] == null,
+                  && save["rfFireman"] == null && save["rfStarters"] is JArray,
                 "save has the stock keys plus rfZones (and no fireman's mode while he is off)");
             var stockReader = new Firebox(def);
             stockReader.SetGameParams(gameParams);
@@ -181,6 +216,7 @@ namespace RealisticFiring.AdapterCheck
 
             CheckInjector(gameParams);
             GwiInjectorChecks.Run(gameParams, Check);
+            CheckVrLeverHold();
             CheckInjectorSteamValve(gameParams);
             CheckInjectorSteamValve(gameParams, "LocoS282A");
             CheckInjectorNeutralState();
@@ -1732,6 +1768,9 @@ namespace RealisticFiring.AdapterCheck
             oil.AttachPorts(null, atomizer, null);
 
             P(oil, "IGNITION_EXT_IN").ExternalValueUpdate(1f);
+            oil.Tick(0.02f);
+            Check(oil.Model.Torch == 0f, "stock lighter cannot create synthetic oil lighting waste");
+            oil.Model.OfferRag(30f);
             valve.Value = 0.4f;
             float tenderDrawn = 0f;
             for (var t = 0f; t < 30f; t += 0.02f)
@@ -1784,7 +1823,7 @@ namespace RealisticFiring.AdapterCheck
             for (var t = 0f; t < 1f; t += 0.02f)
                 dead.Tick(0.02f);
             var coldOil = dead.Model.OilTemperature;
-            P(dead, "IGNITION_EXT_IN").ExternalValueUpdate(1f);
+            dead.Model.OfferRag(30f);
             valve.Value = 0.4f;
             for (var t = 0f; t < 10f; t += 0.02f)
                 dead.Tick(0.02f);
@@ -1796,7 +1835,7 @@ namespace RealisticFiring.AdapterCheck
             for (var t = 0f; t < 600f; t += 0.02f)
                 dead.Tick(0.02f);
             var warmed = dead.Model.OilTemperature;
-            P(dead, "IGNITION_EXT_IN").ExternalValueUpdate(1f);
+            dead.Model.OfferRag(30f);
             valve.Value = 0.4f;
             for (var t = 0f; t < 10f; t += 0.02f)
             {
@@ -2308,6 +2347,8 @@ namespace RealisticFiring.AdapterCheck
             var hostOil = new RealisticOilFirebox(oilDef, null);
             hostOil.Model.PrepareFire();
 
+            host.Model.AddWood(StarterFuel.PieceMass, GrateZone.UnderDoor);
+            host.Model.AddRag(0.03f, true, GrateZone.UnderDoor);
             var data = ClientMirror.Capture(host, hostRig, hostWater, null, hostOil);
 
             var client = Create(def, gameParams);
@@ -2317,6 +2358,7 @@ namespace RealisticFiring.AdapterCheck
             var clientWater = BoilerWaterRig.Create(clientBoiler, null, BoilerWaterRig.Guard.FusiblePlug);
             var clientOil = new RealisticOilFirebox(oilDef, null);
             ClientMirror.Apply(data, client, clientRig, clientWater, null, clientOil);
+            Check(host.Model.SaveStarters().SequenceEqual(client.Model.SaveStarters()), "starter fuel and rag state mirror without refilling");
 
             Check(client.Model.FireOn && client.Model.SaveZones().SequenceEqual(host.Model.SaveZones())
                   && client.LastStoker is StokerFlow flow && flow.Jammed && flow.Fed == 0.4f && client.StokerEngineSpeed == 0.6f
@@ -4427,6 +4469,25 @@ namespace RealisticFiring.AdapterCheck
             {
                 harmony.UnpatchAll(harmony.Id);
             }
+        }
+
+        // An unnotched lever held by a VR hand keeps its spring's target with
+        // it (SpringFollowsHand): told from the mouse's by the game's own types.
+        private static void CheckVrLeverHold()
+        {
+            var controls = typeof(DV.CabControls.ControlImplBase).Assembly;
+            var vr = controls.GetType("DV.CabControls.VRTK.LeverVRTK");
+            var mouse = controls.GetType("DV.CabControls.NonVR.LeverNonVR");
+            Check(vr != null && mouse != null, "the game's VR and mouse lever types are found by name");
+            Check(vr != null && RealisticFiring.Visuals.SpringFollowsHand.IsVrControl(vr), "a VR lever's spring target follows the hand");
+            Check(mouse != null && !RealisticFiring.Visuals.SpringFollowsHand.IsVrControl(mouse), "a mouse lever is left to the game's own grab");
+            Check(RealisticFiring.Visuals.SpringFollowsHand.Held(62f, true, 0f, 50f) == 50f
+                  && RealisticFiring.Visuals.SpringFollowsHand.Held(-3f, true, 0f, 50f) == 0f
+                  && RealisticFiring.Visuals.SpringFollowsHand.Held(31f, true, 0f, 50f) == 31f,
+                "the held target stays within the lever's limits and is otherwise where the hand left it");
+            Check(typeof(RealisticFiring.Visuals.SpringFollowsHand).GetMethod("LateUpdate",
+                      System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic) != null,
+                "the hold runs after the game's own update");
         }
 
         private static void Check(bool ok, string what)

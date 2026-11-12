@@ -149,6 +149,7 @@ namespace RealisticFiring
                 var host = new GameObject("RealisticFiring");
                 Object.DontDestroyOnLoad(host);
                 host.AddComponent<FireController>();
+                host.AddComponent<Items.StartingSupplies>();
                 host.AddComponent<PlumeCapture>();
                 host.AddComponent<Visuals.FireboxCapture>();
             });

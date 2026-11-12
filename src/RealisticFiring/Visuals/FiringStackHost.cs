@@ -30,6 +30,7 @@ namespace RealisticFiring.Visuals
 
             public SmokeSeason SmokeSeason => Main.Settings.SmokeSeason;
             public bool HeatShimmer => Main.Settings.HeatShimmer;
+            public bool EngineSteam => Main.Settings.EngineSteam;
             public bool CustomEffects => Main.Session.CustomSmokeEffects;
             public int StatusLogInterval => Main.Settings.FireStatusLogInterval;
             public bool DeveloperTools => Main.Settings.PlumeTestBedEnabled;

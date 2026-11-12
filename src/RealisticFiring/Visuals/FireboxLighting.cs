@@ -62,6 +62,8 @@ namespace RealisticFiring.Visuals
         private Renderer[] stockEmissive;
         private bool showing;
         private MaterialPropertyBlock block;
+        /// <summary>Other things in the box lit by its fire as the coal is: the wood and rags on the grate.</summary>
+        internal readonly List<Renderer> Extra = new List<Renderer>();
 
         private readonly Vector4[] zones = new Vector4[GrateLayout.ZoneCount];
         private readonly Vector4[] zoneLight = new Vector4[GrateLayout.ZoneCount];
@@ -166,6 +168,9 @@ namespace RealisticFiring.Visuals
                 lumps = fire != null ? fire.GetComponent<CoalLumps>() : null;
             if (lumps != null && lumps.Renderer != null)
                 Apply(lumps.Renderer, CoalLight * gain);
+            Extra.RemoveAll(r => r == null);
+            foreach (var renderer in Extra)
+                if (renderer.gameObject.activeInHierarchy) Apply(renderer, CoalLight * gain);
         }
 
         // Puts the wall material on the box, and takes it off the game's fire's
@@ -216,6 +221,10 @@ namespace RealisticFiring.Visuals
                 var surface = bed.BedPoint(x, z, bed.SurfaceHeight(x, z));
                 zones[i] = new Vector4(surface.x, surface.y, surface.z, area);
                 var glow = ZoneGlow(bed.ZoneHeat(zone), bed.ZoneCover(zone)) * (BedGlow * BedLight * (1f + 0.6f * pulse));
+                // Wood's glowing char lights the box as embers do, under its flames.
+                var starter = firebox.Model.Starters[i];
+                if (starter.EmberGlow > 0f)
+                    glow += ZoneGlow(0.45f * starter.EmberGlow, 0f) * (BedGlow * BedLight);
                 zoneLight[i] = new Vector4(glow.r, glow.g, glow.b, 0f);
 
                 // Use the same firelight with the door open or shut, even
@@ -223,6 +232,16 @@ namespace RealisticFiring.Visuals
                 var drawn = volume != null;
                 var strength = drawn ? volume.ZoneStrength(zone) : flames != null ? flames.ZoneFlame(zone) : 0f;
                 var height = drawn ? volume.ZoneHeight(zone) : flames != null ? flames.ZoneFlameHeight(zone) : 0f;
+                // A wood fire's flames, and a burning rag's, over their zone
+                // (the volume draws them too; behind a shut door it may sleep).
+                var wood = WoodFlame.Strength(starter);
+                if (wood <= 0f && starter.RagLit)
+                    wood = WoodFlame.RagLight;
+                if (wood > strength * height / 0.35f)
+                {
+                    strength = Mathf.Max(strength, 0.8f * wood);
+                    height = Mathf.Max(height, WoodFlame.Top(starter, wood));
+                }
                 var middle = surface + up * (0.5f * height * (1f + 0.3f * pulse));
                 flamePlaces[i] = new Vector4(middle.x, middle.y, middle.z, Mathf.Max(0.08f, 0.5f * height));
                 var flame = FireColors.Flame(FlameLightHeat) * (strength * height * FlameLight * (1f + 0.5f * pulse));

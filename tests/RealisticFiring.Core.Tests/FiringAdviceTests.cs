@@ -132,7 +132,8 @@ namespace RealisticFiring.Core.Tests;
         oil.BrickTemperature = OilFire.ColdBrick;
         oil.FiremanActive = false;
         oil.DoorOpening = 1f;
-        Assert.Contains("no oil needs to be pooled first", FiringAdvice.ForOil(oil).Text);
+        Assert.Contains("burning oiled rag", FiringAdvice.ForOil(oil).Text);
+        Assert.Contains("do not pool oil first", FiringAdvice.ForOil(oil).Text);
     }
 
     [Fact]

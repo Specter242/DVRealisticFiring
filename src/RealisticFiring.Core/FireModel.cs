@@ -75,6 +75,52 @@ namespace RealisticFiring.Core
 
         public FireboxParameters Parameters => parameters;
 
+        public StarterFuel[] Starters { get; } = Enumerable.Range(0, GrateLayout.ZoneCount).Select(_ => new StarterFuel()).ToArray();
+        public float StarterMass { get { var mass = 0f; foreach (var s in Starters) mass += s.Mass; return mass; } }
+        public bool StarterAlight { get { foreach (var s in Starters) if (s.Alight) return true; return false; } }
+        public float AddWood(float mass, GrateZone zone) => Starters[(int)zone].AddWood(mass,
+            Math.Max(0f, parameters.MaxCoalCapacity - CoalMass - StarterMass) + Starters[(int)zone].Mass);
+        public bool AddRag(float oil, bool lit, GrateZone zone) => Starters[(int)zone].AddRag(oil, lit);
+        public float[] SaveStarters()
+        {
+            var state = new float[Starters.Length * StarterFuel.StateLength];
+            for (var i = 0; i < Starters.Length; i++) Starters[i].Save(state, i * StarterFuel.StateLength);
+            return state;
+        }
+        /// <summary>Restores the zones' starter fuel; the first preview's six values a zone still load.</summary>
+        public void RestoreStarters(float[] state)
+        {
+            var stride = state != null && state.Length % Starters.Length == 0 ? state.Length / Starters.Length : 0;
+            for (var i = 0; i < Starters.Length; i++)
+                Starters[i].Restore(state, i * stride, stride);
+            // A new-format cold start has no synthetic lighter support.
+            if (state != null) lighter = 0f;
+        }
+        // Radiation onto wood from a zone's burning coal at its full ignition
+        // support, W/m²; a working coal fire's radiation is 50-100 kW/m².
+        private const float CoalFluxOnWood = 40000f;
+        // Flame from wood burning in the next zone, W/m², at full involvement.
+        private const float NeighborWoodFlux = 20000f;
+        private readonly float[] starterCoalFlux = new float[GrateLayout.ZoneCount];
+        private readonly float[] starterNeighborFlux = new float[GrateLayout.ZoneCount];
+        private readonly float[] woodIgnition = new float[GrateLayout.ZoneCount];
+        private readonly float[] woodHeat = new float[GrateLayout.ZoneCount];
+        private readonly float[] zoneSpeedup = new float[GrateLayout.ZoneCount];
+
+        // Wood or rag in the zone or beside it: its coal may be catching from the wood.
+        private bool WoodNear(int zone)
+        {
+            if (Starters[zone].Mass > NegligibleMass) return true;
+            var neighbors = GrateLayout.Neighbors((GrateZone)zone);
+            for (var k = 0; k < neighbors.Count; k++)
+                if (Starters[(int)neighbors[k]].Mass > NegligibleMass) return true;
+            return false;
+        }
+        private const float WoodHeatToCoal = 0.3f;
+
+        /// <summary>A zone's coal ignition support from its wood fire and its neighbors', 0 to 1, before any startup speedup.</summary>
+        public float WoodIgnitionSupport(GrateZone zone) => woodIgnition[(int)zone];
+
         /// <summary>A zone's reference bed, in kg: what its ash, clinker, and coal are weighed against.</summary>
         public float ReferenceZoneMass => referenceZoneMass;
 
@@ -400,6 +446,7 @@ namespace RealisticFiring.Core
         {
             FireOn = false;
             lighter = 0f;
+            foreach (var starter in Starters) starter.Extinguish();
         }
 
         // Seconds left of the lighter's flame keeping a just-lit fire alight
@@ -656,6 +703,7 @@ namespace RealisticFiring.Core
             foreach (var target in DropGrate)
             {
                 var zone = zones[(int)target];
+                Ashpan += Starters[(int)target].Dump(1f - keep);
                 CoalDumped += (zone.Fresh + zone.Burning) * (1f - keep);
                 DroppedAshAndClinker += (zone.Ash + zone.Clinker) * (1f - keep);
                 Ashpan += (zone.Ash + zone.Clinker) * (1f - keep);
@@ -681,6 +729,7 @@ namespace RealisticFiring.Core
             CoalDumped += dumped;
             FireIntoAshpan(dumped);
             var keep = (float)Math.Exp(-flow * dt / tuning.DumpClearTime);
+            foreach (var starter in Starters) Ashpan += starter.Dump(1f - keep);
             foreach (var zone in zones)
             {
                 Ashpan += (zone.Ash + zone.Clinker) * (1f - keep);
@@ -690,7 +739,7 @@ namespace RealisticFiring.Core
         }
 
         /// <summary>Whether anything is left for the dump to remove.</summary>
-        public bool HasDumpableContents => CoalMass > 0f || AshMass + ClinkerMass > NegligibleMass;
+        public bool HasDumpableContents => StarterMass > NegligibleMass || CoalMass > 0f || AshMass + ClinkerMass > NegligibleMass;
 
         /// <summary>
         /// Restores from a stock save, which only knows the total coal. A lit
@@ -700,6 +749,7 @@ namespace RealisticFiring.Core
         public void Restore(bool fireOn, float coalMass)
         {
             Ashpan = 0f;
+            foreach (var starter in Starters) starter.Clear();
             coalMass = Math.Max(0f, Math.Min(Smoothing.Finite(coalMass), parameters.MaxCoalCapacity));
             foreach (var zone in zones)
             {
@@ -717,6 +767,7 @@ namespace RealisticFiring.Core
  public void LayReadyFire(bool lit)
         {
             Ashpan = 0f;
+            foreach (var starter in Starters) starter.Clear();
             var coalMass = parameters.MaxCoalCapacity * tuning.ReferenceDepthFraction;
             var weightSum = 0f;
             foreach (var weight in draftWeights)
@@ -880,6 +931,46 @@ namespace RealisticFiring.Core
 
             ShakeDownSlope(inputs.Speed, dt);
             DistributeAir(Math.Max(0f, inputs.AirFlow), Smoothing.Clamp01(inputs.DoorOpening));
+            var starterHeat = 0f;
+            var starterSmoke = 0f;
+            for (var i = 0; i < zones.Length; i++)
+            {
+                var neighbors = GrateLayout.Neighbors((GrateZone)i);
+                var flaming = 0f;
+                var burning = 0f;
+                for (var k = 0; k < neighbors.Count; k++)
+                {
+                    flaming = Math.Max(flaming, Starters[(int)neighbors[k]].Flaming);
+                    burning += zones[(int)neighbors[k]].Burning;
+                }
+                starterNeighborFlux[i] = NeighborWoodFlux * flaming;
+                var coal = (zones[i].Burning + tuning.NeighborIgnitionWeight * burning / neighbors.Count) / tuning.IgnitionBurningMass;
+                starterCoalFlux[i] = FireOn && zones[i].Burning + burning > NegligibleMass ? CoalFluxOnWood * Smoothing.Clamp01(coal) : 0f;
+            }
+            for (var i = 0; i < zones.Length; i++)
+            {
+                var zone = zones[i];
+                var starter = Starters[i];
+                starter.Step(dt, zone.AirFlow * dryAir, zone.Fresh, starterCoalFlux[i], starterNeighborFlux[i],
+                    inputs.BoilerTemperature, water > 0.5f);
+                // Reserve the actual oxygen consumed before the coal and over-fire stages.
+                zone.AirFlow = Math.Max(0f, zone.AirFlow - starter.AirUsed / Math.Max(0.001f, dryAir));
+                zone.Ash += starter.AshProduced;
+                starterHeat += starter.Heat;
+                starterSmoke = Math.Max(starterSmoke, starter.Smoke);
+            }
+            // Coal catches from the wood fire's own heat as from the same heat
+            // of burning coal (IgnitionBurningMass is full support).
+            var reference = tuning.IgnitionBurningMass * FireboxParameters.CoalHeatContent / carbonBurnTime;
+            for (var i = 0; i < zones.Length; i++)
+            {
+                var neighbors = GrateLayout.Neighbors((GrateZone)i);
+                var beside = 0f;
+                for (var k = 0; k < neighbors.Count; k++) beside += Starters[(int)neighbors[k]].CoalSupportHeat;
+                woodHeat[i] = Starters[i].CoalSupportHeat + tuning.NeighborIgnitionWeight * beside / neighbors.Count;
+                woodIgnition[i] = Smoothing.Clamp01(woodHeat[i] / reference);
+            }
+            if (StarterAlight) FireOn = true;
 
             // Fresh coal catches from burning coal beneath and beside it. Part
             // of it leaves at once as volatile gas that has to burn above the bed.
@@ -891,6 +982,16 @@ namespace RealisticFiring.Core
             var drying = tuning.WarmUpEnergy / (tuning.WarmUpEnergy + waterPerFresh * DryingEnergy);
             var ignitedToBed = 0f;
             var caught = 0f;
+            // The stock startup speedup is for a coal fire. Where wood lies in
+            // a zone or beside it, the zone's coal gets it only as its own
+            // burning bed grows to full ignition support, so coal just
+            // catching from wood is not burned away 25 times faster than the
+            // wood can light it. A coal fire with no wood near keeps the
+            // whole speedup at any size, as before the wood fire existed.
+            for (var i = 0; i < zones.Length; i++)
+                zoneSpeedup[i] = WoodNear(i)
+                    ? 1f + (speedup - 1f) * Smoothing.Clamp01(zones[i].Burning / tuning.IgnitionBurningMass)
+                    : speedup;
             for (var i = 0; i < zones.Length; i++)
             {
                 var zone = zones[i];
@@ -898,17 +999,23 @@ namespace RealisticFiring.Core
                 if (!FireOn || zone.Fresh <= 0f)
                     continue;
 
-                var ignited = Math.Min(zone.Fresh, speedup * zone.Fresh * IgnitionSupport((GrateZone)i) / ignitionTime * drying * dt);
+                // The stock startup speedup hurries coal catching from coal, not
+                // from the wood: the wood fire burns in real time, and coal laid
+                // on it catches only as fast as that fire can light it.
+                // The wood can warm coal only with the heat it gives: about a
+                // third of its flame and ember heat reaches the coal over it.
+                var fromWood = Math.Min(zone.Fresh * woodIgnition[i] / ignitionTime, WoodHeatToCoal * woodHeat[i] / tuning.WarmUpEnergy);
+                var ignited = Math.Min(zone.Fresh, (zone.Fresh * speedup * IgnitionSupport((GrateZone)i) / ignitionTime + fromWood) * drying * dt);
                 if (zone.Fresh - ignited < NegligibleMass)
                     ignited = zone.Fresh;
                 zone.Fresh -= ignited;
                 caught += ignited;
                 zone.Burning += ignited * (1f - tuning.VolatileFraction);
                 ignitedToBed += ignited * (1f - tuning.VolatileFraction);
-                volatileRate[i] = ignited * tuning.VolatileFraction / (dt * speedup);
+                volatileRate[i] = ignited * tuning.VolatileFraction / (dt * zoneSpeedup[i]);
             }
             lighter = Math.Max(0f, lighter - speedup * dt);
-            if (FireOn && lighter <= 0f && BurningMass <= NegligibleMass)
+            if (FireOn && lighter <= 0f && BurningMass <= NegligibleMass && !StarterAlight)
                 FireOn = false;
 
             // The water on the coal that caught has dried off.
@@ -961,6 +1068,8 @@ namespace RealisticFiring.Core
             var volatileTotal = 0f;  // kg/s of tarry gas from fresh coal
             var freePrimaryAir = 0f;
             var baseRateTotal = 0f;
+            var spedComplete = 0f;
+            var spedUnburned = 0f;
             var smoothTime = parameters.CombustionRateSmoothTime / speedup;
             for (var i = 0; i < zones.Length; i++)
             {
@@ -981,12 +1090,13 @@ namespace RealisticFiring.Core
                     velocity = 0f;
                 }
 
-                var burned = speedup * rate * dt;
+                var zs = zoneSpeedup[i];
+                var burned = zs * rate * dt;
                 if (burned >= zone.Burning)
                 {
                     burned = zone.Burning;
                     zone.Burning = 0f;
-                    rate = burned / (speedup * dt);
+                    rate = burned / (zs * dt);
                     zone.CombustionRate = 0f;
                     zone.RateVelocity = 0f;
                 }
@@ -1000,12 +1110,14 @@ namespace RealisticFiring.Core
                 consumed += burned;
                 burnedToGas += burned;
                 var gas = volatileRate[i];
-                consumed += gas * speedup * dt;
+                consumed += gas * zs * dt;
                 baseRateTotal += rate + gas;
 
                 // Stock oxygen yield: short air leaves CO in the gas.
                 var yield = 0.5f + 0.5f * (float)Math.Pow(oxygen[i], 0.4);
                 completeRate += rate * yield;
+                spedComplete += zs * rate * yield;
+                spedUnburned += zs * (rate * (1f - yield) + gas);
                 volatileTotal += gas;
                 unburnedRate += rate * (1f - yield) + gas;
                 overFireGas[i] = rate * (1f - yield) + gas;
@@ -1031,7 +1143,7 @@ namespace RealisticFiring.Core
             var burnedRate = completeRate + OverFireBurnout * unburnedRate;
             var yieldAverage = baseRateTotal > 0f ? burnedRate / baseRateTotal : 1f;
             var efficiency = parameters.EfficiencyAt(yieldAverage * baseRateTotal);
-            var grossHeat = speedup * burnedRate * FireboxParameters.CoalHeatContent * efficiency;
+            var grossHeat = (spedComplete + OverFireBurnout * spedUnburned) * FireboxParameters.CoalHeatContent * efficiency;
             var coldAirLoss = excessPrimary * tuning.ExcessAirHeatLoss + excessDoor * tuning.DoorAirHeatLoss;
             // Warming fresh coal stores heat that comes back as it burns away.
             var warmUp = tuning.WarmUpEnergy * (ignitedToBed - burnedToGas) / dt;
@@ -1039,23 +1151,23 @@ namespace RealisticFiring.Core
             // about 1 per cent of the heat for 10 per cent of moisture
             // (Kreisinger, Bureau of Mines Technical Paper 80, 1915, p.63).
             DryingHeat = dried * DryingEnergy / dt;
-            Heat = Math.Max(0f, grossHeat - coldAirLoss - warmUp - DryingHeat);
+            Heat = Math.Max(0f, grossHeat - coldAirLoss - warmUp - DryingHeat) + starterHeat * parameters.EfficiencyAt(0f);
 
             ConsumptionRate = consumed / dt;
             wetted = dryAir;
-            CombustionRateNormalized = baseRateTotal / parameters.MaxCombustionRate;
+            CombustionRateNormalized = (baseRateTotal + starterHeat / FireboxParameters.CoalHeatContent) / parameters.MaxCombustionRate;
 
-            if (CoalMass <= 0f && Temperature < MinFireTemperature)
+            if (CoalMass <= 0f && !StarterAlight && Temperature < MinFireTemperature)
                 FireOn = false;
 
             var unburnedShare = baseRateTotal > 0f ? (1f - OverFireBurnout) * unburnedRate / baseRateTotal : 0f;
-            var smokeTarget = FireOn ? Smoothing.Clamp01(tuning.SmokeGain * unburnedShare) : 0f;
+            var smokeTarget = FireOn ? Smoothing.Clamp01(Math.Max(starterSmoke, tuning.SmokeGain * unburnedShare)) : 0f;
             SmokeDensity = Smoothing.SmoothApproach(SmokeDensity, smokeTarget, ref smokeVelocity, smoothTime, dt);
             var sootShare = baseRateTotal > 0f ? (1f - OverFireBurnout) * volatileTotal / baseRateTotal : 0f;
             var sootTarget = FireOn ? Smoothing.Clamp01(tuning.SootGain * sootShare) : 0f;
             SootDensity = Smoothing.SmoothApproach(SootDensity, sootTarget, ref sootVelocity, smoothTime, dt);
 
-            var temperatureTarget = baseRateTotal < MinCombustionRate
+            var temperatureTarget = baseRateTotal < MinCombustionRate && starterHeat <= 0f
                 ? inputs.BoilerTemperature
                 : Smoothing.Lerp(MinFireTemperature, MaxFireTemperature, Heat / parameters.MaxHeatOutput);
             Temperature = Smoothing.SmoothDamp(Temperature, temperatureTarget, ref temperatureVelocity,
@@ -1068,7 +1180,7 @@ namespace RealisticFiring.Core
         {
             if (!(mass > 0f))
                 return 0f;
-            return Math.Max(0f, Math.Min(mass, parameters.MaxCoalCapacity - CoalMass));
+            return Math.Max(0f, Math.Min(mass, parameters.MaxCoalCapacity - CoalMass - StarterMass));
         }
 
         private float IgnitionSupport(GrateZone zone)

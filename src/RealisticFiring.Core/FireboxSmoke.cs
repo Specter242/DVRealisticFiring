@@ -100,12 +100,14 @@ namespace RealisticFiring.Core
                 }
                 if (zone.Coal < MinCoal)
                 {
-                    charge[i] = gasRate[i] = smokeOutRate[i] = 0f;
+                    charge[i] = smokeOutRate[i] = 0f;
+                    gasRate[i] = model.Starters[i].Smoke * SmokeFromFire;
+                    gasTotal += gasRate[i];
                     continue;
                 }
 
                 var green = zone.Fresh / zone.Coal;
-                gasRate[i] = (SmokePerZone * green * warming + SmokeFromFire * model.SmokeDensity) * burnOff;
+                gasRate[i] = model.Starters[i].Smoke * SmokeFromFire + (SmokePerZone * green * warming + SmokeFromFire * model.SmokeDensity) * burnOff;
                 smokeOutRate[i] = SmokeOutPerKg * charge[i] * warming;
                 charge[i] *= (float)Math.Exp(-dt / clearing);
                 gasTotal += gasRate[i];

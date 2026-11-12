@@ -293,8 +293,6 @@ namespace RealisticFiring.Sim
             }
             if (ignitionExtIn.Value == 1f)
             {
-                if (intakeWaterContent.Value <= 0.5f)
-                    Model.Ignite();
                 ignitionExtIn.Value = 0f;
             }
             else if (extinguishExtIn.Value == 1f)

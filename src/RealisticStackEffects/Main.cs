@@ -82,6 +82,7 @@ namespace RealisticStackEffects
 
             public SmokeSeason SmokeSeason => Settings.SmokeSeason;
             public bool HeatShimmer => Settings.HeatShimmer;
+            public bool EngineSteam => Settings.EngineSteam;
             public bool CustomEffects => customEffects;
             public int StatusLogInterval => Settings.StatusLogInterval;
             public bool DeveloperTools => Settings.PlumeTestBedEnabled;

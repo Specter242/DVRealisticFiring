@@ -185,6 +185,8 @@ namespace RealisticFiringFX
             foreach (var font in Directory.Exists(FontsDir) ? Directory.GetFiles(FontsDir, "*.ttf") : new string[0])
                 AssetImporter.GetAtPath(font.Replace('\\', '/')).SetAssetBundleNameAndVariant(BundleName, "");
 
+            BuildStartingFuel(coalBed.GetTexture("_NoiseTex"));
+
             AssetImporter.GetAtPath(PrefabPath).SetAssetBundleNameAndVariant(BundleName, "");
             AssetImporter.GetAtPath(OverflowPrefabPath).SetAssetBundleNameAndVariant(BundleName, "");
             AssetImporter.GetAtPath(FireboxPrefabPath).SetAssetBundleNameAndVariant(BundleName, "");
@@ -449,6 +451,124 @@ namespace RealisticFiringFX
             finally
             {
                 UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        // --- The starting fuel: wood, rags, the crate and the tin ---
+
+        public const string StartingFuelPrefabName = "StartingFuelFX";
+        private const string ModelsDir = Root + "/Models";
+        private const string StartingFuelPrefabPath = Root + "/" + StartingFuelPrefabName + ".prefab";
+        private const string StartingFuelShaderName = "RealisticFiring/StartingFuel";
+        private const string StartingFuelFireShaderName = "RealisticFiring/StartingFuelFire";
+
+        [Serializable] private class FuelModel { public FuelMesh[] meshes; public FuelSlot[] slots; }
+        [Serializable] private class FuelMesh { public string name; public string[] materials; public float[] vertices, normals, uv, colors; public FuelSubmesh[] submeshes; }
+        [Serializable] private class FuelSubmesh { public int[] triangles; }
+        [Serializable] private class FuelSlot { public string body; public float[] position, rotation; }
+
+        /// <summary>
+        /// The starting fuel's bodies from fx/textures/make_starting_fuel.py:
+        /// its meshes saved as assets, its materials (lit in the cab, and by the
+        /// fire on the grate), and one prefab holding a body of each, the
+        /// containers with their contents' slots. Its icons go in too.
+        /// </summary>
+        private static void BuildStartingFuel(Texture noise)
+        {
+            var path = ModelsDir + "/starting_fuel.json";
+            if (!File.Exists(path))
+                throw new FileNotFoundException($"Missing {path}; run fx/textures/make_starting_fuel.py");
+            var model = JsonUtility.FromJson<FuelModel>(File.ReadAllText(path));
+            var cab = FindShader(StartingFuelShaderName);
+            var fire = FindShader(StartingFuelFireShaderName);
+            noise = noise ?? ImportData("fire_noise.png");
+            var materials = new Dictionary<string, Material>();
+            foreach (var (name, texture, metallic, gloss) in new[] { ("StartingFuelSplit", "sf_split", 0f, 0.14f), ("StartingFuelBark", "sf_bark", 0f, 0.07f), ("StartingFuelEnd", "sf_end", 0f, 0.12f),
+                         ("StartingFuelCloth", "sf_cloth", 0f, 0.06f), ("StartingFuelCrate", "sf_crate", 0f, 0.09f), ("StartingFuelStrap", "sf_strap", 0.6f, 0.3f), ("StartingFuelTin", "sf_tin", 0.35f, 0.32f) })
+            {
+                var albedo = ImportAlbedo(texture + ".png");
+                var lit = new Material(cab) { name = name };
+                lit.SetTexture("_MainTex", albedo);
+                lit.SetTexture("_BumpMap", ImportNormal(texture + "_n.png"));
+                lit.SetTexture("_Noise", noise);
+                lit.SetFloat("_Metallic", metallic);
+                lit.SetFloat("_Smoothness", gloss);
+                SaveMaterial(lit);
+                materials[name] = AssetDatabase.LoadAssetAtPath<Material>($"{MaterialsDir}/{name}.mat");
+                // On the grate, lit by the fire alone (wood and rags only).
+                if (name == "StartingFuelSplit" || name == "StartingFuelBark" || name == "StartingFuelEnd" || name == "StartingFuelCloth")
+                {
+                    var hot = new Material(fire) { name = name + "Fire" };
+                    hot.SetTexture("_MainTex", albedo);
+                    hot.SetTexture("_Noise", noise);
+                    hot.SetFloat("_Smoothness", gloss);
+                    SaveMaterial(hot);
+                    AssetImporter.GetAtPath($"{MaterialsDir}/{name}Fire.mat").SetAssetBundleNameAndVariant(BundleName, "");
+                }
+            }
+
+            var generated = ModelsDir + "/Generated";
+            Directory.CreateDirectory(generated);
+            var root = new GameObject(StartingFuelPrefabName);
+            try
+            {
+                foreach (var data in model.meshes)
+                {
+                    var count = data.vertices.Length / 3;
+                    var mesh = new Mesh { name = "Starting " + data.name };
+                    var vertices = new Vector3[count];
+                    var normals = new Vector3[count];
+                    var uv = new Vector2[count];
+                    var colors = new Color[count];
+                    for (var i = 0; i < count; i++)
+                    {
+                        vertices[i] = new Vector3(data.vertices[3 * i], data.vertices[3 * i + 1], data.vertices[3 * i + 2]);
+                        normals[i] = new Vector3(data.normals[3 * i], data.normals[3 * i + 1], data.normals[3 * i + 2]);
+                        uv[i] = new Vector2(data.uv[2 * i], data.uv[2 * i + 1]);
+                        colors[i] = new Color(data.colors[i], data.colors[i], data.colors[i], 1f);
+                    }
+                    mesh.vertices = vertices;
+                    mesh.normals = normals;
+                    mesh.uv = uv;
+                    mesh.colors = colors;
+                    mesh.subMeshCount = data.submeshes.Length;
+                    for (var s = 0; s < data.submeshes.Length; s++)
+                        mesh.SetTriangles(data.submeshes[s].triangles, s);
+                    mesh.RecalculateBounds();
+                    mesh.RecalculateTangents();
+                    var meshPath = $"{generated}/{data.name.Replace(' ', '_')}.asset";
+                    AssetDatabase.DeleteAsset(meshPath);
+                    AssetDatabase.CreateAsset(mesh, meshPath);
+                    var body = new GameObject(data.name);
+                    body.transform.SetParent(root.transform, false);
+                    body.AddComponent<MeshFilter>().sharedMesh = AssetDatabase.LoadAssetAtPath<Mesh>(meshPath);
+                    var renderer = body.AddComponent<MeshRenderer>();
+                    renderer.sharedMaterials = Array.ConvertAll(data.materials, m => materials[m]);
+                    renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+                    body.SetActive(false);
+                }
+                var slotIndex = new Dictionary<string, int>();
+                foreach (var slot in model.slots)
+                {
+                    var holder = root.transform.Find(slot.body) ?? throw new InvalidOperationException("No body " + slot.body);
+                    slotIndex.TryGetValue(slot.body, out var i);
+                    slotIndex[slot.body] = i + 1;
+                    var place = new GameObject("slot " + i).transform;
+                    place.SetParent(holder, false);
+                    place.localPosition = new Vector3(slot.position[0], slot.position[1], slot.position[2]);
+                    place.localRotation = new Quaternion(slot.rotation[0], slot.rotation[1], slot.rotation[2], slot.rotation[3]);
+                }
+                PrefabUtility.SaveAsPrefabAsset(root, StartingFuelPrefabPath);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+            AssetImporter.GetAtPath(StartingFuelPrefabPath).SetAssetBundleNameAndVariant(BundleName, "");
+            foreach (var icon in new[] { "starting_wood_icon", "starting_rag_icon", "starting_crate_icon", "starting_tin_icon" })
+            {
+                ImportIcon(icon + ".png").SetAssetBundleNameAndVariant(BundleName, "");
+                ImportIcon(icon + "_dropped.png").SetAssetBundleNameAndVariant(BundleName, "");
             }
         }
 

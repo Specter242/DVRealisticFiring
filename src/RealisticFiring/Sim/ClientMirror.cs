@@ -13,7 +13,7 @@ namespace RealisticFiring.Sim
         // to older readers (tag 255, length 65535), so they drop this packet
         // before interpreting any changed struct fields.
         internal const int HeaderSize = 11;
-        private static readonly ulong LayoutHash = HashLayout("sections-v5;" + Codec<StokerFlow>.Layout
+        private static readonly ulong LayoutHash = HashLayout("sections-v7-starters" + StarterFuel.StateLength + ";" + Codec<StokerFlow>.Layout
             + Codec<InjectorFlow>.Layout + Codec<FeedPumpFlow>.Layout + Codec<BoosterFlow>.Layout + Codec<OilFireState>.Layout
             + Codec<SteamPathSnapshot>.Layout);
         internal static string LayoutSignature => LayoutHash.ToString("x16");
@@ -95,6 +95,8 @@ namespace RealisticFiring.Sim
                         if (firebox.LastStoker is StokerFlow flow)
                             Codec<StokerFlow>.Write(w, flow);
                         w.Write(firebox.StokerEngineSpeed);
+                        foreach (var value in model.SaveStarters()) w.Write(value);
+                        foreach (var starter in model.Starters) { w.Write(starter.Heat); w.Write(starter.Smoke); }
                     });
                 if (rig != null)
                 {
@@ -232,6 +234,12 @@ namespace RealisticFiring.Sim
                     var ashpan = Finite(r);
                     var stoker = r.ReadBoolean() ? Codec<StokerFlow>.Read(r) : (StokerFlow?)null;
                     var speed = Finite(r);
+                    var starters = new float[GrateLayout.ZoneCount * StarterFuel.StateLength];
+                    for (var i = 0; i < starters.Length; i++) starters[i] = Finite(r);
+                    var starterOutputs = new float[GrateLayout.ZoneCount * 2];
+                    for (var i = 0; i < starterOutputs.Length; i++) starterOutputs[i] = Finite(r);
+                    firebox.Model.RestoreStarters(starters);
+                    for (var i = 0; i < GrateLayout.ZoneCount; i++) firebox.Model.Starters[i].MirrorOutput(starterOutputs[i * 2], starterOutputs[i * 2 + 1]);
                     firebox.Model.MirrorZones(fireOn, zones);
                     firebox.Model.RestoreAshpan(ashpan);
                     firebox.LastStoker = stoker;

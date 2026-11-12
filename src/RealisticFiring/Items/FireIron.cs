@@ -261,7 +261,8 @@ namespace RealisticFiring.Items
         }
 
         internal static Object LoadPrefab(string path) =>
-            path == FireIron.PrefabName ? FireIron.Template
+            FireStartingItems.IsFuel(path) ? FireStartingItems.Load(path)
+            : path == FireIron.PrefabName ? FireIron.Template
             : path == FiringTablet.PrefabName ? FiringTablet.Template
             : path == FiringManual.PrefabName ? FiringManual.Template : Resources.Load(path);
 

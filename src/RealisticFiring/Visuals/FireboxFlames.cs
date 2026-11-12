@@ -562,6 +562,13 @@ namespace RealisticFiring.Visuals
                 zoneBurn[i] = burn;
                 zoneShown[i] = shown;
                 zoneFlameHeight[i] = burn > 0.01f ? CardBase + CardCool * cool + CardGreen * bed.ZoneCover(zone) : 0f;
+                // Its wood and rag fire, in the same cards (WoodFlame).
+                var wood = lit ? WoodFlame.Strength(model.Starters[i]) : 0f;
+                if (wood > zoneBurn[i])
+                {
+                    zoneBurn[i] = wood;
+                    zoneFlameHeight[i] = Mathf.Max(zoneFlameHeight[i], WoodFlame.Top(model.Starters[i], wood) - WoodFlame.PileHeight(model.Starters[i]));
+                }
             }
             if (cardRenderer == null || !cardRenderer.enabled)
                 return;

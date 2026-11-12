@@ -160,6 +160,10 @@ namespace RealisticStackEffects
         private Port totalFlow;
         private SteamExhaust exhaustSim;
         private Port boilerBroken;
+
+        // The steam chest's and the boiler's pressures, bar, for the steam around the engine; null without.
+        private Port steamChest;
+        private Port boilerPressure;
         private ParticleSystem smoke;
         private ParticleSystem sootCore;
         private ParticleSystem jet;
@@ -169,6 +173,12 @@ namespace RealisticStackEffects
 
         // The plume lit as one volume (PlumeVolume), on its materials.
         private PlumeVolume volume;
+
+        // The engine's other steam, drawn as the plume is (SteamVents); null with none.
+        private SteamVents vents;
+
+        /// <summary>The engine's other steam, or null: for the mod's own sources and a capture's.</summary>
+        internal SteamVents Vents => vents;
         private Material[] volumeMaterials = new Material[0];
         private ParticleSystem heat;
         private ParticleSystem[] embers;
@@ -198,6 +208,7 @@ namespace RealisticStackEffects
 
         // The daylight the look was last applied for (PlumeWeather.Daylight).
         private float lookDaylight = -1f;
+        private float lookDirectLight = -1f;
         private const float DaylightStep = 0.02f;
 
         // The stack's bore and outside radius at its lip, m.
@@ -251,6 +262,7 @@ namespace RealisticStackEffects
             if (!custom || !Active)
                 return;
             AddRenderer(smoke, into);
+            AddRenderer(vents?.Drawn, into);
             AddRenderer(sootCore, into);
             AddRenderer(jet, into);
         }
@@ -272,6 +284,34 @@ namespace RealisticStackEffects
         // The cloud and the sooty core, carried as the plume once above the stack.
         private readonly Dictionary<ParticleSystem, PlumeAloft> aloft = new Dictionary<ParticleSystem, PlumeAloft>();
         private float plumeTop;
+
+        // How often the plume's particles are carried, by where it is seen
+        // from (PlumeTurns.FramesApart): in view close by, every frame, its
+        // newest particles worked out every 25 ms; farther, or out of the
+        // camera's view, every few frames, the particles' turns as much
+        // farther apart. The game moves them in between, and the drag is
+        // taken over the time since. A plume that comes into view is carried
+        // the same frame. Out of view its light volume is made again only
+        // every UnseenVolumeEvery s, so it is not long stale when the plume
+        // is next seen.
+        private const float LongestPass = 1f;
+        private const float UnseenVolumeEvery = 0.5f;
+        private float nextUnseenVolume;
+        private static readonly Plane[] LeftView = new Plane[6];
+        private static readonly Plane[] RightView = new Plane[6];
+        private static int viewFrame = -1;
+        private static Camera viewCamera;
+        private static bool viewStereo;
+        private static int plumesMade;
+        private readonly int passOffset = plumesMade++;
+        private ParticleSystemRenderer[] renderers;
+        private float sinceCarried;
+        private int passEvery = 1;
+        private float passPeriod = PlumeTurns.NewestEvery;
+        private bool inView = true;
+
+        /// <summary>The frames between its particles' carrying, for the log: 1 in view close by.</summary>
+        public int PassEvery => passEvery;
 
         // The tunnel roof along the engine's path, in the cloud's space.
         private readonly TunnelRoof roof = new TunnelRoof();
@@ -302,7 +342,7 @@ namespace RealisticStackEffects
         // Each shimmer particle's strength as it left the stack.
         private readonly SeedMemory<float> heatStrengths = new SeedMemory<float>();
 
-        private readonly Dictionary<ParticleSystem, SeedMemory<float>> beatsHard = new Dictionary<ParticleSystem, SeedMemory<float>>();
+        private PlumeAloft.Record[] theirRecords = new PlumeAloft.Record[0];
         private float beatHard;
         private float jetVelocityScale;
         private float jetLengthScale;
@@ -362,6 +402,7 @@ namespace RealisticStackEffects
                 // their old sorting before gathering the current set once.
                 plume.AlignSteam(false);
                 plume.steamSorting.Clear();
+                plume.AttachVents();
                 plume.MatchSorting(car);
                 plume.ShimmerFirst();
                 plume.enabled = true;
@@ -393,6 +434,7 @@ namespace RealisticStackEffects
                     WorldParticles.FollowOriginShifts(system);
             }
             plume.TakeOver();
+            var steam = plume.AttachVents();
             var sorting = plume.MatchSorting(car);
             plume.ShimmerFirst();
             plume.stackLip = MeasureStackLip(car, Emitter(plume.smoke), plume.smoke.transform.up, out var lip, out plume.boreRadius, out plume.outsideRadius);
@@ -402,7 +444,7 @@ namespace RealisticStackEffects
                    (plume.sootCore != null ? $", soot '{plume.sootCore.name}'" : "") +
                    (plume.jet != null ? $", jet '{plume.jet.name}'" : "") +
                    $", sparks {string.Join("/", plume.embers.Select(s => $"'{s.name}'"))}" +
-                   $", {2 * engine.numCylinders} beats per revolution from '{engineId}', flow from '{exhaust.ID}'; {sorting}; {lip}; " +
+                   $", {2 * engine.numCylinders} beats per revolution from '{engineId}', flow from '{exhaust.ID}'; {sorting}; {lip}; {steam}; " +
                    $"simulated in {(plume.smoke.main.simulationSpace == ParticleSystemSimulationSpace.Custom && plume.smoke.main.customSimulationSpace != null ? $"'{plume.smoke.main.customSimulationSpace.name}'" : plume.smoke.main.simulationSpace.ToString())}";
 
             void Bind(ChimneyPlume target)
@@ -413,6 +455,9 @@ namespace RealisticStackEffects
                 target.car = car;
                 target.BindInputs(fire, 2 * engine.numCylinders, crank, pressure, total,
                     flow.OrderedSimComps.OfType<SteamExhaust>().FirstOrDefault(c => c.id == exhaust.ID), broken);
+                var boiler = graph.executionOrder.OfType<BoilerDefinition>().FirstOrDefault();
+                target.steamChest = flow.TryGetPort($"{engineId}.{engine.steamChestPressureReadOut.ID}", out var chest) ? chest : null;
+                target.boilerPressure = boiler != null && flow.TryGetPort($"{boiler.ID}.{boiler.pressureReadOut.ID}", out var boilerPort) ? boilerPort : null;
                 OnCar.Remove(car);
                 OnCar.Add(car, target);
             }
@@ -549,7 +594,8 @@ namespace RealisticStackEffects
                 renderer.sortingLayerID = layer;
                 renderer.sortingOrder = order;
                 renderer.sortingFudge = fudge;
-                if (renderer.sharedMaterial != null)
+                // The vents draw with the cloud's own material, set here through the cloud.
+                if (renderer.sharedMaterial != null && (vents == null || vents.Drawn == null || renderer.gameObject != vents.Drawn.gameObject))
                     Own(renderer).renderQueue = queue;
             }
             var seen = string.Join(", ", stock.GroupBy(r => (r.sharedMaterial.name, r.sharedMaterial.renderQueue, r.sortingOrder, r.sortingFudge))
@@ -813,6 +859,43 @@ namespace RealisticStackEffects
             Active = true;
         }
 
+        // The engine's other steam, taken from the game's systems as they
+        // are now (a cab refresh can replace them): with the custom effects
+        // only, whose material and volume it is drawn with.
+        private string AttachVents()
+        {
+            vents?.Release();
+            vents = null;
+            // The systems and their renderers (PassDue's view check) gather the vents' anew.
+            systems = null;
+            renderers = null;
+            if (!custom || smoke == null || !StackHost.Settings.EngineSteam)
+                return "the game's own steam around the engine";
+            vents = SteamVents.Create(car, smoke);
+            if (vents == null)
+                return "no steam around the engine found";
+            if (puffMaterials.TryGetValue(smoke, out var material))
+                vents.UseMaterial(material);
+            var more = vents.AddRunningGear(
+                () => steamChest != null ? VentSteam.Gauge(steamChest.Value) : 0f,
+                () => crankRotation != null ? crankRotation.Value : 0f,
+                () => boilerPressure != null ? VentSteam.Gauge(boilerPressure.Value) : 0f,
+                RunningGearDamage);
+            return $"{vents.Setup}; {more}";
+        }
+
+        // How far the engine's running gear is damaged, 0 to 1, by the game's
+        // own count (its mechanical powertrain's); 0 without one.
+        private DV.Damage.DamageController damageController;
+
+        private float RunningGearDamage()
+        {
+            if (damageController == null && car != null)
+                damageController = car.GetComponent<DV.Damage.DamageController>();
+            var gear = damageController != null ? damageController.mechanicalPT : null;
+            return gear != null ? Mathf.Clamp01(gear.DamagePercentage) : 0f;
+        }
+
         private void OnDestroy() => Release();
 
         private void Release()
@@ -823,6 +906,8 @@ namespace RealisticStackEffects
             All.Remove(this);
             if (car != null && OnCar.TryGetValue(car, out var registered) && registered == this)
                 OnCar.Remove(car);
+            vents?.Release();
+            vents = null;
             volume?.Destroy();
             volume = null;
             foreach (var material in ownMaterials)
@@ -877,6 +962,8 @@ namespace RealisticStackEffects
         {
             lookVersion = PlumeTestBed.LookVersion;
             lookDaylight = PlumeWeather.Daylight;
+            lookDirectLight = PlumeWeather.DirectLight;
+            var direct = Mathf.Lerp(1f, lookDirectLight, Mathf.Clamp01(Look.TwilightSun));
             volumeMaterials = new[] { smoke, sootCore, jet }.Where(s => s != null)
                 .Select(s => s.GetComponent<ParticleSystemRenderer>()).Where(r => r != null)
                 .Select(Own).Where(m => m != null && m.HasProperty("_Volume")).ToArray();
@@ -889,7 +976,7 @@ namespace RealisticStackEffects
                 if (material == null || !material.HasProperty("_SkyStrength"))
                     continue;
                 material.SetFloat("_SkyStrength", skyLight * Look.Light);
-                material.SetFloat("_SunStrength", Look.SunLight * Look.Light);
+                material.SetFloat("_SunStrength", Look.SunLight * Look.Light * direct);
                 material.SetFloat("_MaxLight", Look.MaxLight * Look.Light);
                 if (!material.HasProperty("_Surface"))
                     continue;
@@ -947,7 +1034,7 @@ namespace RealisticStackEffects
                     material.SetFloat("_WispRelief", Look.WispRelief);
                     material.SetFloat("_WispBulge", Look.WispBulge);
                     material.SetFloat("_WispScatter", Look.WispScatter);
-                    material.SetFloat("_WispSunStrength", Look.WispSunLight * Look.Light);
+                    material.SetFloat("_WispSunStrength", Look.WispSunLight * Look.Light * direct);
                     material.SetFloat("_SootAlbedo", Look.SootAlbedo);
                     material.SetFloat("_LeastOpacity", Look.LeastOpacity);
                     material.SetFloat("_Fringe", Look.Fringe);
@@ -1000,6 +1087,8 @@ namespace RealisticStackEffects
             var heatMaterial = heatRenderer != null ? Own(heatRenderer) : null;
             if (heatMaterial != null && heatMaterial.HasProperty("_Strength"))
                 heatMaterial.SetFloat("_Strength", Look.ShimmerStrength);
+            if (vents != null && smoke != null && puffMaterials.TryGetValue(smoke, out var cloudMaterial))
+                vents.UseMaterial(cloudMaterial);
         }
 
         // The widest a particle is drawn <paramref name="above"/> m from the
@@ -1099,7 +1188,8 @@ namespace RealisticStackEffects
         {
             if (!Active || smoke == null)
                 return;
-            if (lookVersion != PlumeTestBed.LookVersion || Mathf.Abs(PlumeWeather.Daylight - lookDaylight) > DaylightStep)
+            if (lookVersion != PlumeTestBed.LookVersion || Mathf.Abs(PlumeWeather.Daylight - lookDaylight) > DaylightStep
+                || Mathf.Abs(PlumeWeather.DirectLight - lookDirectLight) > DaylightStep)
                 ApplyLook();
             testing = PlumeTestBed.StackFor(this);
 
@@ -1174,23 +1264,105 @@ namespace RealisticStackEffects
                         plume: Aloft(smoke), smokeShare: 0f, smokeColor: PlugSteamColor, cloud: plugCloud);
 
             }
+            sinceCarried = Mathf.Min(sinceCarried + dt, LongestPass);
+            if (!PassDue())
+            {
+                LogStatus(inputs);
+                return;
+            }
+            var passed = sinceCarried;
+            sinceCarried = 0f;
             using (StackHost.TimePhase(PlumePhase.Motion))
             {
                 plumeTop = 0f;
-                volume?.Begin(Look.Volume);
-                Drift(smoke, dt, lift: true);
-                Drift(sootCore, dt, lift: true);
-                Drift(jet, dt, lift: true);
-                Drift(heat, dt, lift: true);
-                var sun = Sun();
-                using (StackHost.TimePhase(PlumePhase.VolumeSubmit))
-                    volume?.End(sun != null && sun.isActiveAndEnabled ? -sun.transform.forward : Vector3.zero,
-                        Look.Volume, Look.VolumeDensity, volumeMaterials);
+                // Its light volume is for the drawing alone: out of view,
+                // its worker and its texture's upload wait.
+                var light = inView || Time.time >= nextUnseenVolume;
+                if (light)
+                {
+                    nextUnseenVolume = Time.time + UnseenVolumeEvery;
+                    volume?.Begin(Look.Volume);
+                }
+                Drift(smoke, passed, lift: true);
+                Drift(sootCore, passed, lift: true);
+                Drift(jet, passed, lift: true);
+                Drift(heat, passed, lift: true);
+                // The engine's own steam, carried on the plume's passes too:
+                // its parcels count toward whether the plume is seen
+                // (Systems), so steam in view nearby moves every frame. Its
+                // jets travel by their age, whatever the step.
+                if (vents != null)
+                {
+                    vents.Step(passed, airVelocity, carVelocity, PlumeWeather.Air, ParticleShare, Look, roof);
+                    if (light)
+                        volume?.Gather(vents.Drawn, vents.Buffer, vents.Count);
+                }
+                if (light)
+                {
+                    var sun = Sun();
+                    using (StackHost.TimePhase(PlumePhase.VolumeSubmit))
+                        volume?.End(sun != null && sun.isActiveAndEnabled ? -sun.transform.forward : Vector3.zero,
+                            Look.Volume, Look.VolumeDensity, volumeMaterials);
+                }
                 foreach (var system in embers)
-                    Fly(system, dt);
+                    Fly(system, passed);
             }
 
             LogStatus(inputs);
+        }
+
+        // Whether the particles are carried this frame, and how far apart
+        // their turns are: by the plume's distance from the camera and
+        // whether any of its particles' bounds is in the camera's view (in
+        // either eye's, in VR). Not by Renderer.isVisible: at half
+        // resolution the renderers are hidden and drawn by PlumeOffscreen.
+        // A capture or a test bed's stack is always carried in full.
+        private bool PassDue()
+        {
+            if (renderers == null)
+                renderers = Systems().Select(s => s.GetComponent<ParticleSystemRenderer>()).Where(r => r != null).ToArray();
+            var camera = PlayerManager.ActiveCamera;
+            var seen = false;
+            if (camera != null)
+            {
+                foreach (var renderer in renderers)
+                {
+                    if (renderer != null && InView(camera, renderer.bounds))
+                    {
+                        seen = true;
+                        break;
+                    }
+                }
+            }
+            var away = camera != null ? Vector3.Distance(camera.transform.position, smoke.transform.position) : 0f;
+            var every = PlumeCapture.Running || testing != null || camera == null ? 1 : PlumeTurns.FramesApart(seen, away);
+            var cameIntoView = seen && !inView;
+            inView = seen || every == 1;
+            passEvery = every;
+            passPeriod = PlumeTurns.NewestEvery * every;
+            return every == 1 || cameIntoView || (Time.frameCount + passOffset) % every == 0;
+        }
+
+        private static bool InView(Camera camera, Bounds bounds)
+        {
+            if (viewFrame != Time.frameCount || viewCamera != camera)
+            {
+                viewFrame = Time.frameCount;
+                viewCamera = camera;
+                viewStereo = camera.stereoEnabled;
+                if (viewStereo)
+                {
+                    GeometryUtility.CalculateFrustumPlanes(camera.GetStereoProjectionMatrix(Camera.StereoscopicEye.Left)
+                                                           * camera.GetStereoViewMatrix(Camera.StereoscopicEye.Left), LeftView);
+                    GeometryUtility.CalculateFrustumPlanes(camera.GetStereoProjectionMatrix(Camera.StereoscopicEye.Right)
+                                                           * camera.GetStereoViewMatrix(Camera.StereoscopicEye.Right), RightView);
+                }
+                else
+                {
+                    GeometryUtility.CalculateFrustumPlanes(camera, LeftView);
+                }
+            }
+            return GeometryUtility.TestPlanesAABB(LeftView, bounds) || viewStereo && GeometryUtility.TestPlanesAABB(RightView, bounds);
         }
 
         // The fire's smoke as the plume takes it, with the engine's exhaust:
@@ -1468,7 +1640,9 @@ namespace RealisticStackEffects
                 {
                     Up = up,
                     Still = air,
-                    Keep = keep,
+                    Drag = PlumeModel.JetDrag(tuning),
+                    Elapsed = dt,
+                    Period = passPeriod,
                     Flux = flux,
                     Speed = airSpeed,
                     Train = carried,
@@ -1618,71 +1792,102 @@ namespace RealisticStackEffects
         private void Carry(ParticleSystem system, PlumeAloft plume, int count, PlumeAloft.Air air,
             Vector3 emitter, Vector3 axis, float zone, Vector3 zoneTop, Vector3 carried)
         {
-            plume.Begin(air);
             var compact = Look.StableParticleData > 0.5f;
             var kept = 0;
-            for (var i = 0; i < count; i++)
+            if (theirRecords.Length < buffer.Length)
+                theirRecords = new PlumeAloft.Record[buffer.Length];
+            using (StackHost.TimePhase(PlumePhase.Carry))
             {
-                var particle = buffer[i];
-                var inZone = InZone(particle.position, emitter, axis, zone);
-                if (inZone)
+                plume.Begin(air);
+                for (var i = 0; i < count; i++)
                 {
-                    var upward = Mathf.Max(Vector3.Dot(particle.velocity - carried, axis), MinZoneRise);
-                    particle.velocity = carried + axis * upward;
+                    // In its place in the buffer: copied out and back, 132
+                    // bytes each way for every particle every pass.
+                    ref var particle = ref buffer[i];
+                    var inZone = InZone(particle.position, emitter, axis, zone);
+                    if (inZone)
+                    {
+                        var upward = Mathf.Max(Vector3.Dot(particle.velocity - carried, axis), MinZoneRise);
+                        particle.velocity = carried + axis * upward;
+                    }
+                    if (plume.Turn(ref particle, inZone))
+                    {
+                        // From the lip's middle: below it in the stack, above it out;
+                        // its least width by its height over the lip.
+                        var height = Vector3.Dot(particle.position - zoneTop, air.Up);
+                        var above = inZone ? Vector3.Dot(particle.position - zoneTop, axis) : Vector3.Distance(particle.position, zoneTop);
+                        plume.Work(ref particle, height, Least(inZone ? above : Mathf.Max(0f, height)), Widest(above), inZone);
+                    }
+                    // SetParticles drops the dead and moves the last survivors
+                    // into their places, but the custom data written after it
+                    // goes by place: a moved particle drew a dead one's wisp, turn
+                    // and age for a frame (Sol, 2026-10-23). Dropped here first,
+                    // each keeps its own.
+                    if (compact && particle.remainingLifetime <= 0f)
+                        continue;
+                    theirRecords[kept] = plume.Last;
+                    if (kept != i)
+                        buffer[kept] = particle;
+                    kept++;
                 }
-                // From the lip's middle: below it in the stack, above it out;
-                // its least width by its height over the lip.
-                var height = Vector3.Dot(particle.position - zoneTop, air.Up);
-                var above = inZone ? Vector3.Dot(particle.position - zoneTop, axis) : Vector3.Distance(particle.position, zoneTop);
-                plume.Carry(ref particle, height, Least(inZone ? above : Mathf.Max(0f, height)), Widest(above), inZone);
-                // SetParticles drops the dead and moves the last survivors
-                // into their places, but the custom data written after it
-                // goes by place: a moved particle drew a dead one's wisp, turn
-                // and age for a frame (Sol, 2026-10-23). Dropped here first,
-                // each keeps its own.
-                if (compact && particle.remainingLifetime <= 0f)
-                    continue;
-                buffer[kept++] = particle;
+                count = kept;
+                plume.End();
             }
-            count = kept;
-            plume.End();
             plumeTop = Mathf.Max(plumeTop, plume.Top);
             UploadParticles(system, count);
-            using (StackHost.TimePhase(PlumePhase.Buffers))
+            using (StackHost.TimePhase(PlumePhase.CustomData))
             {
-                if (rollingPuffs > 0)
+                // The values by place, a place for each particle the system
+                // now holds: its dead dropped above, as many as were sent.
+                if (compact)
                 {
-                    // Rolling steam's wisp is one of the wisp flipbook's rows (x,
-                    // rounded; its fraction its own start in the row × 0.49), at
-                    // its own turn (y), how hard its beat was (z), its frames by
-                    // age, played over the system's own lifetime as the flipbook
-                    // was (PlumeAloft), the last held: its share of that time (w).
-                    var longFrom = Mathf.Min(Look.LongPuffsFrom, Look.LongPuffsBy - 0.01f);
-                    if (!beatsHard.TryGetValue(system, out var hardness))
-                        beatsHard[system] = hardness = new SeedMemory<float>();
+                    Size(shapeData, count);
+                    Size(extraData, count);
+                }
+                else
+                {
                     system.GetCustomParticleData(shapeData, ParticleSystemCustomData.Custom1);
-                    for (var i = 0; i < count && i < shapeData.Count; i++)
+                    system.GetCustomParticleData(extraData, ParticleSystemCustomData.Custom2);
+                }
+                var wisps = rollingPuffs > 0;
+                // Rolling steam's wisp is one of the wisp flipbook's rows (x,
+                // rounded; its fraction its own start in the row × 0.49), at
+                // its own turn (y), how hard its beat was (z), its frames by
+                // age, played over the system's own lifetime as the flipbook
+                // was (PlumeAloft), the last held: its share of that time (w).
+                var longFrom = Mathf.Min(Look.LongPuffsFrom, Look.LongPuffsBy - 0.01f);
+                var filled = Mathf.Min(count, Mathf.Min(shapeData.Count, extraData.Count));
+                for (var i = 0; i < filled; i++)
+                {
+                    var record = theirRecords[i];
+                    var seed = buffer[i].randomSeed;
+                    var age = buffer[i].startLifetime - buffer[i].remainingLifetime;
+                    if (wisps)
                     {
-                        var hard = Mathf.SmoothStep(0f, 1f, (hardness.Recall(buffer[i].randomSeed, beatHard) - longFrom) / (Look.LongPuffsBy - longFrom));
-                        shapeData[i] = new Vector4(PlumeAloft.WispRow(buffer[i]) + 0.49f * PlumeAloft.WispPhase(buffer[i]),
-                            PlumeAloft.WispTurn(buffer[i], Look.WispSpin, Look.WispSpinEase), hard, plume.FlipbookAt(buffer[i]));
+                        var hard = Mathf.SmoothStep(0f, 1f, (plume.HardOf(record, beatHard) - longFrom) / (Look.LongPuffsBy - longFrom));
+                        shapeData[i] = new Vector4(PlumeAloft.WispRow(seed) + 0.49f * PlumeAloft.WispPhase(seed),
+                            PlumeAloft.WispTurn(seed, age, Look.WispSpin, Look.WispSpinEase), hard, plume.FlipbookAt(Mathf.Max(0f, age)));
                     }
-                    system.SetCustomParticleData(shapeData, ParticleSystemCustomData.Custom1);
-                    hardness.Forget();
+                    else if (air.Shape)
+                    {
+                        shapeData[i] = record.Shape;
+                    }
+                    extraData[i] = plume.ExtraOf(record, seed, age, buffer[i].position);
                 }
-                else if (air.Shape)
-                {
-                    system.GetCustomParticleData(shapeData, ParticleSystemCustomData.Custom1);
-                    for (var i = 0; i < count && i < shapeData.Count; i++)
-                        shapeData[i] = plume.ShapeOf(buffer[i].randomSeed);
+                if (wisps || air.Shape)
                     system.SetCustomParticleData(shapeData, ParticleSystemCustomData.Custom1);
-                }
-                system.GetCustomParticleData(extraData, ParticleSystemCustomData.Custom2);
-                for (var i = 0; i < count && i < extraData.Count; i++)
-                    extraData[i] = plume.ExtraOf(buffer[i]);
                 system.SetCustomParticleData(extraData, ParticleSystemCustomData.Custom2);
             }
             volume?.Gather(system, buffer, count);
+        }
+
+        // A list of <paramref name="count"/> values, whatever it held.
+        private static void Size(List<Vector4> list, int count)
+        {
+            if (list.Count > count)
+                list.RemoveRange(count, list.Count - count);
+            while (list.Count < count)
+                list.Add(default);
         }
 
         private PlumeAloft Aloft(ParticleSystem system) => system != null && aloft.TryGetValue(system, out var plume) ? plume : null;
@@ -1858,6 +2063,7 @@ namespace RealisticStackEffects
                    $"{LastPuff.SmokeShare:P0} smoke; plume top {plumeTop:F0} m\n" +
                    $"Particles: {string.Join("; ", aloft.Select(a => $"{a.Key.name} {a.Value.Describe()}"))}; " +
                    $"as one volume, {(volume != null ? volume.ShadedShare : 0f):P0} of its smoke under half the sun\n" +
+                   (vents != null ? vents.Readout() + "\n" : "") +
                    ShaderLight();
         }
 
@@ -1875,7 +2081,7 @@ namespace RealisticStackEffects
                 sunLight = color.grayscale * sun.intensity;
             }
             var skyShare = sky[0].grayscale * Mathf.Lerp(Look.NightSkyLight, Look.SkyLight, PlumeWeather.Daylight) * Look.Light;
-            var sunShare = sunLight * Look.SunLight * Look.Light;
+            var sunShare = sunLight * Look.SunLight * Look.Light * Mathf.Lerp(1f, PlumeWeather.DirectLight, Mathf.Clamp01(Look.TwilightSun));
             var cap = Look.MaxLight * Look.Light;
             return $"Light on the smoke: sky {skyShare:F2} + sun {sunShare:F2} = {Mathf.Min(skyShare + sunShare, cap):F2} (cap {cap:F2}), " +
                    $"{(sun != null ? sun.name : "no sun")}, {QualitySettings.activeColorSpace} color";
@@ -1952,7 +2158,7 @@ namespace RealisticStackEffects
         {
             if (systems != null)
                 return systems;
-            var gathered = new[] { smoke, sootCore, jet, heat }.Concat(embers ?? new ParticleSystem[0]).Where(s => s != null).Distinct().ToArray();
+            var gathered = new[] { smoke, sootCore, jet, heat, vents?.Drawn }.Concat(embers ?? new ParticleSystem[0]).Where(s => s != null).Distinct().ToArray();
             if (Active)
                 systems = gathered;
             return gathered;

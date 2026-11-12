@@ -60,6 +60,13 @@ namespace RealisticFiring.Visuals
         private AudioSource steamSound;
         private readonly InjectorOverflowAudio sound = new InjectorOverflowAudio();
 
+        // The overflow's steam drawn with the engine's other steam, by the
+        // weather (SteamVents), in place of this one's own puffs: the
+        // vents it was added to (an engine's are made again when its cab
+        // reloads), and the steam spilling now, kg/s.
+        private object drawnWith;
+        private float steamNow;
+
         /// <summary>
         /// Puts the overflow on <paramref name="car"/> beside its injector lever
         /// (or moves it there if the cab reloaded). Returns a line for the log,
@@ -260,12 +267,32 @@ namespace RealisticFiring.Visuals
             wasSpilling = spilling;
             var share = spilling ? 1f : 0f;
             SetRate(water, Mathf.Min(MaxWaterParticles, share * flow.Overflow * WaterParticlesPerKg));
-            SetRate(steam, Mathf.Min(MaxSteamParticles, share * flow.OverflowSteam * SteamParticlesPerKg));
+            steamNow = share * flow.OverflowSteam;
+            SetRate(steam, DrawnWithTheEngines() ? 0f : Mathf.Min(MaxSteamParticles, steamNow * SteamParticlesPerKg));
             var ratedSteam = full / (1f + circuit.Injector.Spec.WaterPerSteam);
             sound.Step(Time.unscaledDeltaTime, share * flow.Overflow, share * flow.OverflowSteam,
                 full, ratedSteam, Main.Settings.SteamVentVolume);
             SetVolume(waterSound, sound.Water);
             SetVolume(steamSound, sound.Steam);
+        }
+
+        // Whether the engine's vents draw this overflow's steam; adds it to
+        // them when they are new.
+        private bool DrawnWithTheEngines()
+        {
+            var car = rig.Car;
+            if (car == null || !EngineVents.TryGet(car, out var steam, out var add))
+            {
+                drawnWith = null;
+                return false;
+            }
+            if (ReferenceEquals(drawnWith, steam))
+                return true;
+            drawnWith = steam;
+            var full = RealisticStackEffects.Core.VentSpec.For(RealisticStackEffects.Core.VentKind.Overflow).Flow;
+            return add($"injector overflow {(side < 0f ? "L" : "R")}", RealisticStackEffects.Core.VentKind.Overflow,
+                car.transform.InverseTransformPoint(transform.position), new Vector3(side, -0.6f, 0f),
+                () => this != null ? Mathf.Clamp01(steamNow / full) : 0f);
         }
 
         // Whether this side spills: with a lever each side, the one whose lever

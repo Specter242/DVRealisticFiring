@@ -429,6 +429,7 @@ namespace RealisticFiring.Visuals
                 spec.useSteppedJoint = false;
                 spec.steppedValueUpdate = false;
                 spec.scrollWheelHoverScroll = 0.1f;
+                control.gameObject.AddComponent<SpringFollowsHand>();
             }
             var cloneFeeder = control.GetComponent<InteractablePortFeeder>();
             if (cloneFeeder == null)

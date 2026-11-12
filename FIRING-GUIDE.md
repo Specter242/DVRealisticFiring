@@ -257,13 +257,12 @@ covered districts and the full allowance rules.
   20 °C it won't run at all; above 80 °C it sputters and smokes. Run the
   heater strong to warm it, then turn it down.
 - **Light up in order:** blower on to clear the firebox, atomizer open a
-  little, then your lighter, lit, held at the open main fire door (it stands for
-  lit waste and burns 25 seconds), and within that the firing valve opened a
-  little. Never let oil run in with the fire out: lighting into vapor or
+  little, then throw a burning oiled rag through the open main fire door.
+  Open the firing valve a little while the rag is still burning. Never let oil run in with the fire out: lighting into vapor or
   pooled oil flares back.
   On a dead, cold fire, set the fireman **Off** if he keeps the door shut;
-  turn him back on once lit. The lighter works with an empty pan. The peep
-  hole does not admit it. If the boiler still has steam, you can use that
+  turn him back on once lit. The rag goes into an empty pan. Use the main
+  fire door, not the peep hole. If the boiler still has steam, you can use that
   instead of the shed's line.
 - **Match the atomizer to the oil.** Open it more as you fire harder and work
   harder. Through the peep hole: smoky orange and spitting means too
@@ -461,3 +460,20 @@ A grinding clash means the booster was turning or you were going too fast.
 | Blowdown | 3 s open, 5–6 s shut; about a sixth of the feed |
 | Booster (Hudson) | idling valve open 2–3 min, shut it, wait 10 s; under 12 mph, reverser forward, throttle open: raise the latch |
 | Water | middle of the glass |
+
+## Starting a cold coal fire
+
+Bring a free firewood crate and rag tin from an engine shed or the track
+where steam engines spawn, or reach into them where they stand. Lay four or more pieces of wood together through
+the open fire door: look at the doorway and throw them (they fly to where
+you look), or aim at the door and use them to lay them on the grate where
+you point. A door only partly open may stop a throw. One or two
+pieces will not keep burning on their own. Put a rag down, use the oil can
+on it, light it with the lighter (open its lid with the mouse wheel, then
+use it to strike), and throw or lay it onto that wood. The rag burns about three minutes; the
+wood catches in under a minute and its flames spread over the pile over the
+next minute or two. Coal laid before it catches smothers the start. Once the
+flames have taken all of the wood, cover it with a small charge of coal and
+let that catch before adding more. A pile burns down to embers in about ten
+minutes, so have the coal on and caught before then. Keep air reaching it. Once the coal
+catches, build the bed gradually and let the fireman take over if desired.

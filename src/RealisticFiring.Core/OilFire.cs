@@ -384,6 +384,9 @@ namespace RealisticFiring.Core
 
         public void Ignite() => Torch = TorchTime;
 
+        /// <summary>A physical rag brings only the fuel time it has left.</summary>
+        public void OfferRag(float seconds) => Torch = Math.Max(Torch, Math.Min(4f * TorchTime, RagFuel.Positive(seconds)));
+
         /// <summary>Puts the fire out, as the stock extinguish request does.</summary>
         public void Extinguish()
         {

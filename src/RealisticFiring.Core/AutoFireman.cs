@@ -123,7 +123,7 @@ namespace RealisticFiring.Core
             if (fire == null)
                 throw new ArgumentNullException(nameof(fire));
             var actions = new FiremanActions { Notices = Notices(fire, r), StokerDirection = StokerDirection.Forward };
-            if (Mode == FiremanMode.Off || !(dt > 0f))
+            if (Mode == FiremanMode.Off || !(dt > 0f) || (fire.StarterMass > 0f && fire.BurningMass < 0.5f))
             {
                 roundLeft = 0;
                 stokerHeavyTime = stokerReverseLeft = stokerReverseCooldown = 0f;
