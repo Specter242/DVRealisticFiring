@@ -69,16 +69,23 @@ namespace RealisticStackEffects
         private const float PlugSteamSpeed = 3f;
         private static readonly Color PlugSteamColor = new Color(0.92f, 0.92f, 0.93f, 0.8f);
 
-        // A beat's particles leave at a spread of speeds, so they stretch into a column.
-        private const float PuffSlowest = 0.45f;
-        private const float PuffFastest = 1.1f;
+        // A beat's particles leave as its steam does (ExhaustBlast): its
+        // head at the blast's speed, its tail slowly, each within this of
+        // its speed either way. A drifting beat's, and the last of any
+        // beat's steam, leave at the least, m/s.
+        private const float BeatSpeedSlowest = 0.9f;
+        private const float BeatSpeedFastest = 1.1f;
+        private const float LeastBeatSpeed = 3f;
 
-        // A beat as a cluster (Look.BeatCluster): its lobes' spread and least
-        // speed, and the core's and lobes' sizes against a beat's particle.
+        // A beat as a cluster (Look.BeatCluster): its lobes' spread, and its
+        // head's and lobes' sizes against a beat's particle.
         private const float ClusterSpread = 0.3f;
-        private const float ClusterSlowest = 0.85f;
         private const float ClusterCore = 1.4f;
         private const float ClusterLobe = 0.75f;
+
+        // Beats still letting their steam out: at speed a beat's blowdown
+        // outlasts the next few beats, and its return stroke takes two more.
+        private const int MostPendingBeats = 16;
 
         // Puffs at speed (up to ~15 beats/s, 8 particles each) and heavy
         // beats (up to 30 particles) need more room than the stock cap of
@@ -155,6 +162,25 @@ namespace RealisticStackEffects
             return car != null && OnCar.TryGetValue(car, out plume) && plume != null && plume.Active;
         }
         private ExhaustBeatCounter beats;
+        private int beatsPerTurn = 4;
+
+        // A beat letting its steam out: its puff as it was released, how
+        // many jet streaks and sooty core particles go with its particles,
+        // and how many of each have gone.
+        private struct PendingBeat
+        {
+            public Puff Puff;
+            public BeatRelease Release;
+            public int Particles;
+            public int Out;
+            public int Streaks;
+            public int StreaksOut;
+            public int Soot;
+            public int SootOut;
+        }
+
+        private readonly PendingBeat[] pendingBeats = new PendingBeat[MostPendingBeats];
+        private int pendingBeatCount;
         private Port crankRotation;
         private Port exhaustPressure;
         private Port totalFlow;
@@ -203,7 +229,7 @@ namespace RealisticStackEffects
         private static PlumeLook Look => PlumeTestBed.Look;
 
         // The share of the plume's particles thrown at the player's smoke quality.
-        private static float ParticleShare => SmokeDetail.ParticleShare(StackHost.Settings.SmokeQuality, PlumeOffscreen.Drawing);
+        private static float ParticleShare => SmokeDetail.ParticleShare(StackHost.Quality, PlumeOffscreen.Drawing);
         private int lookVersion = -1;
 
         // The daylight the look was last applied for (PlumeWeather.Daylight).
@@ -254,17 +280,19 @@ namespace RealisticStackEffects
         /// <summary>
         /// Adds the systems drawn at half resolution at a lower smoke quality
         /// (<see cref="PlumeOffscreen"/>), in the order they are drawn
-        /// (<see cref="DrawnBefore"/>): the custom effects' cloud, its sooty
-        /// core, and the jet's streaks.
+        /// (<see cref="DrawnBefore"/>): the engine's steam behind the plume,
+        /// the custom effects' cloud, its sooty core, the jet's streaks, and
+        /// the engine's steam in front of it.
         /// </summary>
         internal void AddOffscreen(List<ParticleSystemRenderer> into)
         {
             if (!custom || !Active)
                 return;
+            AddRenderer(vents?.Behind, into);
             AddRenderer(smoke, into);
-            AddRenderer(vents?.Drawn, into);
             AddRenderer(sootCore, into);
             AddRenderer(jet, into);
+            AddRenderer(vents?.Drawn, into);
         }
 
         private static void AddRenderer(ParticleSystem system, List<ParticleSystemRenderer> into)
@@ -342,7 +370,8 @@ namespace RealisticStackEffects
         // Each shimmer particle's strength as it left the stack.
         private readonly SeedMemory<float> heatStrengths = new SeedMemory<float>();
 
-        private PlumeAloft.Record[] theirRecords = new PlumeAloft.Record[0];
+        private const int SmokeCounts = 30;
+
         private float beatHard;
         private float jetVelocityScale;
         private float jetLengthScale;
@@ -471,6 +500,8 @@ namespace RealisticStackEffects
         {
             fire = source;
             beats = new ExhaustBeatCounter(beatsPerRevolution);
+            beatsPerTurn = Mathf.Max(1, beatsPerRevolution);
+            pendingBeatCount = 0;
             crankRotation = crank;
             exhaustPressure = pressure;
             totalFlow = total;
@@ -595,7 +626,7 @@ namespace RealisticStackEffects
                 renderer.sortingOrder = order;
                 renderer.sortingFudge = fudge;
                 // The vents draw with the cloud's own material, set here through the cloud.
-                if (renderer.sharedMaterial != null && (vents == null || vents.Drawn == null || renderer.gameObject != vents.Drawn.gameObject))
+                if (renderer.sharedMaterial != null && (vents == null || !vents.Draws(renderer)))
                     Own(renderer).renderQueue = queue;
             }
             var seen = string.Join(", ", stock.GroupBy(r => (r.sharedMaterial.name, r.sharedMaterial.renderQueue, r.sortingOrder, r.sortingFudge))
@@ -713,8 +744,11 @@ namespace RealisticStackEffects
 
         // How many of the plume's systems a system is drawn before (a higher
         // fudge sorts it farther, so it is drawn earlier, under the rest).
+        // The engine's other steam is in two: its parcels behind the plume
+        // from the eye first of all, the rest after the jet (SteamVents).
         private int DrawnBefore(ParticleSystem system) =>
-            system == smoke ? 4 : system == sootCore ? 3 : system == jet ? 2 : system == heat ? 0 : 1;
+            vents != null && system == vents.Behind ? 5
+            : system == smoke ? 4 : system == sootCore ? 3 : system == jet ? 2 : system == heat ? 0 : 1;
 
         // Puts the custom plume where the stock smoke leaves the stack, in the
         // game's world-origin-shift space, as the stock smoke has once awake,
@@ -954,6 +988,17 @@ namespace RealisticStackEffects
         // The puffs the rolling steam's flipbooks hold (0: not rolling steam).
         private int rollingPuffs;
         private static readonly int PuffAgeScaleId = Shader.PropertyToID("_PuffAgeScale");
+
+        // As parcels (PlumeParcels) a puff turns to a wisp only as it
+        // thins, never by its age (these shares of its flipbook's time are
+        // past its end): a dense lump is opaque, and an opaque wisp drew as
+        // bright ribbons. Else by the look's ages.
+        private static bool AsParcels => Look.Parcels > 0.5f;
+        private const float NeverByAge = 5f;
+        private static float WispAgeFrom => AsParcels ? NeverByAge : Look.WispAgeFrom;
+        private static float WispAgeTo => AsParcels ? NeverByAge + 1f : Look.WispAgeTo;
+        private static float ThinWispAgeFrom => AsParcels ? NeverByAge : Look.ThinWispAgeFrom;
+        private static float ThinWispAgeTo => AsParcels ? NeverByAge + 1f : Look.ThinWispAgeTo;
         private readonly Dictionary<ParticleSystem, Material> puffMaterials = new Dictionary<ParticleSystem, Material>();
         private float wispTrainSpeed;
 
@@ -1017,15 +1062,15 @@ namespace RealisticStackEffects
                     material.SetFloat("_ShadeSky", Look.ShadeSky);
                     material.SetFloat("_WispBelow", Look.WispBelow);
                     material.SetFloat("_WispAbove", Mathf.Max(Look.WispBelow + 0.01f, Look.WispAbove));
-                    material.SetFloat("_WispAgeFrom", Look.WispAgeFrom);
-                    material.SetFloat("_WispAgeTo", Mathf.Max(Look.WispAgeFrom + 0.01f, Look.WispAgeTo));
+                    material.SetFloat("_WispAgeFrom", WispAgeFrom);
+                    material.SetFloat("_WispAgeTo", Mathf.Max(WispAgeFrom + 0.01f, WispAgeTo));
                     material.SetFloat("_WispBlend", Look.WispBlend);
                     material.SetFloat("_WispSheet", Look.WispSheet);
                     material.SetFloat("_WispCoherence", Look.WispCoherence);
                     material.SetFloat("_WispHold", Look.WispHold);
                     material.SetFloat("_WispFadeFrom", Look.WispFadeFrom);
-                    material.SetFloat("_ThinWispAgeFrom", Look.ThinWispAgeFrom);
-                    material.SetFloat("_ThinWispAgeTo", Mathf.Max(Look.ThinWispAgeFrom + 0.01f, Look.ThinWispAgeTo));
+                    material.SetFloat("_ThinWispAgeFrom", ThinWispAgeFrom);
+                    material.SetFloat("_ThinWispAgeTo", Mathf.Max(ThinWispAgeFrom + 0.01f, ThinWispAgeTo));
                     material.SetFloat("_WispBaked", Look.WispBaked);
                     material.SetFloat("_WispTurn", Look.WispTurn);
                     material.SetFloat("_WispBakedLight", Look.WispBakedLight);
@@ -1178,6 +1223,7 @@ namespace RealisticStackEffects
         private void Update()
         {
             var start = Stopwatch.GetTimestamp();
+            StackHost.Govern();
             using (StackHost.TimePhase(PlumePhase.OffscreenSetup))
                 PlumeOffscreen.Decide();
             UpdatePlume();
@@ -1205,12 +1251,17 @@ namespace RealisticStackEffects
             wispTrainSpeed += (wispSpeed - wispTrainSpeed) * (1f - Mathf.Exp(-dt / 0.5f));
 
             var crossed = beats.Advance(crankRotation.Value);
+            var turned = beats.Turned;
+            var sinceBeat = beats.SinceBeat;
             if (testing != null)
             {
                 // The test's beats, the engine standing.
-                testBeats += Mathf.Max(0f, testing.Beats) * dt;
+                var testTurned = Mathf.Max(0f, testing.Beats) * dt;
+                testBeats += testTurned;
                 crossed = (int)testBeats;
                 testBeats -= crossed;
+                turned = testTurned / beatsPerTurn;
+                sinceBeat = testBeats;
             }
             if (boilerBroken.Value > 0f || dt <= 0f)
                 return;
@@ -1230,17 +1281,39 @@ namespace RealisticStackEffects
             {
                 // A beat with no steam behind it (drifting, regulator shut) makes no puff.
 
-                if (inputs.ExhaustPressure > PlumeModel.MinBeatPressure)
+                // Those already releasing go on by the frame, whatever the
+                // regulator does now; a beat crossed this frame has gone on
+                // only since the crank passed it.
+                for (var i = 0; i < pendingBeatCount; i++)
+                    ExhaustBlast.Step(ref pendingBeats[i].Release, dt, turned);
+                // One exhaust: the beats' puffs and what leaves between them
+                // take the mixture of the two (PlumeModel.AsOne), by the
+                // crank's pace now, not by the beats counted, which come a
+                // frame at a time.
+                var beating = inputs.ExhaustPressure > PlumeModel.MinBeatPressure;
+                var puffNow = PlumeModel.ForBeat(tuning, inputs);
+                var haze = PlumeModel.Between(tuning, inputs);
+                var beatsShare = Look.OneExhaust > 0.5f
+                    ? PlumeModel.AsOne(ref puffNow, ref haze, beating ? Mathf.Abs(turned) * beatsPerTurn / dt : 0f)
+                    : 0f;
+                if (beating)
                 {
-                    for (var i = 0; i < Mathf.Min(crossed, MaxBeatsPerFrame); i++)
-                        EmitPuff(PlumeModel.ForBeat(tuning, inputs), carVelocity);
+                    var beatSeconds = turned > 1e-6f ? dt / (turned * beatsPerTurn) : 0f;
+                    var count = Mathf.Min(crossed, MaxBeatsPerFrame);
+                    for (var i = 0; i < count; i++)
+                    {
+                        var since = Mathf.Min(dt, (sinceBeat + (count - 1 - i)) * beatSeconds);
+                        BeginBeat(puffNow, inputs.ExhaustPressure, since, since / dt * turned, carVelocity);
+                    }
                 }
+                ReleaseBeats(carVelocity);
 
                 stokerCinders = Mathf.Min(stokerCinders + fireNow.Fines, MaxStokerCinderBacklog);
 
-                var haze = PlumeModel.Between(tuning, inputs);
-                // The blower's stream is steam; a clean fire's haze, its own water.
-                var hazeCloud = PlumeModel.SteamThroughStack(inputs.TotalFlowNormalized) > 0.3f ? streamCloud : waterCloud;
+                // The blower's stream is steam; a clean fire's haze, its own
+                // water; with the engine working, the beats' own steam.
+                var hazeCloud = beatsShare > 0f ? steamCloud
+                    : PlumeModel.SteamThroughStack(inputs.TotalFlowNormalized) > 0.3f ? streamCloud : waterCloud;
                 hazeDue += haze.Rate * ParticleShare * dt;
                 for (; hazeDue >= 1f; hazeDue -= 1f)
                     Emit(smoke, haze.Speed, 1.2f * tuning.PuffSize, ToColor(haze.Color), carVelocity, HazeSpread, 0.85f, 1.15f,
@@ -1293,7 +1366,13 @@ namespace RealisticStackEffects
                 // jets travel by their age, whatever the step.
                 if (vents != null)
                 {
-                    vents.Step(passed, airVelocity, carVelocity, PlumeWeather.Air, ParticleShare, Look, roof);
+                    // From the eye: a capture's held view (its camera is put
+                    // there only as it draws), else the player's camera.
+                    var viewer = PlayerManager.ActiveCamera != null ? PlayerManager.ActiveCamera : Camera.main;
+                    var eye = PlumeCapture.HeldAt ?? (viewer != null ? viewer.transform.position : (Vector3?)null);
+                    using (StackHost.TimePhase(PlumePhase.Vents))
+                        vents.Step(passed, airVelocity, carVelocity, PlumeWeather.Air, ParticleShare, Look, roof,
+                            Look.MatchSteamOrder > 0.5f ? Aloft(smoke) : null, eye, Emitter(smoke));
                     if (light)
                         volume?.Gather(vents.Drawn, vents.Buffer, vents.Count);
                 }
@@ -1396,6 +1475,7 @@ namespace RealisticStackEffects
                 TotalFlowNormalized = test.Flow,
                 Soot = test.FireOn ? test.Soot : 0f,
                 FireOn = test.FireOn,
+                FireboxGas = test.FireOn ? test.Gas : 0f,
                 ClearStack = test.Clear,
                 PuffHaze = PlumeModel.WellFiredHaze(tuning, test.Clear),
                 HeatShare = test.FireOn ? Mathf.Clamp01(test.Heat) : 0f,
@@ -1444,54 +1524,34 @@ namespace RealisticStackEffects
             stackFlux = PlumeRise.StackFlux(stackHeat, steam) * tuning.Buoyancy;
         }
 
-        private void EmitPuff(Puff puff, Vector3 carVelocity)
+        // A beat's exhaust begins: its particles leave over the blowdown and
+        // the return stroke (ExhaustBlast), its cinders with its first
+        // surge. <paramref name="since"/> s ago, the crank having turned
+        // <paramref name="turned"/> revolutions since.
+        private void BeginBeat(Puff puff, float pressure, float since, float turned, Vector3 carVelocity)
         {
             LastPuff = puff;
             beatCount++;
-            var color = ToColor(puff.Color);
-            // Strung up the jet (each its own speed, the spread narrow) or, as
-            // clusters, a bigger core with lobes beside it leaving together.
-            var cluster = Mathf.Clamp01(Look.BeatCluster);
-            var spread = Mathf.Lerp(PuffSpread, ClusterSpread, cluster);
-            var slowest = Mathf.Lerp(PuffSlowest, ClusterSlowest, cluster);
             var share = ParticleShare;
             var particles = SmokeDetail.Scaled(puff.Particles, share, ref puffParticlesDue, least: 1);
-            for (var i = 0; i < particles; i++)
+            var beat = new PendingBeat
             {
-                var size = puff.Size * (i == 0 ? Mathf.Lerp(1f, ClusterCore, cluster) : Mathf.Lerp(1f, ClusterLobe, cluster));
-                Emit(smoke, puff.Speed, size, color, carVelocity, i == 0 ? PuffSpread : spread, slowest, PuffFastest, Lifetime(smoke, puff.LifetimeScale),
-                    Aloft(smoke), puff.SmokeShare, ToColor(puff.SmokeColor), steamCloud);
-            }
-
-            // The custom effects add streaks for the jet itself, right above
-            // the stack: its smoke, and its white only as far as it has formed
-            // in their half second.
-            if (jet != null)
+                Puff = puff,
+                Release = ExhaustBlast.Begin(particles, pressure),
+                Particles = particles,
+                // The custom effects add streaks for the jet itself, right
+                // above the stack.
+                Streaks = jet != null ? SmokeDetail.Scaled(Mathf.Max(2, puff.Particles / 2), share, ref jetStreaksDue, least: 1) : 0,
+                Soot = SmokeDetail.Scaled(puff.SootParticles, share, ref sootParticlesDue),
+            };
+            ExhaustBlast.Step(ref beat.Release, since, turned);
+            // The oldest gives way when too many wait (a crank stopped mid-stroke).
+            if (pendingBeatCount == pendingBeats.Length)
             {
-                var streaks = SmokeDetail.Scaled(Mathf.Max(2, puff.Particles / 2), share, ref jetStreaksDue, least: 1);
-                var parcel = new JetParcel { Thickness = PlumeRise.Parcel(puff.Color.A, puff.SmokeShare), SmokeColor = ToColor(puff.SmokeColor) };
-                for (var i = 0; i < streaks; i++)
-                {
-                    var seed = (uint)Random.Range(int.MinValue, int.MaxValue);
-                    jetParcels.Expect(seed, parcel);
-                    Emit(jet, puff.Speed, puff.Size * JetStreakSize, JetColor(parcel, 0f), carVelocity, PuffSpread * 0.5f, 0.85f, 1.1f, seed: seed);
-                }
+                System.Array.Copy(pendingBeats, 1, pendingBeats, 0, pendingBeatCount - 1);
+                pendingBeatCount--;
             }
-
-            // A dark puff's sooty core goes into the cloud's own system, drawn
-            // among its particles by distance: in a system of its own it was
-            // drawn over the whole cloud, white steam in front of it too, and
-            // a fresh charge's black smoke cut through the steam as a layer
-            // (ThinBlueWarrior, Nexus, 2026-10-19). It keeps its shorter
-            // life, drawn as the Soot system's.
-            var sootParticles = SmokeDetail.Scaled(puff.SootParticles, share, ref sootParticlesDue);
-            if (sootParticles > 0)
-            {
-                var soot = new Color(color.r * 0.8f, color.g * 0.8f, color.b * 0.8f, Mathf.Min(1f, color.a + 0.1f));
-                for (var i = 0; i < sootParticles; i++)
-                    Emit(smoke, puff.Speed * 0.9f, puff.Size * 0.6f, soot, carVelocity, PuffSpread, PuffSlowest, PuffFastest,
-                        SootLifetime(puff.LifetimeScale), Aloft(smoke), 1f, soot, steamCloud);
-            }
+            pendingBeats[pendingBeatCount++] = beat;
 
             // Usually well under one spark a beat: round at random. A stoker's
             // lost fines go out with the beat too.
@@ -1508,13 +1568,83 @@ namespace RealisticStackEffects
             }
         }
 
+        // The particles the beats' steam has let out by now, each at the
+        // speed of the stack's flow as it left and as far up as it has come
+        // since.
+        private void ReleaseBeats(Vector3 carVelocity)
+        {
+            var kept = 0;
+            for (var i = 0; i < pendingBeatCount; i++)
+            {
+                ref var beat = ref pendingBeats[i];
+                while (ExhaustBlast.Next(ref beat.Release, out var flow, out var due))
+                    EmitBeatParticle(ref beat, flow, due, carVelocity);
+                if (beat.Release.Done)
+                    continue;
+                if (kept != i)
+                    pendingBeats[kept] = beat;
+                kept++;
+            }
+            pendingBeatCount = kept;
+        }
+
+        private void EmitBeatParticle(ref PendingBeat beat, float flow, float due, Vector3 carVelocity)
+        {
+            var puff = beat.Puff;
+            var color = ToColor(puff.Color);
+            var speed = ExhaustBlast.Speed(flow, puff.Speed, Mathf.Min(LeastBeatSpeed, puff.Speed));
+            var late = Mathf.Min(due, Time.deltaTime);
+            // As a cluster, a bigger head with lobes beside it; else each
+            // the puff's size up the jet.
+            var cluster = Mathf.Clamp01(Look.BeatCluster);
+            var head = beat.Out == 0;
+            beat.Out++;
+            var size = puff.Size * (head ? Mathf.Lerp(1f, ClusterCore, cluster) : Mathf.Lerp(1f, ClusterLobe, cluster));
+            Emit(smoke, speed, size, color, carVelocity, head ? PuffSpread : Mathf.Lerp(PuffSpread, ClusterSpread, cluster),
+                BeatSpeedSlowest, BeatSpeedFastest, Lifetime(smoke, puff.LifetimeScale),
+                Aloft(smoke), puff.SmokeShare, ToColor(puff.SmokeColor), steamCloud, late: late);
+
+            // The jet's streaks: its smoke, and its white only as far as it
+            // has formed in their half second.
+            if (jet != null)
+            {
+                var parcel = new JetParcel { Thickness = PlumeRise.Parcel(puff.Color.A, puff.SmokeShare), SmokeColor = ToColor(puff.SmokeColor) };
+                for (; beat.StreaksOut * beat.Particles < beat.Out * beat.Streaks; beat.StreaksOut++)
+                {
+                    var seed = (uint)Random.Range(int.MinValue, int.MaxValue);
+                    jetParcels.Expect(seed, parcel);
+                    Emit(jet, speed, puff.Size * JetStreakSize, JetColor(parcel, 0f), carVelocity, PuffSpread * 0.5f, 0.85f, 1.1f, seed: seed, late: late);
+                }
+            }
+
+            // A dark puff's sooty core goes into the cloud's own system, drawn
+            // among its particles by distance: in a system of its own it was
+            // drawn over the whole cloud, white steam in front of it too, and
+            // a fresh charge's black smoke cut through the steam as a layer
+            // (ThinBlueWarrior, Nexus, 2026-10-19). It keeps its shorter
+            // life, drawn as the Soot system's.
+            // As one exhaust it carries the puff's own steam with its smoke,
+            // a little denser and its smoke a little darker: all smoke, it
+            // stayed dark among puffs that kept their white (2026-11-12).
+            if (beat.SootOut * beat.Particles < beat.Out * beat.Soot)
+            {
+                var one = Look.OneExhaust > 0.5f;
+                var soot = new Color(color.r * 0.8f, color.g * 0.8f, color.b * 0.8f, Mathf.Min(1f, color.a + 0.1f));
+                var sootSmoke = new Color(puff.SmokeColor.R * 0.8f, puff.SmokeColor.G * 0.8f, puff.SmokeColor.B * 0.8f, 1f);
+                for (; beat.SootOut * beat.Particles < beat.Out * beat.Soot; beat.SootOut++)
+                    Emit(smoke, speed * 0.9f, puff.Size * 0.6f, soot, carVelocity, PuffSpread, BeatSpeedSlowest, BeatSpeedFastest,
+                        SootLifetime(puff.LifetimeScale), Aloft(smoke), one ? puff.SmokeShare : 1f, one ? sootSmoke : soot, steamCloud, late: late);
+            }
+        }
+
         // A jet streak's color <paramref name="age"/> s out of the stack: its
         // smoke, and as much of its white as has formed by then, as the
         // cloud's particles beside it.
-        private Color JetColor(JetParcel parcel, float age)
+        private Color JetColor(JetParcel parcel, float age, float height = 0f)
         {
             var past = airVelocity - stackVelocity;
-            var steam = PlumeRise.SteamLeft(parcel.Thickness, steamCloud, age, new Vector2(past.x, past.z).magnitude, tuning.SteamMixing, tuning.SteamForming);
+            var steam = PlumeRise.SteamLeft(parcel.Thickness, steamCloud, age, new Vector2(past.x, past.z).magnitude, tuning.SteamMixing, tuning.SteamForming,
+                SteamCloud.Sheath(height, 2f * boreRadius, tuning.WhiteByHeight));
             var whole = steam + parcel.Thickness.SmokeDepth;
             var tint = whole > 1e-4f ? PlumeModel.SmokeTint(parcel.Thickness.SmokeDepth / whole) : 1f;
             var white = PlumeModel.Steam;
@@ -1632,8 +1762,9 @@ namespace RealisticStackEffects
                 var ageScale = 1f;
                 if (puffMaterials.TryGetValue(system, out var puffMaterial) && puffMaterial != null && puffMaterial.HasProperty(PuffAgeScaleId))
                 {
-                    ageScale = PlumeRise.PuffAgeScale(wispTrainSpeed, plume.PlayingTime,
-                        Mathf.Max(Look.WispAgeTo, Look.ThinWispAgeTo), Look.PuffTrail);
+                    ageScale = AsParcels
+                        ? 1f
+                        : PlumeRise.PuffAgeScale(wispTrainSpeed, plume.PlayingTime, Mathf.Max(Look.WispAgeTo, Look.ThinWispAgeTo), Look.PuffTrail);
                     puffMaterial.SetFloat(PuffAgeScaleId, ageScale);
                 }
                 Carry(system, plume, count, new PlumeAloft.Air
@@ -1664,8 +1795,8 @@ namespace RealisticStackEffects
                     WispLargestFrom = Look.WispLargestFrom,
                     WispLargestTo = Look.WispLargestTo,
                     WispShare = Look.WispShare,
-                    WispAgeFrom = Look.WispAgeFrom * ageScale,
-                    WispAgeTo = Look.WispAgeTo * ageScale,
+                    WispAgeFrom = WispAgeFrom * ageScale,
+                    WispAgeTo = WispAgeTo * ageScale,
                     WispFrayEdge = Look.WispFrayEdge,
                     WispBelow = Look.WispBelow,
                     WispAbove = Look.WispAbove,
@@ -1683,8 +1814,24 @@ namespace RealisticStackEffects
                     RollSlows = Look.RollSlows,
                     Roof = SameSpace(system, smoke) ? roof : null,
                     InTunnel = roof.OverStack.HasValue,
-                    Faint = SmokeDetail.Faint(StackHost.Settings.SmokeQuality),
+                    Faint = SmokeDetail.Faint(StackHost.Quality),
                     Floor = Vector3.Dot(zoneTop, up),
+                    Parcels = Look.Parcels,
+                    Bore = 2f * boreRadius,
+                    BeatHard = beatHard,
+                    BlastSpread = Look.ParcelBlast,
+                    Roll = Look.ParcelRoll,
+                    MixedBelow = Look.ParcelMixedBelow,
+                    MixedAbove = Look.ParcelMixedAbove,
+                    JetLength = tuning.JetLength,
+                    Neck = Look.Neck * 2f * boreRadius,
+                    WhiteByHeight = tuning.WhiteByHeight,
+                    Lump = Look.ParcelLump,
+                    LeastLump = Look.ParcelLeast,
+                    LumpsAcross = Look.ParcelsAcross,
+                    ParcelArea = Look.ParcelArea,
+                    LightSmoke = Look.ParcelLightSmoke,
+                    DenseSmoke = Look.ParcelDenseSmoke,
                 }, emitter, axis, zone, zoneTop, carried);
                 return;
             }
@@ -1736,7 +1883,7 @@ namespace RealisticStackEffects
                 if (system == jet && jetParcels.TryRecall(particle.randomSeed, out var jetParcel))
                 {
                     var age = Mathf.Max(0f, particle.startLifetime - particle.remainingLifetime);
-                    particle.startColor = JetColor(jetParcel, age);
+                    particle.startColor = JetColor(jetParcel, age, Vector3.Dot(particle.position - zoneTop, up));
                 }
 
                 if (streaks)
@@ -1794,11 +1941,11 @@ namespace RealisticStackEffects
         {
             var compact = Look.StableParticleData > 0.5f;
             var kept = 0;
-            if (theirRecords.Length < buffer.Length)
-                theirRecords = new PlumeAloft.Record[buffer.Length];
+            if (count > SmokeCounts)
+                StackHost.SmokeInTheAir();
             using (StackHost.TimePhase(PlumePhase.Carry))
             {
-                plume.Begin(air);
+                plume.Begin(air, count);
                 for (var i = 0; i < count; i++)
                 {
                     // In its place in the buffer: copied out and back, 132
@@ -1810,13 +1957,13 @@ namespace RealisticStackEffects
                         var upward = Mathf.Max(Vector3.Dot(particle.velocity - carried, axis), MinZoneRise);
                         particle.velocity = carried + axis * upward;
                     }
-                    if (plume.Turn(ref particle, inZone))
+                    if (plume.Turn(ref particle, inZone, i))
                     {
                         // From the lip's middle: below it in the stack, above it out;
                         // its least width by its height over the lip.
                         var height = Vector3.Dot(particle.position - zoneTop, air.Up);
                         var above = inZone ? Vector3.Dot(particle.position - zoneTop, axis) : Vector3.Distance(particle.position, zoneTop);
-                        plume.Work(ref particle, height, Least(inZone ? above : Mathf.Max(0f, height)), Widest(above), inZone);
+                        plume.Work(ref particle, height, Least(inZone ? above : Mathf.Max(0f, height)), Widest(above), inZone, above);
                     }
                     // SetParticles drops the dead and moves the last survivors
                     // into their places, but the custom data written after it
@@ -1825,7 +1972,7 @@ namespace RealisticStackEffects
                     // each keeps its own.
                     if (compact && particle.remainingLifetime <= 0f)
                         continue;
-                    theirRecords[kept] = plume.Last;
+                    plume.Keep(kept);
                     if (kept != i)
                         buffer[kept] = particle;
                     kept++;
@@ -1859,20 +2006,18 @@ namespace RealisticStackEffects
                 var filled = Mathf.Min(count, Mathf.Min(shapeData.Count, extraData.Count));
                 for (var i = 0; i < filled; i++)
                 {
-                    var record = theirRecords[i];
-                    var seed = buffer[i].randomSeed;
+                    var record = plume.At(i);
                     var age = buffer[i].startLifetime - buffer[i].remainingLifetime;
                     if (wisps)
                     {
                         var hard = Mathf.SmoothStep(0f, 1f, (plume.HardOf(record, beatHard) - longFrom) / (Look.LongPuffsBy - longFrom));
-                        shapeData[i] = new Vector4(PlumeAloft.WispRow(seed) + 0.49f * PlumeAloft.WispPhase(seed),
-                            PlumeAloft.WispTurn(seed, age, Look.WispSpin, Look.WispSpinEase), hard, plume.FlipbookAt(Mathf.Max(0f, age)));
+                        shapeData[i] = plume.WispOf(record, age, Look.WispSpin, Look.WispSpinEase, hard);
                     }
                     else if (air.Shape)
                     {
                         shapeData[i] = record.Shape;
                     }
-                    extraData[i] = plume.ExtraOf(record, seed, age, buffer[i].position);
+                    extraData[i] = plume.ExtraOf(record, age, buffer[i].position);
                 }
                 if (wisps || air.Shape)
                     system.SetCustomParticleData(shapeData, ParticleSystemCustomData.Custom1);
@@ -1955,7 +2100,7 @@ namespace RealisticStackEffects
         // through Unity's shape module.
         private static void Emit(ParticleSystem system, float speed, float size, Color color, Vector3 carVelocity,
             float spread, float slowest, float fastest, float lifetime = 0f, PlumeAloft plume = null, float smokeShare = 0f,
-            Color smokeColor = default, SteamCloud cloud = null, uint seed = 0)
+            Color smokeColor = default, SteamCloud cloud = null, uint seed = 0, float late = 0f)
         {
             var transform = system.transform;
             var up = transform.up;
@@ -1968,7 +2113,8 @@ namespace RealisticStackEffects
             var lead = local ? Vector3.zero : carVelocity * Time.deltaTime;
             var emit = new ParticleSystem.EmitParams
             {
-                position = SimulationPoint(system, start - lead),
+                // One that left a moment ago (late) has come this far up the stack.
+                position = SimulationPoint(system, start - lead + launch * late),
                 applyShapeToPosition = false,
                 velocity = local
                     ? transform.InverseTransformDirection(launch)
@@ -2158,7 +2304,7 @@ namespace RealisticStackEffects
         {
             if (systems != null)
                 return systems;
-            var gathered = new[] { smoke, sootCore, jet, heat, vents?.Drawn }.Concat(embers ?? new ParticleSystem[0]).Where(s => s != null).Distinct().ToArray();
+            var gathered = new[] { smoke, sootCore, jet, heat, vents?.Drawn, vents?.Behind }.Concat(embers ?? new ParticleSystem[0]).Where(s => s != null).Distinct().ToArray();
             if (Active)
                 systems = gathered;
             return gathered;

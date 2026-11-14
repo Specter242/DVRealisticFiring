@@ -80,6 +80,10 @@ namespace RealisticFiring.Visuals
                 var steam = Control(steamSource, root.transform, car, V(data.SteamPivot), circuit.SteamValve,
                     () => InjectorSteamCab.SteamHover(circuit, InjectorValves.Steam));
                 Configure(water.GetComponent<Rotary>(), data);
+                // Unnotched like the steam lever: a VR hand's setting holds
+                // only if the spring's target follows it (AdensWorld, Nexus,
+                // 2026-11-12: the wheel would not stay where it was left).
+                water.gameObject.AddComponent<SpringFollowsHand>();
                 var waterInput = water.gameObject.AddComponent<S282ContinuousWaterWheel>();
                 waterInput.Original = stock;
                 waterInput.Car = car;
@@ -187,7 +191,12 @@ namespace RealisticFiring.Visuals
             var rotary = control.GetComponent<Rotary>();
             if (rotary != null) rotary.nonVrStaticInteractionArea = null;
             var lever = control.GetComponent<Lever>();
-            if (lever != null) { lever.nonVrStaticInteractionArea = null; lever.interactionPoint = null; }
+            if (lever != null)
+            {
+                lever.nonVrStaticInteractionArea = null;
+                lever.interactionPoint = null;
+                StripHandGuides(control.gameObject);
+            }
             control.SetPositionAndRotation(car.transform.TransformPoint(pivot), car.transform.rotation);
             var feeder = control.GetComponent<InteractablePortFeeder>();
             if (feeder == null) throw new InvalidDataException("Cloned control has no port feeder");
@@ -195,6 +204,19 @@ namespace RealisticFiring.Visuals
             control.gameObject.AddComponent<SimControlBinder>().Bind(feeder, port);
             control.gameObject.AddComponent<HoverName>().Source = hover;
             return control;
+        }
+
+        /// <summary>
+        /// Takes off the hand guides a cloned lever brought from its source
+        /// (the sand lever's LineHandSnapper): placed for the sand lever's
+        /// handle, they held a VR hand at the top of the steam lever rather
+        /// than where it took hold (AdensWorld, Nexus, 2026-11-12). Without
+        /// one the hand stays where it closed.
+        /// </summary>
+        internal static void StripHandGuides(GameObject control)
+        {
+            foreach (var guide in control.GetComponents<AHandPoseSnapper>())
+                Object.DestroyImmediate(guide);
         }
 
         private static void Grip(Transform control, List<Renderer> renderers, float minimum, Transform movingFrame = null, float? sphereRadius = null)

@@ -225,6 +225,14 @@ namespace RealisticStackEffects.Core
         public static float SteamLeft(PlumeParcel parcel, SteamCloud cloud, float age, float airSpeed, float mixing = 1f, float forming = 1f) =>
             cloud == null ? parcel.SteamDepth : parcel.SteamDepth * cloud.Left(age, airSpeed, mixing, forming);
 
+        /// <summary>
+        /// As <see cref="SteamLeft(PlumeParcel, SteamCloud, float, float, float, float)"/>,
+        /// its white formed no less than the jet's sheath has it at its
+        /// height (<see cref="SteamCloud.Sheath"/>).
+        /// </summary>
+        public static float SteamLeft(PlumeParcel parcel, SteamCloud cloud, float age, float airSpeed, float mixing, float forming, float sheath) =>
+            cloud == null ? parcel.SteamDepth : parcel.SteamDepth * cloud.Left(age, airSpeed, mixing, forming, sheath);
+
         /// <summary>The opacity of <paramref name="depth"/> (at the stack) thinned to <paramref name="height"/> and spread to <paramref name="spreadWidth"/>.</summary>
         public static float OpacityOf(float depth, float height, float spreadWidth = 0f) => OpacityAt(depth, Dilution(height, spreadWidth));
 

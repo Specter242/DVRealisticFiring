@@ -791,6 +791,12 @@ namespace RealisticFiring.Visuals
             doorSmokeTried = true;
             var copy = Instantiate(smoke.gameObject, car.transform, false);
             copy.name = "RealisticFiring door smoke";
+            for (var i = copy.transform.childCount - 1; i >= 0; i--)
+            {
+                var child = copy.transform.GetChild(i).gameObject;
+                child.SetActive(false);
+                Destroy(child);
+            }
             copy.transform.localPosition = Vector3.zero;
             copy.transform.localRotation = Quaternion.identity;
             copy.transform.localScale = Vector3.one;

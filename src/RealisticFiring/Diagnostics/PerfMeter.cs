@@ -21,6 +21,12 @@ namespace RealisticFiring.Diagnostics
         Overflow,
         Controller,
         Gui,
+        // The game's boiler tick with the mod's water rig in it, less the injector's own section.
+        Boiler,
+        // The game's exhaust tick with the mod's blower and draft in it.
+        Draft,
+        // The shed stands' hoses: their water and steam, their plugs' watch, and the rope laid on the ground.
+        ShedHoses,
     }
 
     /// <summary>
@@ -50,6 +56,20 @@ namespace RealisticFiring.Diagnostics
             Calls[(int)section]++;
         }
 
+        /// <summary>
+        /// Ends a section that has <paramref name="within"/> timed inside it:
+        /// counted without what that section gathered since <paramref name="withinBefore"/>
+        /// (<see cref="Gathered"/>), so the sum counts nothing twice.
+        /// </summary>
+        public static void StopLess(PerfSection section, long start, PerfSection within, long withinBefore)
+        {
+            Elapsed[(int)section] += Stopwatch.GetTimestamp() - start - (Elapsed[(int)within] - withinBefore);
+            Calls[(int)section]++;
+        }
+
+        /// <summary>The ticks a section has gathered since the last report.</summary>
+        public static long Gathered(PerfSection section) => Elapsed[(int)section];
+
         public static void StopPlumePhase(RealisticStackEffects.PlumePhase phase, long start)
         {
             PlumeElapsed[(int)phase] += Stopwatch.GetTimestamp() - start;
@@ -75,6 +95,19 @@ namespace RealisticFiring.Diagnostics
         /// <summary>Counts a physics step; call from FixedUpdate.</summary>
         public static void PhysicsStep() => physicsSteps++;
 
+        /// <summary>
+        /// The given sections' milliseconds per frame since the last report,
+        /// for a window timed on purpose (the firebox capture's TimeFrames);
+        /// resets, as <see cref="Report"/> does.
+        /// </summary>
+        public static string Window(params PerfSection[] sections)
+        {
+            var perFrame = frames > 0 ? 1000.0 / Stopwatch.Frequency / frames : 0.0;
+            var text = string.Join(", ", sections.Select(s => $"{s} {Elapsed[(int)s] * perFrame:F3} ms"));
+            Report();
+            return text;
+        }
+
         /// <summary>The frame rate and each section's milliseconds per frame since the last report; resets.</summary>
         public static string Report()
         {
@@ -86,8 +119,8 @@ namespace RealisticFiring.Diagnostics
                 .Select(i => $"{(PerfSection)i} {Elapsed[i] * perFrame:F2} ({(frames > 0 ? (float)Calls[i] / frames : 0f):F1} calls/frame)"));
             var steps = frames > 0 ? (float)physicsSteps / frames : 0f;
             var text = $"frame rate {(seconds > 0f ? frames / seconds : 0f):F0} fps over {seconds:F0} s, {steps:F1} physics steps a frame; " +
-                       $"timed sections {total:F2} ms a frame on the main thread ({parts}; EngineTick includes the stock engine; not the worker or the GPU); " +
-                       $"plume breakdown within ChimneyPlume, not added to total ({PlumeBreakdown(perFrame, frames)}; Motion includes Carry, Shadows, Buffers, CustomData and VolumeSubmit; VolumeSubmit excludes worker execution)";
+                       $"timed sections {total:F2} ms a frame on the main thread ({parts}; EngineTick, Boiler and Draft include the stock engine, boiler and exhaust; not the worker or the GPU); " +
+                       $"plume breakdown within ChimneyPlume, not added to total ({PlumeBreakdown(perFrame, frames)}; Motion includes Carry, Shadows, Buffers, CustomData, Vents and VolumeSubmit; VolumeSubmit excludes worker execution)";
             System.Array.Clear(Elapsed, 0, Elapsed.Length);
             System.Array.Clear(Calls, 0, Calls.Length);
             System.Array.Clear(PlumeElapsed, 0, PlumeElapsed.Length);

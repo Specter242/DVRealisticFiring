@@ -27,6 +27,15 @@ namespace RealisticFiring.Visuals
         private static readonly int SmokeAlbedoId = Shader.PropertyToID("_SmokeAlbedo");
         private static readonly int SmokeLightId = Shader.PropertyToID("_SmokeLight");
         private static readonly int SharpId = Shader.PropertyToID("_Sharp");
+        private static readonly int EdgeMeanId = Shader.PropertyToID("_EdgeMean");
+        private static readonly int SmokeLocalId = Shader.PropertyToID("_SmokeLocal");
+        private static readonly int SmokeMeanId = Shader.PropertyToID("_SmokeMean");
+        private static readonly int CeilingId = Shader.PropertyToID("_Ceiling");
+        private static readonly int DetailBlurId = Shader.PropertyToID("_DetailBlur");
+        private static readonly int DitherAmountId = Shader.PropertyToID("_DitherAmount");
+        private static readonly int DitherShiftId = Shader.PropertyToID("_DitherShift");
+        private static readonly int SmokePlumeId = Shader.PropertyToID("_SmokePlume");
+        private static readonly int SmokeStrideId = Shader.PropertyToID("_SmokeStride");
         private static readonly int WarpId = Shader.PropertyToID("_Warp");
         private static readonly int NoiseTileId = Shader.PropertyToID("_NoiseTile");
         private static readonly int SheetLowId = Shader.PropertyToID("_SheetLow");
@@ -87,6 +96,8 @@ namespace RealisticFiring.Visuals
         private static readonly int SideSwirlId = Shader.PropertyToID("_SideSwirl");
         private static readonly int FlowAId = Shader.PropertyToID("_FlowA");
         private static readonly int FlowBId = Shader.PropertyToID("_FlowB");
+        private static readonly int FlowAPrevId = Shader.PropertyToID("_FlowAPrev");
+        private static readonly int FlowLerpId = Shader.PropertyToID("_FlowLerp");
         private static readonly int FlowWeightsId = Shader.PropertyToID("_FlowWeights");
         private static readonly int DetailScaleId = Shader.PropertyToID("_DetailScale");
         private static readonly int DetailErodeId = Shader.PropertyToID("_DetailErode");
@@ -98,6 +109,10 @@ namespace RealisticFiring.Visuals
         private static readonly int SparseId = Shader.PropertyToID("_Sparse");
         private static readonly int PulseMeanId = Shader.PropertyToID("_PulseMean");
         private static readonly int RootOffsetId = Shader.PropertyToID("_RootOffset");
+        private static readonly int ArchLineId = Shader.PropertyToID("_ArchLine");
+        private static readonly int ArchFlameId = Shader.PropertyToID("_ArchFlame");
+        private static readonly int ArchBendId = Shader.PropertyToID("_ArchBend");
+        private static readonly int ArchFlowId = Shader.PropertyToID("_ArchFlow");
 
         internal static float Steps = 128f;
         internal static float StepLength = 0.02f;
@@ -108,8 +123,8 @@ namespace RealisticFiring.Visuals
         private float closedUpdateAt;
         private float closedUpdated;
         private int sourceRefreshes;
-        internal static float Glow = 0.9f;
-        internal static float FlameDensity = 6f;
+        internal static float Glow = 1.1f;
+        internal static float FlameDensity = 15f;
         // Dense firebox smoke must obscure the fire and walls. The old
         // low extinction and bright scattering showed a luminous haze,
         // especially against the white-hot bed.
@@ -118,7 +133,41 @@ namespace RealisticFiring.Visuals
         internal static float SmokeLight = 0.08f;
         internal static float SmokeClumps = 1f;
         internal static float ChokedSmoke = 2f;
-        internal static float Sharp = 40f;
+        internal static float Sharp = 55f;
+        // The flames' edges taken as their mean along each step of the march
+        // (1), not at each step's point (0): point by point, an edge a few
+        // millimetres thick in 2 cm steps drew as sand along every flame.
+        internal static float EdgeMean = 1f;
+        // Near the coal the smoke is the smoke of the coal under it (1), not
+        // the box's evenly (0): thick over a fresh shovelful.
+        internal static float SmokeLocal = 1f;
+        // How much of the detail finer than a march step is left out of the
+        // flames (each read of the curls and fine filaments at the whole mip
+        // its scale needs): read finer than the steps along the ray, it is
+        // caught by one pixel's march and missed by its neighbor's, a grain
+        // through the flames' bright feet, the worse the more their light
+        // is streaked by it. (It does nothing for the salt over the lumps,
+        // which was the ray's last part-step: jobs 2009 and 2010.)
+        internal static float DetailBlur = 1f;
+        internal static float DitherAmount = 1f;
+        // How far each quad's four starts are shifted at random, a share of
+        // the quarter step they stand apart: what the quad's mean still
+        // misses shows as grain from quad to quad at 1 and as faint combed
+        // striations through the flames at 0 (job 2038: fresh at 1, 0.3,
+        // and 0; working, flat out, burned down, and drifting at 0).
+        internal static float DitherShift = 0.3f;
+        // A patch of fresh coal's own smoke, rolling up from it before the
+        // airflow has it (0 none).
+        internal static float SmokePlume = 1f;
+        // How many steps on the march's next read falls from one clear of
+        // every flame, where only smoke is (1: every step, as it was).
+        internal static float SmokeStride = 3f;
+        // A drifting fire's lazy tongues: this much taller, a share of the
+        // room over the coal, with no draft over a bed past a quarter of its
+        // heat (the footage, shut off: loose tongues 0.2 to 0.5 of the box
+        // high; a duller standing fire keeps its few short ones).
+        internal static float LazyTop = 0.14f;
+        internal static float LazyDraft = 0.3f;
         internal static float NoiseTile = 1f;
 
         // The flames' sheets: where the noise's crests rise over these at the
@@ -136,7 +185,7 @@ namespace RealisticFiring.Visuals
 
         internal static float FlameHeat = 0.9f;
         internal static float EdgeHeat = 0.35f;
-        internal static float CoreDepth = 0.5f;
+        internal static float CoreDepth = 0.25f;
         internal static float Carpet = 0.02f;
         internal static float Stretch = 0.4f;
         internal static float StretchFine = 0.8f;
@@ -168,7 +217,7 @@ namespace RealisticFiring.Visuals
         internal static float LickScale = 2.1f;
         internal static float LickLow = 0.65f;
         internal static float LickStrength = 3f;
-        internal static float LickGlow = 6f;
+        internal static float LickGlow = 2.5f;
         internal static float LickHeat = 0.7f;
         internal static float LickStanding = 1f;
         // Narrow the edge fade and luminous folds without moving the rooted
@@ -203,8 +252,8 @@ namespace RealisticFiring.Visuals
         internal static float EddyHigh = 0.3f;
         internal static float EddySpinForced = 6f;
         internal static float EddySpinDrifting = 2f;
-        internal static float DetailErode = 0.8f;
-        internal static float DetailStreak = 0.25f;
+        internal static float DetailErode = 0.9f;
+        internal static float DetailStreak = 0.55f;
 
         internal static float Sway = 0.12f;
         internal static float SwayForced = 1.2f;
@@ -227,8 +276,8 @@ namespace RealisticFiring.Visuals
         internal static float TipWhipRateDrifting = 0.5f;
         internal static float TipWhipBeat = 3f;
 
-        internal static float BaseGlowForced = 10f;
-        internal static float BaseGlowDrifting = 6f;
+        internal static float BaseGlowForced = 5f;
+        internal static float BaseGlowDrifting = 3.5f;
         internal static float BaseCokeForced = 0.8f;
         internal static float BaseCokeDrifting = 0.5f;
         internal static float BaseHeight = 0.6f;
@@ -244,9 +293,9 @@ namespace RealisticFiring.Visuals
         // feet's and short flames' glare over them, under a full draft and
         // with none; between them it dims to keep the same on average.
         internal static float SpotLow = 0.6f;
-        internal static float SpotGlareForced = 3.3f;
-        internal static float SpotGlareDrifting = 1.8f;
-        internal static float TipHeat = 0.5f;
+        internal static float SpotGlareForced = 2.4f;
+        internal static float SpotGlareDrifting = 1.5f;
+        internal static float TipHeat = 0.75f;
 
         // The flames' turbulence: how far the curls bend them, drifting and
         // under a full draft, and how fast the curls churn across the flow
@@ -271,9 +320,9 @@ namespace RealisticFiring.Visuals
         internal static float FreezeFlow;
 
         internal static float CokeFlame = 0.05f;
-        internal static float GasFlame = 0.15f;
+        internal static float GasFlame = 0.9f;
         internal static float GasFull = 0.35f;
-        internal static float GasExponent = 0.8f;
+        internal static float GasExponent = 4f;
         internal static float GasStrength = 0.9f;
         internal static float GasFill = 0.08f;
         // Weak flames break up into a few tongues, off the threshold by this
@@ -328,8 +377,13 @@ namespace RealisticFiring.Visuals
         private float lickOffset;
         private FireboxAirflow airflow;
         private Texture2D flowA;
+        private Texture2D flowAPrev;
         private Texture2D flowB;
-        private Color[] flowPixelsA;
+        // The airflow's smoke under this is not drawn (the shader's own
+        // limit for a step with nothing in it); and the smoke's top, a share
+        // of the box's height.
+        private const float SmokeDrawn = 0.004f;
+        private float smokeCeiling = 1f;
         private Color[] flowPixelsB;
 
         // The airflow steps at a fixed rate, and the picture is drawn between
@@ -340,6 +394,11 @@ namespace RealisticFiring.Visuals
         private const float FlowStep = 1f / 30f;
         private const int FlowCatchUp = 4;
         private float flowDue;
+        // The zones' maps go to the shader at the airflow's rate too, not
+        // every frame: the fire they draw changes as it burns, over seconds.
+        private float zonesDueAt;
+        // The test bed's tuning the fixed values were last set from.
+        private int constantsVersion = -1;
         private Color[] flowBeforeA;
         private Color[] flowBeforeB;
         private Color[] flowNowA;
@@ -363,6 +422,19 @@ namespace RealisticFiring.Visuals
         private float alongSign = 1f;
 
         /// <summary>How hard a zone's flames burn in the volume this frame, 0 to 1.</summary>
+        /// <summary>The engine's brick arch, which the flames go under and round, or null.</summary>
+        internal BrickArch Arch
+        {
+            get => arch;
+            set
+            {
+                arch = value;
+                constantsVersion = -1;
+            }
+        }
+
+        private BrickArch arch;
+
         public float ZoneStrength(GrateZone zone) => strength[(int)zone];
 
         /// <summary>How tall a zone's flames stand over its coal this frame, m.</summary>
@@ -371,7 +443,9 @@ namespace RealisticFiring.Visuals
         /// <summary>The zones' flames and smoke as the volume draws them, for the test bed's log.</summary>
         internal string Describe()
         {
-            var b = new System.Text.StringBuilder($"draft {flames.Draft:F2}, pulse {pulse:F2}; drawing {boxRenderer?.enabled}, viewed {Viewed}, quality {Main.Settings?.FireboxQuality}, steps {material?.GetFloat(StepsId):F0}, spacing {material?.GetFloat(StepLengthId):F3} m; motion {lickOffset:F3}, dither {material?.GetFloat(DitherFrameId):F0}, source refreshes {sourceRefreshes}, clock {Time.unscaledTime:F3}; fire's light {FireColors.Light:F2}, exposure {FireColors.Exposed:F2}; gas burned over the fire {firebox.Model.OverFireBurnout:P0}, overwhelm {FireColors.Overwhelm:F2}; ");
+            var b = new System.Text.StringBuilder($"draft {flames.Draft:F2}, pulse {pulse:F2}; drawing {boxRenderer?.enabled}, viewed {Viewed}, quality {Main.Settings?.FireboxQuality}, half resolution {FireboxOffscreen.Drawing}, steps {material?.GetFloat(StepsId):F0}, spacing {material?.GetFloat(StepLengthId):F3} m; motion {lickOffset:F3}, dither {material?.GetFloat(DitherFrameId):F0}, source refreshes {sourceRefreshes}, clock {Time.unscaledTime:F3}; fire's light {FireColors.Light:F2}, exposure {FireColors.Exposed:F2}; gas burned over the fire {firebox.Model.OverFireBurnout:P0}, overwhelm {FireColors.Overwhelm:F2}; ceiling {material?.GetFloat(CeilingId):F2}, smoke's {smokeCeiling:F2}; ");
+            if (arch != null)
+                b.Append($"brick arch's heat {arch.Heat:F2}; ");
             if (airflow != null)
             {
                 // The airflow: its speed up and across on average and at most,
@@ -393,14 +467,18 @@ namespace RealisticFiring.Visuals
                 b.Append($"airflow up {up / cells:F2} m/s, across {across / cells:F2}, fastest {fastest:F2}, bend {bend:F2} m; ");
                 b.Append($"flow weights {flowWeights.x:F4}/{flowWeights.y:F4}, resets {airflow.RestartsA}/{airflow.RestartsB}, eddies {airflow.EddiesStarted}; ");
             }
-            b.Append("zones (heat/strength/top/smoke/gas):");
+            b.Append("zones (heat/strength/top/smoke/gas/cover):");
             for (var i = 0; i < GrateLayout.ZoneCount; i++)
-                b.Append($" {pixelsB[GrateLayout.Row((GrateZone)i) * GrateLayout.Columns + GrateLayout.Column((GrateZone)i)].r:F2}/{strength[i]:F2}/{top[i]:F2}/{pixelsA[GrateLayout.Row((GrateZone)i) * GrateLayout.Columns + GrateLayout.Column((GrateZone)i)].b:F2}/{gas[i]:F2}");
+                b.Append($" {pixelsB[GrateLayout.Row((GrateZone)i) * GrateLayout.Columns + GrateLayout.Column((GrateZone)i)].r:F2}/{strength[i]:F2}/{top[i]:F2}/{pixelsA[GrateLayout.Row((GrateZone)i) * GrateLayout.Columns + GrateLayout.Column((GrateZone)i)].b:F2}/{gas[i]:F2}/{bed.ZoneCover((GrateZone)i):F2}");
             return b.ToString();
         }
 
         /// <summary>Whether the volume draws this frame.</summary>
         public bool Drawing => boxRenderer != null && boxRenderer.enabled;
+
+        /// <summary>The volume's renderer and material, for its half-resolution drawing (FireboxOffscreen).</summary>
+        internal MeshRenderer VolumeRenderer => boxRenderer;
+        internal Material VolumeMaterial => material;
 
         /// <summary>Whether a camera saw the volume last frame, through its open door.</summary>
         public bool Viewed { get; private set; }
@@ -430,8 +508,11 @@ namespace RealisticFiring.Visuals
         private bool Near()
         {
             var camera = PlayerManager.ActiveCamera != null ? PlayerManager.ActiveCamera : Camera.main;
-            Distance = camera != null && boxRenderer != null
-                ? Mathf.Sqrt(boxRenderer.bounds.SqrDistance(camera.transform.position))
+            // A plume capture's camera is put at its view only as it draws:
+            // from where it is held, not from where the player stands.
+            var eye = RealisticStackEffects.PlumeCapture.HeldAt ?? (camera != null ? camera.transform.position : (Vector3?)null);
+            Distance = eye.HasValue && boxRenderer != null
+                ? Mathf.Sqrt(boxRenderer.bounds.SqrDistance(eye.Value))
                 : 0f;
             return Distance < ViewDistance;
         }
@@ -453,6 +534,7 @@ namespace RealisticFiring.Visuals
             volume.material.SetTexture(ZonesAId, volume.zonesA);
             volume.material.SetTexture(ZonesBId, volume.zonesB);
             volume.Build();
+            FireboxOffscreen.Add(volume);
             var size = volume.boxSize;
             return $"flames and smoke drawn as one volume in the box, {size.x:F2} by {size.z:F2} m and {size.y:F2} m high";
         }
@@ -537,13 +619,14 @@ namespace RealisticFiring.Visuals
                 filterMode = FilterMode.Bilinear,
             };
             flowA = FlowTexture("RealisticFiring flow phases");
+            flowAPrev = FlowTexture("RealisticFiring flow phases, a step before");
             flowB = FlowTexture("RealisticFiring flow bend");
-            flowPixelsA = new Color[airflow.Across * airflow.Up];
-            flowPixelsB = new Color[airflow.Across * airflow.Up];
-            flowBeforeA = new Color[flowPixelsA.Length];
-            flowBeforeB = new Color[flowPixelsA.Length];
-            flowNowA = new Color[flowPixelsA.Length];
-            flowNowB = new Color[flowPixelsA.Length];
+            var cells = airflow.Across * airflow.Up;
+            flowPixelsB = new Color[cells];
+            flowBeforeA = new Color[cells];
+            flowBeforeB = new Color[cells];
+            flowNowA = new Color[cells];
+            flowNowB = new Color[cells];
             ReadFlow();
             System.Array.Copy(flowNowA, flowBeforeA, flowNowA.Length);
             System.Array.Copy(flowNowB, flowBeforeB, flowNowB.Length);
@@ -552,8 +635,7 @@ namespace RealisticFiring.Visuals
             columnHeat = new float[airflow.Across];
             columnSurface = new float[airflow.Across];
             columnSmoke = new float[airflow.Across];
-            material.SetTexture(FlowAId, flowA);
-            material.SetTexture(FlowBId, flowB);
+            UploadFlow(false);
         }
 
         private static Mesh cube;
@@ -620,7 +702,7 @@ namespace RealisticFiring.Visuals
             // Read the local quality each frame, outside the closed door's
             // source-upload throttle. It changes only the ray sampling;
             // the fire's motion, lighting, and sources keep their budgets.
-            var sampling = FireboxSampling.For(Main.Settings.FireboxQuality, closed, Distance <= 0f, Steps, StepLength, PixelLoad());
+            var sampling = FireboxSampling.For(Main.Settings.FireboxQuality, closed, Distance <= 0f, Steps, StepLength, PixelLoad(), FireboxOffscreen.Drawing);
             material.SetFloat(StepsId, sampling.MaxSteps);
             material.SetFloat(StepLengthId, sampling.StepLength);
             // The flow: up and toward the tube plate, faster with the draft and
@@ -677,9 +759,59 @@ namespace RealisticFiring.Visuals
                 closedUpdateAt = 0f;
             closedUpdated = Time.time;
             sourceRefreshes++;
-            Shape(draft);
+            MeasureZones();
+            if (closed || Time.time >= zonesDueAt)
+            {
+                Shape(draft);
+                zonesDueAt = Time.time + FlowStep;
+            }
             Carry(dt, rise, forcing);
+            if (constantsVersion != FireboxTestBed.TuningVersion)
+            {
+                SetConstants();
+                constantsVersion = FireboxTestBed.TuningVersion;
+            }
 
+            // What changes with the fire's draft and smoke.
+            material.SetFloat(LickMotionId, lickMotion);
+            material.SetVector(FlowWeightsId, flowWeights);
+            material.SetFloat(PuffId, Mathf.Lerp(PuffSizeDrifting, PuffSizeForced, forcing));
+            material.SetFloat(FlowCarryId, carry);
+            material.SetFloat(TipWhipId, Mathf.Lerp(TipWhipDrifting, TipWhipForced, forcing));
+            material.SetFloat(BaseCokeId, Mathf.Lerp(BaseCokeDrifting, BaseCokeForced, forcing));
+            material.SetFloat(BaseGlowId, Mathf.Lerp(BaseGlowDrifting, BaseGlowForced, forcing));
+            material.SetFloat(WhiteHeartId, WhiteHeart * Mathf.InverseLerp(WhiteDraftLow, WhiteDraftFull, draft));
+            var spotLow = Mathf.Clamp(SpotLow, 0f, 0.95f);
+            var spotShare = 0.5f * (1f - spotLow);
+            var spotGlare = Mathf.Clamp(Mathf.Lerp(SpotGlareDrifting, SpotGlareForced, forcing), 1f, 1f / spotShare);
+            material.SetFloat(SpotDimId, (1f - spotShare * spotGlare) / (1f - spotShare));
+            material.SetFloat(SpotGlareId, spotGlare);
+            // A choked fire's soot gathers into a fuller cloud in still gas;
+            // a drawing fire keeps its thinner, broken wisps.
+            var smoky = Mathf.Clamp01(firebox.Model.SmokeDensity);
+            var choked = (1f - Mathf.SmoothStep(0f, 1f, draft / 0.15f)) * smoky * smoky;
+            material.SetFloat(SmokeDensityId, SmokeDensity * (1f + ChokedSmoke * choked));
+            material.SetFloat(WarpId, warp);
+            material.SetFloat(SmokeClumpsId, SmokeClumps * (1f - 0.4f * choked));
+            FireColors.Publish();
+            material.SetFloat(DebugId, FireboxTestBed.Enabled ? FireboxTestBed.VolumeView : 0);
+        }
+
+        // The values that change only when the test bed tunes them: set once,
+        // and again after each tuning, not every frame (audit V7, 2026-11-09).
+        private void SetConstants()
+        {
+            // The brick arch, where the engine has one (BrickArch): where its
+            // bricks are in the box, and how the flames go under and round them.
+            if (Arch != null && BrickArch.ArchShown > 0.5f)
+            {
+                material.SetVector(ArchLineId, Arch.Line);
+                material.SetVector(ArchFlameId, new Vector4(Mathf.Clamp(BrickArch.ArchLayer, 0.05f, 0.95f), BrickArch.ArchBack, BrickArch.ArchOver, Arch.LipAlongBed));
+                material.SetVector(ArchBendId, new Vector4(Mathf.Max(1f, BrickArch.ArchBend), BrickArch.ArchDrag, BrickArch.ArchTurn, BrickArch.ArchRoll));
+                material.SetVector(ArchFlowId, new Vector4(BrickArch.ArchBlur, FireboxTestBed.Enabled ? BrickArch.ArchAlone : 0f, Mathf.Clamp(BrickArch.ArchSqueeze, 0.05f, 1f), Mathf.Max(0f, BrickArch.ArchCarry)));
+            }
+            else
+                material.SetVector(ArchFlameId, Vector4.zero);
             material.SetFloat(RootsId, Roots);
             material.SetFloat(BeatGlowId, BeatGlow);
             material.SetFloat(BeatHeightId, BeatHeight);
@@ -692,7 +824,6 @@ namespace RealisticFiring.Visuals
             material.SetFloat(LickStrengthId, LickStrength);
             material.SetFloat(LickGlowId, LickGlow);
             material.SetFloat(LickHeatId, LickHeat);
-            material.SetFloat(LickMotionId, lickMotion);
             material.SetFloat(LickStandingId, Mathf.Clamp01(LickStanding));
             material.SetFloat(LickEdgeSharpnessId, Mathf.Clamp01(LickEdgeSharpness));
             material.SetFloat(LickDetailId, Mathf.Clamp01(LickDetail));
@@ -701,7 +832,6 @@ namespace RealisticFiring.Visuals
             material.SetFloat(DoorSlopeId, ZonedCoalBed.DoorSlope);
             material.SetFloat(SideWidthId, SideWidth);
             material.SetFloat(SideSwirlId, SideSwirl);
-            material.SetVector(FlowWeightsId, flowWeights);
             material.SetFloat(DetailScaleId, DetailScale);
             material.SetFloat(DetailErodeId, DetailErode);
             material.SetFloat(DetailStreakId, DetailStreak);
@@ -710,33 +840,23 @@ namespace RealisticFiring.Visuals
             material.SetFloat(CrinkleId, Crinkle);
             material.SetFloat(SparseId, Sparse);
             material.SetFloat(SwayId, Sway);
-            material.SetFloat(PuffId, Mathf.Lerp(PuffSizeDrifting, PuffSizeForced, forcing));
-            material.SetFloat(FlowCarryId, carry);
             material.SetFloat(DetailFlowCarryId, Mathf.Clamp01(DetailFlowCarry));
-            material.SetFloat(TipWhipId, Mathf.Lerp(TipWhipDrifting, TipWhipForced, forcing));
-            material.SetFloat(BaseCokeId, Mathf.Lerp(BaseCokeDrifting, BaseCokeForced, forcing));
             material.SetFloat(BuoyancyId, Buoyancy);
-            material.SetFloat(BaseGlowId, Mathf.Lerp(BaseGlowDrifting, BaseGlowForced, forcing));
             material.SetFloat(BaseHeightId, BaseHeight);
-            material.SetFloat(WhiteHeartId, WhiteHeart * Mathf.InverseLerp(WhiteDraftLow, WhiteDraftFull, draft));
-            var spotLow = Mathf.Clamp(SpotLow, 0f, 0.95f);
-            var spotShare = 0.5f * (1f - spotLow);
-            var spotGlare = Mathf.Clamp(Mathf.Lerp(SpotGlareDrifting, SpotGlareForced, forcing), 1f, 1f / spotShare);
-            material.SetFloat(SpotLowId, spotLow);
-            material.SetFloat(SpotDimId, (1f - spotShare * spotGlare) / (1f - spotShare));
-            material.SetFloat(SpotGlareId, spotGlare);
+            material.SetFloat(SpotLowId, Mathf.Clamp(SpotLow, 0f, 0.95f));
             material.SetFloat(TipHeatId, TipHeat);
             material.SetFloat(GlowId, Glow);
             material.SetFloat(FlameDensityId, FlameDensity);
-            // A choked fire's soot gathers into a fuller cloud in still gas;
-            // a drawing fire keeps its thinner, broken wisps.
-            var smoky = Mathf.Clamp01(firebox.Model.SmokeDensity);
-            var choked = (1f - Mathf.SmoothStep(0f, 1f, draft / 0.15f)) * smoky * smoky;
-            material.SetFloat(SmokeDensityId, SmokeDensity * (1f + ChokedSmoke * choked));
             material.SetFloat(SmokeAlbedoId, SmokeAlbedo);
             material.SetFloat(SmokeLightId, SmokeLight);
             material.SetFloat(SharpId, Sharp);
-            material.SetFloat(WarpId, warp);
+            material.SetFloat(EdgeMeanId, Mathf.Clamp01(EdgeMean));
+            material.SetFloat(SmokeLocalId, Mathf.Clamp01(SmokeLocal));
+            material.SetFloat(DetailBlurId, Mathf.Clamp(DetailBlur, 0f, 1.5f));
+            material.SetFloat(DitherAmountId, Mathf.Clamp01(DitherAmount));
+            material.SetFloat(DitherShiftId, Mathf.Clamp01(DitherShift));
+            material.SetFloat(SmokePlumeId, Mathf.Max(0f, SmokePlume));
+            material.SetFloat(SmokeStrideId, Mathf.Clamp(SmokeStride, 1f, 6f));
             material.SetFloat(NoiseTileId, NoiseTile);
             material.SetFloat(SheetLowId, SheetLow);
             material.SetFloat(SheetHighId, SheetHigh);
@@ -749,9 +869,6 @@ namespace RealisticFiring.Visuals
             material.SetFloat(FlameHeatId, FlameHeat);
             material.SetFloat(EdgeHeatId, EdgeHeat);
             material.SetFloat(CoreDepthId, CoreDepth);
-            material.SetFloat(SmokeClumpsId, SmokeClumps * (1f - 0.4f * choked));
-            FireColors.Publish();
-            material.SetFloat(DebugId, FireboxTestBed.Enabled ? FireboxTestBed.VolumeView : 0);
         }
 
         private void Remember(float now, float value)
@@ -833,8 +950,9 @@ namespace RealisticFiring.Visuals
                 var surface = box.InverseTransformPoint(bed.BedPoint(x, z, bed.SmoothHeight(x, z))).y + 0.5f;
                 // The old height spent a whole box height above an already
                 // raised bed, saturating at the crown even at a light firing.
+                var lazy = LazyTop * (1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0f, LazyDraft, draft))) * Mathf.Clamp01((heat - 0.25f) * 4f);
                 top[i] = strength[i] < 0.01f ? 0f
-                    : Mathf.Clamp01(0.05f + CokeFlame * burn + GasFlame * gas * length) * Mathf.Max(0f, 1f - surface);
+                    : Mathf.Clamp01(0.05f + CokeFlame * burn + GasFlame * gas * length + lazy) * Mathf.Max(0f, 1f - surface);
                 // Its wood and rag fire, in the same flames (WoodFlame): from
                 // the grate, over any coal laid on it, to the pile's flame top.
                 var starter = firebox.Model.Starters[i];
@@ -852,7 +970,9 @@ namespace RealisticFiring.Visuals
                 // The texture's rows run along the bed (the door first), its columns across.
                 var texel = GrateLayout.Row(zone) * GrateLayout.Columns + GrateLayout.Column(zone);
                 pixelsA[texel] = new Color(strength[i], top[i], Mathf.Min(smoke, 1.5f), surface);
-                pixelsB[texel] = new Color(flameHeat, glow, gas, 0f);
+                // (Its green coal's share as the bed's shaders show it: none
+                // dark in a zone driven flat out, CoalSurface.cginc.)
+                pixelsB[texel] = new Color(flameHeat, glow, gas, green * (1f - 0.9f * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.93f, 1f, heat))));
             }
         }
 
@@ -875,49 +995,98 @@ namespace RealisticFiring.Visuals
                           + FireboxLighting.ZoneGlow(bed.ZoneHeat(zone), bed.ZoneCover(zone)) * (FireboxLighting.BedGlow * FireboxLighting.BedLight);
             }
             filled *= SmokeBoxLight / GrateLayout.ZoneCount;
+            var smokeMean = 0f;
+            for (var i = 0; i < GrateLayout.ZoneCount; i++)
+                smokeMean += pixelsA[i].b / GrateLayout.ZoneCount;
+            material.SetFloat(SmokeMeanId, smokeMean);
             material.SetVector(BoxLightId, new Vector4(filled.r, filled.g, filled.b, 0f));
             // The grate's height, where the coal slopes down to at the door.
             grateLevel = box.InverseTransformPoint(bed.BedPoint(0.5f, 0.5f, 0f)).y + 0.5f;
             material.SetFloat(GrateLevelId, grateLevel);
             // The bed's relief, added in the shader to the zones' smooth surface.
-            material.SetFloat(BedRiseId, box.InverseTransformPoint(bed.BedPoint(0.5f, 0.5f, 1f)).y + 0.5f - grateLevel);
+            var bedRise = box.InverseTransformPoint(bed.BedPoint(0.5f, 0.5f, 1f)).y + 0.5f - grateLevel;
+            material.SetFloat(BedRiseId, bedRise);
+            // How high in the box anything is drawn, for the march to stop
+            // under: the coal's highest surface with its swells and heaps;
+            // over it the tallest tongue, as the shader draws it (to 1.4 of
+            // its zone's height by its hot spots and lobes, swung by a beat
+            // and a puff, no taller than half the room, its ragged tip half
+            // as far again), or the short flames in the gaps; and the smoke's
+            // top. A drifting fire's march took every step up to the crown
+            // for flames a hand high (33 ms a frame from inside the box).
+            var surfaceMost = 0f;
+            var surfaceLeast = 1f;
+            var topMost = 0f;
+            for (var i = 0; i < GrateLayout.ZoneCount; i++)
+            {
+                surfaceMost = Mathf.Max(surfaceMost, pixelsA[i].a);
+                surfaceLeast = Mathf.Min(surfaceLeast, pixelsA[i].a);
+                topMost = Mathf.Max(topMost, pixelsA[i].g);
+            }
+            var coalMost = grateLevel + Mathf.Max(0f, surfaceMost - grateLevel) * (1f + bed.ReliefSwell) + bed.ReliefHeap * bedRise;
+            var tongue = Mathf.Min(1.4f * (1f + Mathf.Max(0f, BeatHeight)) * 1.55f * topMost, 0.5f * Mathf.Max(0f, 1f - Mathf.Min(surfaceLeast, grateLevel)));
+            var licks = boxSize.y > 0f ? 1.8f * LickHeight / boxSize.y : 1f;
+            var flameCeiling = coalMost + Mathf.Max(1.5f * tongue, licks) + 0.03f;
+            material.SetFloat(CeilingId, Mathf.Clamp01(Mathf.Max(flameCeiling, smokeCeiling)));
             if (bed.ReliefTexture != null)
                 material.SetTexture(BedReliefId, bed.ReliefTexture);
             zonesB.SetPixels(pixelsB);
             zonesB.Apply(false);
         }
 
-        // Carries the flames on the airflow: steps it at its fixed rate, and
-        // sends the shader its maps between its last two steps.
+        // Carries the flames on the airflow: steps it at its fixed rate, sends
+        // the shader its maps after each step, and has it draw them between
+        // the last two (_FlowLerp), so nothing goes up between the steps.
         private void Carry(float dt, float speed, float forcing)
         {
             flowDue += dt;
-            for (var steps = 0; flowDue >= FlowStep && steps < FlowCatchUp; steps++)
+            var steps = 0;
+            for (; flowDue >= FlowStep && steps < FlowCatchUp; steps++)
             {
                 flowDue -= FlowStep;
                 StepFlow(speed, forcing);
             }
             flowDue = Mathf.Min(flowDue, FlowStep);
+            if (steps > 0)
+                UploadFlow(steps == 1);
             var t = flowDue / FlowStep;
             // A phase that restarted in the last step is shown as it is now:
             // between its old and new coordinates is nowhere, and its weight
             // is nil there anyway.
-            for (var k = 0; k < flowPixelsA.Length; k++)
-            {
-                var a = flowNowA[k];
-                var a0 = flowBeforeA[k];
-                flowPixelsA[k] = new Color(
-                    restartedA ? a.r : Mathf.Lerp(a0.r, a.r, t),
-                    restartedA ? a.g : Mathf.Lerp(a0.g, a.g, t),
-                    restartedB ? a.b : Mathf.Lerp(a0.b, a.b, t),
-                    restartedB ? a.a : Mathf.Lerp(a0.a, a.a, t));
-                flowPixelsB[k] = Color.Lerp(flowBeforeB[k], flowNowB[k], t);
-            }
+            material.SetVector(FlowLerpId, new Vector4(restartedA ? 1f : t, restartedB ? 1f : t, t, 0f));
             flowWeights = Vector4.Lerp(weightsBefore, weightsNow, t);
-            flowA.SetPixels(flowPixelsA);
+        }
+
+        // The airflow's maps after a step: where the gas was when each phase
+        // began, now (_FlowA) and a step before (_FlowAPrev); where across it
+        // was a moment ago and its smoke, now and a step before, together
+        // (_FlowB). After one step the map that was now is the one before,
+        // so the two swap and only the new one goes up.
+        private void UploadFlow(bool oneStep)
+        {
+            (flowA, flowAPrev) = (flowAPrev, flowA);
+            flowA.SetPixels(flowNowA);
             flowA.Apply(false);
+            if (!oneStep)
+            {
+                flowAPrev.SetPixels(flowBeforeA);
+                flowAPrev.Apply(false);
+            }
+            // The highest row holding any smoke to speak of, now or a step
+            // before, and so the smoke's top (the shader reads between rows).
+            var smokeRow = -1;
+            for (var k = 0; k < flowPixelsB.Length; k++)
+            {
+                flowPixelsB[k] = new Color(flowNowB[k].r, flowNowB[k].g, flowBeforeB[k].r, flowBeforeB[k].g);
+                if (flowNowB[k].g > SmokeDrawn || flowBeforeB[k].g > SmokeDrawn)
+                    smokeRow = Mathf.Max(smokeRow, k / airflow.Across);
+            }
+            smokeCeiling = smokeRow < 0 ? 0f : Mathf.Clamp01((smokeRow + 1.5f) / airflow.Up);
             flowB.SetPixels(flowPixelsB);
             flowB.Apply(false);
+            material.SetTexture(FlowAId, flowA);
+            material.SetTexture(FlowAPrevId, flowAPrev);
+            material.SetTexture(FlowBId, flowB);
         }
 
         // Steps the airflow from each column across the box: how hard its coal
@@ -1004,6 +1173,7 @@ namespace RealisticFiring.Visuals
 
         private void OnDestroy()
         {
+            FireboxOffscreen.Remove(this);
             if (flames != null)
                 flames.VolumeDraws = false;
             if (box != null)
@@ -1016,6 +1186,8 @@ namespace RealisticFiring.Visuals
                 Destroy(zonesB);
             if (flowA != null)
                 Destroy(flowA);
+            if (flowAPrev != null)
+                Destroy(flowAPrev);
             if (flowB != null)
                 Destroy(flowB);
         }

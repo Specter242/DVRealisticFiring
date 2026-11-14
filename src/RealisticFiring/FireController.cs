@@ -56,6 +56,21 @@ namespace RealisticFiring
         {
             PerfMeter.Frame();
             var start = PerfMeter.Start();
+            if (Main.Settings.DumpUnderEngine)
+            {
+                // A bug hunt's tool must not stop the mod: its first failure is logged and it is switched off.
+                try
+                {
+                    Diagnostics.UnderEngineDump.Tick();
+                    if (Main.Settings.ProbeUnderEngine)
+                        Diagnostics.UnderEngineDump.Probe();
+                }
+                catch (System.Exception e)
+                {
+                    Main.Settings.DumpUnderEngine = false;
+                    Main.Mod.Logger.LogException("The under-engine dump failed and is off", e);
+                }
+            }
             // Once in a game: some of the mod's patches failed to apply.
             if (!toldFailedPatches && Main.FailedPatches.Count > 0 && PlayerManager.PlayerTransform != null)
             {
@@ -628,6 +643,10 @@ namespace RealisticFiring
 
         private void DrawGui()
         {
+            // A bug hunt's probe names what it hides, top middle (Diagnostics.UnderEngineDump).
+            if (Main.Settings.DumpUnderEngine && Main.Settings.ProbeUnderEngine && Diagnostics.UnderEngineDump.Showing != null)
+                GUI.Label(new Rect(Screen.width / 2f - 450f, 40f, 900f, 60f), Diagnostics.UnderEngineDump.Showing,
+                    new GUIStyle(GUI.skin.box) { fontSize = 20, alignment = TextAnchor.MiddleCenter, wordWrap = true });
             // Promotional firebox captures can retain the normal overlay.
             if (PlumeCapture.Running || (Visuals.FireboxCapture.Running && !Visuals.FireboxCapture.ShowOverlay))
                 return;

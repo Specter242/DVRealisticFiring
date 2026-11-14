@@ -382,12 +382,14 @@ namespace RealisticFiring.Shed
         // the ground (HoseGround) after each. One in use (off its stand: in a
         // hand, in an engine, or dropped) runs within 150 m, as all did. One
         // hanging on its stand, once it has hung still long enough to settle,
-        // runs only within 15 m, near enough to wake a second before it can
-        // be reached (ThinBlueWarrior, Nexus, 2026-10-18: the frame rate fell
-        // with the shed stands; a big roundhouse has 20 or more within 150 m).
-        // A sleeping one keeps the shape it had.
+        // runs only within 8 m (ThinBlueWarrior, Nexus, 2026-10-18: the frame
+        // rate fell with the shed stands; a big roundhouse has 20 or more
+        // within 150 m). Within 15 m until 2026-11-12, to wake a second
+        // before it could be reached: two awake hoses beside a stand cost
+        // 0.75 ms a frame, and a hose now wakes as its coupling is taken in
+        // hand (WakeHose). A sleeping one keeps the shape it had.
         private const float SimulateWithin = 150f;
-        private const float HangingWithin = 15f;
+        private const float HangingWithin = 8f;
         private const float SettleTime = 10f;
         private const float SleepEvery = 1f;
         private static float sleepAt;
@@ -423,7 +425,7 @@ namespace RealisticFiring.Shed
             {
                 lookOver = (lookOver + 1) % Built.Count;
                 var stand = Built[lookOver];
-                if (stand == null || !Hidden.TryGetValue(stand, out var off))
+                if (stand == null || !stand.activeSelf || !Hidden.TryGetValue(stand, out var off))
                     continue;
                 stand.GetComponentsInChildren(true, LookedOver);
                 LookedOver.RemoveAll(r => !r.enabled);
@@ -436,13 +438,29 @@ namespace RealisticFiring.Shed
             LookedOver.Clear();
         }
 
+        // Playing alone, a hidden stand's whole object rests: hidden but
+        // active, the map's stands still cost 0.3 ms a frame, spread over
+        // their valves, hoses, and plugs (in game, 2026-11-12), and a stand
+        // switched off and on keeps its valve's setting and its hose on its
+        // socket. Not in a session, where the host works a stand a guest far
+        // from him uses. Woken a few a check as the player comes near, not a
+        // roundhouse's dozen in one frame.
+        private const int WokenEachCheck = 2;
+        private static int wokenThisCheck;
+
         private static void HideFar(GameObject stand, Vector3 player, bool hanging)
         {
             var hidden = Hidden.ContainsKey(stand);
             var away = Vector3.Distance(stand.transform.position, player);
+            var session = Net.InSession;
             var hide = hanging && away > (hidden ? ShownWithin : HiddenBeyond);
             if (hide == hidden)
+            {
+                // A session begun since it went to rest: awake again, though hidden.
+                if (hidden && session && !stand.activeSelf)
+                    Wake(stand);
                 return;
+            }
             if (hide)
             {
                 var shown = stand.GetComponentsInChildren<Renderer>(true).Where(r => r.enabled).ToArray();
@@ -452,6 +470,13 @@ namespace RealisticFiring.Shed
             }
             else
             {
+                if (!stand.activeSelf)
+                {
+                    if (wokenThisCheck >= WokenEachCheck && !session)
+                        return;
+                    wokenThisCheck++;
+                    Wake(stand);
+                }
                 foreach (var renderer in Hidden[stand])
                     if (renderer != null)
                         renderer.enabled = true;
@@ -460,6 +485,31 @@ namespace RealisticFiring.Shed
             foreach (var script in stand.GetComponentsInChildren<MonoBehaviour>(true))
                 if (script is WorldLayer || script is HoseWater || script is HoseSteam || script is StandPlugWatch)
                     script.enabled = !hide;
+            if (hide && !session)
+                stand.SetActive(false);
+        }
+
+        // A resting stand's object on again; its hoses' ropes run until they have settled anew.
+        private static void Wake(GameObject stand)
+        {
+            stand.SetActive(true);
+            foreach (var hose in stand.GetComponentsInChildren<PropHose>(true))
+                HungStill.Remove(hose);
+        }
+
+        /// <summary>
+        /// Runs <paramref name="hose"/>'s rope from now, as its coupling is
+        /// taken in hand: a settled hose sleeps until the player is within
+        /// <see cref="HangingWithin"/> m, looked at only once a second.
+        /// </summary>
+        internal static void WakeHose(PropHose hose)
+        {
+            if (hose == null)
+                return;
+            HungStill.Remove(hose);
+            var solver = hose.GetComponent<VerletRope.VerletSolver>();
+            if (solver != null && !solver.enabled)
+                solver.enabled = true;
         }
 
         private static void SleepFar()
@@ -474,10 +524,22 @@ namespace RealisticFiring.Shed
             var player = PlayerManager.PlayerTransform.position;
             foreach (var gone in HungStill.Keys.Where(h => h == null).ToList())
                 HungStill.Remove(gone);
+            wokenThisCheck = 0;
             foreach (var stand in Built)
             {
                 if (stand == null)
                     continue;
+                // At rest (HideFar): its hose hung on it as it went, and the
+                // game takes a coupling off its socket while its object is
+                // off, to hang it again when it wakes. Read as not hanging,
+                // every resting stand was woken in turn, to rest again once
+                // its hose had hung: the stands near the player never had
+                // their turn (in game, 2026-11-12).
+                if (!stand.activeSelf)
+                {
+                    HideFar(stand, player, true);
+                    continue;
+                }
                 var allHanging = true;
                 foreach (var hose in stand.GetComponentsInChildren<PropHose>(true))
                 {

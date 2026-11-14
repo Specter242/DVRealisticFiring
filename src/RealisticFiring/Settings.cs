@@ -77,7 +77,7 @@ namespace RealisticFiring
 
         // Two players' frame rate fell from 60 to 15 with the plume
         // (Nexus, 2026-10-25); Core.SmokeDetail.
-        [Draw("Smoke quality, for a slower graphics card: Medium draws the chimney's smoke at half resolution and drops its faintest smoke, Low with half its particles and more of the faint smoke besides (in VR or with forward rendering, half and a quarter of its particles instead)", DrawType.ToggleGroup)]
+        [Draw("Smoke quality, for a slower graphics card: Medium draws the chimney's smoke at half resolution and drops its faintest smoke, Low with half its particles and more of the faint smoke besides (in VR or with forward rendering, half and a quarter of its particles instead); Auto lowers it while the frame rate is under 45 and that helps", DrawType.ToggleGroup)]
         public RealisticStackEffects.Core.SmokeQuality SmokeQuality = RealisticStackEffects.Core.SmokeQuality.High;
 
         [Draw("Firebox quality (changes live): High keeps full detail; Medium uses half the open-door ray samples and coal lumps at 20 surface updates/s; Low a quarter at 10/s. Firelight stays the same", DrawType.ToggleGroup)]
@@ -184,6 +184,12 @@ namespace RealisticFiring
 
         // Log the turntables, parking tracks, and service stations once a session, for the shed hoses.
         public bool SurveySheds;
+
+        // Log what is drawn under the firebox of the engine nearest the camera, as it changes (Diagnostics.UnderEngineDump).
+        public bool DumpUnderEngine;
+
+        // With DumpUnderEngine: hide each of those drawings in turn, named on the screen, to find which draws a fault.
+        public bool ProbeUnderEngine;
 
         // Log coal deliveries, door openings, grate shakes, and injector changes.
         public bool LogCoalDeliveries;

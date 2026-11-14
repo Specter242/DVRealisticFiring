@@ -8,6 +8,13 @@ namespace RealisticFiring.Shed
 
         private void LateUpdate()
         {
+            var start = Diagnostics.PerfMeter.Start();
+            try { TimedLateUpdate(); }
+            finally { Diagnostics.PerfMeter.Stop(Diagnostics.PerfSection.ShedHoses, start); }
+        }
+
+        private void TimedLateUpdate()
+        {
             if (renderers == null || renderers.Length == 0)
                 renderers = GetComponentsInChildren<Renderer>(true);
             foreach (var shown in renderers)

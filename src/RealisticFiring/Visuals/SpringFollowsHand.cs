@@ -12,8 +12,9 @@ namespace RealisticFiring.Visuals
     /// A VR hand moves the lever by force and never moves the target, so an
     /// unnotched lever let go was pulled back to where the target last was:
     /// shut, on a lever nobody had scrolled. While a VR hand holds the lever
-    /// the target follows it. The S282's injector steam lever and the 8F's
-    /// water regulators are the mod's unnotched levers.
+    /// the target follows it. The S282's injector steam lever and water
+    /// wheel and the 8F's water regulators are the mod's unnotched controls;
+    /// a wheel's hinge is held the same way.
     /// </summary>
     internal sealed class SpringFollowsHand : MonoBehaviour
     {

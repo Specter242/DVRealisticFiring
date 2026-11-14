@@ -15,6 +15,12 @@ namespace RealisticStackEffects.Core
         private float lastAngle;
         private int revolutions;
 
+        /// <summary>Revolutions the crank turned between the last two readings, either way.</summary>
+        public float Turned { get; private set; }
+
+        /// <summary>How far the crank is past the last beat it crossed, 0 to 1 of a beat, the way it turns.</summary>
+        public float SinceBeat { get; private set; }
+
         /// <param name="beatsPerRevolution">Two per cylinder for a double-acting engine.</param>
         public ExhaustBeatCounter(int beatsPerRevolution)
         {
@@ -39,12 +45,22 @@ namespace RealisticStackEffects.Core
             }
 
             var before = Math.Floor((revolutions + (double)lastAngle) * beatsPerRevolution);
-            if (angle - lastAngle < -0.5f)
+            var change = angle - lastAngle;
+            if (change < -0.5f)
+            {
                 revolutions++;
-            else if (angle - lastAngle > 0.5f)
+                change += 1f;
+            }
+            else if (change > 0.5f)
+            {
                 revolutions--;
+                change -= 1f;
+            }
             lastAngle = angle;
-            var after = Math.Floor((revolutions + (double)angle) * beatsPerRevolution);
+            var place = (revolutions + (double)angle) * beatsPerRevolution;
+            var after = Math.Floor(place);
+            Turned = Math.Abs(change);
+            SinceBeat = (float)(change >= 0f ? place - after : 1.0 - (place - after));
             return (int)Math.Abs(after - before);
         }
     }

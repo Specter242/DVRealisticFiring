@@ -85,14 +85,14 @@ namespace RealisticStackEffects
                 return;
             decided = Time.frameCount;
             var viewer = Viewer();
-            var drawing = StackHost.Settings.HalfResolutionAllowed && SmokeDetail.HalfResolution(StackHost.Settings.SmokeQuality)
+            var drawing = StackHost.Settings.HalfResolutionAllowed && SmokeDetail.HalfResolution(StackHost.Quality)
                           && StackHost.Assets.CompositeMaterial != null && StackHost.Assets.DepthMaterial != null && Fits(viewer);
             if (drawing != Drawing)
             {
                 Drawing = drawing;
                 StackHost.Mod.Logger.Log(drawing
                     ? "Chimney smoke drawn at half resolution"
-                    : "Chimney smoke drawn at full resolution" + (SmokeDetail.HalfResolution(StackHost.Settings.SmokeQuality)
+                    : "Chimney smoke drawn at full resolution" + (SmokeDetail.HalfResolution(StackHost.Quality)
                         ? $" (half wants a deferred camera outside VR; {Describe(viewer)})"
                         : ""));
                 described = false;

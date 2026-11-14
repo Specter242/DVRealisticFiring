@@ -23,7 +23,7 @@ Shader "RealisticFiring/FireboxVolume"
     {
         _Noise ("Noise (R coal ridges, G flame detail, B lobes, A warp)", 3D) = "" {}
         _ZonesA ("Zones: flame strength, flame height, smoke, coal surface", 2D) = "black" {}
-        _ZonesB ("Zones: heat, glow, gas flame", 2D) = "black" {}
+        _ZonesB ("Zones: heat, glow, gas flame, green coal's share", 2D) = "black" {}
         _BedRelief ("The bed's relief: swells, heaps, the heaps' freshness", 2D) = "black" {}
         _BedRise ("The box's height a full pile of coal stands, a share of it", Float) = 0
         _BoxLight ("The flames' light filling the box, for the smoke", Vector) = (0, 0, 0, 0)
@@ -86,7 +86,8 @@ Shader "RealisticFiring/FireboxVolume"
         _GasFill ("Gas flames: how much fuller, off the threshold", Float) = 0.08
         _Sparse ("Weak flames: how much sparser, off the threshold, at none", Float) = 0.25
         _FlowA ("Airflow: where the gas was when each phase began, m (A across, up; B across, up)", 2D) = "black" {}
-        _FlowB ("Airflow: where across the gas was a moment ago, m", 2D) = "black" {}
+        _FlowAPrev ("Airflow: the same a step before", 2D) = "black" {}
+        _FlowB ("Airflow: where across the gas was a moment ago, m, and its smoke; the same a step before (zw)", 2D) = "black" {}
         _DetailScale ("Fine filaments: their noise tiles per tile of the flames'", Float) = 3
         _DetailErode ("Fine filaments: how much they fray the flames' edges", Float) = 0.8
         _DetailStreak ("Fine filaments: how much they streak the flames' light", Float) = 0.6
@@ -95,6 +96,15 @@ Shader "RealisticFiring/FireboxVolume"
         _FlowCarry ("How much of the gas's travel the flames' detail shows", Range(0, 1)) = 1
         _DetailFlowCarry ("Fine detail's share of the flow distortion", Range(0, 1)) = 0.25
         _TipWhip ("Flames' tips whipping about, m", Float) = 0
+        _EdgeMean ("Flame edges taken as their mean along each step (0 at each step's point)", Range(0, 1)) = 1
+        _SmokeLocal ("Smoke near the coal from the coal under it (0 the box's smoke evenly)", Range(0, 1)) = 1
+        _SmokeMean ("The zones' smoke on average", Float) = 0
+        _Ceiling ("How high in the box anything is drawn, 0 to 1", Float) = 1
+        _DetailBlur ("Detail finer than a march step left out (0 none, 1 all of it)", Range(0, 1.5)) = 1
+        _DitherAmount ("How far each pixel's reads are dithered along its ray, share of a step", Range(0, 1)) = 1
+        _DitherShift ("How far each quad's starts are shifted at random, share of a quarter step", Range(0, 1)) = 1
+        _SmokePlume ("A fresh patch's own smoke rolling up from it (0 none)", Float) = 1
+        _SmokeStride ("Steps between reads over the flames' reach, in smoke alone", Range(1, 6)) = 3
     }
 
     SubShader
@@ -109,8 +119,10 @@ Shader "RealisticFiring/FireboxVolume"
             ZWrite Off
             ZTest Always
             // Premultiplied: the volume's light plus what is behind times
-            // the share that gets through.
-            Blend One SrcAlpha
+            // the share that gets through. In alpha, the share alone, times
+            // what the target held: drawn into its half-size target, cleared
+            // to 1, that leaves the share for the laying over (Composite).
+            Blend One SrcAlpha, Zero SrcAlpha
 
             HLSLPROGRAM
             #pragma vertex vert
@@ -199,9 +211,14 @@ Shader "RealisticFiring/FireboxVolume"
             float _Crinkle;
             float _Sparse;
             sampler2D _FlowA;
+            sampler2D _FlowAPrev;
             sampler2D _FlowB;
             // The airflow's two phases' weights, adding to 1.
             float4 _FlowWeights;
+            // How far the frame is from the airflow's last step to its next:
+            // phase A's maps, phase B's (each 1 the step it restarted), and the
+            // bend's and smoke's. The mod sends the maps only as it steps.
+            float4 _FlowLerp;
             float _DetailScale;
             float _DetailErode;
             float _DetailStreak;
@@ -238,6 +255,45 @@ Shader "RealisticFiring/FireboxVolume"
             // per box height; and the noise's offsets, in tiles: the sheets and
             // lobes (xyz), and the curls and warp.
             float _Lean;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            float4 _ArchLine;
+            float4 _ArchFlame;
+            float4 _ArchBend;
+            float4 _ArchFlow;
             float3 _SheetOffset;
             float3 _CurlOffset;
 
@@ -264,9 +320,15 @@ Shader "RealisticFiring/FireboxVolume"
 
             // A flame's color by its temperature, 0 to 1: the fire's ramp from
             // its dull red up (FireColor.cginc).
+            // (Toward white with less blue than the coal's white: a thin
+            // sliver of a white flame drew a pale pinkish grey, like another
+            // material in the fire; thick, or seen flat out, it is white
+            // all the same.)
             half3 FlameColor(half t)
             {
-                return FireColor(0.25 + 0.75 * clamp(t, 0.0, 1.34));
+                half heat = 0.25 + 0.75 * clamp(t, 0.0, 1.34);
+                half white = smoothstep(_FireWhiteHeat, 1.0, heat);
+                return FireColor(heat) * half3(1.0, 1.0 - 0.1 * white, 1.0 - 0.55 * white);
             }
 
 
@@ -282,6 +344,136 @@ Shader "RealisticFiring/FireboxVolume"
 
 
             float _DitherFrame;
+            float _DitherShift;
+            float _SmokePlume;
+            float _SmokeStride;
+
+            // The volume at half resolution (the mod's FireboxOffscreen): its
+            // light and the share of the scene coming through, marched into
+            // a target half the screen's size each way (_FireLowPass 1 while
+            // it is drawn there), then laid over the scene by this same draw
+            // among the transparent things (_FireLowReady 1 for the camera
+            // that drew it, _UseLow 1 on the volume it drew).
+            sampler2D _FireLow;
+            float4 _FireLowSize;
+            float _FireLowPass;
+            float _FireLowReady;
+            float _UseLow;
+
+            // Depths this far apart, as a share of the pixel's own and a
+            // little over, are an edge: a lump's against the gap behind it.
+            #define LOW_EDGE 0.012
+
+            // A pixel from the nine half-size texels about it, as far as
+            // their rays ended at its own depth (each was stopped at the
+            // scene's depth at its own middle); from the one nearest it in
+            // depth where none did. Weighed a half to the nearest row and
+            // column and the other half between the two beside it, by where
+            // the pixel lies: whichever way, the four starts a quad's texels
+            // march from (Dither) weigh a quarter each, so the laying over
+            // is the quad's blend too (QuadBlend), without its blocks: the
+            // texels blended in their quads first, the flames' edges laid
+            // over in steps four pixels across.
+            half4 Composite(float2 pixel, float here)
+            {
+                float2 at = pixel * 0.5;
+                float2 middle = floor(at) + 0.5;
+                float2 f = at - middle;
+                // The surface's own slope here, a pixel across and down: a
+                // texel's depth is held against the pixel's carried along it
+                // to the texel's place. (Against the pixel's own depth, a
+                // sheet seen along its length, each texel a little further
+                // off than the last, passed for an edge at every other
+                // pixel: the flames before the side sheets drew in ribs and
+                // blocks.) No steeper than a hundredth of the depth a
+                // pixel: past that it is an edge, a lump's against the gap.
+                float2 slope = clamp(float2(ddx(here), ddy(here)), -0.01 * here, 0.01 * here);
+                float3 wx = float3(0.25 - 0.5 * f.x, 0.5, 0.25 + 0.5 * f.x);
+                float3 wy = float3(0.25 - 0.5 * f.y, 0.5, 0.25 + 0.5 * f.y);
+                half4 sum = 0;
+                float total = 0;
+                float nearest = 1e9;
+                half4 best = half4(0, 0, 0, 1);
+                [unroll]
+                for (int j = 0; j < 3; j++)
+                {
+                    [unroll]
+                    for (int k = 0; k < 3; k++)
+                    {
+                        float2 place = middle + float2(k - 1, j - 1);
+                        float2 uv = place * _FireLowSize.zw;
+                        half4 texel = tex2Dlod(_FireLow, float4(uv, 0, 0));
+                        // (Its depth as its march read it: at the middle of
+                        // the full-size pixel under its low left quarter. At
+                        // its own middle, a corner between four pixels, the
+                        // march and this read fell on different ones along a
+                        // row here and there, and the row drew as dashes.)
+                        float2 depthAt = (place - 0.25) * _FireLowSize.zw;
+                        float carried = here + dot(slope, place * 2.0 - 0.5 - pixel);
+                        float apart = abs(LinearEyeDepth(SAMPLE_DEPTH_TEXTURE_LOD(_CameraDepthTexture, float4(depthAt, 0, 0))) - carried);
+                        if (apart < nearest)
+                        {
+                            nearest = apart;
+                            best = texel;
+                        }
+                        float weight = apart < LOW_EDGE * here + 0.004 ? wx[k] * wy[j] : 0.0;
+                        sum += texel * weight;
+                        total += weight;
+                    }
+                }
+                return total > 1e-4 ? sum / total : best;
+            }
+
+            float _EdgeMean;
+            float _SmokeLocal;
+            float _SmokeMean;
+            float _Ceiling;
+            float _DetailBlur;
+            float _DitherAmount;
+            // A march step's length in the noise's texels at one tile a metre,
+            // as a mip level: detail read finer than the steps along the ray
+            // is caught by one pixel's march and missed by the next (salt
+            // over the dark lumps and along the flames' edges), so each read
+            // of the noise takes the mip its own scale needs (DetailLod).
+            static float StepLod = 0.0;
+
+            float DetailLod(float tilesPerMetre)
+            {
+                // At full resolution, the whole mip whose texels are no
+                // smaller than a step (between two, each read took both, and
+                // cost 4 ms a frame from inside the box; at the one below,
+                // detail half a step across still got through as a dotted
+                // fringe along the flames' edges). At half resolution,
+                // between two mips, half a level up: its steps run from 1 cm
+                // to 2 across the picture, and at whole levels the flames
+                // changed character along a line where they crossed from
+                // one to the next.
+                float level = max(StepLod + log2(max(tilesPerMetre, 1e-3)), 0.0);
+                return _FireLowPass > 0.5 ? (level + 0.5) * _DetailBlur : ceil(level * _DetailBlur - 0.01);
+            }
+
+            // A flame's edge, saturate(x * sharp), on average along a step
+            // through which x runs evenly from a to b: the share of the step
+            // inside the flame, where its point alone is all in or all out.
+            // Point by point, an edge a few millimetres thick marched in
+            // 2 cm steps came out as sand along every flame (each pixel's
+            // start is dithered), which the quads' blend only coarsened.
+            float EdgeArea(float x, float sharp)
+            {
+                float ramp = clamp(x, 0.0, 1.0 / sharp);
+                return 0.5 * sharp * ramp * ramp + max(x - 1.0 / sharp, 0.0);
+            }
+
+            half EdgeMean(float a, float b, float sharp)
+            {
+                // (Where it hardly runs at all, against how large a and b
+                // are, their middle: the difference of two large areas lost
+                // its digits, and a line of pixels along the horizon, where
+                // a ray keeps its height over the coal, drew wrong.)
+                float run = b - a;
+                return abs(run) > 1e-3 * (1.0 + abs(a) + abs(b))
+                    ? saturate((EdgeArea(b, sharp) - EdgeArea(a, sharp)) / run) : saturate(0.5 * (a + b) * sharp);
+            }
 
             uint Pcg(uint v)
             {
@@ -299,7 +491,11 @@ Shader "RealisticFiring/FireboxVolume"
             float Dither(float2 pixel)
             {
                 uint2 quad = (uint2)floor(pixel * 0.5);
-                float shift = Pcg(quad.x + Pcg(quad.y)) * (1.0 / 4294967296.0);
+                // (Over a quarter of a step and no more: the quad's four
+                // starts stand a quarter apart, so further is the same
+                // again; and over less of it, _DitherShift, the less the
+                // quads differ from one another.)
+                float shift = Pcg(quad.x + Pcg(quad.y)) * (0.25 / 4294967296.0) * _DitherShift;
                 // Quarters 0 and 2 along the top row, 3 and 1 along the bottom:
                 // each pixel's neighbors across and up or down are a quarter
                 // and a half step from it.
@@ -321,18 +517,30 @@ Shader "RealisticFiring/FireboxVolume"
                 return float2(abs(spanX - span) < near ? 0.5 : 0.0, abs(spanY - span) < near ? 0.5 : 0.0);
             }
 
+            // Where both neighbors' rays are of its length, the mean of the
+            // whole quad, its fourth pixel's value from the derivative of a
+            // derivative: the four start a quarter step apart, and only all
+            // four together sample every step evenly. (Taking in the two
+            // neighbors alone left one pixel in four standing out wherever
+            // one of the four starts caught what the others missed: a grid
+            // of dots, two pixels apart, over the faces deep in the gaps.)
             half3 QuadBlend(half3 value, float2 pixel, float2 weights)
             {
                 float2 side = 1.0 - 2.0 * QuadSide(pixel);
-                half3 across = value + side.x * ddx_fine(value);
-                half3 upDown = value + side.y * ddy_fine(value);
-                return (value + weights.x * across + weights.y * upDown) / (1.0 + weights.x + weights.y);
+                half3 across = side.x * ddx_fine(value);
+                half3 upDown = side.y * ddy_fine(value);
+                half3 corner = side.x * ddx_fine(upDown);
+                if (weights.x > 0.0 && weights.y > 0.0)
+                    return value + 0.5 * (across + upDown) + 0.25 * corner;
+                return value + (weights.x * across + weights.y * upDown) / (1.0 + weights.x + weights.y);
             }
 
-            // A small flame's density and density-weighted hot core. Its foot
-            // keeps its old spot; its upper part bends and breaks into irregular
-            // tips, the fine detail traveling up with the flame.
-            half2 BedFlame(float3 q, float up, float2 bend, float scale, float height)
+            // A small flame's shape at a point: how far inside its edge the
+            // point lies (its noise over its threshold), its fine detail, and
+            // how far up the flame it is. Its foot keeps its old spot; its
+            // upper part bends and breaks into irregular tips, the fine
+            // detail traveling up with the flame.
+            half3 BedFlameField(float3 q, float up, float2 bend, float scale, float height)
             {
                 float reach = saturate(up);
                 q.xz += bend * scale * reach * reach;
@@ -342,19 +550,32 @@ Shader "RealisticFiring/FireboxVolume"
                 // The body stands at its bed location. Scrolling this coarse
                 // field extinguished whole tongues as its cells passed; the
                 // height pumping, curl, and fine tip detail still animate.
-                half shape = tex3Dlod(_Noise, float4(q.x, q.y - _LickOffset * (1.0 - _LickStanding), q.z, 0)).g;
+                // (No finer than the half steps it is read at: its noise
+                // runs to features a centimetre across, which showed or did
+                // not by the pixel's dither, white salt in the brightest
+                // gaps and dark dots over the lumps behind.)
+                half shape = tex3Dlod(_Noise, float4(q.x, q.y - _LickOffset * (1.0 - _LickStanding), q.z, DetailLod(0.5 * scale))).g;
                 half threshold = lerp(_LickLow, 1.0, reach);
                 half fine = 0.5;
                 if (_LickDetail > 0.0)
                 {
                     fine = tex3Dlod(_Noise, float4(q * float3(2.3, 4.0, 2.3)
-                                          - float3(0, _LickOffset * 1.5, 0) + float3(0.37, 0.11, 0.71), 0)).g;
+                                          - float3(0, _LickOffset * 1.5, 0) + float3(0.37, 0.11, 0.71), DetailLod(1.15 * scale))).g;
                     shape += (fine - 0.5) * _LickRoughness * smoothstep(0.1, 1.0, up) * _LickDetail;
                     // Continue tapering above the nominal top, so a split tip
                     // fades out before the enclosing branch's height limit.
                     threshold = lerp(threshold, _LickLow + (1.0 - _LickLow) * max(up, 0.0), _LickDetail);
                 }
-                half inside = shape - threshold;
+                return half3(shape - threshold, fine, up);
+            }
+
+            // Its density and density-weighted hot core there, from its shape
+            // (BedFlameField): inside, fine, up.
+            half2 BedFlameLight(half3 field)
+            {
+                half inside = field.x;
+                half fine = field.y;
+                half up = field.z;
                 half body = saturate(inside * _Sharp * 0.4);
                 // Tighten the broad density fade around its existing midpoint.
                 // Keeping that contour avoids simply swelling bright blobs.
@@ -376,6 +597,17 @@ Shader "RealisticFiring/FireboxVolume"
                 return half2(body, body * core);
             }
 
+            // The same on average along the ray between two points, their
+            // shape taken to run evenly from one to the other: the fronts
+            // are a few millimetres thick, and read only at the points
+            // themselves they came out as sand (the shape between costs no
+            // more reads of the noise).
+            half2 BedFlameSpan(half3 from, half3 to)
+            {
+                return (BedFlameLight(lerp(from, to, 1.0 / 6.0)) + BedFlameLight(lerp(from, to, 0.5))
+                    + BedFlameLight(lerp(from, to, 5.0 / 6.0))) / 3.0;
+            }
+
             half4 frag(v2f i) : SV_Target
             {
                 float3 eye = _WorldSpaceCameraPos;
@@ -392,7 +624,14 @@ Shader "RealisticFiring/FireboxVolume"
                 float enter = max(max(lo.x, lo.y), max(lo.z, 0.0));
                 float leave = min(min(hi.x, hi.y), hi.z);
                 // What stands nearer: the walls, the coal, the door, the cab.
-                float scene = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE_PROJ(_CameraDepthTexture, UNITY_PROJ_COORD(i.screen)));
+                // (Into the half-size target, the scene's depth at the
+                // middle of the full-size pixel under the texel's low left
+                // quarter, where the laying over reads it again.)
+                float scene = _FireLowPass > 0.5
+                    ? LinearEyeDepth(SAMPLE_DEPTH_TEXTURE_LOD(_CameraDepthTexture, float4((i.pos.xy - 0.25) * _FireLowSize.zw, 0, 0)))
+                    : LinearEyeDepth(SAMPLE_DEPTH_TEXTURE_PROJ(_CameraDepthTexture, UNITY_PROJ_COORD(i.screen)));
+                if (_FireLowReady > 0.5 && _UseLow > 0.5 && _FireLowPass < 0.5)
+                    return Composite(i.pos.xy, scene);
                 float3 forward = -UNITY_MATRIX_V[2].xyz;
                 leave = min(leave, scene / max(dot(dir, forward), 1e-4));
                 // Every view from outside must enter through the real door.
@@ -403,6 +642,16 @@ Shader "RealisticFiring/FireboxVolume"
                     leave = enter;
                 else
                     enter = viewStart;
+                // Nor over the flames' reach and the smoke's top (the mod
+                // sets it): a low fire's rays stop where it does, and those
+                // that pass over it march nothing.
+                float roof = _Ceiling - 0.5 - origin.y;
+                if (step3.y > 1e-5)
+                    leave = min(leave, roof / step3.y);
+                else if (step3.y < -1e-5)
+                    enter = max(enter, roof / step3.y);
+                else if (roof < 0.0)
+                    leave = enter;
                 // None of the box in front of the scene: nothing to march, though
                 // the pixel still runs on to its quad's blend.
                 float span = max(leave - enter, 0.0);
@@ -411,45 +660,231 @@ Shader "RealisticFiring/FireboxVolume"
                 // ray through a corner takes few.
                 float steps = span > 0.0 ? clamp(ceil(span / max(_StepLength, 0.005)), 4.0, max(4.0, _Steps)) : 0.0;
                 float dt = span / max(steps, 1.0);
-                float t = enter + dt * Dither(i.pos.xy);
+                // The ray is read at its two ends and at one dithered point
+                // in each step between, and each stretch between two reads
+                // is taken from one to the other, by its own length. (Read
+                // at the dithered points alone, each standing for a whole
+                // step, what lies in the last part of a step before a lump,
+                // the flames' dense bright feet, was caught by a pixel's
+                // last point or missed: salt over the bed.)
+                float jitter = 0.5 + (Dither(i.pos.xy) - 0.5) * _DitherAmount;
+                // (At half resolution, the detail a step twice as long
+                // resolves: its closer steps are there to sample the same
+                // flames twice over, so the few pixels left to share out the
+                // dither's pattern have less of it to share. With detail as
+                // fine as the closer steps allow, the pattern came back as
+                // a weave on the thinnest bright folds: the council, round 8.)
+                StepLod = log2(max((_FireLowPass > 0.5 ? 2.0 : 1.0) * dt * 64.0, 1.0));
                 half3 light = 0;
                 // What gets through, by color: soot dims green and blue more than
                 // red, so flames seen through smoke turn brown, not the olive a
                 // grey dimming of yellow gives.
                 half3 through = 1;
                 float tile = 1.0 / max(_NoiseTile, 0.05);
+                // The step before's flame shape against its threshold, and
+                // which step that was: a step skipped leaves none to run from.
+                float insideBefore = 0.0;
+                int stepBefore = -2;
+                // And the short flames' shape at the end of the step before.
+                half3 lickBefore = 0.0;
+                int lickStepBefore = -2;
 
-                for (int k = 0; k < 128; k++)
+                // Where the last read fell, how many steps on the next falls
+                // (more than one over the flames' reach, where only smoke is:
+                // _SmokeStride), and whether the ray's end has been read.
+                float t = enter;
+                float stride = 1.0;
+                bool ended = false;
+
+                for (int k = 0; k < 130; k++)
                 {
-                    if (k >= steps || through.r < 0.01)
+                    if (steps < 0.5 || ended || through.r < 0.01)
                         break;
+                    // This read's place along the ray, and the stretch back
+                    // to the read before: none before the first, part of a
+                    // step to the first dithered point, and whatever is left
+                    // to the ray's end.
+                    float seg = 0.0;
+                    if (k > 0)
+                    {
+                        float next = k == 1 ? enter + jitter * dt : t + stride * dt;
+                        if (next >= leave)
+                        {
+                            next = leave;
+                            ended = true;
+                        }
+                        seg = next - t;
+                        t = next;
+                    }
+                    stride = 1.0;
                     float3 u = origin + step3 * t + 0.5;
-                    t += dt;
 
                     // The zones under this point, the flames leaning toward the
                     // tube plate with height.
                     // The flames' bodies ride the airflow: their zones read where
                     // across the gas here came from a moment ago, so they bend
                     // and roll with it (FireboxAirflow).
-                    half4 flowB = tex2Dlod(_FlowB, float4(u.x, u.y, 0, 0));
+                    half4 flowBoth = tex2Dlod(_FlowB, float4(u.x, u.y, 0, 0));
+                    half2 flowB = lerp(flowBoth.zw, flowBoth.xy, _FlowLerp.z);
                     float carried = flowB.x / _BoxSize.x;
                     float2 bed = float2(dot(_BedS, float3(carried, u.z, 1)), dot(_BedT, float3(carried, u.z, 1)));
                     float2 leaned = bed - float2(0, _Lean * u.y);
-                    half4 zoneA = tex2Dlod(_ZonesA, float4(leaned, 0, 0));
+                    // Under the brick arch, and over it.
+                    bool underArch = false;
+                    bool overArch = false;
+                    float archRoll = 0.0;
+                    // In the layer of gases turning along the bricks: its
+                    // curls and filaments blurred by its shear. (Not the
+                    // sheets and lobes the flames' shapes are of: blurred
+                    // too, the flames there thinned out and went soft.)
+                    bool turning = false;
+                    float turnLod = 0.0;
+                    // The point in the box itself, for what is the box's own
+                    // (its smoke's fade at its sides): u goes on as the
+                    // point the flames here are read at.
+                    float3 uBox = u;
+                    half4 zoneA = 0.0;
+                    bool zoned = false;
+                    if (_ArchFlame.x > 0.0)
+                    {
+                        float archAlong = (u.z - _ArchLine.x) / (_ArchLine.y - _ArchLine.x);
+                        float archUnder = lerp(_ArchLine.z, _ArchLine.w, archAlong);
+                        bool overBricks = archAlong > 0.0 && u.y > archUnder;
+                        underArch = archAlong > 0.0 && !overBricks;
+                        // The zones' lean here, by where the point itself is.
+                        float leanBy = -_Lean * u.y;
+                        if (underArch)
+                        {
+                            // The lean toward the tubes gives way to the
+                            // trail back to the lip over the first part of
+                            // the arch: at once, the flames tore along the
+                            // lip's own line.
+                            float way = smoothstep(0.0, 0.3, archAlong);
+                            float near = saturate((u.y - _GrateLevel) / max(archUnder - _GrateLevel, 1e-3));
+                            leanBy = lerp(leanBy, _ArchFlame.y * near * near, way);
+                        }
+                        else
+                            leanBy -= _ArchFlame.z * max(u.y - _ArchLine.z, 0.0);
+                        leaned.y = bed.y + leanBy;
+                        // The gases' way: how far in from the layer's foot
+                        // the point lies, m. Under the bricks, its depth
+                        // under them; past the lip and under its edge,
+                        // turned about that edge; over its edge, how far
+                        // behind the lip, the layer leaning on over the
+                        // bricks with height.
+                        float archSpan = abs(_ArchLine.y - _ArchLine.x) * _BoxSize.z;
+                        float ahead = archAlong * archSpan;
+                        float over = (u.y - _ArchLine.z) * _BoxSize.y;
+                        float within = -1.0;
+                        if (underArch)
+                            within = (archUnder - u.y) * _BoxSize.y;
+                        else if (over >= 0.0)
+                            within = _ArchBend.z * over - ahead;
+                        else if (ahead < 0.0)
+                            within = length(float2(ahead, over));
+                        // Within 30 cm behind the lip.
+                        if (!underArch)
+                            archRoll = archAlong <= 0.0 ? saturate(1.0 + ahead / 0.3) : 0.0;
+                        float ceiling = underArch ? archUnder : _ArchLine.z;
+                        if (within > 0.0 && within < _ArchFlame.x * (ceiling - _GrateLevel) * _BoxSize.y)
+                        {
+                            // The layer: its share of the room between the
+                            // coal here and the bricks.
+                            zoneA = tex2Dlod(_ZonesA, float4(leaned, 0, 0));
+                            zoned = true;
+                            float coalHere = lerp(_GrateLevel, zoneA.a, smoothstep(0.0, 1.0, bed.y / max(_DoorSlope, 1e-3)));
+                            float layer = _ArchFlame.x * (ceiling - coalHere) * _BoxSize.y;
+                            if (within < layer)
+                            {
+                                // The gas here left the coal nearer the
+                                // bricks' foot, the nearer the bricks the
+                                // farther back, and has come that far
+                                // along them since: its flames are that
+                                // coal's, that much farther up them.
+                                // (At the bricks, from no farther back
+                                // than _ArchFlow.w of the layer's depth,
+                                // nor than their foot. From the foot
+                                // always, the gases of the whole grate
+                                // under the bricks were drawn through the
+                                // layer's depth at the lip, eight times
+                                // as fine through it as along it: their
+                                // flames' detail there drew as hatching,
+                                // and blurred to what the march's steps
+                                // could carry, as stepped rings about the
+                                // lip's edge: the council, round 13.)
+                                turning = true;
+                                float inward = 1.0 - within / layer;
+                                float fromFoot = min(max(archSpan - ahead, 0.0), _ArchFlow.w * layer);
+                                float travel = fromFoot * pow(inward, _ArchBend.x);
+                                float climbed = layer - within;
+                                float run = _ArchBend.y * travel;
+                                u.z += travel / max(archSpan, 1e-3) * (_ArchLine.y - _ArchLine.x);
+                                // (And no farther up them for its climb
+                                // through the layer than _ArchFlow.z of
+                                // it: held under the bricks, the gases
+                                // gather there, and their flames fill the
+                                // layer where free ones would have thinned
+                                // out on the way up.)
+                                // (Under a fire that burns hard: a weak
+                                // one's little gas rises as in the open.
+                                // Drawn out through the layer all the
+                                // same, a drifting fire's faint flames
+                                // reached, unseen, all through it, and
+                                // every step of the march there read its
+                                // smoke: 8 ms a frame from inside the
+                                // box, jobs 2207 and 2213.)
+                                float risen = lerp(1.0, _ArchFlow.z, smoothstep(0.35, 0.8, zoneA.r)) * climbed;
+                                u.y += (sqrt(risen * risen + run * run) - climbed) / _BoxSize.y;
+                                bed = float2(dot(_BedS, float3(carried, u.z, 1)), dot(_BedT, float3(carried, u.z, 1)));
+                                leaned = float2(bed.x, bed.y + leanBy);
+                                zoned = false;
+                                // (The coal's place changes this many
+                                // times faster through the layer's depth
+                                // than along it.)
+                                turnLod = _ArchFlow.x * log2(1.0 + fromFoot * _ArchBend.x * pow(inward, _ArchBend.x - 1.0) / layer);
+                            }
+                        }
+                        // Over the bricks, the flames of the grate under
+                        // them are under them.
+                        overArch = overBricks && !turning && leaned.y > _ArchFlame.w;
+                    }
+                    if (!zoned)
+                        zoneA = tex2Dlod(_ZonesA, float4(leaned, 0, 0));
                     half4 zoneB = tex2Dlod(_ZonesB, float4(bed, 0, 0));
                     // The coal's surface here: the zone's, sloping down to the
                     // grate at the door as the bed does.
                     // With the bed's swells and heaps (ZonedCoalBed.ReliefTexture),
                     // so the flames stand on the coal as drawn.
                     half4 relief = tex2Dlod(_BedRelief, float4(saturate(bed), 0, 0));
+                    // How much fresh coal covers the bed under this point: its
+                    // zone's green share, spread and in patches (CoalFreshPatch
+                    // and CoalFreshCover in CoalSurface.cginc, the same read).
+                    half laid = 0.0;
+                    if (zoneB.a > 0.01)
+                        laid = saturate((zoneB.a * 1.8 - tex3Dlod(_Noise, float4(bed.x * 2.3 + 0.21, 0.43, bed.y * 4.1 + 0.67, 0)).b) / 0.15);
                     float coal = zoneA.a + (zoneA.a - _GrateLevel) * max(relief.r, -0.8) + relief.g * _BedRise;
                     float surface = lerp(_GrateLevel, coal, smoothstep(0.0, 1.0, bed.y / max(_DoorSlope, 1e-3)));
                     float above = u.y - surface;
                     // The gaps between the lumps reach this far under the coal's
                     // surface (the bed draws its deeper coal there: CoalLumps).
                     float gapFloor = _LickDepth / _BoxSize.y;
+                    // A read at that floor or under it, the ray having come
+                    // down through it since the read before (deep in a gap,
+                    // on the bed under the lumps, on the embers): it is
+                    // moved back up the ray to the floor, and its stretch
+                    // shortened by as much. Skipped, the part of the stretch
+                    // above the floor went unmarched, as long as the pixel's
+                    // dither left it, and the gaps' floors drew as a
+                    // halftone of lit and unlit pixels.
                     if (above < -gapFloor)
-                        continue;
+                    {
+                        float back = step3.y < -1e-5 ? (-gapFloor - above) / step3.y : -seg;
+                        if (back <= -seg)
+                            continue;
+                        u += step3 * back;
+                        seg += back;
+                        above = -gapFloor;
+                    }
 
 
 
@@ -458,6 +893,34 @@ Shader "RealisticFiring/FireboxVolume"
 
 
                     half puff = tex3Dlod(_Noise, float4(leaned.x * 1.7 + 0.31, _PuffClock, leaned.y * 3.4 + 0.53, 0)).b;
+
+
+
+
+                    half roots = tex3Dlod(_Noise, float4(leaned.x * 1.2, _RootOffset, leaned.y * 2.4, 0)).a;
+                    // The flames' reach here: the surge at this height (the
+                    // coal's now, older higher up), the zone's height swung by
+                    // it and by the patch's puffing.
+                    float climb = saturate(max(above, 0.0) / max(zoneA.g, 0.02)) * 3.0;
+                    half surge = climb < 1.0 ? lerp(_PulseHistory.x, _PulseHistory.y, climb)
+                               : climb < 2.0 ? lerp(_PulseHistory.y, _PulseHistory.z, climb - 1.0)
+                               : lerp(_PulseHistory.z, _PulseHistory.w, climb - 2.0);
+                    half swing = surge - _PulseMean;
+                    float top = max(zoneA.g * (1.0 + _BeatHeight * swing), 0.02);
+                    top *= lerp(1.0, 0.45 + 1.1 * puff, _Puff);
+                    top *= 1.0 + _ArchBend.w * archRoll;
+                    // Clear of every flame, the tall ones' reach and the short
+                    // ones' in the gaps: only smoke from here, smooth against
+                    // the flames, so the next read falls _SmokeStride steps on
+                    // (over a low fire in a smoky box most of each ray is such;
+                    // the march's cost is its reads). Arriving among the flames
+                    // from such a stride, only the last step of it is taken as
+                    // theirs.
+                    bool clear = (above > 1.5 * top * (0.9 + 0.5 * roots) || overArch) && (above + gapFloor) * _BoxSize.y > 1.8 * _LickHeight;
+                    if (clear)
+                        stride = max(_SmokeStride, 1.0);
+                    else
+                        seg = min(seg, dt);
                     // (The short flames pump with the puffing and sway only as hard
                     // as the draft drives them: drifting, they stand calm.)
                     // The bed's burning spots, read only near it: at a low draft the
@@ -483,6 +946,14 @@ Shader "RealisticFiring/FireboxVolume"
                     // their feet.
                     half4 sway = tex3Dlod(_Noise, float4(leaned.x * 1.3 + 0.71, _SwayClock, leaned.y * 2.6 + 0.19, 0)) - 0.5;
                     half lick = 0;
+                    // Where up the short flames their light is taken for this
+                    // stretch of the ray: half way along it, not at its far
+                    // end. (At the far end, a ray's last stretch down to the
+                    // coal took all its flame at the foot's white heat, and
+                    // the stretch before at its own end's orange: how the
+                    // dither split the last centimetres between the two
+                    // showed as white and orange blocks at the roots.)
+                    float lickUpLight = lickUp;
                     half lickCore = 0;
                     // Only over the bed.
                     if (lickUp < 1.5 && all(bed == saturate(bed)))
@@ -497,24 +968,45 @@ Shader "RealisticFiring/FireboxVolume"
 
 
 
-                        float lickScale = _LickScale * lerp(0.6, 1.0, _LickMotion);
-                        float3 half3Step = step3 * (dt * 0.5);
+
+
+                        float lickScale = _LickScale * lerp(0.8, 1.0, _LickMotion);
                         float3 q = u * _BoxSize * lickScale * float3(1, 0.35, 1);
                         q.xz += sway.ab * 2.0 * _Sway * lickScale * saturate(lickUp) * 0.5 * (0.35 + 0.65 * _LickMotion);
-                        float3 q2 = q + half3Step * _BoxSize * lickScale * float3(1, 0.35, 1);
-                        float lickUp2 = lickUp + half3Step.y * _BoxSize.y / max(lickTall, 0.01);
                         float2 bend = 0;
                         if (_LickDetail > 0.0)
                         {
                             half4 curl = tex3Dlod(_Noise, float4(q * 0.6 - float3(0, _LickOffset * 0.25, 0), 0)) - 0.5;
                             bend = curl.ga * 2.0 * _LickCurl * lerp(0.5, 1.0, _LickMotion) * _LickDetail;
                         }
-                        half2 licks = BedFlame(q, lickUp, bend, lickScale, lickTall);
-                        half2 licks2 = BedFlame(q2, lickUp2, bend, lickScale, lickTall);
-                        // Two samples retain coverage along the ray as the
-                        // short flames' density edges become crisper.
-                        half both = licks.x + licks2.x;
-                        lickCore = (licks.y + licks2.y) / max(both, 1e-4);
+                        // Their light taken along the stretch from the read
+                        // before to this one, their shape running evenly
+                        // between the two: they are dense and bright at
+                        // their feet and thin at their fronts, and read at
+                        // points they came out as sand. Where the read before
+                        // marched none of them, their shape there is read now.
+                        half3 lickFar = BedFlameField(q, lickUp, bend, lickScale, lickTall);
+                        float3 qBack = step3 * seg * _BoxSize * lickScale * float3(1, 0.35, 1);
+                        float upBack = step3.y * seg * _BoxSize.y / max(lickTall, 0.01);
+                        lickUpLight = lickUp - 0.5 * upBack;
+                        half3 lickNear = lickBefore;
+                        if (lickStepBefore != k - 1)
+                            lickNear = seg > 0.0 ? BedFlameField(q - qBack, lickUp - upBack, bend, lickScale, lickTall) : lickFar;
+                        // And read half way between: their fronts are thinner
+                        // than a step, and where the bed's hot spots glare
+                        // through them a front between two reads showed or
+                        // did not by the pixel's dither (white salt in the
+                        // brightest gaps).
+                        half2 licks = BedFlameLight(lickFar);
+                        if (seg > 0.0)
+                        {
+                            half3 lickMid = BedFlameField(q - 0.5 * qBack, lickUp - 0.5 * upBack, bend, lickScale, lickTall);
+                            licks = 0.5 * (BedFlameSpan(lickNear, lickMid) + BedFlameSpan(lickMid, lickFar));
+                        }
+                        lickBefore = lickFar;
+                        lickStepBefore = k;
+                        half both = 2.0 * licks.x;
+                        lickCore = licks.y / max(licks.x, 1e-4);
                         // As dense as the coal is hot, not as hard as it is driven: a
                         // standing fire's hot gaps still flame (the footage in a
                         // station: bright tongues over a dark bed).
@@ -523,27 +1015,28 @@ Shader "RealisticFiring/FireboxVolume"
                         // relighting there (the footage, real time: tongues at the
                         // same places for seconds); under a hard draft, all over.
                         lick *= lerp(smoothstep(0.5, 0.68, spotsAt), 1.0, _LickMotion);
+                        // None through a patch of fresh coal: they come up
+                        // round its edges.
+                        lick *= 1.0 - 0.95 * laid;
                     }
-                    // The flames proper stand on the coal's surface.
-                    half onCoal = step(0.0, above);
-                    if (onCoal < 0.5 && lick <= 0.0)
+                    // The flames proper stand on the coal's surface: over as
+                    // much of the stretch back to the read before as lies
+                    // above it. (By this read alone, a ray ending on a lump
+                    // under the surface lost the flames of its whole last
+                    // stretch, as long as its dither left it: a halftone of
+                    // dark pixels over the lumps beside every gap.)
+                    float aboveNear = above - step3.y * seg;
+                    half onCoal = seg > 0.0 ? EdgeMean(aboveNear * 2000.0, above * 2000.0, 1.0) : step(0.0, above);
+                    if (onCoal <= 0.0 && lick <= 0.0)
                         continue;
                     above = max(above, 0.0);
-                    // The surge here: the coal's now, older higher up.
-                    float climb = saturate(above / max(zoneA.g, 0.02)) * 3.0;
-                    half surge = climb < 1.0 ? lerp(_PulseHistory.x, _PulseHistory.y, climb)
-                               : climb < 2.0 ? lerp(_PulseHistory.y, _PulseHistory.z, climb - 1.0)
-                               : lerp(_PulseHistory.z, _PulseHistory.w, climb - 2.0);
-                    half swing = surge - _PulseMean;
-                    float top = max(zoneA.g * (1.0 + _BeatHeight * swing), 0.02);
-                    top *= lerp(1.0, 0.45 + 1.1 * puff, _Puff);
-
-
-
-
-                    half roots = tex3Dlod(_Noise, float4(leaned.x * 1.2, _RootOffset, leaned.y * 2.4, 0)).a;
+                    aboveNear = max(aboveNear, 0.0);
                     // Over the flames' highest reach with no smoke there is nothing to draw.
-                    if (above > 1.5 * top * (0.9 + 0.5 * roots) && flowB.g < 0.005)
+                    // With smoke, only the smoke: its billows, without the six
+                    // reads of the flames' sheets, curls, and filaments (over a
+                    // low fire in a smoky box most of each ray is such).
+                    bool overFlames = (above > 1.5 * top * (0.9 + 0.5 * roots) || overArch) && lick <= 0.0;
+                    if (overFlames && flowB.g < 0.005)
                         continue;
 
 
@@ -568,6 +1061,9 @@ Shader "RealisticFiring/FireboxVolume"
                     // height before tapering it, rather than slicing a flat lid.
                     float tongueHeight = min(top * (0.6 + 0.5 * roots + 0.3 * lobes), 0.5 * max(1.0 - surface, 0.0));
                     float rise = above / max(tongueHeight, 1e-4);
+                    // And the tall flames' light half way along the stretch,
+                    // as the short ones'.
+                    float riseLight = 0.5 * (above + aboveNear) / max(tongueHeight, 1e-4);
                     // At the side walls the flames curl and sway the more (the
                     // footage: twice the swirl at the sides as in the middle).
                     half wall = saturate(1.0 - min(u.x, 1.0 - u.x) / max(_SideWidth, 0.01));
@@ -596,7 +1092,7 @@ Shader "RealisticFiring/FireboxVolume"
 
 
 
-                    half4 flowA = tex2Dlod(_FlowA, float4(u.x, u.y, 0, 0));
+                    half4 flowA = lerp(tex2Dlod(_FlowAPrev, float4(u.x, u.y, 0, 0)), tex2Dlod(_FlowA, float4(u.x, u.y, 0, 0)), _FlowLerp.xxyy);
                     float2 here = u.xy * _BoxSize.xy;
                     flowA = here.xyxy + _FlowCarry * (flowA - here.xyxy);
                     float3 along = float3(0, 0, 1);
@@ -625,14 +1121,19 @@ Shader "RealisticFiring/FireboxVolume"
                     // Locally renewed phases need independent detail too, so
                     // mixing them does not amplify one shared field's contrast.
                     float3 phaseDetail = (1.0 - _DetailFlowCarry) * float3(0.37, 0.61, 0.23);
-                    half4 phaseA = half4(tex3Dlod(_Noise, float4(tallA - sheetShift + sheetDetail, 0)).g,
-                                         tex3Dlod(_Noise, float4(crispA * 2.0 - curlShift, 0)).g,
-                                         tex3Dlod(_Noise, float4(tallA - sheetShift * 0.7, 0)).b,
-                                         tex3Dlod(_Noise, float4(crispA * _DetailScale - curlShift * 2.0 + fineDetail, 0)).g);
-                    half4 phaseB = half4(tex3Dlod(_Noise, float4(tallB - sheetShift + sheetDetail, 0)).g,
-                                         tex3Dlod(_Noise, float4(crispB * 2.0 - curlShift + phaseDetail, 0)).g,
-                                         tex3Dlod(_Noise, float4(tallB - sheetShift * 0.7, 0)).b,
-                                         tex3Dlod(_Noise, float4(crispB * _DetailScale - curlShift * 2.0 + fineDetail + phaseDetail, 0)).g);
+                    float curlLod = DetailLod(2.0 * tile) + turnLod;
+                    float fineLod = DetailLod(_DetailScale * tile) + turnLod;
+                    half4 phaseA = half4(0.5, 0.5, tex3Dlod(_Noise, float4(tallA - sheetShift * 0.7, 0)).b, 0.5);
+                    half4 phaseB = half4(0.5, 0.5, tex3Dlod(_Noise, float4(tallB - sheetShift * 0.7, 0)).b, 0.5);
+                    if (!overFlames)
+                    {
+                        phaseA.x = tex3Dlod(_Noise, float4(tallA - sheetShift + sheetDetail, 0)).g;
+                        phaseA.y = tex3Dlod(_Noise, float4(crispA * 2.0 - curlShift, curlLod)).g;
+                        phaseA.w = tex3Dlod(_Noise, float4(crispA * _DetailScale - curlShift * 2.0 + fineDetail, fineLod)).g;
+                        phaseB.x = tex3Dlod(_Noise, float4(tallB - sheetShift + sheetDetail, 0)).g;
+                        phaseB.y = tex3Dlod(_Noise, float4(crispB * 2.0 - curlShift + phaseDetail, curlLod)).g;
+                        phaseB.w = tex3Dlod(_Noise, float4(crispB * _DetailScale - curlShift * 2.0 + fineDetail + phaseDetail, fineLod)).g;
+                    }
                     // Mixed keeping their contrast, so the flames do not thin as
                     // one phase fades into the other.
                     half4 mixed = 0.5 + (_FlowWeights.x * (phaseA - 0.5) + _FlowWeights.y * (phaseB - 0.5))
@@ -659,14 +1160,37 @@ Shader "RealisticFiring/FireboxVolume"
                     half threshold = lerp(_SheetLow, _SheetHigh, pow(saturate(rise), 0.8)) + 0.5 * saturate(rise - 1.0) - _BeatCover * swing - _GasFill * zoneB.b + _Sparse * weak * weak;
                     // (Thinner at a low draft: over a standing fire, seen low across
                     // the bed, its curls drew as rippled contour lines.)
-                    half carpet = saturate(1.0 - above * _BoxSize.y / max(_Carpet, 0.005)) * (0.5 + 0.5 * curls) * (0.2 + 0.8 * _LickMotion);
+                    // (Its depth taken along the stretch back to the read
+                    // before: a layer two centimetres deep on the coal, read
+                    // at a point, was caught or missed as the short flames
+                    // were.)
+                    float carpetScale = _BoxSize.y / max(_Carpet, 0.005);
+                    half carpetDepth = EdgeMean(1.0 - aboveNear * carpetScale, 1.0 - above * carpetScale, 1.0);
+                    half carpet = lerp(saturate(1.0 - above * carpetScale), carpetDepth, _EdgeMean) * (0.5 + 0.5 * curls) * (0.2 + 0.8 * _LickMotion);
                     // A crisp edge where the shape crosses the threshold; hotter the
                     // deeper inside a flame, so its body burns yellow and its edges
                     // orange-red.
                     half inside = shape - threshold;
                     half edge = 1.0 - saturate(inside * 5.0);
                     half fray = lerp(1.0, saturate(fine * 2.0 - 0.2), edge * _DetailErode);
-                    half body = (saturate(inside * _Sharp) * (0.7 + 0.6 * lobes) * saturate((1.5 - rise) * 2.0) * fray + carpet) * zoneA.r * onCoal;
+                    half filled = saturate(inside * _Sharp);
+                    if (stepBefore == k - 1)
+                        filled = lerp(filled, EdgeMean(insideBefore, inside, _Sharp), _EdgeMean);
+                    // (Over the flames their shape is not read: none to run from.)
+                    if (!overFlames)
+                    {
+                        insideBefore = inside;
+                        stepBefore = k;
+                    }
+                    half body = overArch ? 0.0 : (filled * (0.7 + 0.6 * lobes) * saturate((1.5 - rise) * 2.0) * fray + carpet) * zoneA.r * onCoal;
+                    // (The test bed's: only the flames of the coal under the
+                    // arch, to see their way along the bricks and round the
+                    // lip without the flames before them.)
+                    if (_ArchFlow.y > 0.5 && bed.y < _ArchFlame.w)
+                    {
+                        body = 0.0;
+                        lick = 0.0;
+                    }
                     half flame = body + lick;
                     half core = saturate(inside / max(_CoreDepth, 0.02) + carpet);
 
@@ -678,7 +1202,7 @@ Shader "RealisticFiring/FireboxVolume"
 
 
 
-                    half heat = _HeatScale * lerp(_FlameHeat, 1.0, zoneB.r) * lerp(1.0, _TipHeat, pow(saturate(rise), 0.8)) * lerp(_EdgeHeat, 1.0, core) * (1.0 + _BeatHeat * swing);
+                    half heat = _HeatScale * lerp(_FlameHeat, 1.0, zoneB.r) * lerp(1.0, _TipHeat, pow(saturate(riseLight), 0.8)) * lerp(_EdgeHeat, 1.0, core) * (1.0 + _BeatHeat * swing);
 
 
 
@@ -694,7 +1218,7 @@ Shader "RealisticFiring/FireboxVolume"
 
 
                     half spot = lerp(_SpotDim, _SpotGlare, smoothstep(_SpotLow, 1.0, roots));
-                    half reach = 1.0 - smoothstep(0.0, max(_BaseHeight, 0.01), saturate(rise));
+                    half reach = 1.0 - smoothstep(0.0, max(_BaseHeight, 0.01), saturate(riseLight));
                     half reach2 = reach * reach;
                     half foot = 1.0 + (_BaseGlow - 1.0) * lerp(_BaseCoke, 1.0, pow(zoneB.b, 1.5)) * reach2 * lerp(1.0, spot, reach2 * reach2);
 
@@ -707,14 +1231,16 @@ Shader "RealisticFiring/FireboxVolume"
 
 
                     heat += _WhiteHeart * core * reach2;
-                    half lickHeat = saturate(lerp(_LickHeat, 1.0, zoneB.r) * lerp(1.3, 0.45, saturate(lickUp)))
+                    half lickHeat = saturate(lerp(_LickHeat, 1.0, zoneB.r) * lerp(1.3, 0.45, saturate(lickUpLight)))
                                   * lerp(1.0, lerp(0.6, 1.0, lickCore), _LickDetail)
-                                  + _WhiteHeart * (1.0 - saturate(lickUp)) * lerp(1.0, lickCore, _LickDetail);
+                                  + _WhiteHeart * (1.0 - saturate(lickUpLight)) * lerp(1.0, lickCore, _LickDetail);
                     heat = lerp(heat, lickHeat, lick / max(flame, 1e-4));
+                    // Over fresh coal the flames burn duller, smoky.
+                    heat *= 1.0 - 0.25 * laid;
                     // _Glow is an opaque flame's radiance: a thick flame shows it,
                     // a thin one less, as much as its density takes up.
                     half lickRadiance = lerp(1.0, 0.5 + 0.9 * lickCore, _LickDetail);
-                    half3 flameLight = FlameColor(heat) * flame * _Glow * lerp(1.0, 0.55 + 0.9 * fine, _DetailStreak) * lerp(1.0, 0.3 + 1.4 * curls, _Crinkle) * max(1.0 + _BeatGlow * swing, 0.2) * lerp(foot, _LickGlow * lerp(1.5, 0.4, saturate(lickUp)) * spot * lickRadiance, lick / max(flame, 1e-4));
+                    half3 flameLight = FlameColor(heat) * flame * _Glow * lerp(1.0, 0.55 + 0.9 * fine, _DetailStreak) * lerp(1.0, 0.3 + 1.4 * curls, _Crinkle) * max(1.0 + _BeatGlow * swing, 0.2) * lerp(foot, _LickGlow * lerp(1.5, 0.4, saturate(lickUpLight)) * spot * lickRadiance, lick / max(flame, 1e-4));
                     half3 glow = flameLight * _FlameDensity;
 
                     // Smoke over the zone, thinner toward the crown, lit from the
@@ -735,6 +1261,22 @@ Shader "RealisticFiring/FireboxVolume"
                     // zero-density holes left the walls visible through it.
                     half smokeShape = max(0.25, lerp(0.5 + lobes, clumps, _SmokeClumps));
                     half smoke = flowB.g * onCoal * saturate((above * _BoxSize.y - 0.04) / 0.18) * smokeShape;
+                    // Thinning out toward the volume's own sides and top:
+                    // where a box stands wider than it (the S060's round
+                    // shell) its smoke showed the volume's square outline.
+                    smoke *= smoothstep(0.0, 0.22, min(min(uBox.x, 1.0 - uBox.x), min(1.0 - uBox.y, min(uBox.z, 1.0 - uBox.z))));
+                    // Near the coal it is the smoke of the coal under it:
+                    // thick over a fresh shovelful, thin over burned-down
+                    // coke beside it; most of a metre up it has mixed. (The
+                    // airflow carries one sheet of smoke for the whole length
+                    // of the box, and a fresh corner's smoke drew as an even
+                    // brown veil over all of it.)
+                    // And within its zone, of the patches its fresh coal
+                    // lies in (as the lumps and the bed under them read
+                    // them, CoalSurface.cginc): thick over a patch, thin
+                    // beside it.
+                    half own = min(zoneA.b / max(_SmokeMean, 0.02), 3.0) * lerp(1.0, 0.4 + 1.6 * laid, saturate(zoneB.a * 4.0));
+                    smoke *= lerp(1.0, lerp(own, 1.0, saturate(above * _BoxSize.y / 0.9)), _SmokeLocal);
                     // Lit orange from the coal below (the bed's glow, its color
                     // a little cooler than its flames') and by the flames in it.
                     half3 fireBelow = FlameColor(zoneB.r * 0.75) * zoneB.g * exp(-3.0 * above);
@@ -744,8 +1286,39 @@ Shader "RealisticFiring/FireboxVolume"
                     // Approximate the bed light absorbed on its way up through
                     // the smoke. Unattenuated box light made dense smoke glow
                     // almost as brightly as the fire it should hide.
+                    // A patch of fresh coal's own smoke, rolling up from it
+                    // thick before the airflow has it (the council: no smoke
+                    // over fresh coal; the airflow's sheet of it is thin and
+                    // unlit over a slow fire): as much as its zone smokes,
+                    // in billows, thinning out over most of a metre; lit by
+                    // the fire in the gaps round the patch, yellow-brown.
+                    // (Its foot the patch's, softly; up from it the billows
+                    // spread and wander with the curl, and thin out within
+                    // half a metre: straight up from the patch's own edge it
+                    // stood as a brown pillar with square sides.)
+                    float metresUp = above * _BoxSize.y;
+                    half column = 0.0;
+                    if (_SmokePlume > 0.0 && zoneB.a > 0.01 && metresUp < 0.6)
+                    {
+                        float2 from = bed + warp.ga * (0.3 * saturate(metresUp / 0.4));
+                        half foot = saturate((zoneB.a * 1.8 + 0.1 - tex3Dlod(_Noise, float4(from.x * 2.3 + 0.21, 0.43, from.y * 4.1 + 0.67, 0)).b) / 0.45);
+                        column = _SmokePlume * foot * onCoal * min(zoneA.b * 3.5, 1.2) * saturate(metresUp / 0.12)
+                               * (1.0 - smoothstep(0.15, 0.6, metresUp)) * max(0.12, clumps)
+                               // (Thin under a working draft, which burns most
+                               // of it and carries off the rest: thick there,
+                               // it veiled the black coal in orange.)
+                               * lerp(1.0, 0.35, _LickMotion);
+                    }
+                    smoke += column;
+                    // (No hotter than an orange: by a working bed's yellow-white
+                    // gaps the plume's thin foot glared, and showed the dither.)
+                    half3 plumeLight = FireColor(min(FireBedCore(zoneB.r), 0.7)) * (0.5 * column / max(smoke, 1e-4)) * exp(-2.0 * metresUp);
                     half smokeShadow = exp(-smoke * _SmokeDensity * max(above * _BoxSize.y, 0.0));
-                    half3 lit = smoke * _SmokeAlbedo * ((_SmokeLight * fireBelow + _BoxLight) * smokeShadow + 0.15 * flameLight);
+                    // Over a patch of fresh coal the smoke rolls up thick in
+                    // the light of the fire round it, a dull lit plume (the
+                    // footage's fresh corner): lit only as the box's smoke
+                    // is, it rose dark against a dark box and did not show.
+                    half3 lit = smoke * _SmokeAlbedo * ((_SmokeLight * (1.0 + 6.0 * laid) * fireBelow + _BoxLight) * smokeShadow + plumeLight + 0.15 * flameLight);
 
                     // The test bed's views: the flames or the smoke alone.
                     if (_VolumeDebug > 1.5)
@@ -759,17 +1332,21 @@ Shader "RealisticFiring/FireboxVolume"
                         lit = 0;
                     }
                     float3 sigma = flame * _FlameDensity + smoke * _SmokeDensity * float3(0.75, 1.0, 1.3);
-                    half3 kept = exp(-sigma * dt);
+                    half3 kept = exp(-sigma * seg);
                     // The light from this step, as much as gets out of it (energy
                     // conserving: an emissive, absorbing slab of its depth).
                     half3 source = glow + lit;
-                    half3 out3 = sigma.g > 1e-4 ? source * (1.0 - kept) / sigma : source * dt;
+                    half3 out3 = sigma.g > 1e-4 ? source * (1.0 - kept) / sigma : source * seg;
                     light += through * out3;
                     through *= kept;
                 }
-                float2 weights = QuadWeights(i.pos.xy, span);
-                light = QuadBlend(light, i.pos.xy, weights);
-                through = QuadBlend(through, i.pos.xy, weights);
+                // (At half resolution the laying over blends the quads.)
+                if (_FireLowPass < 0.5)
+                {
+                    float2 weights = QuadWeights(i.pos.xy, span);
+                    light = QuadBlend(light, i.pos.xy, weights);
+                    through = QuadBlend(through, i.pos.xy, weights);
+                }
                 // As the eye sees it: the flames' and smoke's light alone, the
                 // walls and coal behind already so; those dimmed by the green's
                 // share through, the blend's one.

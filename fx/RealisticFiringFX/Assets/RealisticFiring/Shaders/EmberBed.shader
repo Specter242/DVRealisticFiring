@@ -101,10 +101,19 @@ Shader "RealisticFiring/EmberBed"
                 // Embers glow even under a slow fire; ash dulls them.
                 half glowHeat = saturate((0.25 + 0.75 * heat) * (0.85 + 0.3 * hot) * (0.9 + 0.2 * fine));
                 glowHeat = lerp(glowHeat, heat, FireHeatThrough(heat));
+                // Under the lumps, the bed's core: as hot as the fire between
+                // them, however slowly the zone burns.
+                half core = FireBedCore(heat) * (0.9 + 0.1 * hot);
+                glowHeat = lerp(glowHeat, core, _UnderLumps);
                 half3 c = FireColor(glowHeat) * (0.45 + 0.9 * broad) * (1.0 - 0.7 * ash);
+                // Dark under a patch of fresh coal and a little past its
+                // edge, as the bed over it is (its light came up through
+                // the patch in threads).
+                if (_UnderLumps > 0.5)
+                    c *= 1.0 - 0.85 * CoalFreshCover(i.color.g + 0.06, CoalFreshPatch(i.uv));
                 // The ramp brightens with the heat itself; a little more as it
                 // is forced, and with each beat.
-                c *= _GlowStrength * (0.6 + 0.4 * heat * heat) * (1.0 + 0.5 * _Pulse);
+                c *= _GlowStrength * lerp(0.6 + 0.4 * heat * heat, 1.0, _UnderLumps) * (1.0 + 0.5 * _Pulse);
                 // Nothing glows where nothing burns: a dead zone is black, while
                 // a slow fire (heat 0.2 and up) keeps its full glow.
                 c *= saturate(heat * 20.0);

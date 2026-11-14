@@ -40,7 +40,9 @@ namespace RealisticFiring.Patches
                 SetupGuard.Run(car, "stoker's spray", () => StokerSpray.Attach(__instance.GetComponent<ZonedCoalBed>(), firebox));
                 SetupGuard.Logged(car, "flames", () => FireboxFlames.Attach(__instance, __instance.GetComponent<ZonedCoalBed>(), firebox));
                 SetupGuard.Logged(car, "fire volume", () => FireboxVolume.Attach(__instance, __instance.GetComponent<ZonedCoalBed>(), firebox));
+                SetupGuard.Logged(car, "brick arch", () => BrickArch.Attach(__instance, __instance.GetComponent<ZonedCoalBed>(), firebox));
                 SetupGuard.Logged(car, "coal lumps", () => CoalLumps.Attach(__instance, __instance.GetComponent<ZonedCoalBed>()));
+                SetupGuard.Logged(car, "firebox cinders", () => FireboxCinders.Attach(__instance, __instance.GetComponent<ZonedCoalBed>()));
                 SetupGuard.Logged(car, "firebox lighting", () =>
                 {
                     var lighting = FireboxLighting.Attach(__instance, __instance.GetComponent<ZonedCoalBed>(), firebox);

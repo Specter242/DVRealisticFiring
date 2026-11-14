@@ -34,6 +34,13 @@ namespace RealisticFiring.Shed
 
         private void Update()
         {
+            var start = Diagnostics.PerfMeter.Start();
+            try { TimedUpdate(); }
+            finally { Diagnostics.PerfMeter.Stop(Diagnostics.PerfSection.ShedHoses, start); }
+        }
+
+        private void TimedUpdate()
+        {
             if (control == null && plug != null)
             {
                 control = plug.GetComponent<ControlImplBase>();
@@ -42,6 +49,7 @@ namespace RealisticFiring.Shed
                     control.Grabbed += _ =>
                     {
                         held = true;
+                        ShedStands.WakeHose(GetComponent<PropHose>());
                         TellWhereItGoes();
                     };
                     control.Ungrabbed += _ => { held = false; Restore(); };

@@ -64,4 +64,22 @@ public class ExhaustBeatCounterTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new ExhaustBeatCounter(0));
     }
+
+    [Fact]
+    public void TellsHowFarTheCrankTurnedAndHowFarPastTheBeat()
+    {
+        var counter = new ExhaustBeatCounter(4);
+        counter.Advance(0.2f);
+
+        Assert.Equal(1, counter.Advance(0.3f));
+        Assert.Equal(0.1f, counter.Turned, 4);
+        // The beat was at 0.25: 0.05 of a turn ago, a fifth of a beat.
+        Assert.Equal(0.2f, counter.SinceBeat, 3);
+
+        // Backwards across the wrap, past the beat at 0.
+        counter.Advance(0.05f);
+        Assert.Equal(1, counter.Advance(0.95f));
+        Assert.Equal(0.1f, counter.Turned, 4);
+        Assert.Equal(0.2f, counter.SinceBeat, 3);
+    }
 }

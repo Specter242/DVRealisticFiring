@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using LocoSim.Implementations;
 using LocoSim.Resources;
 using MPAPI;
@@ -48,6 +49,16 @@ namespace RealisticFiring.Multiplayer
             MultiplayerAPI.ServerStarted += OnServerStarted;
             MultiplayerAPI.ClientStarted += OnClientStarted;
             MultiplayerAPI.ClientStopped += OnClientStopped;
+            try
+            {
+                HearServerStopped();
+            }
+            catch (Exception e)
+            {
+                // A Multiplayer without the event: a new server still clears
+                // the session, and nothing is told outside one.
+                mod.Logger.Warning($"The Multiplayer mod does not report a server stopping ({e.GetType().Name}); a session's state is cleared when the next one starts");
+            }
             api.OnTick += OnTick;
             // Last (audit 2026-11-09): with these set the mod's fires follow
             // the host on a guest, so nothing that can fail comes after them.
@@ -61,6 +72,11 @@ namespace RealisticFiring.Multiplayer
                 OnClientStarted(MultiplayerAPI.Client);
             mod.Logger.Log($"Multiplayer support on (Multiplayer {api.MultiplayerVersion}, its API {MultiplayerAPI.LoadedApiVersion})");
         }
+
+        // Apart, so a Multiplayer without the event fails here, inside the
+        // caller's try, and not when Start itself is compiled.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void HearServerStopped() => MultiplayerAPI.ServerStopped += OnServerStopped;
 
         private static bool IsClient()
         {
@@ -117,7 +133,7 @@ namespace RealisticFiring.Multiplayer
                 Items.FireStartingItems.Register();
                 PumpingBy.Clear();
                 Guests.Clear();
-                Unheard.Clear();
+                Hellos.Clear();
                 server.RegisterSerializablePacket<HelloPacket>(OnHello);
                 server.RegisterSerializablePacket<FireActionPacket>(OnFireAction);
                 StandSync.OnServerStarted(server);
@@ -130,6 +146,29 @@ namespace RealisticFiring.Multiplayer
             catch (Exception e)
             {
                 Faults.Report("the multiplayer add-on's server start", null, e);
+            }
+        }
+
+        // The session's state on the host ends with its server. The server
+        // stops without reporting each guest gone (Ace's host log,
+        // 2026-11-11: a guest was named as unanswered in the main menu).
+        private static void OnServerStopped()
+        {
+            try
+            {
+                Hellos.Clear();
+                Leaving.Clear();
+                Guests.Clear();
+                foreach (var pumping in PumpingBy)
+                    pumping.Value?.RemotePump(pumping.Key, false);
+                PumpingBy.Clear();
+                lastHudPolicy = null;
+                snapshotDue = 0u;
+                StartingFuelSync.ServerStopped();
+            }
+            catch (Exception e)
+            {
+                Faults.Report("the multiplayer add-on's server stop", null, e);
             }
         }
 
@@ -224,14 +263,15 @@ namespace RealisticFiring.Multiplayer
             if (tick < hudWaitUntil.Value)
                 return;
             HudPolicy.Receive(false);
-            mod.Logger.Warning($"No display rule from the host after {HudWaitSeconds:F0} s (is Realistic Firing's multiplayer add-on running there?); showing this player's own displays");
+            mod.Logger.Warning($"No display rule from the host after {HudWaitSeconds:F0} s (does the host have Realistic Firing {mod.Info.Version}?); showing this player's own displays");
         }
 
-        // A guest who has not said hello: missing the mod's add-on, or the
-        // mod. The host is told; such a guest was never checked, and its
-        // fires ran on their own (audit 2026-11-09). Not kicked: the
-        // Multiplayer mod's own mod list decides who may join.
-        private static readonly Dictionary<byte, (IPlayer Player, uint Due)> Unheard = new Dictionary<byte, (IPlayer, uint)>();
+        // A guest who has not said hello: without Realistic Firing, or with
+        // a version that does not answer. The host is told; such a guest was
+        // never checked, and its fires ran on their own (audit 2026-11-09).
+        // Not kicked: the Multiplayer mod's own mod list decides who may
+        // join. The hello can come before the join (HelloWatch).
+        private static readonly HelloWatch<IPlayer> Hellos = new HelloWatch<IPlayer>();
         private const float HelloSeconds = 45f;
 
         private static void OnPlayerJoined(IPlayer player)
@@ -241,7 +281,7 @@ namespace RealisticFiring.Multiplayer
                 var api = MultiplayerAPI.Instance;
                 if (player == null || player.IsHost || api == null)
                     return;
-                Unheard[player.PlayerId] = (player, api.CurrentTick + (uint)(HelloSeconds * Math.Max(1u, api.TICK_RATE)));
+                Hellos.Joined(player.PlayerId, player, api.CurrentTick + (uint)(HelloSeconds * Math.Max(1u, api.TICK_RATE)));
             }
             catch (Exception e)
             {
@@ -251,16 +291,18 @@ namespace RealisticFiring.Multiplayer
 
         private static void TellOfUnheard(uint tick)
         {
-            if (Unheard.Count == 0)
+            if (Hellos.Waiting == 0)
                 return;
-            foreach (var pair in Unheard.Where(p => tick >= p.Value.Due).ToList())
+            var api = MultiplayerAPI.Instance;
+            var server = MultiplayerAPI.Server;
+            var hosting = api != null && server != null && api.IsHost && InSession();
+            foreach (var player in Hellos.Overdue(tick, hosting))
             {
-                Unheard.Remove(pair.Key);
-                var name = HelloPacket.Clean(pair.Value.Player.DisplayName, HelloPacket.MaxVersion);
-                mod.Logger.Warning($"{name} joined and Realistic Firing on their side has not answered in {HelloSeconds:F0} s; their fires may not match the host's");
-                FireController.Announce($"{name}: Realistic Firing on their side has not answered. Their fires may not match yours; they may be missing the mod's multiplayer add-on");
-                MultiplayerAPI.Server?.SendWhisperChatMessage(
-                    "Realistic Firing on your side has not answered the host. Your fires may not match theirs; reinstall the mod so its multiplayer add-on is there.", pair.Value.Player);
+                var name = HelloPacket.Clean(player?.DisplayName, HelloPacket.MaxVersion);
+                mod.Logger.Warning($"{name}: Realistic Firing didn't answer from their game in {HelloSeconds:F0} s; they may not have it installed, or have another version. Their fires may not match the host's");
+                FireController.Announce($"{name}: Realistic Firing didn't answer from their game. They may not have it installed, or have another version.");
+                server.SendWhisperChatMessage(
+                    $"The host's Realistic Firing got no answer from your game. Install Realistic Firing {mod.Info.Version}, restart, and rejoin.", player);
             }
         }
 
@@ -400,7 +442,7 @@ namespace RealisticFiring.Multiplayer
         {
             if (sender == null || sender.IsHost)
                 return;
-            Unheard.Remove(sender.PlayerId);
+            Hellos.Heard(sender.PlayerId);
             var version = mod.Info.Version;
             var shape = Shape();
             if (hello.Version == version && hello.Shape == shape)
@@ -596,7 +638,7 @@ namespace RealisticFiring.Multiplayer
                 StandSync.PlayerLeft(player);
                 if (player == null)
                     return;
-                Unheard.Remove(player.PlayerId);
+                Hellos.Left(player.PlayerId);
                 Guests.Forget(player.PlayerId);
                 StartingFuelSync.Forget(player.PlayerId);
                 if (PumpingBy.TryGetValue(player.PlayerId, out var rig))

@@ -209,6 +209,13 @@ namespace RealisticStackEffects.Core
 
  public float SteamForming { get; set; } = 1f;
 
+        /// <summary>
+        /// The bore diameters over the lip by which the steam's white has
+        /// formed across the jet, whatever its age (<see cref="SteamCloud.Sheath"/>);
+        /// 0 for by its age only, as until 2026-11-11.
+        /// </summary>
+        public float WhiteByHeight { get; set; } = 3f;
+
         /// <summary>The share of the train's speed its wake carries the plume's base with at the stack's lip (<see cref="PlumeRise.Wake(float, float, float)"/>).</summary>
         public float WakeCarry { get; set; } = PlumeRise.WakeCarry;
 
@@ -397,6 +404,34 @@ namespace RealisticStackEffects.Core
                 SmokeColor = smokeColor,
             };
         }
+
+ public static float AsOne(ref Puff puff, ref Haze haze, float beatsPerSecond)
+        {
+            var beats = Math.Max(0f, beatsPerSecond) * Math.Max(0, puff.Particles);
+            var between = Math.Max(0f, haze.Rate);
+            if (!(beats > 0f))
+                return 0f;
+            var share = beats / (beats + between);
+            var puffDepth = DepthOf(puff.Color.A);
+            var hazeDepth = DepthOf(haze.Color.A);
+            var puffSmoke = share * puffDepth * Clamp01(puff.SmokeShare);
+            var hazeSmoke = (1f - share) * hazeDepth * Clamp01(haze.SmokeShare);
+            var smoke = puffSmoke + hazeSmoke;
+            var steam = share * puffDepth * (1f - Clamp01(puff.SmokeShare)) + (1f - share) * hazeDepth * (1f - Clamp01(haze.SmokeShare));
+            var whole = smoke + steam;
+            if (!(whole > 1e-6f))
+                return share;
+            var smokeShare = smoke / whole;
+            var smokeColor = smoke > 1e-6f ? Mix(haze.SmokeColor, puff.SmokeColor, puffSmoke / smoke, 1f) : puff.SmokeColor;
+            var color = Tinted(smokeShare, smokeColor, 1f - (float)Math.Exp(-whole));
+            puff.Color = haze.Color = color;
+            puff.SmokeShare = haze.SmokeShare = smokeShare;
+            puff.SmokeColor = haze.SmokeColor = smokeColor;
+            return share;
+        }
+
+        // A particle's optical depth for its opacity (as Weathered takes it).
+        private static float DepthOf(float opacity) => -(float)Math.Log(1f - Math.Min(0.98f, Math.Max(0f, opacity)));
 
  public static float SmokeTint(float smokeShare) => (float)Math.Sqrt(Clamp01(smokeShare));
 

@@ -52,6 +52,10 @@ namespace RealisticFiring.Items
             public Vector3 Point;
         }
 
+        /// <summary>The world's site of that name, or null.</summary>
+        internal static StartingSupplySite Find(string id) =>
+            string.IsNullOrEmpty(id) ? null : Sites.FirstOrDefault(s => s != null && s.Id == id);
+
         internal static void Update()
         {
             var root = WorldMover.OriginShiftParent;
@@ -222,6 +226,11 @@ namespace RealisticFiring.Items
     /// The site keeps its own containers by reference: the game deactivates
     /// world items far from the player (ItemDisabler, 192 m), and a site
     /// that lost sight of its sleeping crate would stock another every 30 s.
+    /// In multiplayer the host stocks every site: a guest's game finds the
+    /// spot where its player is (the host's may not have that ground loaded)
+    /// and asks the host for it (2026-11-12: guests saw none where the host
+    /// had not been). The host's containers there sleep until the host comes
+    /// near, and the Multiplayer mod shows them to guests.
     /// </summary>
     internal sealed class StartingSupplySite : MonoBehaviour
     {
@@ -244,11 +253,17 @@ namespace RealisticFiring.Items
         // Other tracks' centre lines near it, found once.
         private List<IReadOnlyList<(float X, float Z)>> nearTracks;
         private StartingFuelItem crate, tin;
+        // The place's point before its spot was found, unshifted.
+        private Vector3 anchor;
+
+        /// <summary>The Multiplayer bridge, on a guest: asks the host to stock a site at its spot (unshifted) and turn.</summary>
+        internal static Action<string, Vector3, Quaternion> RequestStock;
         // Side by side along the track, in the spot's frame (+x away from the track).
         private static readonly Vector3 WoodAt = new Vector3(0f, 0f, -0.4f), RagAt = new Vector3(0f, 0f, 0.4f);
         private void Start()
         {
             next = Time.time + 5f;
+            anchor = transform.position - WorldMover.currentMove;
         }
         private void Update()
         {
@@ -261,9 +276,50 @@ namespace RealisticFiring.Items
                 if (nearSince < 0f) nearSince = Time.time;
                 if (!Settle()) return;
             }
-            if (Net.IsClient) return;
+            if (Net.IsClient)
+            {
+                if (!Stands(StartingFuelKind.WoodCrate, WoodAt) || !Stands(StartingFuelKind.RagBox, RagAt))
+                    RequestStock?.Invoke(Id, transform.position - WorldMover.currentMove, transform.rotation);
+                return;
+            }
             Supply(ref crate, StartingFuelKind.WoodCrate, WoodAt);
             Supply(ref tin, StartingFuelKind.RagBox, RagAt);
+        }
+
+        // On a guest: whether the host's container stands at its place here.
+        private bool Stands(StartingFuelKind kind, Vector3 offset)
+        {
+            var at = transform.TransformPoint(offset);
+            foreach (var item in StartingFuelItem.Live)
+                if (item != null && item.Kind == kind && Flat(item.transform.position - at) < 2f)
+                    return true;
+            return false;
+        }
+
+        /// <summary>
+        /// On the host: a guest near the site of <paramref name="id"/> found
+        /// its spot at <paramref name="spot"/> (unshifted) facing
+        /// <paramref name="turn"/>, standing at <paramref name="guest"/> (the
+        /// host's world). Stocked there as for the host's own player, the
+        /// spot taken if the host has found none itself. Why not, otherwise.
+        /// </summary>
+        internal static string StockFor(string id, Vector3 spot, Quaternion turn, Vector3 guest)
+        {
+            if (Net.IsClient || !Main.ReplacementEnabled) return "not hosting with realistic fireboxes";
+            var site = SupplyPlaces.Find(id);
+            if (site == null) return "no such place";
+            var from = guest - WorldMover.currentMove;
+            if (!SupplyPlan.AcceptsGuestSpot(site.anchor.x, site.anchor.z, spot.x, spot.z, from.x, from.z, StockingRange))
+                return "the spot is not by the place, or the guest is not near it";
+            if (!site.settled)
+            {
+                site.transform.SetPositionAndRotation(spot + WorldMover.currentMove, Quaternion.Euler(0f, turn.eulerAngles.y, 0f));
+                site.settled = true;
+                Main.Mod.Logger.Log($"Starting supplies '{site.Id}': set out at a guest's spot ({spot.x:F1}, {spot.y:F1}, {spot.z:F1})");
+            }
+            site.Supply(ref site.crate, StartingFuelKind.WoodCrate, WoodAt);
+            site.Supply(ref site.tin, StartingFuelKind.RagBox, RagAt);
+            return null;
         }
 
         // Finds the spot; false to try again later (the shed's stands not yet built).

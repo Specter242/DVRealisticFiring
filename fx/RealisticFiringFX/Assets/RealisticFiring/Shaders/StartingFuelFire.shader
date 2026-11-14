@@ -119,7 +119,7 @@ HLSLPROGRAM
             FuelSurface s = StartingFuelSurface(IN.uv_MainTex, IN.color.r);
             half3 n = FacingCamera(normalize(IN.worldNormal), IN.worldPos);
             o.Albedo = s.albedo;
-            o.Emission = FireSeen(s.glow * 3.0 * _GlowStrength + FireLit(s.albedo, FireLight(IN.worldPos, n) * _FireLightScale + DoorLight(IN.worldPos, n)));
+            o.Emission = FireSurface(s.glow * 3.0 * _GlowStrength, s.albedo, FireLight(IN.worldPos, n) * _FireLightScale, DoorLight(IN.worldPos, n));
             o.Alpha = 1;
         }
 
@@ -412,7 +412,7 @@ fixed4 frag_surf (v2f_surf IN) : SV_Target {
             FuelSurface s = StartingFuelSurface(IN.uv_MainTex, IN.color.r);
             half3 n = FacingCamera(normalize(IN.worldNormal), IN.worldPos);
             o.Albedo = s.albedo;
-            o.Emission = FireSeen(s.glow * 3.0 * _GlowStrength + FireLit(s.albedo, FireLight(IN.worldPos, n) * _FireLightScale + DoorLight(IN.worldPos, n)));
+            o.Emission = FireSurface(s.glow * 3.0 * _GlowStrength, s.albedo, FireLight(IN.worldPos, n) * _FireLightScale, DoorLight(IN.worldPos, n));
             o.Alpha = 1;
         }
 
@@ -740,7 +740,7 @@ HLSLPROGRAM
             FuelSurface s = StartingFuelSurface(IN.uv_MainTex, IN.color.r);
             half3 n = FacingCamera(normalize(IN.worldNormal), IN.worldPos);
             o.Albedo = s.albedo;
-            o.Emission = FireSeen(s.glow * 3.0 * _GlowStrength + FireLit(s.albedo, FireLight(IN.worldPos, n) * _FireLightScale + DoorLight(IN.worldPos, n)));
+            o.Emission = FireSurface(s.glow * 3.0 * _GlowStrength, s.albedo, FireLight(IN.worldPos, n) * _FireLightScale, DoorLight(IN.worldPos, n));
             o.Alpha = 1;
         }
 
@@ -970,7 +970,7 @@ fixed3 originalNormal = o.Normal;
             FuelSurface s = StartingFuelSurface(IN.uv_MainTex, IN.color.r);
             half3 n = FacingCamera(normalize(IN.worldNormal), IN.worldPos);
             o.Albedo = s.albedo;
-            o.Emission = FireSeen(s.glow * 3.0 * _GlowStrength + FireLit(s.albedo, FireLight(IN.worldPos, n) * _FireLightScale + DoorLight(IN.worldPos, n)));
+            o.Emission = FireSurface(s.glow * 3.0 * _GlowStrength, s.albedo, FireLight(IN.worldPos, n) * _FireLightScale, DoorLight(IN.worldPos, n));
             o.Alpha = 1;
         }
 
@@ -1230,7 +1230,7 @@ HLSLPROGRAM
             FuelSurface s = StartingFuelSurface(IN.uv_MainTex, IN.color.r);
             half3 n = FacingCamera(normalize(IN.worldNormal), IN.worldPos);
             o.Albedo = s.albedo;
-            o.Emission = FireSeen(s.glow * 3.0 * _GlowStrength + FireLit(s.albedo, FireLight(IN.worldPos, n) * _FireLightScale + DoorLight(IN.worldPos, n)));
+            o.Emission = FireSurface(s.glow * 3.0 * _GlowStrength, s.albedo, FireLight(IN.worldPos, n) * _FireLightScale, DoorLight(IN.worldPos, n));
             o.Alpha = 1;
         }
 
@@ -1357,7 +1357,7 @@ fixed4 frag_surf (v2f_surf IN) : SV_Target {
             FuelSurface s = StartingFuelSurface(IN.uv_MainTex, IN.color.r);
             half3 n = FacingCamera(normalize(IN.worldNormal), IN.worldPos);
             o.Albedo = s.albedo;
-            o.Emission = FireSeen(s.glow * 3.0 * _GlowStrength + FireLit(s.albedo, FireLight(IN.worldPos, n) * _FireLightScale + DoorLight(IN.worldPos, n)));
+            o.Emission = FireSurface(s.glow * 3.0 * _GlowStrength, s.albedo, FireLight(IN.worldPos, n) * _FireLightScale, DoorLight(IN.worldPos, n));
             o.Alpha = 1;
         }
 

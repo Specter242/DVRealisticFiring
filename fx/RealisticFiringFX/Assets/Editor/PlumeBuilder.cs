@@ -346,18 +346,89 @@ namespace RealisticFiringFX
             var pixels = new Color32[size * size * size];
             for (var i = 0; i < pixels.Length; i++)
                 pixels[i] = new Color32(bytes[4 * i], bytes[4 * i + 1], bytes[4 * i + 2], bytes[4 * i + 3]);
-            var texture = new Texture3D(size, size, size, TextureFormat.RGBA32, false)
+            // With mips: the coal lumps read it by screen size, and without
+            // them its fine grain aliased into speckle from the door (the
+            // volume reads its top level by name, as before).
+            var texture = new Texture3D(size, size, size, TextureFormat.RGBA32, true)
             {
                 name = Path.GetFileNameWithoutExtension(file),
                 wrapMode = TextureWrapMode.Repeat,
-                filterMode = FilterMode.Bilinear,
+                filterMode = FilterMode.Trilinear,
             };
             texture.SetPixels32(pixels);
+            // Its mips filtered by hand: Unity's own halve by a box, which
+            // lets through, and folds back, detail the smaller level cannot
+            // hold. Read at a coarse level (the fire's long rays from inside
+            // the box), the noise's fine band showed as an egg-crate of
+            // alternating cells through the flames (the council, round 9).
+            var level = pixels;
+            var levelSize = size;
+            for (var mip = 1; levelSize > 1; mip++)
+            {
+                level = HalveVolume(level, levelSize);
+                levelSize /= 2;
+                texture.SetPixels32(level, mip);
+            }
             texture.Apply(false);
             var assetPath = $"{TexturesDir}/{texture.name}.asset";
             AssetDatabase.DeleteAsset(assetPath);
             AssetDatabase.CreateAsset(texture, assetPath);
             return AssetDatabase.LoadAssetAtPath<Texture3D>(assetPath);
+        }
+
+        // A tiling volume at half its size each way, each texel the six
+        // nearest of the larger along each axis weighed 1, 5, 10, 10, 5, 1:
+        // at the smaller level's finest detail that passes under a fifth of
+        // what a box does of what it cannot hold.
+        private static Color32[] HalveVolume(Color32[] source, int size)
+        {
+            var half = size / 2;
+            int[] weights = { 1, 5, 10, 10, 5, 1 };
+            // Along x, then y, then z, each into a buffer of its own.
+            float[] Pass(float[] from, int sx, int sy, int sz, int axis)
+            {
+                var tx = axis == 0 ? sx / 2 : sx;
+                var ty = axis == 1 ? sy / 2 : sy;
+                var tz = axis == 2 ? sz / 2 : sz;
+                var to = new float[tx * ty * tz * 4];
+                var along = axis == 0 ? sx : axis == 1 ? sy : sz;
+                for (var z = 0; z < tz; z++)
+                for (var y = 0; y < ty; y++)
+                for (var x = 0; x < tx; x++)
+                {
+                    var at = ((z * ty + y) * tx + x) * 4;
+                    for (var tap = 0; tap < 6; tap++)
+                    {
+                        var i = (((axis == 0 ? x : axis == 1 ? y : z) * 2 - 2 + tap) % along + along) % along;
+                        var fx = axis == 0 ? i : x;
+                        var fy = axis == 1 ? i : y;
+                        var fz = axis == 2 ? i : z;
+                        var f = ((fz * sy + fy) * sx + fx) * 4;
+                        var w = weights[tap] / 32f;
+                        to[at] += w * from[f];
+                        to[at + 1] += w * from[f + 1];
+                        to[at + 2] += w * from[f + 2];
+                        to[at + 3] += w * from[f + 3];
+                    }
+                }
+                return to;
+            }
+            var values = new float[source.Length * 4];
+            for (var i = 0; i < source.Length; i++)
+            {
+                values[4 * i] = source[i].r;
+                values[4 * i + 1] = source[i].g;
+                values[4 * i + 2] = source[i].b;
+                values[4 * i + 3] = source[i].a;
+            }
+            values = Pass(values, size, size, size, 0);
+            values = Pass(values, half, size, size, 1);
+            values = Pass(values, half, half, size, 2);
+            var result = new Color32[half * half * half];
+            for (var i = 0; i < result.Length; i++)
+                result[i] = new Color32((byte)Mathf.Clamp(Mathf.RoundToInt(values[4 * i]), 0, 255), (byte)Mathf.Clamp(Mathf.RoundToInt(values[4 * i + 1]), 0, 255),
+                    (byte)Mathf.Clamp(Mathf.RoundToInt(values[4 * i + 2]), 0, 255), (byte)Mathf.Clamp(Mathf.RoundToInt(values[4 * i + 3]), 0, 255));
+            return result;
         }
 
         // An inventory icon: full resolution, sharp, with transparency.

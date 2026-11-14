@@ -9,6 +9,7 @@ using HarmonyLib;
 using LocoSim.Implementations;
 using Newtonsoft.Json;
 using RealisticFiring.Core;
+using RealisticFiring.Diagnostics;
 using RealisticFiring.Sim;
 using RealisticStackEffects;
 using UnityEngine;
@@ -100,6 +101,13 @@ namespace RealisticFiring.Visuals
             /// <summary>Spawn a missing stock coal locomotive for an unsaved capture session.</summary>
             public bool SpawnStockCar;
 
+            /// <summary>
+            /// Spawn a missing engine of any livery, a car pack's too, alone:
+            /// for a development check of another maker's firebox, never for
+            /// a picture of the base game.
+            /// </summary>
+            public bool SpawnAnyCar;
+
             /// <summary>Keep the normal fire overlay visible when it is enabled in settings.</summary>
             public bool ShowOverlay;
 
@@ -181,20 +189,22 @@ namespace RealisticFiring.Visuals
                 Main.Mod.Logger.Log("Firebox capture: the game's autosave is off for the rest of the session");
             }
             var firebox = Find(request.Car);
-            if (firebox == null && request.SpawnStockCar)
+            if (firebox == null && (request.SpawnStockCar || request.SpawnAnyCar))
             {
                 // Only the two stock coal engines; never substitute a custom
                 // livery in a screenshot meant to represent the base game.
-                if (request.Car != "LocoS282A" && request.Car != "LocoS060")
+                var stock = request.Car == "LocoS282A" || request.Car == "LocoS060";
+                if (!stock && !request.SpawnAnyCar)
                 {
                     Main.Mod.Logger.Warning("Firebox capture: stock spawning requires LocoS282A or LocoS060");
                     yield break;
                 }
-                var ids = request.Car == "LocoS282A" ? new[] { "LocoS282A", "LocoS282B" } : new[] { "LocoS060" };
+                var ids = request.Car == "LocoS282A" ? new[] { "LocoS282A", "LocoS282B" } : new[] { request.Car };
                 var liveries = ids.Select(id => Globals.G.Types.Liveries.FirstOrDefault(l => l.id == id)).ToList();
                 if (liveries.Any(l => l == null))
                 {
-                    Main.Mod.Logger.Warning("Firebox capture: stock livery unavailable");
+                    Main.Mod.Logger.Warning($"Firebox capture: no livery {string.Join(", ", ids)} to spawn" +
+                        (stock ? "" : "; with a firebox: " + string.Join(", ", Globals.G.Types.Liveries.Where(l => l.prefab != null && l.prefab.GetComponentInChildren<Fire>(true) != null).Select(l => l.id))));
                     yield break;
                 }
                 var spawned = SingletonBehaviour<CarSpawner>.Instance.SpawnCarTypesOnClosestTrack(
@@ -202,7 +212,7 @@ namespace RealisticFiring.Visuals
                     preventAutoCoupleOnLastCars: true, applyHandbrakeOnLastCars: true, playerSpawnedCars: true);
                 if (spawned == null || spawned.Count == 0)
                 {
-                    Main.Mod.Logger.Warning("Firebox capture: no room to spawn the stock locomotive");
+                    Main.Mod.Logger.Warning("Firebox capture: no room to spawn the locomotive");
                     yield break;
                 }
                 yield return null;
@@ -387,6 +397,8 @@ namespace RealisticFiring.Visuals
                             if (request.TimeFrames > 0)
                             {
                                 var times = new System.Collections.Generic.List<float>(request.TimeFrames);
+                                // The mod's own main-thread sections over the same frames.
+                                PerfMeter.Report();
                                 for (var i = 0; i < request.TimeFrames; i++)
                                 {
                                     door.Set(opening);
@@ -394,7 +406,8 @@ namespace RealisticFiring.Visuals
                                     times.Add(Time.unscaledDeltaTime * 1000f);
                                 }
                                 times.Sort();
-                                timing = $"frame {times.Average():F2} ms, slowest tenth from {times[times.Count * 9 / 10]:F2} ms; ";
+                                timing = $"frame {times.Average():F2} ms, slowest tenth from {times[times.Count * 9 / 10]:F2} ms, " +
+                                         $"{PerfMeter.Window(PerfSection.FireboxVolume, PerfSection.CoalBed, PerfSection.CoalLumps, PerfSection.FireboxLighting, PerfSection.Firebox)}; ";
                             }
                             yield return new WaitForEndOfFrame();
                             file += ".jpg";
@@ -547,6 +560,33 @@ namespace RealisticFiring.Visuals
                     at = new Vector3(hole.Middle, middle, hole.Plane + 0.12f);
                     look = new Vector3(hole.Middle, hole.Foot - 0.1f, hole.Plane + 2f);
                     break;
+                case "arch":
+                    // Low inside the door, looking up under the brick arch.
+                    at = new Vector3(hole.Middle, hole.Foot + 0.12f, hole.Plane + 0.2f);
+                    look = new Vector3(hole.Middle, hole.Foot + 0.6f, hole.Plane + 2.2f);
+                    break;
+                case "arch-side":
+                    // From beside one side sheet, looking across and up along
+                    // the bricks' underside: the flame against them in profile.
+                    at = new Vector3(hole.Middle - 0.36f, hole.Foot + 0.2f, hole.Plane + 0.75f);
+                    look = new Vector3(hole.Middle + 0.25f, hole.Foot + 0.72f, hole.Plane + 2.3f);
+                    break;
+                case "arch-lip":
+                {
+                    // From against a side sheet, behind the lip and a little
+                    // under it, looking across at it: the flames coming out
+                    // from under the bricks and turning up round it, in
+                    // profile.
+                    // (On the fire's own object, in the cab's interior: not among the car's children.)
+                    var arch = UnityEngine.Object.FindObjectsOfType<BrickArch>().FirstOrDefault(a => a.Shown);
+                    if (arch == null || !arch.Shown)
+                        return null;
+                    arch.Underside(out var corner, out var across, out var along, out var up);
+                    var back = -along.normalized;
+                    var eye = corner + 0.08f * across + 0.5f * back - 0.22f * up;
+                    var toward = corner + 0.8f * across + 0.2f * along.normalized - 0.05f * up;
+                    return new Pose(eye, Quaternion.LookRotation(toward - eye, car.transform.up));
+                }
                 case "inside-low":
                     // Low over the bed, looking along it to the tube plate.
                     at = new Vector3(hole.Middle, hole.Foot + 0.05f, hole.Plane + 0.15f);

@@ -14,6 +14,8 @@ namespace RealisticFiring.Visuals
         private static readonly int DoorSlopeId = Shader.PropertyToID("_DoorSlope");
         private static readonly int PulseId = Shader.PropertyToID("_Pulse");
         private static readonly int GlowStrengthId = Shader.PropertyToID("_GlowStrength");
+        private static readonly int BedUpId = Shader.PropertyToID("_BedUp");
+        private static readonly int NoiseId = Shader.PropertyToID("_Noise");
 
         // The lumps' spacing, m: about one or two a cell; their sizes, m:
         // chips, the usual run, and a few big ones (the footage: caps a few
@@ -24,13 +26,41 @@ namespace RealisticFiring.Visuals
         private static readonly Vector2 Usual = new Vector2(0.05f, 0.08f);
         private static readonly Vector2 Big = new Vector2(0.09f, 0.13f);
         private const float ChipShare = 0.25f;
+
+        // Under them, in each cell, a smaller lump lying down in the gaps,
+        // its top this far under the pile's surface, m: without them the
+        // gaps between lumps standing proud showed the bed under them as flat
+        // glowing panes.
+        private static readonly Vector2 Filler = new Vector2(0.03f, 0.055f);
+        private static readonly Vector2 FillerDepth = new Vector2(0.012f, 0.04f);
+        // And a chip just under the surface, breaking up the widest gaps
+        // (the council, round 3: "broad luminous channels").
+        private static readonly Vector2 Chink = new Vector2(0.02f, 0.035f);
+        private static readonly Vector2 ChinkDepth = new Vector2(0.002f, 0.02f);
         private const float BigShare = 0.15f;
 
-        // How deep a lump sits in the pile, a share of its size.
-        private static readonly Vector2 Burial = new Vector2(0.25f, 0.55f);
+        // How deep a lump sits in the pile: a share of its own height above
+        // its middle as it lies. (A share of its size, as the rounded rocks
+        // were sunk, would bury flat slabs and short blocks whole.)
+        private static readonly Vector2 Burial = new Vector2(0.05f, 0.7f);
 
-        // The rocks the lumps are cut from.
-        private const int Rocks = 6;
+        // How far a lump is tipped off level either way, degrees: shovelled,
+        // not laid (at 25 the pile's slabs lay as paving, their tops within a
+        // centimetre of one height).
+        private const float Tumble = 40f;
+
+        private static readonly CoalRock.Kind[] Rocks =
+        {
+            CoalRock.Kind.Broken, CoalRock.Kind.Broken, CoalRock.Kind.Broken, CoalRock.Kind.Broken,
+            CoalRock.Kind.Broken, CoalRock.Kind.Broken, CoalRock.Kind.Broken, CoalRock.Kind.Block,
+            CoalRock.Kind.Block, CoalRock.Kind.Block, CoalRock.Kind.Block, CoalRock.Kind.Slab,
+        };
+
+        // A point's height on its rock as the lump shader reads it for the
+        // glow at its foot (low on the rock) and its darker cap: the rounded
+        // rocks stood about this far either way of their middle, and the
+        // shader was tuned on them.
+        private const float GlowHeight = 0.6f;
 
         // The lumps' glow, to be set against the footage on the test bed.
         internal static float GlowStrength = 0.6f;
@@ -47,7 +77,8 @@ namespace RealisticFiring.Visuals
         private Texture2D zones;
         private Mesh mesh;
         private int[] fullTriangles;
-        private int trianglesPerLump;
+        // Where each lump's triangles begin in fullTriangles, and their end.
+        private int[] lumpStarts;
         private int drawnStride;
         private float nextUploadAt;
         private readonly Color[] pixels = new Color[GrateLayout.ZoneCount];
@@ -100,12 +131,13 @@ namespace RealisticFiring.Visuals
                 depth / Mathf.Max(1e-5f, box.size.y),
                 length / Mathf.Max(1e-5f, box.size.z));
             upPerUnit = perUnit.y;
+            material.SetFloat(BedUpId, upPerUnit);
 
             var random = new System.Random(588030);
             float Range(Vector2 r) => Mathf.Lerp(r.x, r.y, (float)random.NextDouble());
-            var rocks = new List<(Vector3[] Points, Vector3[] Normals, int[] Triangles)>();
-            for (var r = 0; r < Rocks; r++)
-                rocks.Add(Rock(random));
+            var rocks = new List<(Vector3[] Points, Vector3[] Normals, Vector3[] Heights, int[] Triangles)>();
+            foreach (var kind in Rocks)
+                rocks.Add(Rock(random, kind));
 
             var vertices = new List<Vector3>();
             var normals = new List<Vector3>();
@@ -113,6 +145,7 @@ namespace RealisticFiring.Visuals
             var lumpData = new List<Vector3>();
             var rockPoints = new List<Vector3>();
             var triangles = new List<int>();
+            var starts = new List<int>();
             var across = Mathf.Max(1, Mathf.CeilToInt(width / Cell));
             var along = Mathf.Max(1, Mathf.CeilToInt(length / Cell));
             var count = 0;
@@ -120,16 +153,24 @@ namespace RealisticFiring.Visuals
             for (var i = 0; i < across; i++)
             {
                 var inCell = random.NextDouble() < SecondLump ? 2 : 1;
-                for (var k = 0; k < inCell; k++)
+                // The last two in each cell are its filler, down in the
+                // gaps, and its chip, just under the surface.
+                for (var k = 0; k <= inCell + 1; k++)
                 {
+                    var filler = k >= inCell;
+                    var chink = k > inCell;
                     var pick = random.NextDouble();
-                    var size = pick < ChipShare ? Range(Chips) : pick > 1.0 - BigShare ? Range(Big) : Range(Usual);
+                    var size = chink ? Range(Chink) : filler ? Range(Filler) : pick < ChipShare ? Range(Chips) : pick > 1.0 - BigShare ? Range(Big) : Range(Usual);
                     var anchor = new Vector2((i + (float)random.NextDouble()) / across, (j + (float)random.NextDouble()) / along);
-                    var turn = Quaternion.Euler(Range(new Vector2(-25f, 25f)), Range(new Vector2(0f, 360f)), Range(new Vector2(-25f, 25f)));
-                    var sink = size * Range(Burial) / perUnit.y;
-                    var seed = (float)random.NextDouble();
+                    var turn = Quaternion.Euler(Range(new Vector2(-Tumble, Tumble)), Range(new Vector2(0f, 360f)), Range(new Vector2(-Tumble, Tumble)));
                     var rock = rocks[random.Next(rocks.Count)];
+                    var top = 0f;
+                    foreach (var point in rock.Points)
+                        top = Mathf.Max(top, (turn * point).y);
+                    var sink = (filler ? 0.5f * size * top + Range(chink ? ChinkDepth : FillerDepth) : 0.5f * size * top * Range(Burial)) / perUnit.y;
+                    var seed = (float)random.NextDouble();
                     var start = vertices.Count;
+                    starts.Add(triangles.Count);
                     for (var v = 0; v < rock.Points.Length; v++)
                     {
                         var metres = turn * (rock.Points[v] * (0.5f * size));
@@ -139,7 +180,7 @@ namespace RealisticFiring.Visuals
                         normals.Add(new Vector3(normal.x * perUnit.x, normal.y * perUnit.y, normal.z * perUnit.z).normalized);
                         anchors.Add(anchor);
                         lumpData.Add(new Vector3(seed, size, sink));
-                        rockPoints.Add(rock.Points[v]);
+                        rockPoints.Add(rock.Heights[v]);
                     }
                     foreach (var t in rock.Triangles)
                         triangles.Add(start + t);
@@ -155,9 +196,10 @@ namespace RealisticFiring.Visuals
             mesh.SetUVs(1, anchors);
             mesh.SetUVs(2, lumpData);
             mesh.SetUVs(3, rockPoints);
-            // All rocks have the same icosphere topology. Keep their complete
-            // index blocks so switching detail never moves the retained lumps.
-            trianglesPerLump = rocks[0].Triangles.Length;
+            // Keep each lump's complete index block, so switching detail
+            // never moves the retained lumps.
+            starts.Add(triangles.Count);
+            lumpStarts = starts.ToArray();
             fullTriangles = triangles.ToArray();
             ApplyQuality();
             // The shader lifts the lumps to the coal: drawn wherever the pile can reach.
@@ -184,105 +226,36 @@ namespace RealisticFiring.Visuals
                 mesh.SetTriangles(fullTriangles, 0, false);
             else
             {
-                var indices = new List<int>(fullTriangles.Length / stride + trianglesPerLump);
-                for (var i = 0; i < fullTriangles.Length; i += trianglesPerLump * stride)
-                    for (var j = 0; j < trianglesPerLump; j++)
-                        indices.Add(fullTriangles[i + j]);
+                var indices = new List<int>(fullTriangles.Length / stride + 64);
+                for (var lump = 0; lump + 1 < lumpStarts.Length; lump += stride)
+                    for (var i = lumpStarts[lump]; i < lumpStarts[lump + 1]; i++)
+                        indices.Add(fullTriangles[i]);
                 mesh.SetTriangles(indices, 0, false);
             }
         }
 
-        // A broken lump: a sphere squashed a little and cut by a few planes,
-        // its faces roughened. Points about the unit sphere, outward normals.
-        private static (Vector3[] Points, Vector3[] Normals, int[] Triangles) Rock(System.Random random)
+        // A broken lump (CoalRock), its largest half extent 1. Its normals
+        // point out from its middle: each face is lit flat by its own normal in
+        // the shader, and these round its highlights across the faces. Its
+        // heights for the glow are its points with their height on the rock
+        // scaled to GlowHeight either way.
+        private static (Vector3[] Points, Vector3[] Normals, Vector3[] Heights, int[] Triangles) Rock(System.Random random, CoalRock.Kind kind)
         {
-            Icosphere(out var points, out var triangles);
-            float Next(float a, float b) => a + (b - a) * (float)random.NextDouble();
-            var squash = new Vector3(Next(0.85f, 1.2f), Next(0.6f, 0.85f), Next(0.85f, 1.2f));
-            // Broken coal is angular: cut close by many planes, so its sides
-            // are flat faces meeting at edges.
-            var cuts = new List<(Vector3 Normal, float Distance)>();
-            for (var c = 0; c < 8; c++)
-                cuts.Add((Random(random), Next(0.45f, 0.75f)));
-            for (var v = 0; v < points.Count; v++)
+            var shape = CoalRock.Make(random, kind);
+            var count = shape.PointCount;
+            var points = new Vector3[count];
+            var normals = new Vector3[count];
+            var heights = new Vector3[count];
+            var half = 1e-4f;
+            for (var i = 0; i < count; i++)
             {
-                var p = Vector3.Scale(points[v], squash);
-                foreach (var (normal, distance) in cuts)
-                {
-                    var over = Vector3.Dot(p, normal) - distance;
-                    if (over > 0f)
-                        p -= normal * over;
-                }
-                points[v] = p * Next(0.95f, 1.05f);
+                points[i] = new Vector3(shape.Points[3 * i], shape.Points[3 * i + 1], shape.Points[3 * i + 2]);
+                normals[i] = points[i].sqrMagnitude > 1e-8f ? points[i].normalized : Vector3.up;
+                half = Mathf.Max(half, Mathf.Abs(points[i].y));
             }
-            var normals = new Vector3[points.Count];
-            for (var t = 0; t < triangles.Count; t += 3)
-            {
-                var a = points[triangles[t]];
-                var face = Vector3.Cross(points[triangles[t + 1]] - a, points[triangles[t + 2]] - a);
-                normals[triangles[t]] += face;
-                normals[triangles[t + 1]] += face;
-                normals[triangles[t + 2]] += face;
-            }
-            for (var v = 0; v < normals.Length; v++)
-                normals[v] = normals[v].normalized;
-            return (points.ToArray(), normals, triangles.ToArray());
-        }
-
-        private static Vector3 Random(System.Random random)
-        {
-            Vector3 v;
-            do
-            {
-                v = new Vector3((float)random.NextDouble() * 2f - 1f, (float)random.NextDouble() * 2f - 1f, (float)random.NextDouble() * 2f - 1f);
-            }
-            while (v.sqrMagnitude < 0.01f || v.sqrMagnitude > 1f);
-            return v.normalized;
-        }
-
-        // An icosahedron split once: 42 points on the unit sphere, 80 faces
-        // wound so their cross product points out, which Unity draws as the
-        // front (clockwise seen from outside).
-        private static void Icosphere(out List<Vector3> points, out List<int> triangles)
-        {
-            var t = (1f + Mathf.Sqrt(5f)) / 2f;
-            points = new List<Vector3>
-            {
-                new Vector3(-1, t, 0), new Vector3(1, t, 0), new Vector3(-1, -t, 0), new Vector3(1, -t, 0),
-                new Vector3(0, -1, t), new Vector3(0, 1, t), new Vector3(0, -1, -t), new Vector3(0, 1, -t),
-                new Vector3(t, 0, -1), new Vector3(t, 0, 1), new Vector3(-t, 0, -1), new Vector3(-t, 0, 1),
-            };
-            for (var i = 0; i < points.Count; i++)
-                points[i] = points[i].normalized;
-            var faces = new List<int>
-            {
-                0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11,
-                1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8,
-                3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9,
-                4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1,
-            };
-            var middles = new Dictionary<long, int>();
-            var list = points;
-            int Middle(int a, int b)
-            {
-                var key = a < b ? ((long)a << 32) | (uint)b : ((long)b << 32) | (uint)a;
-                if (middles.TryGetValue(key, out var found))
-                    return found;
-                list.Add(((list[a] + list[b]) * 0.5f).normalized);
-                middles[key] = list.Count - 1;
-                return list.Count - 1;
-            }
-            triangles = new List<int>();
-            for (var f = 0; f < faces.Count; f += 3)
-            {
-                var a = faces[f];
-                var b = faces[f + 1];
-                var c = faces[f + 2];
-                var ab = Middle(a, b);
-                var bc = Middle(b, c);
-                var ca = Middle(c, a);
-                triangles.AddRange(new[] { a, ab, ca, b, bc, ab, c, ca, bc, ab, bc, ca });
-            }
+            for (var i = 0; i < count; i++)
+                heights[i] = new Vector3(points[i].x, points[i].y * GlowHeight / half, points[i].z);
+            return (points, normals, heights, shape.Triangles);
         }
 
         private void LateUpdate()
@@ -322,7 +295,7 @@ namespace RealisticFiring.Visuals
             material.SetFloat(GlowStrengthId, GlowStrength);
             // The continuous layers follow this same surface and heat,
             // with their own depth below it.
-            bed.SetLumpSurface(zones, UnderDrop, upPerUnit);
+            bed.SetLumpSurface(zones, UnderDrop, upPerUnit, material.GetTexture(NoiseId));
         }
 
         private void OnDestroy()

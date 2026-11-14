@@ -10,6 +10,7 @@ namespace RealisticFiring
     {
         private static readonly string[] Pages = { "DISPLAY", "FIRING", "BOILER", "ENGINE", "SOUND", "CONTROLS" };
         private static readonly string[] Quality = { "High", "Medium", "Low" };
+        private static readonly string[] SmokeChoices = { "High", "Medium", "Low", "Auto" };
         private static readonly string[] Seasons = { "Summer", "Spring / autumn", "Winter" };
         private static readonly string[] Water = { "Good", "Average", "Bad" };
         private static readonly string[] Aim = { "Keypad", "Grate" };
@@ -82,7 +83,7 @@ namespace RealisticFiring
             s.ShowZonedCoalBed = Toggle("Detailed firebox", s.ShowZonedCoalBed,
                 "Coal heaps, flames, smoke, and firelight. Turn off to use the stock visuals. Applies immediately.");
             s.FireboxQuality = Choice("Firebox quality", s.FireboxQuality, Quality,
-                "High: full detail. Medium: half the flame samples and coal lumps, 20 surface updates/s. Low: a quarter, 10 updates/s. Firelight stays the same.");
+                "High: full detail. Medium: flames at half resolution, half the coal lumps, 20 surface updates/s; much cheaper leaning into the firebox. Low: fewer flame samples too, a quarter of the lumps, 10 updates/s. Firelight stays the same.");
             s.AshpanGlow = Slider("Ashpan glow", s.AshpanGlow, 0f, 3f, 1, "×",
                 "Light beneath the engine, dimmed by ash. 0 turns it off.");
             End();
@@ -92,8 +93,8 @@ namespace RealisticFiring
                 : "Smoke, steam, and heat above the stack.");
             var enabled = GUI.enabled;
             GUI.enabled = enabled && !stackHandedOff;
-            s.SmokeQuality = Choice("Smoke quality", s.SmokeQuality, Quality,
-                "Medium: half-resolution smoke without its faintest parts. Low: fewer particles and less faint smoke too. In VR and forward rendering, both reduce particles instead of resolution.");
+            s.SmokeQuality = Choice("Smoke quality", s.SmokeQuality, SmokeChoices,
+                "Medium: half-resolution smoke without its faintest parts. Low: fewer particles and less faint smoke too. In VR and forward rendering, both reduce particles instead of resolution. Auto: High, lowered while the frame rate is under 45 with smoke in the air and the lower quality helps, and raised again when it runs well.");
             s.SmokeSeason = Choice("Season", s.SmokeSeason, Seasons,
                 "Controls how much white steam condenses. When DV Seasons is running, its weather is used instead.");
             s.RealisticSmoke = Toggle("Realistic chimney smoke", s.RealisticSmoke,

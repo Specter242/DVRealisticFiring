@@ -90,7 +90,8 @@ namespace RealisticFiring.Shed
         private void Run(bool running)
         {
             var go = jet.gameObject;
-            if (running && !go.activeSelf)
+            // (Not playing though awake: its stand rested whole and woke with the valve still open.)
+            if (running && (!go.activeSelf || !jet.isPlaying))
             {
                 go.SetActive(true);
                 jet.Play();
@@ -114,6 +115,13 @@ namespace RealisticFiring.Shed
         }
 
         private void LateUpdate()
+        {
+            var start = Diagnostics.PerfMeter.Start();
+            try { TimedLateUpdate(); }
+            finally { Diagnostics.PerfMeter.Stop(Diagnostics.PerfSection.ShedHoses, start); }
+        }
+
+        private void TimedLateUpdate()
         {
             if (plug == null)
                 return;

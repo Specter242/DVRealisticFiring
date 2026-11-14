@@ -21,6 +21,21 @@ namespace RealisticFiring.Multiplayer
         public void Serialize(BinaryWriter w) { w.Write(Item); w.Write(Seq); w.Write(Action); w.Write(Oil); w.Write(Lit); w.Write(Count); }
         public void Deserialize(BinaryReader r) { Item = r.ReadUInt16(); Seq = r.ReadUInt16(); Action = r.ReadByte(); Oil = r.ReadSingle(); Lit = r.ReadBoolean(); Count = r.ReadInt32(); }
     }
+    /// <summary>
+    /// A guest to the host: stock the supply place of this name at the spot
+    /// the guest's game found for it (unshifted) and its turn about the
+    /// vertical. The name is cut to <see cref="MaxSite"/> characters.
+    /// </summary>
+    public sealed class StartingSupplyPacket : ISerializablePacket
+    {
+        public const int MaxSite = 160;
+        public string Site = "";
+        public float X, Y, Z, Yaw;
+        public void Serialize(BinaryWriter w) { w.Write(Cut(Site)); w.Write(X); w.Write(Y); w.Write(Z); w.Write(Yaw); }
+        public void Deserialize(BinaryReader r) { Site = Cut(r.ReadString()); X = r.ReadSingle(); Y = r.ReadSingle(); Z = r.ReadSingle(); Yaw = r.ReadSingle(); }
+        private static string Cut(string text) => text == null ? "" : text.Length > MaxSite ? text.Substring(0, MaxSite) : text;
+    }
+
     /// <summary>Stock MP owns item identities and movement; RF owns fuel and consumption.</summary>
     internal static class StartingFuelSync
     {
@@ -45,6 +60,7 @@ namespace RealisticFiring.Multiplayer
         }
         private static StartingFuelItem Find(ushort id) => id == 0 ? null : StartingFuelItem.Live.FirstOrDefault(i => i != null && Id(i) == id);
         internal static void Forget(byte player) => requests.Remove(player);
+        private static readonly HashSet<string> refused = new HashSet<string>();
         private static object lifecycle;
         private static System.Reflection.PropertyInfo serverPlayers;
         private static System.Reflection.MethodInfo ownsItem;
@@ -84,6 +100,19 @@ namespace RealisticFiring.Multiplayer
             requests.Clear();
             serverPlayers = null;
             StartingFuelItem.HeldRemotely = OwnedByPlayer;
+            refused.Clear();
+            server.RegisterSerializablePacket<StartingSupplyPacket>((p, sender) =>
+            {
+                try
+                {
+                    if (sender == null || p == null || float.IsNaN(p.X + p.Y + p.Z + p.Yaw) || float.IsInfinity(p.X + p.Y + p.Z + p.Yaw)) return;
+                    var why = StartingSupplySite.StockFor(p.Site, new Vector3(p.X, p.Y, p.Z), Quaternion.Euler(0f, p.Yaw, 0f), sender.Position);
+                    // Each refusal logged once a session for a place and guest.
+                    if (why != null && refused.Add(sender.PlayerId + "/" + p.Site))
+                        Main.Mod.Logger.Warning($"Starting supplies: not stocked for {HelloPacket.Clean(sender.DisplayName, HelloPacket.MaxVersion)} at '{HelloPacket.Clean(p.Site, StartingSupplyPacket.MaxSite)}': {why}");
+                }
+                catch (Exception e) { Faults.Report("a guest's starting supplies request", null, e); }
+            });
             server.RegisterSerializablePacket<StartingFuelPacket>((p, sender) =>
             {
                 try
@@ -100,9 +129,23 @@ namespace RealisticFiring.Multiplayer
                 catch (Exception e) { Faults.Report("starting fuel request", null, e); }
             });
         }
+        // The host's session ended: nobody else holds an item, and the
+        // server the ownership was read from is gone.
+        internal static void ServerStopped()
+        {
+            requests.Clear();
+            refused.Clear();
+            serverPlayers = null;
+            lifecycle = null;
+            ownsItem = null;
+            StartingFuelItem.HeldRemotely = null;
+        }
+
         internal static void Client(IClient client)
         {
             snapshots.Clear();
+            StartingSupplySite.RequestStock = (site, at, turn) =>
+                client.SendSerializablePacketToServer(new StartingSupplyPacket { Site = site, X = at.x, Y = at.y, Z = at.z, Yaw = turn.eulerAngles.y });
             StartingFuelItem.SendAction = (item, action) =>
             {
                 var id = Id(item);

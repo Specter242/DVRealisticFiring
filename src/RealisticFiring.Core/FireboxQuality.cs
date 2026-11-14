@@ -65,17 +65,31 @@ namespace RealisticFiring.Core
         /// reference screen does (audit 2026-11-09: the budget took no
         /// account of resolution or VR).
         /// </para>
+        /// <para>
+        /// With <paramref name="halfResolution"/> the fire is marched over a
+        /// quarter as many pixels (the adapter's FireboxOffscreen, at Medium
+        /// and Low), and takes its samples twice as close along the ray, up
+        /// to the shader's limit: fewer pixels share out the dither's
+        /// pattern, which showed as a weave through the flames at High's
+        /// own spacing (the council, round 7). So Medium at half resolution
+        /// has High's full-resolution samples and Low has Medium's, cheaper
+        /// than their thinner samples at full resolution were. Where they
+        /// cannot draw so (VR, forward rendering), they thin their samples
+        /// as before.
+        /// </para>
         public static FireboxSampling For(FireboxQuality quality, bool doorClosed, bool cameraInside,
-            float highSteps = 128f, float highStepLength = 0.02f, float pixelLoad = 1f)
+            float highSteps = 128f, float highStepLength = 0.02f, float pixelLoad = 1f, bool halfResolution = false)
         {
             if (doorClosed)
                 return new FireboxSampling(24f, Math.Max(highStepLength, 0.06f));
 
             var divisor = quality == FireboxQuality.Medium ? 2f : quality == FireboxQuality.Low ? 4f : 1f;
+            if (halfResolution)
+                divisor /= 2f;
             if (pixelLoad > 1f && !float.IsInfinity(pixelLoad))
                 divisor *= Math.Min(pixelLoad, MostPixelThinning);
             var steps = Math.Max(4f, Math.Min(128f, cameraInside ? 0.5f * highSteps : highSteps));
-            return new FireboxSampling(Math.Max(4f, steps / divisor), highStepLength * divisor);
+            return new FireboxSampling(Math.Max(4f, Math.Min(128f, steps / divisor)), highStepLength * divisor);
         }
     }
 }

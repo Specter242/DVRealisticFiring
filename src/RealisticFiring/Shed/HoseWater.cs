@@ -85,7 +85,8 @@ namespace RealisticFiring.Shed
         private void Run(bool running)
         {
             var go = stream.gameObject;
-            if (running && !go.activeSelf)
+            // (Not playing though awake: its stand rested whole and woke with the valve still open.)
+            if (running && (!go.activeSelf || !stream.isPlaying))
             {
                 go.SetActive(true);
                 stream.Play();
@@ -109,6 +110,13 @@ namespace RealisticFiring.Shed
         }
 
         private void LateUpdate()
+        {
+            var start = Diagnostics.PerfMeter.Start();
+            try { TimedLateUpdate(); }
+            finally { Diagnostics.PerfMeter.Stop(Diagnostics.PerfSection.ShedHoses, start); }
+        }
+
+        private void TimedLateUpdate()
         {
             if (plug == null)
                 return;

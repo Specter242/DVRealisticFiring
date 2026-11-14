@@ -7,12 +7,13 @@ namespace RealisticStackEffects.Core
         High,
         Medium,
         Low,
+        Auto,
     }
 
     public static class SmokeDetail
     {
         /// <summary>Whether <paramref name="quality"/> draws the plume at half resolution where it can.</summary>
-        public static bool HalfResolution(SmokeQuality quality) => quality != SmokeQuality.High;
+        public static bool HalfResolution(SmokeQuality quality) => quality == SmokeQuality.Medium || quality == SmokeQuality.Low;
 
         /// <summary>
         /// The share of the plume's particles thrown at <paramref name="quality"/>,
@@ -20,7 +21,7 @@ namespace RealisticStackEffects.Core
         /// </summary>
         public static float ParticleShare(SmokeQuality quality, bool halfResolution)
         {
-            if (quality == SmokeQuality.High)
+            if (!HalfResolution(quality))
                 return 1f;
             var low = quality == SmokeQuality.Low;
             return halfResolution ? (low ? 0.5f : 1f) : (low ? 0.25f : 0.5f);

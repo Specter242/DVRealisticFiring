@@ -603,6 +603,74 @@ namespace RealisticFiring.AdapterCheck
             finally { harmony.UnpatchAll(id); }
         }
 
+        // Ace's host log (2026-11-11): a guest whose hello came before the
+        // Multiplayer mod's join was named as unanswered in the main menu,
+        // after the server had stopped. The add-on's own wiring of its
+        // HelloWatch (the watch itself is in the Core tests), through
+        // reflection: the Multiplayer API's types are the add-on's alone.
+        private static void CheckHelloWatch()
+        {
+            const BindingFlags hidden = BindingFlags.NonPublic | BindingFlags.Static;
+            var integration = typeof(Multiplayer.Integration);
+            var hellos = integration.GetField("Hellos", hidden)?.GetValue(null);
+            if (hellos == null)
+            {
+                Check(false, "the multiplayer add-on keeps its guests' hellos in a HelloWatch");
+                return;
+            }
+            var watch = hellos.GetType();
+            void Call(string name, params object[] args) => watch.GetMethod(name).Invoke(hellos, args);
+            int Waiting() => (int)watch.GetProperty("Waiting").GetValue(hellos);
+            try
+            {
+                Call("Heard", (byte)7);
+                Call("Joined", (byte)7, null, 0u);
+                var heardFirst = Waiting() == 0;
+                Call("Joined", (byte)8, null, 0u);
+                integration.GetMethod("OnServerStopped", hidden).Invoke(null, null);
+                var stopped = Waiting() == 0;
+                Call("Joined", (byte)9, null, 0u);
+                integration.GetMethod("TellOfUnheard", hidden).Invoke(null, new object[] { 100u });
+                var menu = Waiting() == 0;
+                var subscribes = PatchProcessor.GetOriginalInstructions(integration.GetMethod("HearServerStopped", hidden))
+                    .Any(i => i.operand is MethodInfo m && m.Name == "add_ServerStopped" && m.DeclaringType?.FullName == "MPAPI.MultiplayerAPI");
+                var started = PatchProcessor.GetOriginalInstructions(integration.GetMethod("Start", BindingFlags.Public | BindingFlags.Static))
+                    .Any(i => i.operand is MethodInfo m && m.Name == "HearServerStopped");
+                Check(heardFirst && stopped && menu && subscribes && started,
+                    "a guest heard before the join is not awaited, the server's stop clears the wait, and nobody is named outside a session" +
+                    $" (heard first {heardFirst}, stop {stopped}, menu {menu}, subscribed {subscribes && started})");
+            }
+            finally
+            {
+                Call("Clear");
+            }
+        }
+
+        // A guest's request that the host stock a supply place (2026-11-12):
+        // carried as written, its untrusted name cut to length.
+        private static void CheckSupplyRequest()
+        {
+            var sent = new Multiplayer.StartingSupplyPacket { Site = "shed T_MF_1", X = 1234.5f, Y = 120.25f, Z = -6789.75f, Yaw = 271.5f };
+            var read = new Multiplayer.StartingSupplyPacket();
+            using (var stream = new MemoryStream())
+            {
+                using (var writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, true)) sent.Serialize(writer);
+                stream.Position = 0;
+                using (var reader = new BinaryReader(stream, System.Text.Encoding.UTF8, true)) read.Deserialize(reader);
+                Check(read.Site == sent.Site && read.X == sent.X && read.Y == sent.Y && read.Z == sent.Z && read.Yaw == sent.Yaw
+                      && stream.Position == stream.Length, "a guest's supply place request carries its place, spot and turn");
+            }
+            var longer = new Multiplayer.StartingSupplyPacket { Site = new string('x', 5000) };
+            using (var stream = new MemoryStream())
+            {
+                using (var writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, true)) longer.Serialize(writer);
+                stream.Position = 0;
+                var cut = new Multiplayer.StartingSupplyPacket();
+                using (var reader = new BinaryReader(stream, System.Text.Encoding.UTF8, true)) cut.Deserialize(reader);
+                Check(cut.Site.Length == Multiplayer.StartingSupplyPacket.MaxSite, "a supply place request's name is cut to length");
+            }
+        }
+
         private static void CheckStandSync(Assembly multiplayer)
         {
             const string harmonyId = "RealisticFiring.AdapterCheck.StandHoses";
@@ -734,6 +802,8 @@ namespace RealisticFiring.AdapterCheck
                 load.Invoke(System.Runtime.Serialization.FormatterServices.GetUninitializedObject(type), new object[] { null });
                 Check(true, "a null interior notification skips Multiplayer's load coroutine");
                 CheckStandSync(assembly);
+                CheckHelloWatch();
+                CheckSupplyRequest();
                 MultiplayerStokerChecks.Run(assembly, Check);
             }
             catch (Exception e)
@@ -4488,6 +4558,44 @@ namespace RealisticFiring.AdapterCheck
             Check(typeof(RealisticFiring.Visuals.SpringFollowsHand).GetMethod("LateUpdate",
                       System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic) != null,
                 "the hold runs after the game's own update");
+
+            // The S282's water wheel is held the same way, and its cloned
+            // steam lever loses the sand lever's hand guide (AdensWorld,
+            // Nexus, 2026-11-12).
+            var wheelVr = controls.GetType("DV.CabControls.VRTK.RotaryVRTK");
+            var wheelMouse = controls.GetType("DV.CabControls.NonVR.RotaryNonVR");
+            Check(wheelVr != null && RealisticFiring.Visuals.SpringFollowsHand.IsVrControl(wheelVr)
+                  && wheelMouse != null && !RealisticFiring.Visuals.SpringFollowsHand.IsVrControl(wheelMouse),
+                "a VR wheel is told from the mouse's, as a lever is");
+            const System.Reflection.BindingFlags hidden = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+            var cab = typeof(RealisticFiring.Visuals.S282InjectorCab);
+            var holds = PatchProcessor.GetOriginalInstructions(cab.GetMethod("TryAttach", hidden))
+                .Count(i => i.operand is System.Reflection.MethodInfo m && m.Name == "AddComponent" && m.IsGenericMethod
+                            && m.GetGenericArguments()[0] == typeof(RealisticFiring.Visuals.SpringFollowsHand));
+            Check(holds == 2, $"the S282 injector's water wheel and steam lever both follow a VR hand ({holds} holds)");
+            var strips = PatchProcessor.GetOriginalInstructions(cab.GetMethod("Control", hidden))
+                .Any(i => i.operand is System.Reflection.MethodInfo m && m.Name == "StripHandGuides");
+            var guides = PatchProcessor.GetOriginalInstructions(cab.GetMethod("StripHandGuides", hidden))
+                .Any(i => i.operand is System.Reflection.MethodInfo m && m.Name == "GetComponents" && m.IsGenericMethod
+                          && m.GetGenericArguments()[0].Name == "AHandPoseSnapper");
+            Check(strips && guides, "a cloned injector lever drops its source's VR hand guides");
+
+            // Wood and rags in VR (SeanJAnimations and Blaze221, Nexus,
+            // 2026-11-12), by the game's own rule (ItemVRTK.Setup): an item is
+            // usable in a VR hand unless its use is None or OneShotNonVROnly.
+            bool UsableInVr(DV.CabControls.Spec.ItemUseApproach use) =>
+                use != DV.CabControls.Spec.ItemUseApproach.None && use != DV.CabControls.Spec.ItemUseApproach.OneShotNonVROnly;
+            var kinds = (RealisticFiring.Items.StartingFuelKind[])Enum.GetValues(typeof(RealisticFiring.Items.StartingFuelKind));
+            var grabs = kinds.ToDictionary(k => k, RealisticFiring.Items.FireStartingItems.VrGrab);
+            var containers = kinds.Where(RealisticFiring.Items.FireStartingItems.IsContainer).ToList();
+            var pieces = kinds.Where(k => !RealisticFiring.Items.FireStartingItems.IsContainer(k)).ToList();
+            Check(containers.Count == 2 && containers.All(k => UsableInVr(grabs[k].Use)),
+                "a crate or tin held in a VR hand can be used, to put a piece on top");
+            Check(pieces.All(k => !UsableInVr(grabs[k].Use)), "a loose piece's use (laying by the door) stays desktop-only");
+            Check(kinds.All(k => grabs[k].Attach == DV.CabControls.Spec.ItemControllerAttachMethod.ReparentToController),
+                "each is carried in one hand, as the game's crates are, not as the shovel's two-handed pole");
+            Check(pieces.All(p => containers.All(c => grabs[p].Priority > grabs[c].Priority)),
+                "a loose piece outranks a crate or tin for a VR hand touching both");
         }
 
         private static void Check(bool ok, string what)

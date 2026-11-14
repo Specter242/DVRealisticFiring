@@ -23,6 +23,8 @@ namespace RealisticFiring.AdapterCheck
             nameof(Patches.SuperheaterTickPatch),
             // Times the tick for the status log; writes nothing.
             nameof(Patches.EngineTimingPatch),
+            nameof(Patches.BoilerTimingPatch),
+            nameof(Patches.DraftTimingPatch),
         };
 
         internal static void Run(Action<bool, string> check)

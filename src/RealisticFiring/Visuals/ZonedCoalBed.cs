@@ -28,6 +28,7 @@ namespace RealisticFiring.Visuals
         private static readonly int TilingId = Shader.PropertyToID("_Tiling");
         private static readonly int PulseId = Shader.PropertyToID("_Pulse");
         private static readonly int GlowStrengthId = Shader.PropertyToID("_GlowStrength");
+        private static readonly int NoiseId = Shader.PropertyToID("_Noise");
         private static readonly int LumpZonesId = Shader.PropertyToID("_LumpZones");
         private static readonly int BedReliefId = Shader.PropertyToID("_BedRelief");
         private static readonly int BedMinId = Shader.PropertyToID("_BedMin");
@@ -653,6 +654,7 @@ namespace RealisticFiring.Visuals
             if (!seen)
             {
                 nextVisibleUploadAt = 0f;
+                nextUnderLumpsAt = 0f;
                 return;
             }
             if (Time.unscaledTime < nextVisibleUploadAt)
@@ -673,6 +675,16 @@ namespace RealisticFiring.Visuals
         private const float SeenWithin = 15f;
         private float nextVisibleUploadAt;
         private bool surfaceReady;
+
+        // Under the lumps (SetLumpSurface) the shaders stand the coal and
+        // the embers on the lumps' surface, with its heat, green, ash, and
+        // slope: the mesh holds only the clinker and the bare grate for
+        // them, which change as slowly as the fire burns. Rebuilt every
+        // frame, it cost about 0.65 ms while the fire was looked at (audit
+        // V4, 2026-11-09); now a few times a second.
+        private const float UnderLumpsInterval = 0.25f;
+        private bool lumpSurface;
+        private float nextUnderLumpsAt;
 
         /// <summary>
         /// Whether the coal can be seen now: its door open (or none) and the
@@ -796,6 +808,7 @@ namespace RealisticFiring.Visuals
                     FreshShare = heap.Fresh / Mathf.Max(heap.Mass, 1e-3f),
                 };
             }
+            heapMost = 0f;
             for (var j = 0; j < ReliefAlong; j++)
             {
                 var along = (j + 0.5f) / ReliefAlong;
@@ -824,6 +837,7 @@ namespace RealisticFiring.Visuals
                     // m, softly no taller than the tallest, as a share of the pile's height.
                     up = tallest * (float)System.Math.Tanh(up / tallest) / pileHeight;
                     heaped[k] = up;
+                    heapMost = Mathf.Max(heapMost, up);
                     heapFresh[k] = fresh;
                     reliefPixels[k] = new Color(swells[k], up, fresh, 0f);
                 }
@@ -857,6 +871,17 @@ namespace RealisticFiring.Visuals
 
         private void UpdateMesh(FireModel fire, GrateZone? aimed, float pulse)
         {
+            if (!lumpSurface || Time.unscaledTime >= nextUnderLumpsAt)
+            {
+                UpdateGeometry();
+                nextUnderLumpsAt = Time.unscaledTime + UnderLumpsInterval;
+            }
+            UpdateProperties(aimed, pulse);
+        }
+
+        // The bed's vertices: where the coal stands and its state there.
+        private void UpdateGeometry()
+        {
             for (var j = 0; j <= GridAlong; j++)
             {
                 var along = (float)j / GridAlong;
@@ -882,8 +907,15 @@ namespace RealisticFiring.Visuals
             mesh.vertices = vertices;
             mesh.colors = colors;
             mesh.SetUVs(3, bare);
-            mesh.RecalculateNormals();
-            mesh.RecalculateBounds();
+            // Under the lumps the shader gives the slope, and the bounds
+            // stay the lumps' reach (LumpSurfaceBounds), past these heights.
+            if (!lumpSurface)
+            {
+                mesh.RecalculateNormals();
+                mesh.RecalculateBounds();
+            }
+            else
+                mesh.bounds = LumpSurfaceBounds;
             surfaceReady = true;
 
             if (emberMesh != null)
@@ -896,9 +928,17 @@ namespace RealisticFiring.Visuals
                     emberVertices[v] = new Vector3(vertices[v].x, Mathf.Max(floor, vertices[v].y - drop), vertices[v].z);
                 emberMesh.vertices = emberVertices;
                 emberMesh.colors = colors;
-                emberMesh.RecalculateBounds();
+                if (!lumpSurface)
+                    emberMesh.RecalculateBounds();
+                else
+                    emberMesh.bounds = LumpSurfaceBounds;
             }
+        }
 
+        // The shaders' state for the bed that changes frame to frame: its
+        // flicker, the beat, and the aimed zone's pulse.
+        private void UpdateProperties(GrateZone? aimed, float pulse)
+        {
             bedRenderer.GetPropertyBlock(properties);
             properties.SetFloat(TilingId, LumpsAcross);
             properties.SetFloat(FlickerSpeedId, 0.3f + 1.4f * fireForcing);
@@ -1031,16 +1071,26 @@ namespace RealisticFiring.Visuals
         internal Texture2D ReliefTexture => reliefTexture;
 
         /// <summary>
+        /// The most the relief adds to the coal's surface: its swells, as a
+        /// share of the coal's depth, and its tallest heap, as a share of the
+        /// pile's height (for the fire volume's ceiling).
+        /// </summary>
+        internal float ReliefSwell => Lumpiness;
+        internal float ReliefHeap => heapMost;
+        private float heapMost;
+
+        /// <summary>
         /// Makes the continuous coal and ember layers read the lumps' surface
         /// and heat, keeping both below it instead of crossing it where their
         /// CPU height interpolation and heat jitter differ from the shader's.
         /// </summary>
-        internal void SetLumpSurface(Texture2D zones, float depth, float upPerUnit)
+        internal void SetLumpSurface(Texture2D zones, float depth, float upPerUnit, Texture noise)
         {
             var units = 1f / Mathf.Max(1e-5f, upPerUnit);
             var floor = bed.min.y - EmberUnder * units;
-            SetLumpSurface(bedRenderer, properties, zones, depth * units, floor);
-            SetLumpSurface(emberRenderer, emberProperties, zones, Mathf.Max(EmberDepth, depth + EmberUnder) * units, floor);
+            SetLumpSurface(bedRenderer, properties, zones, depth * units, floor, noise);
+            SetLumpSurface(emberRenderer, emberProperties, zones, Mathf.Max(EmberDepth, depth + EmberUnder) * units, floor, noise);
+            lumpSurface = true;
             // The shader can lift these beyond the CPU mesh at a heaped or
             // overfilled zone. Keep its displaced surface inside the bounds.
             if (mesh != null)
@@ -1059,12 +1109,16 @@ namespace RealisticFiring.Visuals
             }
         }
 
-        private void SetLumpSurface(Renderer renderer, MaterialPropertyBlock block, Texture2D zones, float depth, float floor)
+        // With the lumps' noise, in which the layers under them read where
+        // fresh coal lies in patches (CoalSurface.cginc).
+        private void SetLumpSurface(Renderer renderer, MaterialPropertyBlock block, Texture2D zones, float depth, float floor, Texture noise)
         {
             if (renderer == null || block == null)
                 return;
             renderer.GetPropertyBlock(block);
             block.SetTexture(LumpZonesId, zones);
+            if (noise != null)
+                block.SetTexture(NoiseId, noise);
             block.SetTexture(BedReliefId, reliefTexture);
             block.SetVector(BedMinId, bed.min);
             block.SetVector(BedMaxId, bed.max);

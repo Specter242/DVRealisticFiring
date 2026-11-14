@@ -342,7 +342,7 @@ namespace RealisticStackEffects
                             }
                             for (var i = 0; i < HoldFrames; i++)
                                 yield return null;
-                            var file = $"{++count:000}-{Safe(sceneName)}-{Safe(stackName)}-{view}";
+                            var file = $"{++count:000}-{Safe(sceneName)}-{Safe(stackName)}-{Safe(view)}";
                             if (request.Clip > 0f)
                             {
                                 // Filmed: each frame the same step of game time.
@@ -573,6 +573,16 @@ namespace RealisticStackEffects
         // standing column): the camera's place and where it looks,
         // from the stack along the engine (the test bed's air going past from
         // its front).
+        private static bool Point(string text, out Vector3 point)
+        {
+            point = default;
+            var parts = text.Split(',');
+            return parts.Length == 3
+                   && float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out point.x)
+                   && float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out point.y)
+                   && float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out point.z);
+        }
+
         private static Pose? View(ChimneyPlume plume, string view)
         {
             if (view.EndsWith("-turn", StringComparison.Ordinal))
@@ -580,6 +590,16 @@ namespace RealisticStackEffects
             var car = plume.Car;
             if (car == null || !plume.Active)
                 return null;
+            // A place and a point looked at in the car's own frame, m (x
+            // right, y up, z forward): "car:-4,1.1,-6:0,0.6,3".
+            if (view.StartsWith("car:", StringComparison.Ordinal))
+            {
+                var parts = view.Substring(4).Split(':');
+                if (parts.Length != 2 || !Point(parts[0], out var from) || !Point(parts[1], out var to))
+                    return null;
+                var eye = car.transform.TransformPoint(from);
+                return new Pose(eye, Quaternion.LookRotation(car.transform.TransformPoint(to) - eye, Vector3.up));
+            }
             var stack = plume.StackTop;
             var ahead = Vector3.ProjectOnPlane(car.transform.forward, Vector3.up).normalized;
             var right = Vector3.Cross(Vector3.up, ahead);
@@ -596,6 +616,14 @@ namespace RealisticStackEffects
                     at = stack + ahead * 18f + right * 9f;
                     at.y = rail + 1.7f;
                     look = stack + Vector3.up * 2.5f - ahead * 3f;
+                    break;
+                case "ahead":
+                    // On the track ahead of the engine and above it, looking
+                    // back over the boiler: the dynamo's and the safety
+                    // valves' steam behind the stack's smoke.
+                    at = stack + ahead * 22f;
+                    at.y = rail + 8f;
+                    look = stack + Vector3.up * 3f - ahead * 4f;
                     break;
                 case "front-above":
                     at = stack + ahead * 18f + right * 9f;

@@ -88,6 +88,33 @@ namespace RealisticStackEffects
         /// <summary>How far each particle is lit as its part of the plume's surface, × (0 each alone; PlumeAloft.ShapeOf).</summary>
         public float PlumeShape = 0f;
 
+        // The plume as parcels that carry their smoke (PlumeParcels), 1 on:
+        // a particle is a lump this share of the plume's envelope across (no
+        // smaller than this, m shown), this many kept in each envelope's
+        // length, each carrying the model's depth over this area, m², and a
+        // light haze's smoke this share of that. In place of each particle as
+        // wide and as opaque as the plume (FillWidth, Overlap, WispShare,
+        // SmokeAsSteam's sharing).
+        public float Parcels = 0f;
+        public float ParcelLump = 0.4f;
+        public float ParcelLeast = 1f;
+        public float ParcelsAcross = 20f;
+        public float ParcelArea = 1.2f;
+        public float ParcelLightSmoke = 0.09f;
+
+        /// <summary>Black smoke's amount, × steam's for the same depth in the model.</summary>
+        public float ParcelDenseSmoke = 0.27f;
+
+        /// <summary>How far a hard beat billows out as its blast is spent: this much wider, m, for each metre from the lip over the jet's length.</summary>
+        public float ParcelBlast = 1f;
+
+        /// <summary>How fast the plume's lumps turn over within it, × its rise over its half-width (PlumeParcels.Roll; 0 each keeps its place).</summary>
+        public float ParcelRoll = 0.5f;
+
+        /// <summary>Where the plume's optical depth across is this or less its lumps have mixed into an even haze; from the next they stand apart.</summary>
+        public float ParcelMixedBelow = 0.3f;
+        public float ParcelMixedAbove = 1.5f;
+
         /// <summary>How far a beat's particles leave as one cluster, a core and lobes beside it, 0 (strung up the jet) to 1.</summary>
         public float BeatCluster = 0.6f;
 
@@ -166,7 +193,12 @@ namespace RealisticStackEffects
         public float WispAgeTo = 0.45f;
         // Limit the rounded trail at speed; 0 retains the stationary handoff.
         public float PuffTrail = 10f;
-        // Development comparison with the old, mismatched steam priorities.
+        // The beats' puffs and what leaves between them as one mixture
+        // (PlumeModel.AsOne); 0 for each its own, as until 2026-11-12.
+        public float OneExhaust = 1f;
+        // Development comparison with the old, mismatched steam priorities
+        // (0: the game's own steam keeps its sorting orders, and the engine's
+        // steam the mod draws is all drawn over the plume).
         public float MatchSteamOrder = 1f;
 
         /// <summary>
@@ -325,6 +357,13 @@ namespace RealisticStackEffects
 
         /// <summary>Visible smoke leaving the fire, 0 to 1 (the plume goes black at 0.5).</summary>
         public float Soot;
+
+        /// <summary>
+        /// The firebox's smoke, its puffs a second (a smoking fire's 20 to
+        /// 40): more of the fire's own smoke leaves between beats
+        /// (PlumeInputs.FireboxGas).
+        /// </summary>
+        public float Gas;
 
         /// <summary>How clear the stack is between beats, 0 to 1 (air to spare).</summary>
         public float Clear;
@@ -644,6 +683,7 @@ namespace RealisticStackEffects
             Slider("Exhaust, bar", ref s.Exhaust, 0f, 12f, "F1");
             Slider("Steam between beats", ref s.Flow, 0f, 1f, "F2");
             Slider("Soot (black at 0.5)", ref s.Soot, 0f, 1f, "F2");
+            Slider("Firebox smoke, puffs a second", ref s.Gas, 0f, 60f, "F0");
             Slider("Clear stack (air to spare)", ref s.Clear, 0f, 1f, "F2");
             Slider("Fire's heat, share", ref s.Heat, 0f, 1f, "F2");
             Slider("Air through the fire, kg/kg steam", ref s.AirPerSteam, 0f, 20f, "F1");
@@ -669,6 +709,7 @@ namespace RealisticStackEffects
             Slider("Flue gas mixing into the blower's jet", () => Tuning.BlowerFlueGasMixing, v => Tuning.BlowerFlueGasMixing = v, 0f, 1.5f, "F2");
             Slider("Steam mixing into the air, ×", () => Tuning.SteamMixing, v => Tuning.SteamMixing = v, 0.25f, 10f, "F2");
             Slider("White forming above the stack, ×", () => Tuning.SteamForming, v => Tuning.SteamForming = v, 0.1f, 10f, "F2");
+            Slider("White formed across the jet by, bore diameters (0 by age)", () => Tuning.WhiteByHeight, v => Tuning.WhiteByHeight = v, 0f, 10f, "F1");
             Slider("Steam opacity (tuned air)", () => Tuning.SteamOpacity, v => Tuning.SteamOpacity = v, 0.2f, 0.95f, "F2");
             Slider("Clean haze opacity", () => Tuning.HazeOpacity, v => Tuning.HazeOpacity = v, 0f, 0.5f, "F2");
             Slider("Haze in a well-fired engine's beats", () => Tuning.BeatHaze, v => Tuning.BeatHaze = v, 0f, 1f, "F2");
@@ -707,6 +748,18 @@ namespace RealisticStackEffects
             LookSlider("Light greyed", ref Look.LightGrey, 0f, 1f, "F2");
             LookSlider("Lit as the plume's surface", ref Look.PlumeShape, 0f, 3f, "F2");
             Kept("Beats leave as clusters", ref Look.BeatCluster, 0f, 1f, "F2");
+            Kept("One exhaust: beats and between them one mixture (0 off, 1 on)", ref Look.OneExhaust, 0f, 1f, "F0");
+            LookSlider("Parcels that carry their smoke (0 off, 1 on)", ref Look.Parcels, 0f, 1f, "F0");
+            Kept("Parcels: a lump, × the plume across", ref Look.ParcelLump, 0.2f, 0.8f, "F2");
+            Kept("Parcels: least lump, m", ref Look.ParcelLeast, 0.3f, 3f, "F1");
+            Kept("Parcels: lumps in the plume's width of its length", ref Look.ParcelsAcross, 4f, 40f, "F0");
+            Kept("Parcels: a depth of 1 over, m²", ref Look.ParcelArea, 0.1f, 3f, "F2");
+            Kept("Parcels: a light haze's smoke, × steam's", ref Look.ParcelLightSmoke, 0.02f, 1f, "F2");
+            Kept("Parcels: black smoke's, × steam's", ref Look.ParcelDenseSmoke, 0.1f, 1f, "F2");
+            Kept("Parcels: a hard beat billows, m a metre", ref Look.ParcelBlast, 0f, 2f, "F2");
+            Kept("Parcels: lumps turn over, ×", ref Look.ParcelRoll, 0f, 2f, "F2");
+            Kept("Parcels: mixed into haze below, depth across", ref Look.ParcelMixedBelow, 0.05f, 2f, "F2");
+            Kept("Parcels: lumps stand apart above", ref Look.ParcelMixedAbove, 0.2f, 5f, "F2");
             LookSlider("Billows where thick", ref Look.Billow, 0f, 1f, "F2");
             LookSlider("Billows from opacity", ref Look.BillowFrom, 0f, 1f, "F2");
             LookSlider("Billows fully at opacity", ref Look.BillowFull, 0f, 1f, "F2");

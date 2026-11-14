@@ -35,6 +35,7 @@ Shader "RealisticFiring/CoalBedSurface"
         _UnderDrop ("Under lumps: how far under the coal's surface it lies (its units)", Float) = 0
         _LumpZones ("Zones: height, heat, green, ash", 2D) = "black" {}
         _BedRelief ("The bed's relief: swells, heaps, freshness", 2D) = "black" {}
+        _Noise ("Noise (B the fresh coal's patches)", 3D) = "" {}
         _BedMin ("The bed's box, low corner", Vector) = (0, 0, 0, 0)
         _BedMax ("The bed's box, high corner", Vector) = (1, 1, 1, 0)
         _DoorSlope ("The bed's slope down to the door", Float) = 0.07
@@ -93,6 +94,16 @@ Shader "RealisticFiring/CoalBedSurface"
                 float4 zone;
                 v.vertex.y = CoalSurfacePoint(o.bed, zone).y - _UnderDrop;
                 o.state.rgb = zone.gba;
+                // Its slope is that surface's too, so the mod rebuilds the
+                // mesh only now and then for its clinker and bare grate
+                // (ZonedCoalBed.UnderLumpsInterval). Up the bed's own up
+                // (its height rises toward _BedMax.y), as the mesh's are.
+                float4 near;
+                float reach = 0.02;
+                float3 across = CoalSurfacePoint(o.bed + float2(reach, 0), near) - CoalSurfacePoint(o.bed - float2(reach, 0), near);
+                float3 along = CoalSurfacePoint(o.bed + float2(0, reach), near) - CoalSurfacePoint(o.bed - float2(0, reach), near);
+                float3 slope = normalize(cross(along, across));
+                v.normal = slope.y < 0.0 ? -slope : slope;
             }
         }
 
@@ -168,11 +179,26 @@ Shader "RealisticFiring/CoalBedSurface"
             half through = _UnderLumps * FireHeatThrough(heat);
             half colorHeat = lerp(local * (1.0 - 0.4 * fresh), heat, through);
             half3 glow = FireColor(colorHeat) * mask * lit * waver * (0.4 + 1.2 * heat + 0.8 * forced * forced);
+            // Under the lumps it is the fire between them: at the bed's core
+            // heat however slowly the zone burns (FireBedCore), a little
+            // cooler in patches, dimmer under green coal. By the zone's own
+            // heat a slow fire's gaps were a dull red under dark lumps, where
+            // the footage's are the brightest thing in the box.
+            // Granular: its own lumps' tops darker, the cracks between them
+            // brightest (an even glow drew as a flat floor under the lumps).
+            // At the texture's own scale: 2.7 times finer, its lumps were
+            // two or three pixels across from the door, a halftone of dark
+            // dots over every gap's floor (the council's "sandy" gaps).
+            half4 small = tex2Dbias(_CoalTex, float4(uv * 0.9 + 0.37, 0, 0.5));
+            half crack = smoothstep(0.3, 0.85, 1.0 - small.g);
+            half3 between = FireColor(FireBedCore(heat) * (0.84 + 0.16 * crack)) * (0.45 + 0.4 * crack + 0.15 * deep + 0.3 * broad * fine)
+                * (1.0 - 0.9 * CoalFreshCover(green + 0.06, CoalFreshPatch(IN.bed))) * lit * waver;
+            glow = lerp(glow, between, _UnderLumps);
             o.Emission = glow * _GlowStrength * (1.0 + 0.6 * _Pulse) * step(0.001, heat) * (1.0 - saturate(IN.bare * 2.0));
 
             // The fire's light on the coal, the ash, and the bars: no other light reaches them.
             half3 n = normalize(WorldNormalVector(IN, o.Normal));
-            o.Emission = FireSeen(o.Emission + FireLit(albedo, FireLight(IN.worldPos, n) * _FireLightScale + DoorLight(IN.worldPos, n)));
+            o.Emission = FireSurface(o.Emission, albedo, FireLight(IN.worldPos, n) * _FireLightScale, DoorLight(IN.worldPos, n));
 
             // The zone a loaded shovel is aimed at.
             float2 inside = step(_AimRect.xy, IN.bed) * step(IN.bed, _AimRect.zw);

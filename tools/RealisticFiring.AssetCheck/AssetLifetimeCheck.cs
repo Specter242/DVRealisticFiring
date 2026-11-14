@@ -135,8 +135,11 @@ public sealed class AssetLifetimeRunner : MonoBehaviour
 
     private static void Reset()
     {
+        // The loaded assets and the loaded flag, not the fixed lists and the
+        // starting fuel's map, which the loader clears and fills itself.
         foreach (var field in typeof(PlumeAssets).GetFields(BindingFlags.Static | BindingFlags.NonPublic))
-            field.SetValue(null, field.FieldType == typeof(bool) ? (object)false : null);
+            if (!field.IsInitOnly && !field.IsLiteral)
+                field.SetValue(null, field.FieldType == typeof(bool) ? (object)false : null);
     }
 }
 

@@ -33,6 +33,22 @@ namespace RealisticFiring.Items
         internal static string Name(StartingFuelKind kind) => kind == StartingFuelKind.Wood ? "Split firewood"
             : kind == StartingFuelKind.Rag ? "Lighting rag" : kind == StartingFuelKind.WoodCrate ? "Firewood crate" : "Rag tin";
         internal static bool IsContainer(StartingFuelKind kind) => kind == StartingFuelKind.WoodCrate || kind == StartingFuelKind.RagBox;
+
+        /// <summary>
+        /// How each is held and used in VR (SeanJAnimations and Blaze221,
+        /// Nexus, 2026-11-12: a crate could be carried, but nothing came out
+        /// of it). The shovel these are made from is a two-handed pole whose
+        /// use is desktop-only, so a VR hand could never use a crate. Each is
+        /// carried in one hand, as the game's own crates are; a crate or tin
+        /// used while held (the trigger) puts a piece on top of it; and a
+        /// loose piece outranks its crate for the other hand, so it takes the
+        /// piece rather than the crate. A piece's use stays desktop-only: it
+        /// lays the piece by the door, which a VR hand does itself.
+        /// </summary>
+        internal static (DV.CabControls.Spec.ItemControllerAttachMethod Attach, DV.CabControls.Spec.ItemUseApproach Use, int Priority) VrGrab(StartingFuelKind kind) =>
+            IsContainer(kind)
+                ? (DV.CabControls.Spec.ItemControllerAttachMethod.ReparentToController, DV.CabControls.Spec.ItemUseApproach.OneShot, 0)
+                : (DV.CabControls.Spec.ItemControllerAttachMethod.ReparentToController, DV.CabControls.Spec.ItemUseApproach.OneShotNonVROnly, 1);
         internal static StartingFuelKind Content(StartingFuelKind kind) => kind == StartingFuelKind.WoodCrate ? StartingFuelKind.Wood : StartingFuelKind.Rag;
         internal static bool IsFuel(string path) => path != null && path.StartsWith(Prefix, StringComparison.Ordinal);
         internal static GameObject Load(string path) => Enum.TryParse(path.Substring(Prefix.Length), out StartingFuelKind kind)
@@ -74,6 +90,11 @@ namespace RealisticFiring.Items
             spec.rigidbodyMass = kind == StartingFuelKind.Wood ? StarterFuel.PieceMass : kind == StartingFuelKind.Rag ? 0.05f
                 : EmptyMass(kind) + ContainerCapacity * ContentMass(kind);
             spec.preventNestedGrabWhenUnGrabbed = false;
+            var grab = VrGrab(kind);
+            spec.controllerAttachMethod = grab.Attach;
+            spec.precisionGrab = true;
+            spec.itemUseApproach = grab.Use;
+            spec.interactionPriority = grab.Priority;
             // Not a shovel: no shovel mount, hanger, or belt; no coal; its own knock.
             spec.allowedSnapPointTypes = DV.CabControls.Spec.SnapPointTypes.None;
             spec.coalAmount = 0f;
@@ -315,9 +336,9 @@ namespace RealisticFiring.Items
             SingletonBehaviour<StorageController>.Instance.AddItemToWorldStorage(item);
         }
 
-        // A held container's use: a piece out on top of it, for VR hands and
-        // anyone carrying it (a grounded one hands a piece straight to the
-        // hand, StartingFuelTake).
+        // A held container's use: a piece out on top of it, for VR hands (the
+        // trigger, VrGrab) and anyone carrying it (a grounded one hands a
+        // piece straight to the hand, StartingFuelTake).
         private void Use()
         {
             if (!FireStartingItems.IsContainer(Kind)) return;

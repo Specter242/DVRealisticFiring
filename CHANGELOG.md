@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.19.0 (2026-11-13)
+
+- **The fire in the firebox looks far more like a real one.** The coal is
+  broken lumps, blocks and slabs with sharp edges, where it looked like
+  smooth pebbles. A burning bed glows from its gaps under dark-crusted
+  lumps; fresh coal lies on it black, in patches, and smokes. A fire you
+  have just fired fills the box with flame, burned-down coke burns short,
+  and a fire driven flat out is white and hard to look into. The walls are
+  lit by the fire and show their staybolts and soot, cinders fly up through
+  the flames, and the flames no longer sparkle with grain.
+- **New: a brick arch in the S282's and S060's fireboxes.** Lean in low
+  at the door and look up: firebrick over the front of the grate, on two
+  arch tubes in the S282 and sprung across the box in the S060. The bricks
+  are worn and glow with the fire under them, heating and cooling over
+  minutes. The flames at the front stay under them, and under a working
+  fire they bend back along the bricks and curl up round the arch's edge.
+- **The chimney's exhaust looks more like the real thing.** Each beat's
+  steam leaves as a burst that dies away, where it left all at once: at
+  slow, hard beats the plume starts at the stack's rim, not some metres
+  over it. In damp air its steam is white from the rim up, and a smoky
+  start no longer comes out of the stack in two colors.
+- **New: Auto smoke quality.** Smoke quality has a fourth choice. Auto
+  draws the smoke at High and lowers it only while the game runs under 45
+  frames a second with smoke in the air and the lower quality helps, then
+  raises it again when the game runs well. High is still the default.
+- Firebox quality Medium and Low now draw the flames at half resolution
+  instead of thinning them out. On Medium, leaning into the firebox costs
+  about a third less than on High.
+- Looking into the fire costs less: about 1 ms a frame less on a laptop,
+  and leaning in close to a low, smoky fire up to a fifth less.
+- The shed stands cost no frame time while you are away from them.
+- The steam around the engine is drawn behind the chimney's smoke where
+  it is behind it, where it showed in front of the smoke from every side.
+- With the fire out or burning low, the inside of the firebox is no longer
+  brighter than the cab around it.
+- Fixed: flames could show under the cab from outside after the fire
+  door had been opened on a smoky fire.
+- Fixed (VR): wood and rags can be taken from their crate and tin. Hold one
+  and pull the trigger, and a piece comes out on top for your other hand.
+  The crate, tin, wood, and rags are carried in one hand.
+- Fixed (multiplayer): firewood crates and rag tins appear for every player,
+  not only where the host has been.
+- Fixed (VR): the S282's injector water wheel stays where you leave it, and
+  your hand holds the injector steam lever where you grab it, not at its top.
+- Fixed (multiplayer): the host could be told a player's Realistic Firing
+  hadn't answered when it had, even after leaving the session. The message
+  now says what to check: Realistic Firing missing, or another version.
+
 ## 1.18.0 (2026-11-11)
 
 - **New: light a cold coal fire with wood and an oiled rag.** Free firewood

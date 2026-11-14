@@ -76,6 +76,13 @@ namespace RealisticFiring.Shed
             {
                 if (Hoses.Count == 0 || !Hoses.TryGetValue(__instance, out var lying) || lying.Rope == null)
                     return;
+                var start = Diagnostics.PerfMeter.Start();
+                try { LayFinished(lying, dependsOn); }
+                finally { Diagnostics.PerfMeter.Stop(Diagnostics.PerfSection.ShedHoses, start); }
+            }
+
+            private static void LayFinished(Lying lying, JobHandle dependsOn)
+            {
                 // Only a hose near the player, its rope's step finished here
                 // for it: further off the rope's own floor holds it.
                 if (PlayerManager.PlayerTransform != null

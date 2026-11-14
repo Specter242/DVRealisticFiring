@@ -18,18 +18,31 @@ namespace RealisticFiring.Visuals
         private static readonly int DoorId = Shader.PropertyToID("_FireDoor");
         private static readonly int DoorLightId = Shader.PropertyToID("_FireDoorLight");
         private static readonly int DebugId = Shader.PropertyToID("_FireDebug");
+        private static readonly int BedOriginId = Shader.PropertyToID("_FireBedOrigin");
+        private static readonly int BedAcrossId = Shader.PropertyToID("_FireBedAcross");
+        private static readonly int BedAlongId = Shader.PropertyToID("_FireBedAlong");
+        private static readonly int StayboltsId = Shader.PropertyToID("_Staybolts");
+        private static readonly int SootId = Shader.PropertyToID("_Soot");
         private static readonly int LightScaleId = Shader.PropertyToID("_FireLightScale");
         private static readonly int GlowStrengthId = Shader.PropertyToID("_GlowStrength");
         private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
         private static readonly int BumpMapId = Shader.PropertyToID("_BumpMap");
         private static readonly int CutoffId = Shader.PropertyToID("_Cutoff");
+        private static readonly int ArchCornerId = Shader.PropertyToID("_FireArchCorner");
+        private static readonly int ArchAcrossId = Shader.PropertyToID("_FireArchAcross");
+        private static readonly int ArchAlongId = Shader.PropertyToID("_FireArchAlong");
+        private static readonly int ArchUpId = Shader.PropertyToID("_FireArchUp");
+        private static readonly int ArchGlowId = Shader.PropertyToID("_FireArchGlow");
 
         // A glowing zone's radiance against its heat, as the bed draws its glow
         // there on average (CoalBed: the glow's color, how much of the zone
         // glows, and its strength); and the flames' light against their
         // strength and height. Both to be set against footage on the test bed.
         internal static float BedLight = 1f;
+        // How much of a burning zone, seen from the box, is its bright gaps
+        // and the lumps' glowing feet; the rest is their darker caps.
+        internal static float GapShare = 0.25f;
         internal static float FlameLight = 0.6f;
 
         // How bright the bed's glow draws (CoalBed's strength), and so the
@@ -40,13 +53,18 @@ namespace RealisticFiring.Visuals
         internal static float EmberGlow = 0.7f;
         internal static float FlameLightHeat = 0.6f;
 
-        internal static float WallLight = 0.03f;
+        internal static float WallLight = 0.18f;
         internal static float CoalLight = 0.08f;
 
         internal static float DoorLight = 5f;
         internal static float DoorDaylight = 0.2f;
         internal static float DoorBounce = 0.15f;
         internal static float S060Light = 1.6f;
+
+        // Staybolt heads on the box's sheets, 0 none to 1 (FireboxWall).
+        internal static float Staybolts = 1f;
+        // Soot up the box's sheets and on its crown, 0 none to 1.
+        internal static float Soot = 1f;
 
         // An alpha-tested or blended stock material's holes (the tube plate's
         // tubes) are cut where its alpha falls under this.
@@ -58,6 +76,7 @@ namespace RealisticFiring.Visuals
         private FireboxFlames flames;
         private FireboxVolume volume;
         private CoalLumps lumps;
+        private BrickArch arch;
         private readonly List<(Renderer Renderer, Material[] Stock, Material[] Lit)> taken = new List<(Renderer, Material[], Material[])>();
         private Renderer[] stockEmissive;
         private bool showing;
@@ -89,6 +108,7 @@ namespace RealisticFiring.Visuals
             lighting.bed = bed;
             lighting.firebox = firebox;
             lighting.flames = fire.GetComponent<FireboxFlames>();
+            lighting.arch = fire.GetComponent<BrickArch>();
             lighting.block = new MaterialPropertyBlock();
             lighting.stockEmissive = fire.emissiveRenderersAffectedByFire;
             foreach (var renderer in BoxRenderers(fire, bed))
@@ -168,6 +188,10 @@ namespace RealisticFiring.Visuals
                 lumps = fire != null ? fire.GetComponent<CoalLumps>() : null;
             if (lumps != null && lumps.Renderer != null)
                 Apply(lumps.Renderer, CoalLight * gain);
+            // The brick arch: paler than the sheets, with no staybolts, and
+            // too hot under the fire to hold soot.
+            if (arch != null && arch.Renderer != null)
+                Apply(arch.Renderer, BrickArch.ArchLight * gain, bolts: 0f, soot: 0f);
             Extra.RemoveAll(r => r == null);
             foreach (var renderer in Extra)
                 if (renderer.gameObject.activeInHierarchy) Apply(renderer, CoalLight * gain);
@@ -210,6 +234,11 @@ namespace RealisticFiring.Visuals
             var along = bed.BedPoint(0f, 1f, 0f) - origin;
             var up = (bed.BedPoint(0.5f, 0.5f, 1f) - bed.BedPoint(0.5f, 0.5f, 0f)).normalized;
             var area = across.magnitude * along.magnitude / GrateLayout.ZoneCount;
+            bedOrigin = origin;
+            bedAcross = across.normalized;
+            bedAcross.w = across.magnitude;
+            bedAlong = along.normalized;
+            bedAlong.w = along.magnitude;
             var pulse = flames != null ? flames.Pulse : 0f;
             var lit = false;
             light = 0f;
@@ -224,7 +253,7 @@ namespace RealisticFiring.Visuals
                 // Wood's glowing char lights the box as embers do, under its flames.
                 var starter = firebox.Model.Starters[i];
                 if (starter.EmberGlow > 0f)
-                    glow += ZoneGlow(0.45f * starter.EmberGlow, 0f) * (BedGlow * BedLight);
+                    glow += CharGlow(0.45f * starter.EmberGlow) * (BedGlow * BedLight);
                 zoneLight[i] = new Vector4(glow.r, glow.g, glow.b, 0f);
 
                 // Use the same firelight with the door open or shut, even
@@ -242,6 +271,9 @@ namespace RealisticFiring.Visuals
                     strength = Mathf.Max(strength, 0.8f * wood);
                     height = Mathf.Max(height, WoodFlame.Top(starter, wood));
                 }
+                // Under the brick arch the flames stand no higher than its bricks.
+                if (arch != null)
+                    height = Mathf.Min(height, arch.Room(surface));
                 var middle = surface + up * (0.5f * height * (1f + 0.3f * pulse));
                 flamePlaces[i] = new Vector4(middle.x, middle.y, middle.z, Mathf.Max(0.08f, 0.5f * height));
                 var flame = FireColors.Flame(FlameLightHeat) * (strength * height * FlameLight * (1f + 0.5f * pulse));
@@ -252,7 +284,47 @@ namespace RealisticFiring.Visuals
                 lit |= glow.maxColorComponent > 0f || strength > 0f;
             }
             grateUp = new Vector4(up.x, up.y, up.z, lit ? 1f : 0f);
+            // The arch's underside, for its shadow on what stands over it.
+            archCorner = archAcross = archAlong = archUp = archGlow = Vector4.zero;
+            if (arch != null && arch.Renderer != null && arch.Renderer.enabled)
+            {
+                arch.Underside(out var corner, out var acrossArch, out var alongArch, out var upArch);
+                archCorner = new Vector4(corner.x, corner.y, corner.z, 1f);
+                archAcross = new Vector4(acrossArch.x, acrossArch.y, acrossArch.z, 1f / Mathf.Max(acrossArch.sqrMagnitude, 1e-6f));
+                archAlong = new Vector4(alongArch.x, alongArch.y, alongArch.z, 1f / Mathf.Max(alongArch.sqrMagnitude, 1e-6f));
+                archUp = new Vector4(upArch.x, upArch.y, upArch.z, BrickArch.ArchShadow);
+                // And the bricks' own light on what lies under and beside
+                // them: their glow, and the fire's light they give back.
+                var middle = corner + 0.5f * (acrossArch + alongArch);
+                var gain = firebox.Car?.carLivery?.id == "LocoS060" ? S060Light : 1f;
+                var radiance = FireColors.At(Mathf.Clamp01(0.93f * arch.Heat)) * BrickArch.ArchGlow
+                               + LightAt(middle, -upArch) * (BrickArch.ArchLight * gain * BrickArch.ArchAlbedo);
+                archGlow = new Vector4(radiance.r, radiance.g, radiance.b, 0f);
+            }
             MeasureDoor();
+        }
+
+        // The fire's light on a surface at a point facing a way, over pi, as
+        // the shaders sum it (FireLight in FireLight.cginc).
+        private Color LightAt(Vector3 point, Vector3 normal)
+        {
+            const float sideGlow = 0.35f;
+            var up = (Vector3)grateUp;
+            var sum = Color.black;
+            for (var i = 0; i < GrateLayout.ZoneCount; i++)
+            {
+                var toZone = (Vector3)zones[i] - point;
+                var zone2 = Mathf.Max(toZone.sqrMagnitude, 1e-4f);
+                var l = toZone / Mathf.Sqrt(zone2);
+                var area = zones[i].w;
+                var emitting = sideGlow + (1f - sideGlow) * Mathf.Clamp01(Vector3.Dot(up, -l));
+                sum += (Color)zoneLight[i] * (area * Mathf.Clamp01(Vector3.Dot(normal, l)) * emitting / (Mathf.PI * zone2 + area));
+                var toFlame = (Vector3)flamePlaces[i] - point;
+                var flame2 = Mathf.Max(toFlame.sqrMagnitude, 1e-4f);
+                var radius = flamePlaces[i].w;
+                sum += (Color)flameLight[i] * (Mathf.Clamp01(Vector3.Dot(normal, toFlame / Mathf.Sqrt(flame2))) / (flame2 + radius * radius));
+            }
+            return sum * grateUp.w;
         }
 
         // The open firehole and the cab's light at it, looking out into the
@@ -289,6 +361,14 @@ namespace RealisticFiring.Visuals
         private readonly Color[] cabLight = new Color[1];
 
         private Vector4 grateUp;
+        private Vector4 bedOrigin;
+        private Vector4 bedAcross;
+        private Vector4 bedAlong;
+        private Vector4 archCorner;
+        private Vector4 archAcross;
+        private Vector4 archAlong;
+        private Vector4 archUp;
+        private Vector4 archGlow;
 
         // The fire's light this frame, its zones' glow and flames on average.
         private float light;
@@ -301,7 +381,7 @@ namespace RealisticFiring.Visuals
             $"fill {fire.fillLight?.intensity:F3} rgb {fire.fillLight?.color.r:F3}/{fire.fillLight?.color.g:F3}/{fire.fillLight?.color.b:F3}, " +
             $"bounce {fire.bounceLight?.intensity:F3} rgb {fire.bounceLight?.color.r:F3}/{fire.bounceLight?.color.g:F3}/{fire.bounceLight?.color.b:F3}";
 
-        private void Apply(Renderer renderer, float scale, float glow = -1f)
+        private void Apply(Renderer renderer, float scale, float glow = -1f, float bolts = 1f, float soot = 1f)
         {
             if (renderer == null)
                 return;
@@ -311,6 +391,16 @@ namespace RealisticFiring.Visuals
             block.SetVectorArray(FlamesId, flamePlaces);
             block.SetVectorArray(FlameLightId, flameLight);
             block.SetVector(GrateUpId, grateUp);
+            block.SetVector(BedOriginId, bedOrigin);
+            block.SetVector(BedAcrossId, bedAcross);
+            block.SetVector(BedAlongId, bedAlong);
+            block.SetFloat(StayboltsId, Mathf.Clamp01(Staybolts) * bolts);
+            block.SetFloat(SootId, Mathf.Clamp01(Soot) * soot);
+            block.SetVector(ArchCornerId, archCorner);
+            block.SetVector(ArchAcrossId, archAcross);
+            block.SetVector(ArchAlongId, archAlong);
+            block.SetVector(ArchUpId, archUp);
+            block.SetVector(ArchGlowId, archGlow);
             block.SetVector(DoorId, door);
             block.SetVector(DoorLightId, doorLight);
             block.SetFloat(DebugId, FireboxTestBed.Enabled ? FireboxTestBed.LightView : 0);
@@ -321,20 +411,29 @@ namespace RealisticFiring.Visuals
         }
 
         /// <summary>
-        /// A zone's glow, its radiance on average as the bed draws it
-        /// (the fire's color and CoalBed's strength, over the share of the zone
-        /// glowing: the gaps first, then the lumps, all of it white-hot),
-        /// dimmed where green coal lies dark on it.
+        /// A zone's glow, its radiance on average as the bed and its lumps
+        /// draw it (the gaps at the bed's core heat, the lumps' caps cooler
+        /// until the zone nears white heat), dimmed where green coal lies
+        /// dark on it.
         /// </summary>
         internal static Color ZoneGlow(float heat, float cover)
         {
             if (!(heat > 0.001f))
                 return Color.black;
-            var local = Mathf.Clamp01(heat) * (1f - 0.4f * cover);
+            // The gaps and the lumps' feet at the bed's core heat, a share of
+            // what the box sees of the bed; the lumps' caps, cooler, the rest.
+            var cap = Mathf.Clamp01(heat) * Mathf.Lerp(FireColors.CapHeat, 0.85f, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.9f, 1f, heat)));
+            var glow = FireColors.At(FireColors.CoreHeat(heat)) * GapShare + FireColors.At(cap) * (1f - GapShare);
+            return glow * (1f - 0.5f * cover);
+        }
+
+        // Wood's glowing char, by its own heat: no deep bed burns under it.
+        private static Color CharGlow(float heat)
+        {
+            if (!(heat > 0.001f))
+                return Color.black;
             var forced = heat * heat * heat;
-            // The gaps glow first; the lumps' caps, dimmer, only when hot.
-            var glowing = Mathf.Clamp01(0.25f + 0.45f * heat);
-            return FireColors.At(local) * (glowing * (0.4f + 1.2f * heat + 0.8f * forced * forced) * (1f - 0.5f * cover));
+            return FireColors.At(Mathf.Clamp01(heat)) * (Mathf.Clamp01(0.25f + 0.45f * heat) * (0.4f + 1.2f * heat + 0.8f * forced * forced));
         }
 
         private void OnDestroy()

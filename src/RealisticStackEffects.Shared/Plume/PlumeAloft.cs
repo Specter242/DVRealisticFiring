@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using RealisticStackEffects.Core;
 using UnityEngine;
@@ -59,6 +60,15 @@ namespace RealisticStackEffects
             public float SpreadAge;
             // When it was last carried aloft, by the game's clock, s (0: not yet).
             public float CarriedAt;
+            // Its place across the plume, in the unit ball (PlumeParcels.Roll
+            // turns it over), and how far from the plume's middle it has
+            // been set by it, m.
+            public Vector3 Place;
+            public bool Placed;
+            public Vector3 Offset;
+            // Where it was last to be set, and the velocity it was given to get there.
+            public Vector3 Set;
+            public Vector3 Outward;
         }
 
         /// <summary>
@@ -87,6 +97,20 @@ namespace RealisticStackEffects
             internal bool Retiring;
             // The last cycle it was seen in: forgotten when a whole cycle passes without it.
             internal int Cycle;
+            // Whose it is while it is kept (0 once forgotten): a record found
+            // by its particle's place in the buffer is the particle's only
+            // with its seed.
+            internal uint Seed;
+            // What its seed alone gives the shader's values, worked out once:
+            // its wisp's row and start, its turn at birth and which way it
+            // spins, where its puff's roll starts and its pace, its puff.
+            internal float Wisp;
+            internal float TurnFrom;
+            internal float TurnWay;
+            internal float RollFrom;
+            internal float RollPace;
+            internal float Puff;
+            internal bool Mirrored;
         }
 
         private static readonly Color SteamColor = new Color(PlumeModel.Steam.R, PlumeModel.Steam.G, PlumeModel.Steam.B);
@@ -232,7 +256,56 @@ namespace RealisticStackEffects
 
             /// <summary>The stack's mouth's height on <see cref="Up"/>: a roof holds smoke down to no lower.</summary>
             public float Floor;
+
+            /// <summary>
+            /// The plume as parcels that carry their smoke (<see cref="PlumeParcels"/>),
+            /// above 0.5: a particle a lump <see cref="Lump"/> of the plume's
+            /// envelope across (no smaller than <see cref="LeastLump"/> m
+            /// shown, nor larger than the envelope), <see cref="LumpsAcross"/>
+            /// kept in each envelope's length, each carrying its depth over
+            /// <see cref="ParcelArea"/> m², a light haze's smoke
+            /// <see cref="LightSmoke"/> of that.
+            /// </summary>
+            public float Parcels;
+
+            /// <summary>The stack's bore, m, and the bore diameters over the lip by which the white has formed across the jet (<see cref="SteamCloud.Sheath"/>).</summary>
+            public float Bore;
+            public float WhiteByHeight;
+            public float Lump;
+            public float LeastLump;
+            public float LumpsAcross;
+            public float ParcelArea;
+            public float LightSmoke;
+
+            /// <summary>Black smoke's amount, × steam's for the same depth in the model.</summary>
+            public float DenseSmoke;
+
+            /// <summary>
+            /// How hard the beats are now, 0 to 1 (a particle keeps what it
+            /// left on: <see cref="HardOf"/>), and how far a hard beat
+            /// billows out as its blast is spent: this much wider, m, for
+            /// each metre from the lip, over the jet's length, m.
+            /// </summary>
+            public float BeatHard;
+            public float BlastSpread;
+            public float JetLength;
+
+            /// <summary>The exhaust's neck over the lip, m: it holds the bore's width this far before it billows.</summary>
+            public float Neck;
+
+            /// <summary>How fast the plume's lumps turn over within it, × its rise over its half-width (0: each keeps its place).</summary>
+            public float Roll;
+
+            /// <summary>Where the plume's optical depth across is this or less its lumps have mixed into an even haze, and from the next they stand apart.</summary>
+            public float MixedBelow;
+            public float MixedAbove;
         }
+
+        // A particle is moved out to its place across the plume over this long, s.
+        private const float PlaceEase = 0.25f;
+
+        // No particle is moved to its place faster than this, m/s (a hitch's long step).
+        private const float MostPlaceSpeed = 25f;
 
         // A renderer draws a particle no bigger than this share of the view.
         private const float MaxScreenShare = 4f;
@@ -247,6 +320,21 @@ namespace RealisticStackEffects
 
         private const float ShapeAgeStep = 0.5f;
         private const int ShapeAges = 240;
+
+        /// <summary>
+        /// The plume's middle at each age it was last found at, youngest
+        /// first, into <paramref name="into"/> from <paramref name="from"/>
+        /// on, in its particles' own space; how many. For what is drawn
+        /// with the plume to be put before or after it (SteamVents).
+        /// </summary>
+        public int Middles(Vector3[] into, int from)
+        {
+            var n = 0;
+            for (var i = 0; i < ShapeAges && from + n < into.Length; i++)
+                if (middleKnown[i])
+                    into[from + n++] = middle[i];
+            return n;
+        }
         private const int FewestForMiddle = 3;
         // How many bands either side a particle's middle is looked for in.
         private const int MiddleReach = 4;
@@ -285,6 +373,18 @@ namespace RealisticStackEffects
         {
             var turned = ease > 0f ? ease * Mathf.Log(1f + age / ease) : age;
             return Hash(seed ^ 0x9e3779b9u) * 2f * Mathf.PI + (2f * Hash(seed ^ 0x7f4a7c15u) - 1f) * spin * turned;
+        }
+
+        /// <summary>
+        /// A rolling particle's first custom data (see ChimneyPlume.Carry):
+        /// its wisp, its turn at <paramref name="age"/> s (WispTurn), how
+        /// <paramref name="hard"/> its beat was, and how far through the
+        /// flipbook it is.
+        /// </summary>
+        public Vector4 WispOf(Record record, float age, float spin, float ease, float hard)
+        {
+            var turned = ease > 0f ? ease * Mathf.Log(1f + age / ease) : age;
+            return new Vector4(record.Wisp, record.TurnFrom + record.TurnWay * spin * turned, hard, FlipbookAt(Mathf.Max(0f, age)));
         }
 
         /// <summary>How hard the beat was that <paramref name="record"/>'s particle left on: <paramref name="now"/>'s, the first time it is asked.</summary>
@@ -330,7 +430,7 @@ namespace RealisticStackEffects
         /// its thin edge frays into strands, which over the plume's faces
         /// turned toward the view veiled its lobes.
         /// </summary>
-        public Vector4 ExtraOf(Record record, uint seed, float age, Vector3 position)
+        public Vector4 ExtraOf(Record record, float age, Vector3 position)
         {
             age = Mathf.Max(0f, age);
             var onset = air.BillowAge > 0f ? Mathf.SmoothStep(0f, 1f, age / air.BillowAge) : 1f;
@@ -340,10 +440,9 @@ namespace RealisticStackEffects
             {
                 // Each its own puff, mirrored or not, from its own place in
                 // the loop; fast off the jet, slowing as its eddies spend.
-                puff = Mathf.Min(air.Puffs - 1, Mathf.Floor(Hash(seed ^ 0x68e31da4u) * air.Puffs))
-                       + (Hash(seed ^ 0xb5297a4du) < 0.5f ? 0.5f : 0f);
+                puff = Mathf.Min(air.Puffs - 1, Mathf.Floor(record.Puff * air.Puffs)) + (record.Mirrored ? 0.5f : 0f);
                 // Each at its own pace, so puffs of an age do not turn together.
-                roll = Hash(seed ^ 0x1b56c4e9u) + Rolled(age, air.RollRate, air.RollSlows) * (0.7f + 0.6f * Hash(seed ^ 0x2545f491u));
+                roll = record.RollFrom + Rolled(age, air.RollRate, air.RollSlows) * record.RollPace;
             }
             var shade = record.ShadeRound == shadeRound ? record.Shade : 0f;
             if (air.Puffs > 0)
@@ -385,6 +484,15 @@ namespace RealisticStackEffects
         /// <summary>The record of the particle last carried.</summary>
         public Record Last { get; private set; }
 
+        // Each particle's record by its place in the system's buffer, as the last pass left them.
+        private Record[] placed = new Record[0];
+
+        /// <summary>The record of the particle kept at <paramref name="place"/> this pass.</summary>
+        public Record At(int place) => placed[place];
+
+        /// <summary>Keeps the particle last carried at <paramref name="place"/> in the buffer: never past the place it was read from.</summary>
+        public void Keep(int place) => placed[place] = Last;
+
         private Record Fresh(uint seed, Parcel parcel)
         {
             var record = spare.Count > 0 ? spare.Pop() : new Record();
@@ -398,6 +506,14 @@ namespace RealisticStackEffects
             record.Hard = float.NaN;
             record.Retiring = false;
             record.Cycle = cycle;
+            record.Seed = seed;
+            record.Wisp = WispRow(seed) + 0.49f * WispPhase(seed);
+            record.TurnFrom = Hash(seed ^ 0x9e3779b9u) * 2f * Mathf.PI;
+            record.TurnWay = 2f * Hash(seed ^ 0x7f4a7c15u) - 1f;
+            record.RollFrom = Hash(seed ^ 0x1b56c4e9u);
+            record.RollPace = 0.7f + 0.6f * Hash(seed ^ 0x2545f491u);
+            record.Puff = Hash(seed ^ 0x68e31da4u);
+            record.Mirrored = Hash(seed ^ 0xb5297a4du) < 0.5f;
             records[seed] = record;
             return record;
         }
@@ -510,8 +626,10 @@ namespace RealisticStackEffects
             }).Cycle = cycle + 1;
         }
 
-        public void Begin(Air frame)
+        public void Begin(Air frame, int count)
         {
+            if (placed.Length < count)
+                Array.Resize(ref placed, Mathf.NextPowerOfTwo(count));
             var dt = Mathf.Max(frame.Elapsed, 1e-4f);
             emissionRate += (emitted / dt - emissionRate) * (1f - Mathf.Exp(-dt / RateSmoothing));
             emitted = 0;
@@ -545,7 +663,7 @@ namespace RealisticStackEffects
         /// particle on its turn needs): by its age, or still fading in, or
         /// fading out, or first seen. Else the game moves it as it is.
         /// </summary>
-        public bool Turn(ref ParticleSystem.Particle particle, bool inStack)
+        public bool Turn(ref ParticleSystem.Particle particle, bool inStack, int place)
         {
             var age = Mathf.Max(0f, particle.startLifetime - particle.remainingLifetime);
             var seed = particle.randomSeed;
@@ -558,7 +676,10 @@ namespace RealisticStackEffects
                 middleCount[band]++;
             }
             turnAge = age;
-            if (records.TryGetValue(seed, out var record))
+            // The record that stood at its place last pass is its own unless
+            // a particle before it has gone since: then found by its seed.
+            var record = place < placed.Length ? placed[place] : null;
+            if (record != null && record.Seed == seed && seed != 0 || records.TryGetValue(seed, out record))
             {
                 if (record.Cycle < cycle)
                     record.Cycle = cycle;
@@ -591,7 +712,7 @@ namespace RealisticStackEffects
         /// only its size and fade (the caller moves it). False when it is
         /// retired.
         /// </summary>
-        public bool Work(ref ParticleSystem.Particle particle, float height, float least, float widest, bool inStack)
+        public bool Work(ref ParticleSystem.Particle particle, float height, float least, float widest, bool inStack, float away = 0f)
         {
             var age = turnAge;
             var seed = particle.randomSeed;
@@ -620,8 +741,12 @@ namespace RealisticStackEffects
                 var smokeAtLip = record.SmokeAtLip;
                 var steamAtLip = PlumeRise.OpacityOf(formed, 0f);
                 Remember(record, 1f - (1f - steamAtLip) * (1f - smokeAtLip), particle.startSize);
-                shown = Drawn(steamAtLip, smokeAtLip,
-                    particle.startSize, 1f, (particle.velocity - air.Train).magnitude, AsSteam(smokeAtLip), parcel.Rate);
+                shown = air.Parcels > 0.5f
+                    ? PlumeParcels.Opacity(PlumeParcels.Depth(formed, air.ParcelArea, particle.startSize, 1f)
+                                           + PlumeParcels.Depth(parcel.Thickness.SmokeDepth,
+                                               air.ParcelArea * PlumeParcels.SmokeAmount(AsSteam(smokeAtLip), air.LightSmoke, air.DenseSmoke), particle.startSize, 1f))
+                    : Drawn(steamAtLip, smokeAtLip,
+                        particle.startSize, 1f, (particle.velocity - air.Train).magnitude, AsSteam(smokeAtLip), parcel.Rate);
                 if (whole > 1e-4f)
                     color = Color.Lerp(SteamColor, parcel.SmokeColor, PlumeModel.SmokeTint(parcel.Thickness.SmokeDepth / whole));
                 if (onTurn)
@@ -663,7 +788,8 @@ namespace RealisticStackEffects
                 var stir = Stir(particle.position, height, rise, now) * air.Eddies;
                 // White steam tinted by its smoke, turning the smoke's color
                 // as the steam evaporates (as its puff was tinted at the stack).
-                var steam = PlumeRise.SteamLeft(parcel.Thickness, cloud, age, air.Speed, air.Mixing, air.Forming);
+                var steam = PlumeRise.SteamLeft(parcel.Thickness, cloud, age, air.Speed, air.Mixing, air.Forming,
+                    SteamCloud.Sheath(height, air.Bore, air.WhiteByHeight));
                 var depth = steam + parcel.Thickness.SmokeDepth;
                 var plumeShown = PlumeRise.OpacityAt(depth, dilution);
                 shown = plumeShown;
@@ -673,6 +799,72 @@ namespace RealisticStackEffects
                 var fill = Mathf.Lerp(air.FillWidth, air.SmokeFillWidth, asSteam);
                 var steamHere = PlumeRise.OpacityAt(steam, dilution);
                 var here = 1f - (1f - steamHere) * (1f - smokeHere);
+                // As parcels: a lump of the plume, set across it, only as
+                // many kept as fill it, each its own amount and its retired
+                // neighbors' over the disc it shows (PlumeParcels).
+                var parcels = air.Parcels > 0.5f;
+                var lumpSize = 0f;
+                if (parcels)
+                {
+                    // A hard beat billows out as its blast is spent, within
+                    // a few metres of the lip (the photos' working beats, 5
+                    // to 10 bores wide 2 to 3 m up), and keeps that width.
+                    var envelope = PlumeParcels.Envelope(width, PlumeParcels.ShownShare * least)
+                                   + air.BlastSpread * HardOf(record, air.BeatHard) * Mathf.Clamp(away - air.Neck, 0f, air.JetLength);
+                    // Its place across the plume, any way out from its
+                    // middle, turning over within it as the plume rolls.
+                    if (!parcel.Placed)
+                    {
+                        parcel.Placed = true;
+                        parcel.Place = Way(seed) * PlumeParcels.Out(Hash(seed ^ 0x27d4eb2du));
+                    }
+                    if (air.Roll > 0f && !under)
+                    {
+                        var axial = Vector3.Dot(parcel.Place, air.Up);
+                        var out3 = parcel.Place - air.Up * axial;
+                        var radial = out3.magnitude;
+                        PlumeParcels.Roll(axial, radial, out var axialRate, out var radialRate);
+                        var turned = Mathf.Min(0.5f, air.Roll * rise / Mathf.Max(0.5f, 0.5f * envelope) * since);
+                        var placed = parcel.Place + (air.Up * axialRate + (radial > 1e-4f ? out3 / radial : Vector3.zero) * radialRate) * turned;
+                        parcel.Place = placed.sqrMagnitude > 1f ? placed.normalized : placed;
+                    }
+                    // It moves on at its own speed while its blast lasts.
+                    var moving = Mathf.Max(Mathf.Max(1f, (particle.velocity - still).magnitude), Mathf.Max(airSpeed, rise));
+                    // How thick the plume is across here, from what left the
+                    // stack: thin, its lumps have mixed into an even haze.
+                    var amount = air.ParcelArea * (steam + parcel.Thickness.SmokeDepth * PlumeParcels.SmokeAmount(asSteam, air.LightSmoke, air.DenseSmoke));
+                    var acrossDepth = PlumeParcels.AcrossDepth(amount, parcel.Rate, moving, envelope);
+                    var mixed = 1f - Mathf.SmoothStep(0f, 1f, (acrossDepth - air.MixedBelow) / Mathf.Max(0.01f, air.MixedAbove - air.MixedBelow));
+                    // A lump of it: larger in the plume's middle, its body,
+                    // and smaller at its rim, its lobes; no smaller than the
+                    // least, nor larger than the plume.
+                    var lump = PlumeParcels.Lump(air.Lump, parcel.Place.magnitude, mixed) * Mathf.Lerp(0.9f, 1.1f, Hash(seed ^ 0x9e3779b9u));
+                    lump = Mathf.Clamp(lump * envelope, Mathf.Min(envelope, air.LeastLump), envelope) / Mathf.Max(1e-3f, envelope);
+                    // As many as fill it where its lumps are their share of
+                    // it: nearer the lip, where a lump is the column's width,
+                    // fewer would do, but those retired there would be missed
+                    // above, where it widens. Mixed, fewer fill it.
+                    var wanted = air.LumpsAcross * Mathf.Lerp(1f, PlumeParcels.MixedShare, mixed);
+                    survival = PlumeParcels.Kept(Mathf.Max(envelope, air.LeastLump / Mathf.Max(0.05f, air.Lump)), moving, parcel.Rate, wanted);
+                    // Its size is the plume's there: not held narrow while fast.
+                    lumpSize = PlumeParcels.Size(envelope, lump);
+                    var steamDepth = PlumeParcels.Depth(steam, air.ParcelArea, lumpSize, survival);
+                    var smokeDepth = PlumeParcels.Depth(parcel.Thickness.SmokeDepth,
+                        air.ParcelArea * PlumeParcels.SmokeAmount(asSteam, air.LightSmoke, air.DenseSmoke), lumpSize, survival);
+                    steamHere = PlumeParcels.Opacity(steamDepth);
+                    smokeHere = PlumeParcels.Opacity(smokeDepth);
+                    here = 1f - (1f - steamHere) * (1f - smokeHere);
+                    plumeShown = PlumeParcels.Opacity(acrossDepth);
+                    shown = here;
+                    // Carried there as its place moves (a beat billowing
+                    // out moves its lumps' places at metres a second), and
+                    // the rest of the way over a moment.
+                    var set = parcel.Place * PlumeParcels.Offset(envelope, lump, 1f);
+                    outward = Vector3.ClampMagnitude(
+                        (set - parcel.Offset) / Mathf.Max(since, PlaceEase) + (set - parcel.Set) / Mathf.Max(since, 0.01f), MostPlaceSpeed);
+                    parcel.Set = set;
+                    parcel.Offset += outward * since;
+                }
                 var wisp = air.WispAgeTo > air.WispAgeFrom
                     ? Mathf.SmoothStep(0f, 1f, (FlipbookAt(age) - air.WispAgeFrom) / (air.WispAgeTo - air.WispAgeFrom))
                     : 1f;
@@ -681,16 +873,31 @@ namespace RealisticStackEffects
                 var asWisp = air.Puffs > 0
                     ? Mathf.Max(1f - Mathf.SmoothStep(0f, 1f, (here - air.WispBelow) / Mathf.Max(0.01f, air.WispAbove - air.WispBelow)), wisp)
                     : 0f;
-                var size = Mathf.Min(Mathf.Max(Mathf.Max(grown, width * fill) * narrow, least) * Thinning(shown, asWisp), widest);
+                var size = parcels
+                    ? Mathf.Min(lumpSize * Thinning(shown, asWisp), widest)
+                    : Mathf.Min(Mathf.Max(Mathf.Max(grown, width * fill) * narrow, least) * Thinning(shown, asWisp), widest);
                 Remember(record, here, size);
-                shown = Drawn(steamHere, smokeHere,
-                    size, survival, Mathf.Max(airSpeed, rise), asSteam, parcel.Rate, air.WispShare * wisp);
+                if (!parcels)
+                    shown = Drawn(steamHere, smokeHere,
+                        size, survival, Mathf.Max(airSpeed, rise), asSteam, parcel.Rate, air.WispShare * wisp);
                 if (under)
                     size = Mathf.Min(size, TunnelSmoke.WidestParticle);
                 else
                 {
-                    var target = still + air.Up * rise + outward + stir;
-                    particle.velocity = target + (particle.velocity - target) * keep;
+                    if (parcels)
+                    {
+                        // Its way to its place is given it outright: dragged
+                        // toward as the rest is, it lagged a fast beat's
+                        // billowing by metres, a thin column of beads.
+                        var target = still + air.Up * rise + stir;
+                        particle.velocity = target + (particle.velocity - parcel.Outward - target) * keep + outward;
+                        parcel.Outward = outward;
+                    }
+                    else
+                    {
+                        var target = still + air.Up * rise + outward + stir;
+                        particle.velocity = target + (particle.velocity - target) * keep;
+                    }
                 }
                 particle.startSize = size;
                 if (under)
@@ -772,6 +979,15 @@ namespace RealisticStackEffects
             var outwards = sign * Vector3.Dot(particle.velocity, roof.Across);
             if (outwards > 0f)
                 particle.velocity -= roof.Across * (sign * outwards);
+        }
+
+        // A way out from the plume's middle, evenly over the sphere, by the particle's seed.
+        private static Vector3 Way(uint seed)
+        {
+            var y = 2f * Hash(seed ^ 0x85ebca6bu) - 1f;
+            var turn = 2f * Mathf.PI * Hash(seed ^ 0x5bd1e995u);
+            var flat = Mathf.Sqrt(Mathf.Max(0f, 1f - y * y));
+            return new Vector3(flat * Mathf.Cos(turn), y, flat * Mathf.Sin(turn));
         }
 
         // A particle's opacity drawn, its white steam's <paramref name="steam"/>
@@ -933,7 +1149,9 @@ namespace RealisticStackEffects
                     gone.Add(kept.Key);
             foreach (var seed in gone)
             {
-                spare.Push(records[seed]);
+                var dead = records[seed];
+                dead.Seed = 0;
+                spare.Push(dead);
                 records.Remove(seed);
             }
             cycle++;

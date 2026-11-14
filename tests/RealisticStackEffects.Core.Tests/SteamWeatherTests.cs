@@ -290,4 +290,40 @@ namespace RealisticStackEffects.Core.Tests;
         Assert.True(PlumeModel.Shimmer(Tuning, Working(5f, 0f)) > 0.5f);
         Assert.True(PlumeModel.Shimmer(Tuning, Working(5f, 1f)) < 0.3f);
     }
+
+    [Fact]
+    public void TheWhiteFormsAcrossTheJetByItsHeightHoweverFastItLeft()
+    {
+        var cloud = SteamCloud.Reference;
+        // A hard beat's head, 0.05 s out and already 0.9 m up: by its age barely formed.
+        var byAge = cloud.Left(0.05f, 3.6f, 3f, 1f);
+        var sheath = SteamCloud.Sheath(0.9f, 0.6f, 3f);
+        Assert.Equal(0.5f, sheath, 3);
+
+        Assert.True(byAge < 0.3f, $"by age {byAge}");
+        Assert.Equal(0.5f, cloud.Left(0.05f, 3.6f, 3f, 1f, sheath), 3);
+        // Formed across by three bore diameters up; none in the stack.
+        Assert.Equal(1f, SteamCloud.Sheath(1.8f, 0.6f, 3f), 3);
+        Assert.Equal(0f, SteamCloud.Sheath(-0.2f, 0.6f, 3f), 3);
+        // By its age only when the lengths are none.
+        Assert.Equal(0f, SteamCloud.Sheath(5f, 0.6f, 0f), 3);
+    }
+
+    [Fact]
+    public void TheSheathMakesNoWhiteWhereTheAirLetsNoneForm()
+    {
+        var dry = SteamCloud.For(new PlumeAir(36f, 0.34f), 2f);
+        Assert.Equal(0f, dry.Thickness, 3);
+
+        Assert.Equal(0f, dry.Left(0.5f, 3f, 3f, 1f, 1f), 3);
+    }
+
+    [Fact]
+    public void TheSheathDoesNotKeepSteamThatHasEvaporated()
+    {
+        var cloud = SteamCloud.Reference;
+        var gone = cloud.Lasting(3f, 3f, 0.01f) + 1f;
+
+        Assert.Equal(cloud.Left(gone, 3f, 3f, 1f), cloud.Left(gone, 3f, 3f, 1f, 1f), 4);
+    }
 }

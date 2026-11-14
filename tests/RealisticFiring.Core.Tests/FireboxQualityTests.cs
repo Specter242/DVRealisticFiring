@@ -62,6 +62,26 @@ public class FireboxQualityTests
         Assert.Equal(24f, FireboxSampling.For(FireboxQuality.High, true, false, pixelLoad: load).MaxSteps);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AtHalfResolutionEachQualityTakesItsSamplesTwiceAsCloseWithinTheShadersLimit(bool inside)
+    {
+        var high = FireboxSampling.For(FireboxQuality.High, false, inside, halfResolution: true);
+        var medium = FireboxSampling.For(FireboxQuality.Medium, false, inside, halfResolution: true);
+        var low = FireboxSampling.For(FireboxQuality.Low, false, inside, halfResolution: true);
+        var plain = FireboxSampling.For(FireboxQuality.High, false, inside);
+        var plainMedium = FireboxSampling.For(FireboxQuality.Medium, false, inside);
+
+        Assert.Equal(plain.StepLength / 2f, high.StepLength);
+        Assert.Equal(System.Math.Min(128f, plain.MaxSteps * 2f), high.MaxSteps);
+        Assert.Equal(plain.MaxSteps, medium.MaxSteps);
+        Assert.Equal(plain.StepLength, medium.StepLength);
+        Assert.Equal(plainMedium.MaxSteps, low.MaxSteps);
+        Assert.Equal(plainMedium.StepLength, low.StepLength);
+        Assert.All(new[] { high, medium, low }, s => Assert.InRange(s.MaxSteps, 4f, 128f));
+    }
+
     [Fact]
     public void ShutDoorRetainsItsFireAtEveryQuality()
     {

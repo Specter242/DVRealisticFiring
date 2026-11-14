@@ -123,6 +123,9 @@ namespace RealisticStackEffects
             public uint Seed;
             public bool Shown;
             public SteamCloud Cloud;
+            // Drawn before the plume, as behind it from the eye (PlumeOrder), once placed.
+            public bool Behind;
+            public bool Placed;
         }
 
         private readonly List<Source> sources = new List<Source>();
@@ -131,14 +134,39 @@ namespace RealisticStackEffects
         private ParticleSystem.Particle[] buffer = new ParticleSystem.Particle[256];
         private readonly List<Vector4> shapeData = new List<Vector4>();
         private readonly List<Vector4> extraData = new List<Vector4>();
+        // Those behind the plume, for their own system.
+        private ParticleSystem.Particle[] behindBuffer = new ParticleSystem.Particle[256];
+        private ParticleSystem.Particle[] frontBuffer = new ParticleSystem.Particle[256];
+        private readonly List<Vector4> behindShape = new List<Vector4>();
+        private readonly List<Vector4> behindExtra = new List<Vector4>();
+        // The plume's line this pass, in the parcels' space: the stack's
+        // lip, then its middle at each age, as far as the engine's steam
+        // reaches (the youngest this many, half a second apart). Then each
+        // piece of it from the eye: its start, its length along, and their
+        // products, worked out once a pass for every parcel's look.
+        private const int LinePoints = 32;
+        private readonly Vector3[] plumeLine = new Vector3[LinePoints];
+        private readonly Vector3[] lineFrom = new Vector3[LinePoints];
+        private readonly Vector3[] lineStep = new Vector3[LinePoints];
+        private readonly float[] lineFromSq = new float[LinePoints];
+        private readonly float[] lineFromStep = new float[LinePoints];
+        private readonly float[] lineStepSq = new float[LinePoints];
+        private int pass;
         private readonly Dictionary<long, SteamCloud> clouds = new Dictionary<long, SteamCloud>();
         private PlumeAir cloudsAir;
         private TrainCar car;
         private GameObject root;
+        private GameObject behindRoot;
         private int puffs = 8;
 
-        /// <summary>The particle system the parcels are drawn by.</summary>
+        /// <summary>The particle system the parcels are drawn by: those in front of the plume from the eye, and any with no plume to sort against.</summary>
         public ParticleSystem Drawn { get; private set; }
+
+ public ParticleSystem Behind { get; private set; }
+
+        /// <summary>Whether <paramref name="renderer"/> is one of the two that draw the parcels.</summary>
+        public bool Draws(Renderer renderer) =>
+            renderer != null && (Drawn != null && renderer.gameObject == Drawn.gameObject || Behind != null && renderer.gameObject == Behind.gameObject);
 
         /// <summary>The parcels as particles, the first <see cref="Count"/> of them, for the plume's volume.</summary>
         public ParticleSystem.Particle[] Buffer => buffer;
@@ -163,7 +191,11 @@ namespace RealisticStackEffects
             vents.root = UnityEngine.Object.Instantiate(cloud.gameObject, cloud.transform.parent, false);
             vents.root.name = "Vents";
             vents.Drawn = vents.root.GetComponent<ParticleSystem>();
-            vents.Prepare(cloud);
+            Prepare(vents.Drawn, cloud);
+            vents.behindRoot = UnityEngine.Object.Instantiate(cloud.gameObject, cloud.transform.parent, false);
+            vents.behindRoot.name = "VentsBehind";
+            vents.Behind = vents.behindRoot.GetComponent<ParticleSystem>();
+            Prepare(vents.Behind, cloud);
             vents.Setup = $"steam around the engine from {vents.sources.Count} sources: " +
                           string.Join(", ", vents.sources.GroupBy(s => s.Kind).Select(g => g.Count() > 1 ? $"{g.Key} ×{g.Count()}" : g.Key.ToString()));
             return vents;
@@ -246,9 +278,9 @@ namespace RealisticStackEffects
 
         // The mod sets every particle each frame: nothing of Unity's moves,
         // sizes, tints, or turns them.
-        private void Prepare(ParticleSystem cloud)
+        private static void Prepare(ParticleSystem system, ParticleSystem cloud)
         {
-            var main = Drawn.main;
+            var main = system.main;
             main.maxParticles = MostParcels;
             main.startLifetime = LongestLife * 2f;
             main.gravityModifier = 0f;
@@ -256,33 +288,33 @@ namespace RealisticStackEffects
             main.simulationSpace = cloudMain.simulationSpace;
             if (cloudMain.simulationSpace == ParticleSystemSimulationSpace.Custom)
                 main.customSimulationSpace = cloudMain.customSimulationSpace;
-            var emission = Drawn.emission;
+            var emission = system.emission;
             emission.enabled = false;
-            var size = Drawn.sizeOverLifetime;
+            var size = system.sizeOverLifetime;
             size.enabled = false;
-            var color = Drawn.colorOverLifetime;
+            var color = system.colorOverLifetime;
             color.enabled = false;
-            var noise = Drawn.noise;
+            var noise = system.noise;
             noise.enabled = false;
-            var spin = Drawn.rotationOverLifetime;
+            var spin = system.rotationOverLifetime;
             spin.enabled = false;
-            var bySpeed = Drawn.sizeBySpeed;
+            var bySpeed = system.sizeBySpeed;
             bySpeed.enabled = false;
-            var velocity = Drawn.velocityOverLifetime;
+            var velocity = system.velocityOverLifetime;
             velocity.enabled = false;
-            var limit = Drawn.limitVelocityOverLifetime;
+            var limit = system.limitVelocityOverLifetime;
             limit.enabled = false;
-            var force = Drawn.forceOverLifetime;
+            var force = system.forceOverLifetime;
             force.enabled = false;
-            var inherit = Drawn.inheritVelocity;
+            var inherit = system.inheritVelocity;
             inherit.enabled = false;
-            var external = Drawn.externalForces;
+            var external = system.externalForces;
             external.enabled = false;
-            var renderer = Drawn.GetComponent<ParticleSystemRenderer>();
+            var renderer = system.GetComponent<ParticleSystemRenderer>();
             if (renderer != null)
                 renderer.sortMode = ParticleSystemSortMode.Distance;
-            Drawn.Clear();
-            Drawn.Play();
+            system.Clear();
+            system.Play();
         }
 
         /// <summary>Draws with the plume's own <paramref name="material"/>, its light and look.</summary>
@@ -292,6 +324,9 @@ namespace RealisticStackEffects
             if (renderer == null || material == null)
                 return;
             renderer.sharedMaterial = material;
+            var behind = Behind != null ? Behind.GetComponent<ParticleSystemRenderer>() : null;
+            if (behind != null)
+                behind.sharedMaterial = material;
             if (material.HasProperty("_SixWay") && material.GetFloat("_SixWay") > 0.5f)
                 puffs = Mathf.Max(1, Mathf.RoundToInt(material.GetFloat("_SixColumns") * material.GetFloat("_SixRows")
                                                       / Mathf.Max(1f, material.GetFloat("_SixFrames"))));
@@ -451,11 +486,32 @@ namespace RealisticStackEffects
         /// at the player's smoke quality; <paramref name="look"/> the test
         /// bed's.
         /// </summary>
-        public void Step(float dt, Vector3 wind, Vector3 carVelocity, PlumeAir air, float share, PlumeLook look, TunnelRoof roof = null)
+        public void Step(float dt, Vector3 wind, Vector3 carVelocity, PlumeAir air, float share, PlumeLook look, TunnelRoof roof = null,
+            PlumeAloft plume = null, Vector3? eye = null, Vector3 lip = default)
         {
             if (Drawn == null || dt <= 0f)
                 return;
             var space = PlumeVolume.SpaceOf(Drawn);
+            // The plume's line and the eye, in the parcels' space (the cloud's own).
+            var lineCount = 0;
+            var eyeIn = Vector3.zero;
+            if (plume != null && eye.HasValue && Behind != null)
+            {
+                plumeLine[0] = space != null ? space.InverseTransformPoint(lip) : lip;
+                lineCount = 1 + plume.Middles(plumeLine, 1);
+                eyeIn = space != null ? space.InverseTransformPoint(eye.Value) : eye.Value;
+                for (var k = 0; k < lineCount; k++)
+                {
+                    var a = plumeLine[k] - eyeIn;
+                    var u = k + 1 < lineCount ? plumeLine[k + 1] - plumeLine[k] : Vector3.zero;
+                    lineFrom[k] = a;
+                    lineStep[k] = u;
+                    lineFromSq[k] = a.sqrMagnitude;
+                    lineFromStep[k] = Vector3.Dot(a, u);
+                    lineStepSq[k] = u.sqrMagnitude;
+                }
+            }
+            pass++;
             // Fewer from every source as the engine's parcels near their budget.
             var load = count / (Budget * Mathf.Clamp(share, 0.25f, 1f));
             var throttle = Mathf.Lerp(1f, 0.25f, Mathf.InverseLerp(0.6f, 1f, load));
@@ -500,22 +556,48 @@ namespace RealisticStackEffects
             var kept = 0;
             for (var i = 0; i < count; i++)
             {
-                var parcel = parcels[i];
-                if (!Advance(ref parcel, dt, wind, carVelocity, airSpeed, air, mixing, look, space, ground, roof, out var particle))
+                // In its place, and drawn straight into the buffer: copied
+                // out and back, each parcel and its particle cost as much
+                // again as its working out.
+                ref var parcel = ref parcels[i];
+                if (!Advance(ref parcel, dt, wind, carVelocity, airSpeed, air, mixing, look, space, ground, roof, out buffer[kept]))
                     continue;
-                parcels[kept] = parcel;
-                buffer[kept] = particle;
+                // Before the plume or after it: placed as it leaves, then
+                // looked at again every eighth pass.
+                if (lineCount == 0)
+                    parcel.Behind = parcel.Placed = false;
+                else if (!parcel.Placed || ((parcel.Seed + (uint)pass) & 7u) == 0u)
+                {
+                    parcel.Behind = BehindPlume(parcel.Position, eyeIn, lineCount, parcel.Placed && parcel.Behind);
+                    parcel.Placed = true;
+                }
+                if (kept != i)
+                    parcels[kept] = parcel;
                 kept++;
             }
             count = kept;
             Count = kept;
-            Drawn.SetParticles(buffer, kept);
+            if (frontBuffer.Length < buffer.Length)
+            {
+                frontBuffer = new ParticleSystem.Particle[buffer.Length];
+                behindBuffer = new ParticleSystem.Particle[buffer.Length];
+            }
             shapeData.Clear();
             extraData.Clear();
+            behindShape.Clear();
+            behindExtra.Clear();
+            var front = 0;
+            var behind = 0;
             for (var i = 0; i < kept; i++)
             {
-                var parcel = parcels[i];
-                var particle = buffer[i];
+                ref var parcel = ref parcels[i];
+                ref var particle = ref buffer[i];
+                var shapes = parcel.Behind ? behindShape : shapeData;
+                var extras = parcel.Behind ? behindExtra : extraData;
+                if (parcel.Behind)
+                    behindBuffer[behind++] = particle;
+                else
+                    frontBuffer[front++] = particle;
                 var age = parcel.Age;
                 // The rolling steam's own data (ChimneyPlume.Carry): its wisp
                 // and turn, how hard it left, and how far to a wisp it is;
@@ -523,7 +605,7 @@ namespace RealisticStackEffects
                 // far it has rolled, and which puff it is.
                 // (By the particle's seed and age, as the plume's own: PlumeAloft.)
                 var seed = particle.randomSeed;
-                shapeData.Add(new Vector4(PlumeAloft.WispRow(seed) + 0.49f * PlumeAloft.WispPhase(seed),
+                shapes.Add(new Vector4(PlumeAloft.WispRow(seed) + 0.49f * PlumeAloft.WispPhase(seed),
                     PlumeAloft.WispTurn(seed, particle.startLifetime - particle.remainingLifetime, look.WispSpin, look.WispSpinEase),
                     parcel.Hard, Mathf.Clamp01(age / WispTime)));
                 var puff = Mathf.Min(puffs - 1, Mathf.Floor(Hash(parcel.Seed ^ 0x68e31da4u) * puffs))
@@ -532,10 +614,54 @@ namespace RealisticStackEffects
                            + PlumeAloft.Rolled(age, look.RollRate * look.VentRoll, look.RollSlows) * (0.7f + 0.6f * Hash(parcel.Seed ^ 0x2545f491u));
                 // Thick enough to be a puff while young, whatever its opacity.
                 var thick = Mathf.Max(((Color)particle.startColor).a, 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(PuffUntil, WispBy, age)));
-                extraData.Add(new Vector4(thick, look.VentEdge, roll, puff));
+                extras.Add(new Vector4(thick, look.VentEdge, roll, puff));
             }
+            Drawn.SetParticles(frontBuffer, front);
             Drawn.SetCustomParticleData(shapeData, ParticleSystemCustomData.Custom1);
             Drawn.SetCustomParticleData(extraData, ParticleSystemCustomData.Custom2);
+            if (Behind != null)
+            {
+                Behind.SetParticles(behindBuffer, behind);
+                Behind.SetCustomParticleData(behindShape, ParticleSystemCustomData.Custom1);
+                Behind.SetCustomParticleData(behindExtra, ParticleSystemCustomData.Custom2);
+            }
+        }
+
+        // Whether a parcel at <paramref name="position"/> is behind the plume
+        // from the eye: farther than the plume's line is where the line of
+        // sight to the parcel passes it nearest, which is where the two
+        // overlap on the screen.
+        private bool BehindPlume(Vector3 position, Vector3 eye, int lineCount, bool was)
+        {
+            var to = position - eye;
+            var depth = to.magnitude;
+            if (depth < 1e-3f)
+                return false;
+            var sight = to / depth;
+            var nearest = float.MaxValue;
+            var plumeDepth = 0f;
+            for (var k = 0; k < lineCount; k++)
+            {
+                // The line's piece from this point to the next: where on it
+                // the line of sight passes nearest, how far along the sight
+                // that is, and how far off it (squared).
+                var a = lineFrom[k];
+                var u = lineStep[k];
+                var ad = a.x * sight.x + a.y * sight.y + a.z * sight.z;
+                var ud = u.x * sight.x + u.y * sight.y + u.z * sight.z;
+                var across = lineStepSq[k] - ud * ud;
+                var t = across > 1e-6f ? Mathf.Clamp01((ad * ud - lineFromStep[k]) / across) : 0f;
+                var along = ad + ud * t;
+                if (along <= 0f)
+                    continue;
+                var off = lineFromSq[k] + t * (2f * lineFromStep[k] + t * lineStepSq[k]) - along * along;
+                if (off < nearest)
+                {
+                    nearest = off;
+                    plumeDepth = along;
+                }
+            }
+            return nearest < float.MaxValue && PlumeOrder.Behind(was, depth, plumeDepth);
         }
 
         private void Emit(Source source, float mass, float bore, SteamCloud cloud, Vector3 past, Vector3 carVelocity, float lead, float dt,
@@ -746,7 +872,7 @@ namespace RealisticStackEffects
 
         /// <summary>The sources and what they are doing, for the test bed's readout and the log.</summary>
         public string Readout() =>
-            $"vents: {Count} parcels; " + string.Join(", ", sources.Where(s => s.Now > 0.01f).Select(s => $"{s.Kind} {s.Now:F2}"))
+            $"vents: {Count} parcels, {(Behind != null ? Behind.particleCount : 0)} drawn behind the plume; " + string.Join(", ", sources.Where(s => s.Now > 0.01f).Select(s => $"{s.Kind} {s.Now:F2}"))
             + (roofed > 0 ? System.FormattableString.Invariant($"; under a roof {roofed}, the nearest {nearestRoof:F2} m under it and {nearestWall:F2} m off a wall") : "");
 
         /// <summary>Hands the game's steam back and removes the mod's.</summary>
@@ -775,7 +901,14 @@ namespace RealisticStackEffects
                 UnityEngine.Object.Destroy(root);
                 root = null;
             }
+            if (behindRoot != null)
+            {
+                behindRoot.SetActive(false);
+                UnityEngine.Object.Destroy(behindRoot);
+                behindRoot = null;
+            }
             Drawn = null;
+            Behind = null;
         }
     }
 }

@@ -93,16 +93,23 @@ namespace RealisticFiring.Visuals
         private static readonly System.Collections.Generic.Dictionary<System.Reflection.FieldInfo, object> untuned =
             new System.Collections.Generic.Dictionary<System.Reflection.FieldInfo, object>();
 
+        /// <summary>
+        /// Counts each change to the tuned values, so what sends them to a
+        /// shader once (FireboxVolume's fixed values) sends them again.
+        /// </summary>
+        public static int TuningVersion { get; private set; }
+
         private static void Set(System.Reflection.FieldInfo field, object value)
         {
             if (!untuned.ContainsKey(field))
                 untuned[field] = field.GetValue(null);
             field.SetValue(null, value);
+            TuningVersion++;
         }
 
         private static System.Reflection.FieldInfo Tunable(string name)
         {
-            foreach (var type in new[] { typeof(FireboxVolume), typeof(FireboxLighting), typeof(FireboxFlames), typeof(CoalLumps), typeof(FireColors), typeof(StokerSpray) })
+            foreach (var type in new[] { typeof(FireboxVolume), typeof(BrickArch), typeof(FireboxOffscreen), typeof(FireboxCinders), typeof(FireboxLighting), typeof(FireboxFlames), typeof(CoalLumps), typeof(FireColors), typeof(StokerSpray) })
             {
                 var field = type.GetField(name, System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
                 if (field != null && (field.FieldType == typeof(float) || field.FieldType == typeof(Color)) && !field.IsInitOnly && !field.IsLiteral)
@@ -133,6 +140,8 @@ namespace RealisticFiring.Visuals
             BeatStrength = 1f;
             foreach (var entry in untuned)
                 entry.Key.SetValue(null, entry.Value);
+            if (untuned.Count > 0)
+                TuningVersion++;
             untuned.Clear();
         }
     }

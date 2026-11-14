@@ -150,6 +150,38 @@ namespace RealisticStackEffects.Core
         public float Left(float age, float airSpeed, float mixing, float forming = 1f) =>
             Math.Min(Formed(Dilution(age, airSpeed, mixing * forming)), Remaining(Dilution(age, airSpeed, mixing)));
 
+        /// <summary>
+        /// As <see cref="Left(float, float, float, float)"/>, the white
+        /// formed no less than the jet's <paramref name="sheath"/> has it
+        /// (<see cref="Sheath"/>), where any forms at all.
+        /// </summary>
+        public float Left(float age, float airSpeed, float mixing, float forming, float sheath)
+        {
+            var formed = Formed(Dilution(age, airSpeed, mixing * forming));
+            if (Thickness > 0f)
+                formed = Math.Max(formed, Math.Min(1f, Math.Max(0f, sheath)));
+            return Math.Min(formed, Remaining(Dilution(age, airSpeed, mixing)));
+        }
+
+        /// <summary>
+        /// How far the white has formed across the jet <paramref name="height"/>
+        /// m over the lip of a stack of <paramref name="bore"/> m, 0 to 1,
+        /// whatever its age: the air mixes into a jet from its edge, in a
+        /// layer that thickens with the height (about a sixth of it) and
+        /// meets in the middle some <paramref name="lengths"/> bore
+        /// diameters up. That layer holds every mixture from the stack's
+        /// gas to the air at once, so its white shows from the rim (the
+        /// photos' exhaust is attached to it, white from the lip in damp
+        /// air). By its age alone a hard beat's steam, leaving at 18 m/s,
+        /// was some metres up before it showed. 0 lengths: by its age only.
+        /// </summary>
+        public static float Sheath(float height, float bore, float lengths)
+        {
+            if (!(lengths > 0f) || !(bore > 0f))
+                return 0f;
+            return Math.Min(1f, Math.Max(0f, height) / (lengths * bore));
+        }
+
         /// <summary>Whether the white has formed and only evaporates from <paramref name="age"/> s on (true when it never forms).</summary>
         public bool PastThickest(float age, float airSpeed, float mixing, float forming = 1f) =>
             !(Thickness > 0f) || age >= ThickestAge(airSpeed, mixing, forming);

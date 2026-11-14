@@ -8,7 +8,9 @@ namespace RealisticFiring.Visuals
         private static readonly int RedId = Shader.PropertyToID("_FireRampRed");
         private static readonly int OrangeId = Shader.PropertyToID("_FireRampOrange");
         private static readonly int CoreId = Shader.PropertyToID("_FireRampCore");
+        private static readonly int HotId = Shader.PropertyToID("_FireRampHot");
         private static readonly int WhiteId = Shader.PropertyToID("_FireRampWhite");
+        private static readonly int BedId = Shader.PropertyToID("_FireBed");
         private static readonly int WhiteHeatId = Shader.PropertyToID("_FireWhiteHeat");
         private static readonly int ExposureId = Shader.PropertyToID("_FireExposure");
 
@@ -24,10 +26,33 @@ namespace RealisticFiring.Visuals
         // Enough blue radiance survives the eye's minimum exposure to make
         // a fully forced fire glare white instead of stopping at yellow.
         internal static Color White = new Color(24f, 18f, 12f);
+        // On the way there, yellow: a hotter body's green fills before its
+        // blue does. Blended straight to white, whose blue is two thirds of
+        // its green, the colors between were peach and pink.
+        internal static Color Hot = new Color(16f, 6f, 1f);
         // Spread the yellow-to-white change over the upper quarter of heat.
         // A narrow end stop made cooling coal appear to lose its glare at once.
         internal static float WhiteHeat = 0.75f;
         internal static float Exposure = 0.8f;
+
+        // The fire between and under the lumps at the slowest burn, as heat
+        // on the ramp (it runs to 1 with the zone's heat): the inside of a
+        // burning bed is far hotter than its top, however slowly it burns
+        // (the footage: yellow gaps between dark-capped lumps, drifting as
+        // working). And a burning lump's cap, as a share of its zone's heat.
+        internal static float BedCore = 0.7f;
+        internal static float CapHeat = 0.22f;
+        // And between the lumps of a zone at its full heat: yellow-white,
+        // short of the ramp's white end. (Nearer white, 0.94 and 0.98, a
+        // working fire did not look whiter: its bed threw more light, the
+        // eye stopped down for it, 0.8 to 0.7 and 0.6, and its flames came
+        // out dimmer; and at its top a working bed's gaps clip to a flat
+        // white floor.)
+        internal static float BedCoreHot = 0.9f;
+        // The fire's light at which the eye takes in half of the cab's light
+        // through the door: adapted to a burning bed, it sees coal lit by the
+        // cab as black, not grey.
+        internal static float DoorDimLight = 0.04f;
 
         // The adaptation: the fire's light (its zones' glow and flames, on
         // average, FireboxLighting) up to which the exposure is the one
@@ -83,9 +108,13 @@ namespace RealisticFiring.Visuals
             c = Color.LerpUnclamped(c, Red, Mathf.Clamp01(x - 1f));
             c = Color.LerpUnclamped(c, Orange, Mathf.Clamp01(x - 2f));
             c = Color.LerpUnclamped(c, Core, Mathf.Clamp01(x - 3f));
-            var white = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(WhiteStart, 1f, heat));
-            return Color.LerpUnclamped(c, White, white);
+            var white = 2f * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(WhiteStart, 1f, heat));
+            c = Color.LerpUnclamped(c, Hot, Mathf.Clamp01(white));
+            return Color.LerpUnclamped(c, White, Mathf.Clamp01(white - 1f));
         }
+
+        /// <summary>The heat of the fire between and under the lumps of a zone at <paramref name="heat"/> (FireBedCore in FireColor.cginc).</summary>
+        internal static float CoreHeat(float heat) => Mathf.Lerp(BedCore, BedCoreHot, Mathf.Clamp01(heat) * Mathf.Clamp01(heat)) * Mathf.Clamp01(heat * 20f);
 
         private static float WhiteStart => Mathf.Clamp(WhiteHeat, 0.75f, 0.99f);
 
@@ -156,7 +185,9 @@ namespace RealisticFiring.Visuals
             Shader.SetGlobalVector(RedId, Red);
             Shader.SetGlobalVector(OrangeId, Orange);
             Shader.SetGlobalVector(CoreId, Core);
+            Shader.SetGlobalVector(HotId, Hot);
             Shader.SetGlobalVector(WhiteId, White);
+            Shader.SetGlobalVector(BedId, new Vector4(BedCore, CapHeat, 1f / (1f + Light / Mathf.Max(DoorDimLight, 1e-4f)), Mathf.Clamp(BedCoreHot, BedCore, 1f)));
             Shader.SetGlobalFloat(WhiteHeatId, WhiteStart);
             Shader.SetGlobalFloat(ExposureId, Exposed);
         }
