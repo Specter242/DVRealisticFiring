@@ -85,8 +85,10 @@ namespace RealisticStackEffects
         private const float GroundBelow = 0.15f;
         private const float GroundClearance = 0.35f;
 
-        // A stock source counts as blowing its hardest at the fastest start
-        // speed its driver has given it; softer in proportion, no less than this.
+        // A stock source with no game value found to size it (the cylinder
+        // cocks, which their own reader pulses with the stroke) counts as
+        // blowing its hardest at the fastest start speed its driver has given
+        // it; softer in proportion, no less than this.
         private const float LeastStrength = 0.35f;
 
         private sealed class Source
@@ -99,6 +101,10 @@ namespace RealisticStackEffects
             public ParticleSystemRenderer[] Hidden = new ParticleSystemRenderer[0];
             public bool[] WasEnabled = new bool[0];
             public Func<float> Strength;
+            // The game's value that sizes its stock effect, as its particle
+            // controller takes it, 0 to 1 (VentDrive); null where none was found.
+            public Func<float> Driven;
+            public string DrivenBy;
             public float FastestSeen;
             public float Due;
             public float Test = -1f;
@@ -196,8 +202,10 @@ namespace RealisticStackEffects
             vents.behindRoot.name = "VentsBehind";
             vents.Behind = vents.behindRoot.GetComponent<ParticleSystem>();
             Prepare(vents.Behind, cloud);
+            var driven = vents.sources.Where(s => s.DrivenBy != null).ToList();
             vents.Setup = $"steam around the engine from {vents.sources.Count} sources: " +
-                          string.Join(", ", vents.sources.GroupBy(s => s.Kind).Select(g => g.Count() > 1 ? $"{g.Key} ×{g.Count()}" : g.Key.ToString()));
+                          string.Join(", ", vents.sources.GroupBy(s => s.Kind).Select(g => g.Count() > 1 ? $"{g.Key} ×{g.Count()}" : g.Key.ToString())) +
+                          (driven.Count > 0 ? "; sized by the game's " + string.Join(", ", driven.Select(s => $"{s.Kind} {s.DrivenBy}").Distinct()) : "");
             return vents;
         }
 
@@ -241,6 +249,65 @@ namespace RealisticStackEffects
             foreach (var source in sources)
                 foreach (var renderer in source.Hidden)
                     renderer.enabled = false;
+            BindDrivers();
+        }
+
+        // Each stock source's driver: the port the game's particle controller
+        // switches and scales its effect by (the blowdown's flow, the whistle's,
+        // the safety valves', the dynamo's, a cracked cylinder's), read as the
+        // controller reads it, so the steam follows the valve however it was
+        // opened before (pnwr1854, Nexus, 2026-11-13). The reader nearest the
+        // source's systems is its own. Leaks keep their chest pressure.
+        private void BindDrivers()
+        {
+            var flow = car != null && car.SimController != null ? car.SimController.SimulationFlow : null;
+            if (flow == null)
+                return;
+            var readers = car.GetComponentsInChildren<DV.Simulation.Controllers.ParticlesPortReadersController>(true)
+                .Where(c => c != null && c.particlePortReaders != null)
+                .SelectMany(c => c.particlePortReaders)
+                .Where(r => r != null && r.particlesParent != null && r.particleUpdaters != null)
+                .ToList();
+            foreach (var source in sources)
+            {
+                if (source.Stock.Length == 0 || source.Kind == VentKind.Leak)
+                    continue;
+                DV.Simulation.Controllers.ParticlesPortReadersController.ParticlePortReader own = null;
+                var depth = -1;
+                foreach (var reader in readers)
+                {
+                    var parent = reader.particlesParent.transform;
+                    if (!source.Stock.Any(s => s != null && s.transform.IsChildOf(parent)))
+                        continue;
+                    var d = 0;
+                    for (var t = parent; t != null; t = t.parent)
+                        d++;
+                    if (d > depth)
+                    {
+                        own = reader;
+                        depth = d;
+                    }
+                }
+                if (own == null)
+                    continue;
+                var updaters = own.particleUpdaters.Where(u => u != null).ToList();
+                var index = VentDrive.Driver(updaters
+                    .Select(u => (IReadOnlyList<int>)(u.propertiesToUpdate ?? new List<DV.Simulation.Controllers.ParticlesPortReadersController.ParticlePortReader.PropertyChangeDefinition>())
+                        .Where(c => c != null).Select(c => (int)c.propertyType).ToList())
+                    .ToList());
+                if (index < 0)
+                    continue;
+                var updater = updaters[index];
+                if (string.IsNullOrEmpty(updater.portId) || !flow.TryGetPort(updater.portId, out var port) || port == null)
+                    continue;
+                var modifier = updater.inputModifier;
+                var multiplier = modifier != null ? modifier.valueMultiplier : 1f;
+                var offset = modifier != null ? modifier.valueOffset : 0f;
+                var absoluteInput = modifier != null && modifier.absoluteInputValue;
+                var absoluteResult = modifier != null && modifier.absoluteResultValue;
+                source.Driven = () => VentDrive.Strength(port.Value, multiplier, offset, absoluteInput, absoluteResult);
+                source.DrivenBy = updater.portId;
+            }
         }
 
         private static bool IsSteam(string material) =>
@@ -461,6 +528,9 @@ namespace RealisticStackEffects
             // their rate alone: here by the steam actually in the chest.
             if (source.Kind == VentKind.Leak)
                 return chestPressure != null ? Mathf.Clamp01(chestPressure() / LeakFullPressure) : 0f;
+            // On, as the game has it, as hard as the value that drives it.
+            if (source.Driven != null)
+                return source.Driven();
             source.FastestSeen = Mathf.Max(source.FastestSeen, fastest);
             return source.FastestSeen > 0f ? Mathf.Clamp(fastest / source.FastestSeen, LeastStrength, 1f) : 1f;
         }
