@@ -95,6 +95,10 @@ namespace RealisticFiring
             catch (System.Exception e) { Faults.Report("the mod's keys", null, e); }
             try { Visuals.StokerCab.EnsureBuilt(); }
             catch (System.Exception e) { Faults.Report("the stoker's cab controls", null, e); }
+            try { Visuals.FeedPumpCab.EnsureFitted(); }
+            catch (System.Exception e) { Faults.Report("the feed pump's cab controls", null, e); }
+            try { Visuals.BoosterCab.EnsureFitted(); }
+            catch (System.Exception e) { Faults.Report("the booster's cab controls", null, e); }
             try
             {
                 Diagnostics.ShedSurvey.TryRun();
@@ -109,6 +113,8 @@ namespace RealisticFiring
             catch (System.Exception e) { Faults.Report("the oil burner's cab controls", null, e); }
             try { Visuals.OilFlareback.Update(); }
             catch (System.Exception e) { Faults.Report("the oil flareback", null, e); }
+            try { Visuals.JetBlowback.Update(); }
+            catch (System.Exception e) { Faults.Report("the jets' blowback", null, e); }
             PerfMeter.Stop(PerfSection.Controller, start);
         }
 
@@ -436,7 +442,7 @@ namespace RealisticFiring
         /// <summary>The booster, for the status log and overlay, or null without one.</summary>
         internal static string DescribeBooster(TrainCar car)
         {
-            if (!RealisticBooster.TryGet(car, out var booster))
+            if (!RealisticBooster.TryGet(car, out var booster) || !booster.Fitted)
                 return null;
             var flow = booster.Flow;
             return $"booster {flow.State} ({Visuals.BoosterCab.Describe(flow, flow.State != BoosterState.CutOut)}), " +

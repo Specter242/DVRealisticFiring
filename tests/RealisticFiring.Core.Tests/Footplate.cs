@@ -150,6 +150,9 @@ internal sealed class Footplate
 
     // The controls, as the fireman last set them.
     public float Door;
+
+    /// <summary>The over-fire jets' valve, where the box has jets.</summary>
+    public float JetValve;
     public float Blower;
     public float Blowdown;
     public float Damper = 1f;
@@ -264,6 +267,7 @@ internal sealed class Footplate
                 Shakes.Add(actions.Shake.Value);
             }
             Door = actions.Door;
+            JetValve = actions.OverFireJets;
             Blower = actions.Blower;
             Blowdown = actions.Blowdown;
             Damper = actions.Damper;
@@ -301,6 +305,8 @@ internal sealed class Footplate
             StartupMultiplier = StartupMultiplier,
             BoilerTemperature = saturation,
             Speed = Standing ? 0f : 15f,
+            JetOpening = JetValve,
+            BoilerPressure = Pressure,
         });
 
         var flow = Injector.Step(Dt, new InjectorInputs
@@ -337,7 +343,7 @@ internal sealed class Footplate
             stokerSteam += PumpFlow.SteamUsed;
         }
 
-        var steamOut = EngineSteam + AirPumpSteam + BlowerFlow + flow.SteamUsed + stokerSteam;
+        var steamOut = EngineSteam + AirPumpSteam + BlowerFlow + flow.SteamUsed + stokerSteam + Fire.JetSteamFlow;
         var blown = Pressure > 1.5f ? Blowdown * BlowdownRate : 0f;
         var heat = Fire.Heat - LossPerDegree * (saturation - 20f) - steamOut * Latent - flow.WaterIn * 4190f * Math.Max(0f, saturation - flow.FeedTemperature)
                    - pumpWarmth;

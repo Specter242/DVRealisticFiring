@@ -9,6 +9,9 @@ namespace RealisticFiring
         [Draw("Replace supported coal fireboxes, including the S282, S060, and JK3 (restart required)")]
         public bool ReplaceStockFireboxes = true;
 
+        [Draw("Light the coal straight from the lighter, as in the stock game (skips the wood and rag)")]
+        public bool LighterLightsCoal;
+
         [Draw("Realistic injectors on every steam loco (restart required)")]
         public bool RealisticInjectors = true;
 
@@ -163,11 +166,32 @@ namespace RealisticFiring
         [Draw("Put the stoker's jet valves in the cab (takes effect when the cab next loads)")]
         public bool ShowStokerJetValves = true;
 
-        [Draw("Fit the stock S282 with a mechanical stoker (needs a restart)")]
+        // Before the stoker was an upgrade: whether the S282 had one. Read
+        // once into S282Stoker (ApplyNewDefaults); not in the menu.
         public bool RetrofitS282Stoker = true;
 
         [Draw("Stoker jams: lumps or tramp iron now and then; reverse the stoker engine to clear (needs a restart)")]
         public bool StokerJams = true;
+
+        // The stock engines' brick arch: bought in a career (Upgrades on a
+        // career manager), or always or never fitted.
+        public Upgrades.UpgradeRule BrickArch = Upgrades.UpgradeRule.BuyInCareer;
+
+        // The stock engines' over-fire jets, the same way; fitted only where
+        // the arch is.
+        public Upgrades.UpgradeRule OverFireJets = Upgrades.UpgradeRule.BuyInCareer;
+
+        // The stock S282's mechanical stoker, the same way. Never fitted
+        // leaves it out of the engine altogether, and so takes a restart.
+        public Upgrades.UpgradeRule S282Stoker = Upgrades.UpgradeRule.BuyInCareer;
+
+        // The stock S282's feedwater heater and pump, the same way; it needs
+        // the realistic injectors. Never fitted takes a restart.
+        public Upgrades.UpgradeRule S282FeedPump = Upgrades.UpgradeRule.BuyInCareer;
+
+        // The stock S282's trailing-truck booster, the same way. Never fitted
+        // takes a restart.
+        public Upgrades.UpgradeRule S282Booster = Upgrades.UpgradeRule.BuyInCareer;
 
         [Header("Recovery")]
         [Draw("Renew the boiler and its fusible plug now, on the loco you're on, as a service station's repair does (recovery for an engine stranded with a melted plug; unticks itself)")]
@@ -239,11 +263,11 @@ namespace RealisticFiring
         private const int CurrentKeys = 1;
 
         // Which defaults the settings were saved with: 0 before 1.11.1, 1 the
-        // aiming keypad drawn, 2 the shovelful always a real one. Not in the
-        // menu.
+        // aiming keypad drawn, 2 the shovelful always a real one, 3 the S282's
+        // stoker an upgrade. Not in the menu.
         public int DefaultsVersion;
 
-        private const int CurrentDefaults = 2;
+        private const int CurrentDefaults = 3;
 
  public bool ApplyNewDefaults()
         {
@@ -254,6 +278,10 @@ namespace RealisticFiring
             // The stock shovelful at 0 is gone: a saved 0 is a real shovelful again.
             if (DefaultsVersion < 2 && !(ShovelfulMass >= MinShovelful && ShovelfulMass <= MaxShovelful))
                 ShovelfulMass = DefaultShovelful;
+            // The S282's stoker switched off before it was an upgrade stays off.
+            if (DefaultsVersion < 3 && !RetrofitS282Stoker)
+                S282Stoker = Upgrades.UpgradeRule.NeverFitted;
+            RetrofitS282Stoker = true;
             DefaultsVersion = CurrentDefaults;
             return true;
         }

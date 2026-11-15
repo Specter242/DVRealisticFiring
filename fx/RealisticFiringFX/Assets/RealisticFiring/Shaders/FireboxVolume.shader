@@ -294,6 +294,23 @@ Shader "RealisticFiring/FireboxVolume"
             float4 _ArchFlame;
             float4 _ArchBend;
             float4 _ArchFlow;
+            // The over-fire jets blowing (the mod's FireboxVolume.SetJets):
+            // _JetCount of them; each its tube's mouth in the box (xyz) and
+            // how hard it blows, 0 to 1 (w); the way it blows, a unit way in
+            // metres (xyz), and how far into the rising gas it reaches, m (w).
+            // _JetShape: the dark core's length (x) and the tube's radius (y),
+            // m; how fast the cone spreads, its radius a metre along it (z);
+            // and how far it carries the flames in it, a share of the way
+            // along it (w). _JetBend: the way the gas bends it, up and on
+            // toward the tubes (xyz), and how much, m off its line at its
+            // reach a metre of reach (w). _JetClear: how much its clear air
+            // thins the smoke in it.
+            float4 _Jets[6];
+            float4 _JetWays[6];
+            float _JetCount;
+            float4 _JetShape;
+            float4 _JetBend;
+            float _JetClear;
             float3 _SheetOffset;
             float3 _CurlOffset;
 
@@ -540,6 +557,54 @@ Shader "RealisticFiring/FireboxVolume"
             // how far up the flame it is. Its foot keeps its old spot; its
             // upper part bends and breaks into irregular tips, the fine
             // detail traveling up with the flame.
+            // The jets at a point in the box: how far back along them the
+            // flames' shapes here came from (m, level, along each jet), how
+            // deep in a jet's dark core of cold air the point is, and how
+            // deep in its cone, each 0 to 1. A jet's line runs from its mouth
+            // across the box, bent up and on by the gas as the square of the
+            // way along it against its reach; it fades out past its reach.
+            // The carrying fades out over twice the cone's radius, the core
+            // and the clearing within it: carried as far within a narrow
+            // cone's edge, the flames drew cut along it (the council, round 1).
+            float3 JetField(float3 u, out float core, out float cone)
+            {
+                float3 shift = 0.0;
+                core = 0.0;
+                cone = 0.0;
+                float3 here = u * _BoxSize;
+                UNITY_LOOP
+                for (int j = 0; j < 6; j++)
+                {
+                    if (j >= (int)_JetCount)
+                        break;
+                    float4 jet = _Jets[j];
+                    float4 way = _JetWays[j];
+                    float3 p = here - jet.xyz * _BoxSize;
+                    float along = dot(p, way.xyz);
+                    float reach = max(way.w, 0.05);
+                    if (along <= 0.0 || along > 1.5 * reach)
+                        continue;
+                    float bent = _JetBend.w * along * along / reach;
+                    float r = length(p - way.xyz * along - _JetBend.xyz * bent);
+                    float radius = _JetShape.y + along * _JetShape.z;
+                    float fade = 1.0 - smoothstep(reach, 1.5 * reach, along);
+                    float carry = jet.w * fade * (1.0 - smoothstep(0.0, 2.0 * radius, r));
+                    float w = jet.w * fade * (1.0 - smoothstep(0.55 * radius, radius, r));
+                    // Their shapes carried along its bent line: sideways out
+                    // of the mouth, then turning up with the gas (only the
+                    // shapes: carried whole along it, the flames' dense feet
+                    // went up into the box as soft bright blobs).
+                    float3 tangent = normalize(way.xyz + _JetBend.xyz * (2.0 * _JetBend.w * along / reach));
+                    // At most eleven tube radii (0.4 m on the S282): a fixed
+                    // 0.4 m pushed the S060's narrow box's flames from both
+                    // sides together up its middle (the council, 2026-11-14).
+                    shift -= tangent * min(_JetShape.w * min(along, reach), 11.0 * _JetShape.y) * carry;
+                    core = max(core, w * (1.0 - smoothstep(0.4 * _JetShape.x, _JetShape.x, along)));
+                    cone = max(cone, w);
+                }
+                return shift;
+            }
+
             half3 BedFlameField(float3 q, float up, float2 bend, float scale, float height)
             {
                 float reach = saturate(up);
@@ -718,6 +783,26 @@ Shader "RealisticFiring/FireboxVolume"
                     }
                     stride = 1.0;
                     float3 u = origin + step3 * t + 0.5;
+                    // The point itself, for what is the box's own; the
+                    // flames here are read where the jets carried them from.
+                    float3 uOwn = u;
+                    float jetCore = 0.0;
+                    float jetCone = 0.0;
+                    // Only the flames' shapes are carried along the jets
+                    // (their sheets, curls, and short flames' fields), not
+                    // where they burn or how high: carried whole, the flames'
+                    // dense feet and bodies were copied along them as soft
+                    // swollen blobs (the council, round 1).
+                    float3 jetShift = 0.0;
+                    if (_JetCount > 0.5)
+                    {
+                        jetShift = JetField(u, jetCore, jetCone);
+                        // Carried unevenly, as the jet's own turbulence has
+                        // it: carried evenly, the shapes drew as combed
+                        // streaks at the carry's end (the council, round 3).
+                        if (dot(jetShift, jetShift) > 1e-6)
+                            jetShift *= lerp(0.6, 1.4, tex3Dlod(_Noise, float4(u * float3(2.3, 1.7, 2.9) + _CurlOffset * 0.4, 0)).r);
+                    }
 
                     // The zones under this point, the flames leaning toward the
                     // tube plate with height.
@@ -742,7 +827,7 @@ Shader "RealisticFiring/FireboxVolume"
                     // The point in the box itself, for what is the box's own
                     // (its smoke's fade at its sides): u goes on as the
                     // point the flames here are read at.
-                    float3 uBox = u;
+                    float3 uBox = uOwn;
                     half4 zoneA = 0.0;
                     bool zoned = false;
                     if (_ArchFlame.x > 0.0)
@@ -971,7 +1056,7 @@ Shader "RealisticFiring/FireboxVolume"
 
 
                         float lickScale = _LickScale * lerp(0.8, 1.0, _LickMotion);
-                        float3 q = u * _BoxSize * lickScale * float3(1, 0.35, 1);
+                        float3 q = (u * _BoxSize + jetShift) * lickScale * float3(1, 0.35, 1);
                         q.xz += sway.ab * 2.0 * _Sway * lickScale * saturate(lickUp) * 0.5 * (0.35 + 0.65 * _LickMotion);
                         float2 bend = 0;
                         if (_LickDetail > 0.0)
@@ -1048,7 +1133,7 @@ Shader "RealisticFiring/FireboxVolume"
 
 
                     float metres = above * _BoxSize.y;
-                    float3 p = float3(u.x * _BoxSize.x, pow(metres + 0.1, _Buoyancy) - pow(0.1, _Buoyancy), u.z * _BoxSize.z) * tile;
+                    float3 p = float3(u.x * _BoxSize.x + jetShift.x, pow(max(metres + jetShift.y, 0.0) + 0.1, _Buoyancy) - pow(0.1, _Buoyancy), u.z * _BoxSize.z + jetShift.z) * tile;
                     half4 warp = tex3Dlod(_Noise, float4(p * 0.5 - _CurlOffset * 0.5, 0)) - 0.5;
                     // The big lobes a working fire rolls in: the warp's own lobes.
                     half lobes = warp.b + 0.5;
@@ -1191,6 +1276,10 @@ Shader "RealisticFiring/FireboxVolume"
                         body = 0.0;
                         lick = 0.0;
                     }
+                    // In a jet's core, its cold air: no flame.
+                    half jetKeep = 1.0 - 0.85 * saturate(jetCore);
+                    body *= jetKeep;
+                    lick *= jetKeep;
                     half flame = body + lick;
                     half core = saturate(inside / max(_CoreDepth, 0.02) + carpet);
 
@@ -1309,6 +1398,10 @@ Shader "RealisticFiring/FireboxVolume"
                                // it veiled the black coal in orange.)
                                * lerp(1.0, 0.35, _LickMotion);
                     }
+                    // The jets' clear air through it, and none in a core.
+                    half jetClear = jetKeep * (1.0 - _JetClear * saturate(jetCone));
+                    smoke *= jetClear;
+                    column *= jetClear;
                     smoke += column;
                     // (No hotter than an orange: by a working bed's yellow-white
                     // gaps the plume's thin foot glared, and showed the dither.)

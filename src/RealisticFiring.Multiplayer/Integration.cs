@@ -109,6 +109,8 @@ namespace RealisticFiring.Multiplayer
                 $"fusible plugs {session.FusiblePlugs}",
                 $"S282 stoker {session.RetrofitS282Stoker}",
                 $"stoker jams {session.StokerJams}",
+                $"S282 feed pump {session.S282FeedPump}",
+                $"S282 booster {session.S282Booster}",
                 $"boosters {session.FitBoosters}",
                 $"feed pumps {session.FitFeedPumps}",
                 $"oil burners {session.RealisticOilBurners}",
@@ -126,7 +128,9 @@ namespace RealisticFiring.Multiplayer
             try
             {
                 lastHudPolicy = null;
+                lastFittings = null;
                 HudPolicy.Reset();
+                LighterRule.Reset();
                 Items.FireIron.RegisterAsGameItem();
                 Items.FiringTablet.RegisterAsGameItem();
                 Items.FiringManual.RegisterAsGameItem();
@@ -163,6 +167,7 @@ namespace RealisticFiring.Multiplayer
                     pumping.Value?.RemotePump(pumping.Key, false);
                 PumpingBy.Clear();
                 lastHudPolicy = null;
+                lastFittings = null;
                 snapshotDue = 0u;
                 StartingFuelSync.ServerStopped();
             }
@@ -177,6 +182,7 @@ namespace RealisticFiring.Multiplayer
             try
             {
                 HudPolicy.Reset();
+                LighterRule.Reset();
                 hudHeard = null;
                 hudWaitUntil = null;
                 Items.FireIron.RegisterAsGameItem();
@@ -187,6 +193,7 @@ namespace RealisticFiring.Multiplayer
                 client.RegisterSerializablePacket<SnapshotPacket>(OnSnapshot);
                 client.RegisterSerializablePacket<FireEventPacket>(OnFireEvent);
                 client.RegisterSerializablePacket<HudPolicyPacket>(OnHudPolicy);
+                client.RegisterSerializablePacket<FittingsPacket>(OnFittings);
                 StandSync.OnClientStarted(client);
                 StartingFuelSync.Client(client);
                 helloDue = true;
@@ -205,6 +212,14 @@ namespace RealisticFiring.Multiplayer
                 hudHeard = null;
                 hudWaitUntil = null;
                 HudPolicy.Reset();
+                fittingsHeard = null;
+                Upgrades.Fittings.FromHost = null;
+                Upgrades.Fittings.JetsFromHost = null;
+                Upgrades.Fittings.StokerFromHost = null;
+                Upgrades.Fittings.FeedPumpFromHost = null;
+                Upgrades.Fittings.BoosterFromHost = null;
+                Upgrades.Fittings.Changed();
+                LighterRule.Reset();
                 Shed.ShedNet.Reset();
             }
             catch (Exception e)
@@ -220,6 +235,7 @@ namespace RealisticFiring.Multiplayer
             try
             {
                 SendHudPolicy();
+                SendFittings();
                 SendSnapshots(tick);
                 StartingFuelSync.Tick(tick);
                 SendHello();
@@ -239,12 +255,44 @@ namespace RealisticFiring.Multiplayer
         private static uint? hudWaitUntil;
         private const float HudWaitSeconds = 20f;
 
+        // The host's fittings in the order they were sent.
+        private static ushort fittingsSent;
+        private static ushort? fittingsHeard;
+        private static (bool Arch, bool Jets, bool Stoker, bool FeedPump, bool Booster)? lastFittings;
+
+        private static void OnFittings(FittingsPacket packet)
+        {
+            if (fittingsHeard.HasValue && !Shed.ShedNet.Newer(packet.Seq, fittingsHeard.Value))
+                return;
+            fittingsHeard = packet.Seq;
+            Upgrades.Fittings.FromHost = packet.Arch;
+            Upgrades.Fittings.JetsFromHost = packet.Jets;
+            Upgrades.Fittings.StokerFromHost = packet.Stoker;
+            Upgrades.Fittings.FeedPumpFromHost = packet.FeedPump;
+            Upgrades.Fittings.BoosterFromHost = packet.Booster;
+            Upgrades.Fittings.Changed();
+        }
+
+        private static void SendFittings()
+        {
+            var server = MultiplayerAPI.Server;
+            var api = MultiplayerAPI.Instance;
+            if (server == null || api == null || !api.IsHost || !InSession())
+                return;
+            var now = (Upgrades.Fittings.Arch, Upgrades.Fittings.Jets, Upgrades.Fittings.Stoker, Upgrades.Fittings.FeedPump, Upgrades.Fittings.Booster);
+            if (lastFittings == now)
+                return;
+            lastFittings = now;
+            server.SendSerializablePacketToAll(new FittingsPacket { Arch = now.Item1, Jets = now.Item2, Stoker = now.Item3, FeedPump = now.Item4, Booster = now.Item5, Seq = ++fittingsSent }, reliable: true, excludeSelf: true);
+        }
+
         private static void OnHudPolicy(HudPolicyPacket packet)
         {
             if (hudHeard.HasValue && !Shed.ShedNet.Newer(packet.Seq, hudHeard.Value))
                 return;
             hudHeard = packet.Seq;
             HudPolicy.Receive(packet.Hidden);
+            LighterRule.Receive(packet.LighterLightsCoal);
         }
 
         // A guest waits for the host's rule before showing its displays. A
@@ -306,7 +354,14 @@ namespace RealisticFiring.Multiplayer
             }
         }
 
-        private static bool? lastHudPolicy;
+        private static (bool Hidden, bool LighterLightsCoal)? lastHudPolicy;
+
+        private static HudPolicyPacket SessionRules() => new HudPolicyPacket
+        {
+            Hidden = Main.Settings.HostHidesHud,
+            LighterLightsCoal = Main.Settings.LighterLightsCoal,
+            Seq = ++hudSent,
+        };
 
         private static void SendHudPolicy()
         {
@@ -314,11 +369,11 @@ namespace RealisticFiring.Multiplayer
             var api = MultiplayerAPI.Instance;
             if (server == null || api == null || !api.IsHost || !InSession())
                 return;
-            var hidden = Main.Settings.HostHidesHud;
-            if (lastHudPolicy == hidden)
+            var rules = (Main.Settings.HostHidesHud, Main.Settings.LighterLightsCoal);
+            if (lastHudPolicy == rules)
                 return;
-            lastHudPolicy = hidden;
-            server.SendSerializablePacketToAll(new HudPolicyPacket { Hidden = hidden, Seq = ++hudSent }, reliable: true, excludeSelf: true);
+            lastHudPolicy = rules;
+            server.SendSerializablePacketToAll(SessionRules(), reliable: true, excludeSelf: true);
         }
 
         // A player who joined with another version or other settings: told why
@@ -449,7 +504,8 @@ namespace RealisticFiring.Multiplayer
             {
                 mod.Logger.Log($"{sender.DisplayName} joined with Realistic Firing {hello.Version}, settings matching");
                 StandSync.SendStands(sender);
-                MultiplayerAPI.Server?.SendSerializablePacketToPlayer(new HudPolicyPacket { Hidden = Main.Settings.HostHidesHud, Seq = ++hudSent }, sender);
+                MultiplayerAPI.Server?.SendSerializablePacketToPlayer(SessionRules(), sender);
+                MultiplayerAPI.Server?.SendSerializablePacketToPlayer(new FittingsPacket { Arch = Upgrades.Fittings.Arch, Jets = Upgrades.Fittings.Jets, Stoker = Upgrades.Fittings.Stoker, FeedPump = Upgrades.Fittings.FeedPump, Booster = Upgrades.Fittings.Booster, Seq = ++fittingsSent }, sender);
                 return;
             }
             var reason = hello.Version != version

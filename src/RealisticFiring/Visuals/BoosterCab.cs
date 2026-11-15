@@ -18,11 +18,32 @@ namespace RealisticFiring.Visuals
         private const string SourceLatchControl = "C_Sand";
         private static readonly string[] LatchNotches = { "Down", "Up" };
 
-        private static readonly Dictionary<string, Vector2> Placements = new Dictionary<string, Vector2>
+        private static readonly Dictionary<string, Vector3> Placements = new Dictionary<string, Vector3>
         {
-            ["S464-730"] = new Vector2(-26f, 15f),
+            ["S464-730"] = new Vector3(-26f, 15f, 0f),
         };
-        private static readonly Vector2 DefaultPlacement = new Vector2(0f, 115f);
+
+        private static readonly Dictionary<string, Vector3> CarSeats = new Dictionary<string, Vector3>
+        {
+            ["LocoS282A"] = new Vector3(1.45f, 1.60f, -0.24f),
+        };
+
+        /// <summary>Car-frame seats set on the seating bench this session, by livery; ahead of both tables.</summary>
+        internal static readonly Dictionary<string, Vector3> DevCarSeats = new Dictionary<string, Vector3>();
+
+        /// <summary>Where the cluster is pinned in the car's frame for <paramref name="livery"/>, if it is.</summary>
+        internal static Vector3? CarSeatFor(string livery) =>
+            DevCarSeats.TryGetValue(livery, out var dev) ? dev
+            : CarSeats.TryGetValue(livery, out var seated) ? seated
+            : (Vector3?)null;
+        private static readonly Vector3 DefaultPlacement = new Vector3(0f, 115f, 0f);
+
+        // Where the controls go by the reverser for a livery not pinned in the car's frame.
+        private static Vector3 PlacementFor(string livery) =>
+            Placements.TryGetValue(livery, out var seated) ? seated : DefaultPlacement;
+
+        /// <summary>The cluster's root in a cab, for the seating bench.</summary>
+        internal const string Root = RootName;
 
         // How far in from the reverser to start looking for the wall, and how far to look, m.
         private const float WallSearchStart = 0.4f;
@@ -48,9 +69,13 @@ namespace RealisticFiring.Visuals
         /// <summary>Builds the controls in a newly loaded cab. Returns a line for the log, or null.</summary>
         public static string Attach(TrainCar car, Transform interior)
         {
-            if (car == null || interior == null || interior.Find(RootName) != null || !Main.Session.FitBoosters
+            if (car == null || interior == null || interior.Find(RootName) != null
                 || !RealisticBooster.TryGet(car, out var booster))
                 return null;
+            Interiors[car] = interior;
+            // The S282's booster not yet bought: no controls, until it is (EnsureFitted).
+            if (!booster.Fitted)
+                return "the booster is not fitted (an upgrade at a career manager): no controls in the cab";
             var flow = car.SimController != null ? car.SimController.SimulationFlow : null;
             if (flow == null || !flow.TryGetPort(BoosterFit.Latch.PortId, out var latchPort) || !flow.TryGetPort(BoosterFit.Idle.PortId, out var idlePort))
                 return null;
@@ -61,7 +86,8 @@ namespace RealisticFiring.Visuals
                 .Select(f => f.transform)
                 .OrderByDescending(t => car.transform.InverseTransformPoint(t.position).x)
                 .FirstOrDefault();
-            if (anchor == null)
+            var pinned = CarSeatFor(car.carLivery.id);
+            if (anchor == null && !pinned.HasValue)
                 return "no reverser in the cab to place the booster controls by";
             if (!Globals.G.Types.TryGetLivery(StokerCab.SourceLivery, out var livery) || livery.interiorPrefab == null)
                 return $"no {StokerCab.SourceLivery} cab to take controls from";
@@ -78,23 +104,38 @@ namespace RealisticFiring.Visuals
             root.transform.SetParent(interior, false);
 
             // Upright on the side wall by the reverser, facing into the cab.
-            var mount = anchor.parent != null ? anchor.parent : anchor;
-            var seat = Placements.TryGetValue(car.carLivery.id, out var seated) ? seated : DefaultPlacement;
-            var reverser = car.transform.InverseTransformPoint(mount.position);
-            var side = reverser.x < 0f ? -1f : 1f;
-            var floor = InjectorOverflow.TryFindCabFloor(car, out var deck) ? deck : reverser.y;
-            var into = car.transform.right * side;
-            var looking = car.transform.TransformPoint(new Vector3(reverser.x - side * WallSearchStart, floor + seat.y / 100f, reverser.z + seat.x / 100f));
-            var onWall = CabRay.TryHit(car, looking, into, WallSearch, out var toWall, out var wall);
-            if (!onWall)
-                toWall = WallSearchStart + FallbackWallOutboard;
             var frame = root.transform;
-            frame.rotation = Quaternion.LookRotation(into, car.transform.up);
-            frame.position = looking + into * (toWall - Wall);
+            float side;
+            string where;
+            if (pinned is Vector3 at)
+            {
+                side = at.x < 0f ? -1f : 1f;
+                frame.rotation = Quaternion.LookRotation(car.transform.right * side, car.transform.up);
+                frame.position = car.transform.TransformPoint(at);
+                where = "pinned in the car frame";
+            }
+            else
+            {
+                var mount = anchor.parent != null ? anchor.parent : anchor;
+                var seat = PlacementFor(car.carLivery.id);
+                var reverser = car.transform.InverseTransformPoint(mount.position);
+                side = reverser.x < 0f ? -1f : 1f;
+                var floor = InjectorOverflow.TryFindCabFloor(car, out var deck) ? deck : reverser.y;
+                var into = car.transform.right * side;
+                var looking = car.transform.TransformPoint(new Vector3(reverser.x - side * WallSearchStart, floor + seat.y / 100f, reverser.z + seat.x / 100f));
+                var onWall = CabRay.TryHit(car, looking, into, WallSearch, out var toWall, out var wall);
+                if (!onWall)
+                    toWall = WallSearchStart + FallbackWallOutboard;
+                frame.rotation = Quaternion.LookRotation(into, car.transform.up);
+                frame.position = looking + into * (toWall + seat.z / 100f - Wall);
+                where = $"by '{anchor.name}' ({seat.x:F0} cm along from the reverser, {seat.y:F0} cm above the floor, {seat.z:F1} cm out, " +
+                        $"wall {(onWall ? $"'{wall.name}'" : "not found; guessed")})";
+            }
 
             var latch = PlaceLatch(sourceLatch, frame, latchPort, booster);
-            StokerCab.Pipe(frame, "body idling valve", new Vector3(IdleAt.x, IdleAt.y, Wall), new Vector3(IdleAt.x, IdleAt.y, BodyFront), BodyRadius);
             var idle = StokerCab.PlaceWheel(sourceValve, frame, IdleAt, BoosterFit.Idle, idlePort);
+            var bodyFront = StokerCab.BodyFrontTo(idle, frame, BodyFront);
+            StokerCab.Pipe(frame, "body idling valve", new Vector3(IdleAt.x, IdleAt.y, Wall), new Vector3(IdleAt.x, IdleAt.y, bodyFront), BodyRadius);
             var idleHover = idle.GetComponent<HoverName>();
             idleHover.Source = () => $"{BoosterFit.Idle.Label}: " + (idlePort.Value > 0.5f
                 ? $"Idling (latch locked out; warm {booster.Model.Warmth:P0})"
@@ -111,9 +152,70 @@ namespace RealisticFiring.Visuals
             gauge.WriteScales();
             BoosterSounds.Attach(car, booster, frame);
             var local = car.transform.InverseTransformPoint(frame.position);
-            return $"booster controls on the {(side < 0f ? "left" : "right")} wall by '{anchor.name}' at ({local.x:F2}, {local.y:F2}, {local.z:F2}) m in the car frame " +
-                   $"({seat.x:F0} cm along from the reverser, {seat.y:F0} cm above the floor, wall {(onWall ? $"'{wall.name}'" : "not found; guessed")}), " +
-                   $"latch {(latch != null ? "placed" : "missing")}, {labels} labels, {gauge.Count} gauge";
+            return $"booster controls on the {(side < 0f ? "left" : "right")} wall at ({local.x:F2}, {local.y:F2}, {local.z:F2}) m in the car frame, {where}, " +
+                   $"latch {(latch != null ? "placed" : "missing")}, idling valve's body {(Wall - bodyFront) * 100f:F1} cm, {labels} labels, {gauge.Count} gauge";
+        }
+
+        private static readonly Dictionary<TrainCar, Transform> Interiors = new Dictionary<TrainCar, Transform>();
+        private static float nextCheck;
+        private static int fittedVersion = -1;
+
+        /// <summary>
+        /// Builds an upgrade's booster controls in a loaded cab once it is
+        /// bought, and takes them out if the menu's rule unfits it, checking
+        /// once a second; call every frame.
+        /// </summary>
+        public static void EnsureFitted()
+        {
+            if (Time.unscaledTime < nextCheck)
+                return;
+            nextCheck = Time.unscaledTime + 1f;
+            var refit = fittedVersion != Upgrades.Fittings.Version;
+            fittedVersion = Upgrades.Fittings.Version;
+            foreach (var car in Interiors.Keys.ToList())
+            {
+                var interior = car != null && car.loadedInterior != null ? car.loadedInterior.transform : null;
+                if (car == null || interior == null || interior != Interiors[car] || !RealisticBooster.TryGet(car, out var booster))
+                {
+                    Interiors.Remove(car);
+                    continue;
+                }
+                var root = interior.Find(RootName);
+                if (root != null && !booster.Fitted)
+                {
+                    Object.DestroyImmediate(root.gameObject);
+                    if (Main.Settings.LogFireboxCreation)
+                        Main.Mod.Logger.Log($"{car.ID}: the booster is no longer fitted; its controls are taken out of the cab");
+                    continue;
+                }
+                if (root != null || !booster.Fitted)
+                    continue;
+                var result = Attach(car, interior);
+                if (result != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log(refit ? $"{car.ID}: the booster fitted; {result}" : $"{car.ID}: the cab had lost its booster controls; {result}");
+            }
+        }
+
+        /// <summary>Rebuilds the controls in every loaded cab, as the seating bench moves them.</summary>
+        public static void RebuildLoaded()
+        {
+            foreach (var pair in Interiors.ToList())
+            {
+                var car = pair.Key;
+                var interior = pair.Value;
+                if (car == null || interior == null || car.loadedInterior == null || car.loadedInterior.transform != interior)
+                {
+                    Interiors.Remove(car);
+                    continue;
+                }
+                var old = interior.Find(RootName);
+                if (old == null)
+                    continue;
+                Object.DestroyImmediate(old.gameObject);
+                var result = Attach(car, interior);
+                if (result != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log($"{car.LogName()}: {result}");
+            }
         }
 
         // The latch: the S282's sander lever with two notches, Down and Up.

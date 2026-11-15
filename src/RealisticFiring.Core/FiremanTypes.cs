@@ -220,6 +220,9 @@ namespace RealisticFiring.Core
         /// <summary>The firebox door, 0 shut to 1 open.</summary>
         public float Door;
 
+        /// <summary>The over-fire jets' valve, 0 shut to 1 open, where the box has jets.</summary>
+        public float OverFireJets;
+
         /// <summary>Rock the grate now.</summary>
         public ShakeStroke? Shake;
 

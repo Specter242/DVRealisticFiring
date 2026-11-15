@@ -77,6 +77,7 @@ namespace RealisticFiring.Visuals
         private FireboxVolume volume;
         private CoalLumps lumps;
         private BrickArch arch;
+        private JetTubes jetTubes;
         private readonly List<(Renderer Renderer, Material[] Stock, Material[] Lit)> taken = new List<(Renderer, Material[], Material[])>();
         private Renderer[] stockEmissive;
         private bool showing;
@@ -133,7 +134,7 @@ namespace RealisticFiring.Visuals
 
         // The wall material with the stock material's surface: its texture,
         // tint, and relief, its holes where it had them.
-        private static Material WallFor(Material wall, Material stock)
+        internal static Material WallFor(Material wall, Material stock)
         {
             var lit = new Material(wall) { name = $"{wall.name} ({(stock != null ? stock.name : "none")})" };
             if (stock == null)
@@ -192,6 +193,11 @@ namespace RealisticFiring.Visuals
             // too hot under the fire to hold soot.
             if (arch != null && arch.Renderer != null)
                 Apply(arch.Renderer, BrickArch.ArchLight * gain, bolts: 0f, soot: 0f);
+            // The over-fire jets' tubes: sooted steel like the sheets they come through.
+            if (jetTubes == null && fire != null)
+                jetTubes = fire.GetComponent<JetTubes>();
+            if (jetTubes != null && jetTubes.Shown)
+                Apply(jetTubes.Renderer, WallLight * gain, bolts: 0f);
             Extra.RemoveAll(r => r == null);
             foreach (var renderer in Extra)
                 if (renderer.gameObject.activeInHierarchy) Apply(renderer, CoalLight * gain);
@@ -272,7 +278,7 @@ namespace RealisticFiring.Visuals
                     height = Mathf.Max(height, WoodFlame.Top(starter, wood));
                 }
                 // Under the brick arch the flames stand no higher than its bricks.
-                if (arch != null)
+                if (arch != null && arch.Fitted)
                     height = Mathf.Min(height, arch.Room(surface));
                 var middle = surface + up * (0.5f * height * (1f + 0.3f * pulse));
                 flamePlaces[i] = new Vector4(middle.x, middle.y, middle.z, Mathf.Max(0.08f, 0.5f * height));

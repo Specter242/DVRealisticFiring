@@ -46,6 +46,7 @@ namespace RealisticFiring.Sim
         {
             public SteamDraft Draft;
             public SteamCompressor Pump;
+            public RealisticFirebox Firebox;
         }
 
         private sealed class FittedPump
@@ -69,7 +70,8 @@ namespace RealisticFiring.Sim
             var working = SafetyValveOpeningPressure(boiler);
             var pump = flow.OrderedSimComps.OfType<SteamCompressor>().FirstOrDefault();
             var maxPump = fit.Pump.Steam * fit.Pumps;
-            Fit(exhaust, new SteamDraft(fit.MaxBlower, fit.Natural, exhaust.entrainmentRatio, working), pump, maxPump);
+            Fit(exhaust, new SteamDraft(fit.MaxBlower, fit.Natural, exhaust.entrainmentRatio, working), pump, maxPump,
+                flow.OrderedSimComps.OfType<RealisticFirebox>().FirstOrDefault());
             var note = $"period blower: {fit.MaxBlower:F2} kg/s at {working:F1} bar (the mod's {exhaust.maxBlowerFlow:F2} at {exhaust.pressureForMaxBlowerFlow:F1}), " +
                        $"{SteamDraft.BlowerEntrainment:F0} kg of air a kg, natural draft {fit.Natural:F2} kg/s (the mod's {exhaust.passiveExhaust:F2}); ";
             if (pump == null)
@@ -106,10 +108,10 @@ namespace RealisticFiring.Sim
         }
 
         /// <summary>Fits a draft to <paramref name="exhaust"/> and, with <paramref name="pump"/>, the pump's steam and its exhaust into the blast pipe.</summary>
-        internal static void Fit(SteamExhaust exhaust, SteamDraft draft, SteamCompressor pump = null, float maxPump = 0f)
+        internal static void Fit(SteamExhaust exhaust, SteamDraft draft, SteamCompressor pump = null, float maxPump = 0f, RealisticFirebox firebox = null)
         {
             ByExhaust.Remove(exhaust);
-            ByExhaust.Add(exhaust, new Fitted { Draft = draft, Pump = pump });
+            ByExhaust.Add(exhaust, new Fitted { Draft = draft, Pump = pump, Firebox = firebox });
             if (pump == null)
                 return;
             ByPump.Remove(pump);
@@ -130,6 +132,15 @@ namespace RealisticFiring.Sim
         public static float PumpSteam(SteamExhaust exhaust) =>
             exhaust != null && ByExhaust.TryGetValue(exhaust, out var fitted) && fitted.Pump != null
                 ? Mathf.Max(0f, fitted.Pump.steamConsumptionReadOut.Value)
+                : 0f;
+
+        /// <summary>
+        /// The steam the engine's over-fire jets take from the boiler now, kg/s:
+        /// from the turret like the blower's, so drawn with it.
+        /// </summary>
+        public static float JetSteam(SteamExhaust exhaust) =>
+            exhaust != null && ByExhaust.TryGetValue(exhaust, out var fitted) && fitted.Firebox != null
+                ? Mathf.Max(0f, fitted.Firebox.Model.JetSteamFlow)
                 : 0f;
 
         public static bool TryGet(SteamExhaust exhaust, out SteamDraft draft)

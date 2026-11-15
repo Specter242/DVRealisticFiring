@@ -73,8 +73,11 @@ namespace RealisticFiring.Core
         /// to <see cref="EfficiencyAtMaxCombustion"/> at the maximum rate, as
         /// the tested boilers' did with the rate of firing.
         /// </summary>
-        public float EfficiencyAt(float rate) =>
-            Smoothing.Lerp(Math.Max(LightFiringEfficiency, EfficiencyAtMaxCombustion), EfficiencyAtMaxCombustion, rate / MaxCombustionRate);
+        public float EfficiencyAt(float rate) => Efficiency.At(rate);
+
+        /// <summary>The boiler's efficiency line: <see cref="LightFiringEfficiency"/> fired lightly to <see cref="EfficiencyAtMaxCombustion"/> at the most.</summary>
+        public EfficiencyLine Efficiency =>
+            new EfficiencyLine(Math.Max(LightFiringEfficiency, EfficiencyAtMaxCombustion), EfficiencyAtMaxCombustion, MaxCombustionRate);
 
         /// <summary>
         /// The burn time that makes a box of <paramref name="maxCoalCapacity"/>

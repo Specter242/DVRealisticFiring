@@ -79,6 +79,7 @@ namespace RealisticFiring.Sim
         private readonly float smoothTime;
         private readonly float coalMultiplier;
         private readonly bool steamWired;
+        private readonly bool upgrade;
 
         private RealisticFirebox firebox;
         private Boiler boiler;
@@ -91,10 +92,11 @@ namespace RealisticFiring.Sim
         private Port[] jetPorts;
         private Port reversePort;
 
-        public RealisticStoker(StokerDefinitionValues def, TrainCar car, float coalMultiplier, bool steamWired)
+        public RealisticStoker(StokerDefinitionValues def, TrainCar car, float coalMultiplier, bool steamWired, bool upgrade = false)
             : base(def.Id)
         {
             this.car = car;
+            this.upgrade = upgrade;
             maxTransferRate = def.MaxTransferRate;
             fullSpeedPressure = def.MaxWorkingPressure;
             smoothTime = def.SmoothTime;
@@ -112,8 +114,31 @@ namespace RealisticFiring.Sim
             coalConsume = AddPortReference(def.CoalConsume);
         }
 
-        /// <summary>The stoker model, once the first tick has found the firebox.</summary>
-        internal Stoker Model => stoker;
+        /// <summary>
+        /// Whether the stoker is on the engine now: always, but for the stock
+        /// S282's, an upgrade bought at a career manager (<see cref="Upgrades.Fittings.Stoker"/>).
+        /// Unfitted, it is built but idle, so buying it fits it at once.
+        /// </summary>
+        internal bool Fitted
+        {
+            get
+            {
+                if (!upgrade)
+                    return true;
+                if (fittedVersion != Upgrades.Fittings.Version)
+                {
+                    fittedVersion = Upgrades.Fittings.Version;
+                    fitted = Upgrades.Fittings.Stoker;
+                }
+                return fitted;
+            }
+        }
+
+        private int fittedVersion = -1;
+        private bool fitted;
+
+        /// <summary>The stoker model, once the first tick has found the firebox; null while it isn't fitted.</summary>
+        internal Stoker Model => Fitted ? stoker : null;
 
         private static readonly HarmonyLib.AccessTools.FieldRef<PortReference, Port> ReferencedPort =
             HarmonyLib.AccessTools.FieldRefAccess<PortReference, Port>("port");
@@ -206,6 +231,18 @@ namespace RealisticFiring.Sim
                 Resolve();
             if (!(delta > 0f))
                 return;
+            if (!Fitted)
+            {
+                // Not bought: it feeds nothing, draws no coal or steam, and the
+                // fire, gauges, and fireman see no stoker.
+                coalConsume.Value = 0f;
+                stokingNormalized.Value = 0f;
+                steamConsumption.Value = 0f;
+                CoalReached = 0f;
+                CoalFrom = "none: not fitted";
+                firebox?.Unstoke();
+                return;
+            }
 
             var modifier = gameParams != null ? gameParams.ResourceConsumptionModifier : 1f;
             // The real pile is authoritative on the host, as for shoveling.

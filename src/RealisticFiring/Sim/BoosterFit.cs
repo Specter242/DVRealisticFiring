@@ -19,12 +19,16 @@ namespace RealisticFiring.Sim
 
         internal sealed class Fit
         {
-            public Fit(float wheelDiameter, float trailerLoad, int drivingAxles)
+            public Fit(float wheelDiameter, float trailerLoad, int drivingAxles, bool upgrade = false)
             {
                 WheelDiameter = wheelDiameter;
                 TrailerLoad = trailerLoad;
                 DrivingAxles = drivingAxles;
+                Upgrade = upgrade;
             }
+
+            /// <summary>Bought at a career manager (<see cref="Upgrades.Fittings.Booster"/>): built in, idle until fitted.</summary>
+            public bool Upgrade { get; }
 
             /// <summary>The trailer wheels the booster drives, m.</summary>
             public float WheelDiameter { get; }
@@ -41,12 +45,18 @@ namespace RealisticFiring.Sim
             // NYC J-3a: a Franklin C-2 on the 51-in rear trailer wheels, whose
             // axle carries 55,500 lb; three driving axles (official NYC diagram).
             ["S464-730"] = new Fit(1.2954f, 25174f, 3),
+            ["LocoS282A"] = new Fit(1.0922f, 20412f, 4, upgrade: true),
         };
 
         public static bool TryGet(string liveryId, out Fit fit)
         {
             fit = null;
-            return liveryId != null && Fits.TryGetValue(liveryId, out fit);
+            if (liveryId == null || !Fits.TryGetValue(liveryId, out var found))
+                return false;
+            if (!(found.Upgrade ? Main.Session.S282Booster : Main.Session.FitBoosters))
+                return false;
+            fit = found;
+            return true;
         }
 
         public static BoosterSpec SpecFor(TrainCar car)

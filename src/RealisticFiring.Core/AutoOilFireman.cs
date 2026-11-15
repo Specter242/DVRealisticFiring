@@ -104,7 +104,7 @@ namespace RealisticFiring.Core
             if (Mode == FiremanMode.Off || !(dt > 0f))
                 return actions;
 
-            var j = Perceive(dt, r, fire.Parameters);
+            var j = Perceive(dt, r, fire.Parameters.Efficiency);
             Fire(dt, fire, r, j, ref actions);
             Air(dt, fire, r, j, ref actions);
             Water(dt, r, j, ref actions);

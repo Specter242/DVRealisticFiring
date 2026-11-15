@@ -36,6 +36,10 @@ namespace RealisticFiring.Sim
 
             /// <summary>How much more lump coal the stoker sends left than right.</summary>
             public float StokerLumpsLeft { get; set; }
+
+ public float? ArchLength { get; set; }
+
+ public OverFireJets Jets { get; set; }
         }
 
         // A measured slope this close to level is a coal pile modeled flat.
@@ -76,16 +80,33 @@ namespace RealisticFiring.Sim
             // back corners at speed. The typical draft is a Mikado's measured
             // one: a Frisco 2-8-2 with a sealed arch pulled hardest at the back
             // (Acker, RME Apr. 1930).
+            // Its drawn arch covers about the front half of the grate
+            // (BrickArch): a full arch, as the tested engines'.
             ["LocoS282A"] = new Firebox("a light Mikado's wide box: short chamber and arch; draws hardest at the back, and the fire creeps forward off the back corners",
-                new GrateCharacter { OverFireMixing = 0.95f }),
+                new GrateCharacter { OverFireMixing = 0.95f })
+            {
+                ArchLength = 1f,
+                // A road engine's fire (about 150 lb/sq ft/h at its most): BE's
+                // 3-1/4-in tubes with 0.150-in nozzles, on 24-in centers along
+                // its 1.9 m of grate, staggered: six (council round 1).
+                Jets = new OverFireJets(6, JetTube.Large),
+            },
 
             // A small switcher's narrow, level grate between the frames
             // (the USATC S100 the community likens it to: 19 sq ft, hand
             // fired). No combustion chamber; a short arch: it draws nearly
             // evenly, end to end, a little harder at the back, and smokes
             // readily after firing (inferred).
+            // Its short arch (BrickArch: 0.68 m of a 1.86 m grate, 37 %)
+            // reaches about three-quarters as far as a full arch's half.
             ["LocoS060"] = new Firebox("a switcher's small, narrow box: draws nearly evenly, smokes readily",
-                new GrateCharacter { BackRowDraft = 1.04f, FrontRowDraft = 0.96f, SideDraft = 1.04f, OverFireMixing = 0.8f }),
+                new GrateCharacter { BackRowDraft = 1.04f, FrontRowDraft = 0.96f, SideDraft = 1.04f, OverFireMixing = 0.8f })
+            {
+                ArchLength = 0.73f,
+                // A switcher: BE's 2-1/4-in tubes with 1/8-in nozzles, four on
+                // 24-in centers along its 1.65 m of grate.
+                Jets = new OverFireJets(4, JetTube.Small),
+            },
 
             // Lilla and Cruzer's fictional 1897-1912 shunter. Its modeled
             // grate is narrow, long, and level (0.897 by 1.593 m). With no arch

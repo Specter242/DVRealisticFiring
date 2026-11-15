@@ -38,6 +38,8 @@
     <Reference Include="net.smkd.vector3d" HintPath="$(DvManagedDir)/net.smkd.vector3d.dll" Private="false" />
     <Reference Include="DV.Simulation" HintPath="$(DvManagedDir)/DV.Simulation.dll" Private="false" />
     <Reference Include="DV.ThingTypes" HintPath="$(DvManagedDir)/DV.ThingTypes.dll" Private="false" />
+    <Reference Include="DV.Common" HintPath="$(DvManagedDir)/DV.Common.dll" Private="false" />
+    <Reference Include="DV.UserManagement" HintPath="$(DvManagedDir)/DV.UserManagement.dll" Private="false" />
     <Reference Include="DV.Utils" HintPath="$(DvManagedDir)/DV.Utils.dll" Private="false" />
     <Reference Include="DV.WeatherSystem" HintPath="$(DvManagedDir)/DV.WeatherSystem.dll" Private="false" />
     <Reference Include="Newtonsoft.Json" HintPath="$(DvManagedDir)/Newtonsoft.Json.dll" Private="false" />

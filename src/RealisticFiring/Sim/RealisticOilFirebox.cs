@@ -57,6 +57,20 @@ namespace RealisticFiring.Sim
         private readonly Port coalEnvDamage;
         private readonly Port ignitionExtIn;
         private readonly Port extinguishExtIn;
+
+        /// <summary>
+        /// Takes back a request to put the fire out not yet carried out: the
+        /// career manager's service sets the engine's controls to neutral,
+        /// its power off among them, and on a steam engine that puts the fire
+        /// out (Patches.ServiceFirePatch). Returns whether one was pending.
+        /// </summary>
+        internal bool KeepFire()
+        {
+            if (extinguishExtIn.Value != 1f)
+                return false;
+            extinguishExtIn.Value = 0f;
+            return true;
+        }
         private readonly Port heatReadOut;
         private readonly Port fireOnReadOut;
         private readonly Port smokeDensityReadOut;

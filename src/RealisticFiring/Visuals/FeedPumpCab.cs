@@ -51,6 +51,7 @@ namespace RealisticFiring.Visuals
             ["S464-730"] = new Spot(Vector2.zero, new Vector2(0.076f, 0.24f)),
             // Beside the QJ's triangle, clear of the speedometer above it.
             [QjStokerCab.Livery] = new Spot(new Vector2(0.26f, -0.28f), new Vector2(0.26f, -0.14f)),
+            ["LocoS282A"] = new Spot(Vector2.zero, new Vector2(0f, 0.12f), new Vector3(-0.46f, 2.9f, 0.06f)),
         };
 
         private static readonly Spot DefaultSpot = new Spot(new Vector2(-0.165f, -0.12f), new Vector2(-0.165f, 0.03f));
@@ -108,14 +109,16 @@ namespace RealisticFiring.Visuals
                 || !FeedwaterFit.TryGet(car.carLivery.id, out var fit) || fit.OnInjectorLever)
                 return null;
             var flow = car.SimController != null ? car.SimController.SimulationFlow : null;
-            if (flow == null || flow.OrderedSimComps.Any(c => c != null && c.id == StokerJetControls.Master.Id))
+            // On a stoker engine the manifold carries it, but for an upgrade's, which has a seat of its own.
+            if (flow == null || !fit.Upgrade && flow.OrderedSimComps.Any(c => c != null && c.id == StokerJetControls.Master.Id))
                 return null;
             float Across(Component c) => car.transform.InverseTransformPoint(c.transform.position).x;
             var lever = interior.GetComponentsInChildren<InteractablePortFeeder>(true)
                 .Where(f => f.portId == rig.LeverPortId)
                 .OrderBy(Across)
                 .FirstOrDefault();
-            if (lever == null)
+            var seated = SeatedInCar(car.carLivery.id);
+            if (lever == null && !seated.HasValue)
                 return "no injector lever in the cab to place the feed pump's valve by";
             if (!DV.Globals.G.Types.TryGetLivery(StokerCab.SourceLivery, out var source) || source.interiorPrefab == null)
                 return $"no {StokerCab.SourceLivery} cab to take the feed pump's valve from";
@@ -126,7 +129,6 @@ namespace RealisticFiring.Visuals
             var sourceLabel = source.interiorPrefab.transform.Find(StokerCab.SourceLabel);
 
             var id = car.carLivery.id;
-            var seated = SeatedInCar(id);
             var spot = seated ?? FromLever(car, lever.transform);
             BuiltOnBackhead[id] = spot;
             var root = new GameObject(BackheadRoot);
@@ -136,7 +138,7 @@ namespace RealisticFiring.Visuals
             frame.SetParent(root.transform, false);
             frame.SetPositionAndRotation(car.transform.TransformPoint(spot.ValveInCar.Value), Quaternion.LookRotation(car.transform.forward, car.transform.up));
             var built = BuildInManifold(car, flow, frame, source.interiorPrefab.transform, sourceValve, sourceControl, sourceLabel, null, spot,
-                $"by the injector lever '{lever.name}'");
+                lever != null ? $"by the injector lever '{lever.name}'" : "on the backhead");
             root.SetActive(true);
             built.Gauge?.WriteScales();
             var at = spot.ValveInCar.Value;
@@ -150,6 +152,43 @@ namespace RealisticFiring.Visuals
             var at = car.transform.InverseTransformPoint(lever.position);
             var inward = at.x < 0f ? 1f : -1f;
             return new Spot(Vector2.zero, BackheadGauge, new Vector3(at.x + inward * BackheadFromLever.x, at.y + BackheadFromLever.y, at.z));
+        }
+
+        private static float nextCheck;
+        private static int fittedVersion = -1;
+
+        /// <summary>
+        /// Builds an upgrade's pump valve and gauge in a loaded cab once it is
+        /// bought, and takes them out if the menu's rule unfits it, checking
+        /// once a second; call every frame.
+        /// </summary>
+        public static void EnsureFitted()
+        {
+            if (Time.unscaledTime < nextCheck)
+                return;
+            nextCheck = Time.unscaledTime + 1f;
+            var refit = fittedVersion != Upgrades.Fittings.Version;
+            fittedVersion = Upgrades.Fittings.Version;
+            foreach (var rig in InjectorRig.All)
+            {
+                var car = rig.Car;
+                var interior = car != null && car.loadedInterior != null ? car.loadedInterior.transform : null;
+                if (interior == null || !FeedwaterFit.TryGet(car.carLivery.id, out var fit) || !fit.Upgrade)
+                    continue;
+                var root = interior.Find(BackheadRoot);
+                if (root != null && rig.Pump == null)
+                {
+                    Object.DestroyImmediate(root.gameObject);
+                    if (Main.Settings.LogFireboxCreation)
+                        Main.Mod.Logger.Log($"{car.ID}: the feed pump is no longer fitted; its valve and gauge are taken out of the cab");
+                    continue;
+                }
+                if (root != null || rig.Pump == null)
+                    continue;
+                var result = AttachOnBackhead(car, interior);
+                if (result != null && Main.Settings.LogFireboxCreation)
+                    Main.Mod.Logger.Log(refit ? $"{car.ID}: the feed pump fitted; {result}" : $"{car.ID}: the cab had lost its feed pump; {result}");
+            }
         }
 
         /// <summary>Rebuilds every loaded backhead pump valve and gauge, as the seating bench moves them.</summary>
@@ -229,6 +268,9 @@ namespace RealisticFiring.Visuals
             if (car == null || flow == null || !InjectorRig.TryGet(car, out var rig) || rig.Pump == null
                 || !FeedwaterFit.TryGet(car.carLivery.id, out var fit) || !flow.TryGetPort(FeedwaterFit.Valve.PortId, out var port))
                 return (null, null);
+            // An upgrade's pump stands on the backhead in its own seat, stoker or not.
+            if (fit.Upgrade && at == null)
+                return (null, null);
 
             var spot = at ?? SpotFor(car.carLivery.id);
             var valveAt = spot.Valve;
@@ -246,10 +288,11 @@ namespace RealisticFiring.Visuals
             if (!fit.OnInjectorLever && sourceValve != null)
             {
                 // The valve's body runs back into the boiler.
-                StokerCab.Pipe(frame, "body feed pump", new Vector3(valvePoint.x, valvePoint.y, BodyBack), new Vector3(valvePoint.x, valvePoint.y, BodyFront), BodyRadius);
+                var control = StokerCab.PlaceWheel(sourceValve, frame, valvePoint, FeedwaterFit.Valve, port);
+                StokerCab.Pipe(frame, "body feed pump", new Vector3(valvePoint.x, valvePoint.y, BodyBack),
+                    new Vector3(valvePoint.x, valvePoint.y, StokerCab.BodyFrontTo(control, frame, BodyFront)), BodyRadius);
                 notes.Add(StokerCab.PipeToBackhead(frame, car, new Vector2(valvePoint.x, valvePoint.y), BodyBack, BodyRadius, FlangeRadius,
                     "feed pump valve", FallbackPanelDepth));
-                var control = StokerCab.PlaceWheel(sourceValve, frame, valvePoint, FeedwaterFit.Valve, port);
                 control.GetComponent<HoverName>().Source = () => Hover(rig);
                 // Turned as the manifold's plates are, or, alone, as its own wheel.
                 var labelled = StokerCab.HangLabel(sourceControl, sourceLabel, plateFacing != null ? plateFacing : control, frame,

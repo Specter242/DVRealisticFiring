@@ -117,6 +117,7 @@ namespace RealisticFiring.AdapterCheck
             P(mine, "IGNITION_EXT_IN").ExternalValueUpdate(1f);
             mine.Tick(0.02f);
             Check(P(mine, "FIRE_ON").Value == 0f && P(mine, "IGNITION_EXT_IN").Value == 0f, "stock ignition request cannot bypass wood and rag lighting and resets");
+            CheckLighterLightsCoal(def, gameParams, air);
             mine.Model.Restore(true, mine.Model.CoalMass);
             for (var i = 0; i < 500; i++)
                 mine.Tick(0.02f);
@@ -575,6 +576,53 @@ namespace RealisticFiring.AdapterCheck
                 Net.ClientCheck = client;
                 Net.SessionCheck = session;
                 HudPolicy.Reset();
+            }
+        }
+
+        // The setting that has the lighter light laid coal as the stock game
+        // does (kadengamesj, 2026-11-14): the stock request lights a dry,
+        // laid bed with it on, and never a wet one.
+        private static void CheckLighterLightsCoal(FireboxDefinition def, SimGameParams gameParams, Port air)
+        {
+            var settings = RealisticFiring.Main.Settings;
+            try
+            {
+                RealisticFiring.Main.Settings.LighterLightsCoal = true;
+                var dry = Create(def, gameParams);
+                dry.GetAllPortReferences().Single(r => r.id == $"{Id}.AIR_FLOW").SetPortReference(air);
+                P(dry, "IGNITION_EXT_IN").ExternalValueUpdate(1f);
+                dry.Tick(0.02f);
+                Check(P(dry, "FIRE_ON").Value == 0f && P(dry, "IGNITION_EXT_IN").Value == 0f,
+                    "with the lighter setting on, a request on an empty grate lights nothing and resets");
+                // Laid first: the request is checked before a delivery in the same tick lands.
+                P(dry, "COAL_CONTROL_EXT_IN").Value += 9f;
+                dry.Tick(0.02f);
+                Check(P(dry, "FIRE_ON").Value == 0f && dry.Model.CoalMass > 8f, "laid coal does not light itself");
+                P(dry, "IGNITION_EXT_IN").ExternalValueUpdate(1f);
+                dry.Tick(0.02f);
+                Check(P(dry, "FIRE_ON").Value == 1f && dry.Model.FireOn && P(dry, "IGNITION_EXT_IN").Value == 0f,
+                    "with the lighter setting on, the stock request lights laid coal and resets");
+                // Five seconds: at a dead boiler the game's Steam Startup burns
+                // the box up to 25 times as fast, and this draft takes 9 kg in 20 s.
+                for (var i = 0; i < 250; i++)
+                    dry.Tick(0.02f);
+                Check(P(dry, "FIRE_ON").Value == 1f && dry.Model.BurningMass > 0.5f && P(dry, "HEAT").Value > 0f,
+                    $"the lit coal catches ({dry.Model.BurningMass:F1} kg burning after 5 s)");
+
+                var wet = Create(def, gameParams);
+                wet.GetAllPortReferences().Single(r => r.id == $"{Id}.AIR_FLOW").SetPortReference(air);
+                wet.GetAllPortReferences().Single(r => r.id == $"{Id}.INTAKE_WATER_CONTENT").SetPortReference(
+                    new Port("water", new PortDefinition(PortType.READONLY_OUT, PortValueType.STATE, "WATER"), 0.8f));
+                P(wet, "COAL_CONTROL_EXT_IN").Value += 9f;
+                wet.Tick(0.02f);
+                P(wet, "IGNITION_EXT_IN").ExternalValueUpdate(1f);
+                wet.Tick(0.02f);
+                Check(P(wet, "FIRE_ON").Value == 0f && !wet.Model.FireOn, "with the lighter setting on, a drowned grate does not light");
+            }
+            finally
+            {
+                RealisticFiring.Main.Settings = settings;
+                RealisticFiring.Main.Settings.LighterLightsCoal = false;
             }
         }
 
@@ -4060,9 +4108,9 @@ namespace RealisticFiring.AdapterCheck
         private static void CheckFiringManual()
         {
             var rows = Items.FiringManualContents.Entries;
-            Check(rows.Length == 16 && Items.FiringManualContents.PageCount == 18
+            Check(rows.Length == 17 && Items.FiringManualContents.PageCount == 19
                   && Items.FiringManualContents.ContentsPage == 1,
-                "the manual preserves O1's cover and fifteen lessons, with contents and the appended throttle page");
+                "the manual preserves O1's cover and fifteen lessons, with contents and the appended throttle and upgrades pages");
             for (var i = 0; i < rows.Length; i++)
             {
                 Check(Items.FiringManualContents.TryDestination(i, 1, out var target) && target == i + 2
@@ -4071,7 +4119,7 @@ namespace RealisticFiring.AdapterCheck
                     $"manual contents row {i + 1} opens its printed page {i + 2}");
             }
             Check(!Items.FiringManualContents.TryDestination(-1, 1, out _)
-                  && !Items.FiringManualContents.TryDestination(16, 1, out _)
+                  && !Items.FiringManualContents.TryDestination(17, 1, out _)
                   && !Items.FiringManualContents.TryDestination(0, 0, out _)
                   && !Items.FiringManualContents.TryDestination(0, 2, out _),
                 "manual links reject non-contents pages and invalid rows");

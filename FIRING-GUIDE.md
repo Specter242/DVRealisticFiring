@@ -62,7 +62,8 @@ under the door first. Keep those fuller (heaviest at the sides and back
 corners), and the air spreads forward. On a sloping grate the coal also
 creeps forward at speed, so the back wants it all the more. A bare patch
 takes about three times its share of air and chills the fire: fill holes
-before anything else.
+before anything else. An S282 or S060 without its arch draws the other way;
+see [Upgrades](#upgrades-and-how-they-change-the-firing).
 
 **Aim each shovelful** where the overlay shows the coal running short, by
 where you point in the open firehole, read like a keypad: the top third
@@ -193,7 +194,74 @@ covered districts and the full allowance rules.
   dumping it elsewhere adds an environmental fee. Check the handle's hover
   before opening it. From outside, a bright glow under the engine means clean grates.
 
-## Stoker (S282 if fitted, NYC Hudson, 844, S484-840, QJ)
+## Upgrades and how they change the firing
+
+In a career the stock S282 and S060 start in their most basic form: no
+brick arch, no over-fire jets, and the S282 hand fired, fed by its
+injector alone, with no booster. Buy each fitting at any career manager's
+**Upgrades** screen: choose it, put your wallet to the register, and
+confirm. From then on every engine it fits has it, the one you're on
+included. Sandbox has them all. **Engine → Firebox Upgrades** in the mod's
+settings (F8) can fit each always or never instead.
+
+| Upgrade | Engines | Price |
+| --- | --- | --- |
+| Brick arch | S282, S060 | $20,000 |
+| Over-fire jets | S282, S060, once the arch is bought | $15,000 |
+| Stoker | S282 | $40,000 |
+| Feed pump and heater | S282 | $25,000 |
+| Booster | S282 | $30,000 |
+
+**Without the brick arch** the gas leaves the box half burnt: about 7 %
+more coal for the same work fired lightly, up to 13 % more worked hard,
+about 13 % less steam at the most, and smoke after every round. The draft
+runs the other way too. With no arch to turn the gas from the back of the
+grate, the front draws hardest and burns through first. Keep the front
+fuller, fire lighter and more often, and crack the door after each round.
+With the arch, fire the back and the back corners heavier, as above. The
+arch pays for itself in coal before anything else does: buy it first.
+
+**With the over-fire jets** (the JETS valve beside the blower valve),
+steam jets through the firebox sides blow air over the fire and burn the
+smoke of a fresh round. You'll hear them hiss.
+
+- **Open them** after firing a round, and standing or drifting with smoke
+  showing. Shut them once the smoke clears.
+- **Shut them** while the door is open, and when working hard: against the
+  full draft they reach only part way across and cost steam for little.
+- **Keep the blower on** standing with them open. They take some of the
+  grate's draft, and without the blower the fire starves and blows back out
+  of an open door.
+- With them you needn't crack the door for smoke. They cost a little
+  steam, about 2 % of the coal over a run, for a clean stack, and that
+  pays off in town: a fresh round standing at a station clears before it
+  runs up an environmental fee (see
+  [Smoke in towns](#smoke-in-towns)).
+
+**With the stoker** (S282) the fireman shovels only where it runs short.
+It feeds steadily as long as you keep the jets set and the engine
+working; see [Stoker](#stoker-s282-once-bought-nyc-hudson-844-s484-840-qj).
+It runs the back corners and under the door short, smokes if left
+feeding standing, and takes steam for its engine and jets. Without it,
+fire the S282 by hand as above.
+
+**With the feed pump and heater** (S282) the exhaust heats the water
+before it goes in, so each kilogram fed takes about an eighth less heat
+once the heater is hot (about seven minutes of working). Start on the
+injector, then feed with the pump while working; the pressure holds
+better and the tender lasts longer. The injector stays the second feed,
+and the one to use standing. See [Water](#water).
+
+**With the booster** (S282) the engine starts about a fifth harder, about
+11,500 lb more, for heavy trains and slow climbs. It takes a lot of steam:
+build the fire up before you cut it in, and expect the pressure to fall
+while it works. Cut it out by 21 mph. See
+[Booster](#booster-nyc-hudson-s282-once-bought).
+
+The automatic fireman works the jets, the stoker, and the feed pump when
+they're fitted. The booster is the engineer's.
+
+## Stoker (S282 once bought, NYC Hudson, 844, S484-840, QJ)
 
 - **Start** with steam up: floor lever at Forward, open the stoker engine
   valve, and set the feed to hold the coal steady.
@@ -319,8 +387,8 @@ covered districts and the full allowance rules.
   see [Throttle characteristics](#throttle-characteristics).
 - **Don't run the tender dry:** nearly empty, a climb or a hard start runs
   the water off the outlet and the injectors lose it until it runs back.
-- **Feed pump and heater** (Hudson, 844, S484-840, 2901, QJ): start on the
-  injector, then switch to the pump once the engine has worked a few
+- **Feed pump and heater** (Hudson, 844, S484-840, 2901, QJ, and the S282
+  once bought): start on the injector, then switch to the pump once the engine has worked a few
   minutes. It feeds hot water and holds the pressure better. Ease it before
   you shut off.
 - **Blow down** in short bursts, about three seconds open and five or six
@@ -409,11 +477,12 @@ wear from drifting hooked up.
 Turning off **Realistic cylinders** restores the game's throttle response
 and disables the mod's cylinder and superheater behavior.
 
-## Booster (NYC Hudson)
+## Booster (NYC Hudson, S282 once bought)
 
-A small engine on the trailing truck that adds about 12,100 lb of pull for
-starting and slow running. Its controls are on the wall by the reverser:
-the IDLING VALVE wheel, the BOOSTER LATCH, and the BOOSTER gauge.
+A small engine on the trailing truck that adds pull for starting and slow
+running: about 12,100 lb on the Hudson, about 11,500 lb on the S282. Its
+controls are on the wall by the reverser: the IDLING VALVE wheel, the
+BOOSTER LATCH, and the BOOSTER gauge.
 
 **Cutting it in:**
 
@@ -458,7 +527,7 @@ A grinding clash means the booster was turning or you were going too fast.
 | Oil stack | light grey-brown haze |
 | Injector | at least 2.5 bar; water open, steam Prime, then Feed; water past two fifths |
 | Blowdown | 3 s open, 5–6 s shut; about a sixth of the feed |
-| Booster (Hudson) | idling valve open 2–3 min, shut it, wait 10 s; under 12 mph, reverser forward, throttle open: raise the latch |
+| Booster (Hudson, S282) | idling valve open 2–3 min, shut it, wait 10 s; under 12 mph, reverser forward, throttle open: raise the latch |
 | Water | middle of the glass |
 
 ## Starting a cold coal fire

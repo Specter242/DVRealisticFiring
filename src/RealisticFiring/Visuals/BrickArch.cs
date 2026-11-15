@@ -152,6 +152,11 @@ namespace RealisticFiring.Visuals
         /// <summary>Whether the arch is drawn and holds the flames.</summary>
         internal bool Shown => archRenderer != null && archRenderer.enabled;
 
+        /// <summary>Whether the engine has its arch now: it is an upgrade on the stock engines (<see cref="Upgrades.Fittings"/>).</summary>
+        internal bool Fitted => firebox == null || firebox.ArchFitted;
+
+        private RealisticFirebox firebox;
+
         // (Little blue in it: a white-hot fire's light on a paler buff drew
         // the bricks pink.)
         private static readonly Color Brick = new Color(0.85f, 0.74f, 0.52f);
@@ -267,6 +272,7 @@ namespace RealisticFiring.Visuals
                 return null;
             var arch = fire.gameObject.AddComponent<BrickArch>();
             arch.bed = bed;
+            arch.firebox = firebox;
             arch.flames = flames;
             arch.shape = shape;
             arch.material = new Material(wall) { name = wall.name + " (brick arch)" };
@@ -730,7 +736,7 @@ namespace RealisticFiring.Visuals
 
         private void LateUpdate()
         {
-            var show = Main.Settings != null && Main.Settings.ShowZonedCoalBed && bed != null && bed.Ready && ArchShown > 0.5f;
+            var show = Main.Settings != null && Main.Settings.ShowZonedCoalBed && bed != null && bed.Ready && ArchShown > 0.5f && Fitted;
             if (archRenderer != null && archRenderer.enabled != show)
                 archRenderer.enabled = show;
             if (!show)

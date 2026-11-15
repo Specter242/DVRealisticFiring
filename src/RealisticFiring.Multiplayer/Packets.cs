@@ -5,10 +5,15 @@ using UnityEngine;
 
 namespace RealisticFiring.Multiplayer
 {
-    /// <summary>The host's live display rule, sent reliably on join and whenever it changes.</summary>
+    /// <summary>
+    /// The host's live session rules, sent reliably on join and whenever one
+    /// changes: its display rule, and whether the lighter lights a cold coal
+    /// bed (the host's sim decides; a guest's lighter follows it).
+    /// </summary>
     public sealed class HudPolicyPacket : ISerializablePacket
     {
         public bool Hidden;
+        public bool LighterLightsCoal;
 
         /// <summary>
         /// One more each time the host sends its rule (wrapping): the
@@ -21,12 +26,60 @@ namespace RealisticFiring.Multiplayer
         {
             writer.Write(Hidden);
             writer.Write(Seq);
+            writer.Write(LighterLightsCoal);
         }
 
         public void Deserialize(BinaryReader reader)
         {
             Hidden = reader.ReadBoolean();
             Seq = reader.ReadUInt16();
+            LighterLightsCoal = reader.ReadBoolean();
+        }
+    }
+
+    /// <summary>
+    /// Whether the host's engines have their brick arches, over-fire jets,
+    /// and the S282's stoker, feed pump, and booster (Upgrades.Fittings),
+    /// sent reliably on join and whenever it changes: a client's own setting
+    /// and save do not count in the host's game.
+    /// </summary>
+    public sealed class FittingsPacket : ISerializablePacket
+    {
+        public bool Arch;
+
+        /// <summary>One more each time the host sends (wrapping), as <see cref="HudPolicyPacket.Seq"/>.</summary>
+        public ushort Seq;
+
+        /// <summary>Whether the host's engines have their over-fire jets.</summary>
+        public bool Jets;
+
+        /// <summary>Whether the host's S282s have their stoker.</summary>
+        public bool Stoker;
+
+        /// <summary>Whether the host's S282s have their feed pump.</summary>
+        public bool FeedPump;
+
+        /// <summary>Whether the host's S282s have their booster.</summary>
+        public bool Booster;
+
+        public void Serialize(BinaryWriter writer)
+        {
+            writer.Write(Arch);
+            writer.Write(Seq);
+            writer.Write(Jets);
+            writer.Write(Stoker);
+            writer.Write(FeedPump);
+            writer.Write(Booster);
+        }
+
+        public void Deserialize(BinaryReader reader)
+        {
+            Arch = reader.ReadBoolean();
+            Seq = reader.ReadUInt16();
+            Jets = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
+            Stoker = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
+            FeedPump = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
+            Booster = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
         }
     }
 

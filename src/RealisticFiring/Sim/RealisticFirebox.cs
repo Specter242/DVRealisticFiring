@@ -63,6 +63,20 @@ namespace RealisticFiring.Sim
         private readonly Port coalEnvDamage;
         private readonly Port ignitionExtIn;
         private readonly Port extinguishExtIn;
+
+        /// <summary>
+        /// Takes back a request to put the fire out not yet carried out: the
+        /// career manager's service sets the engine's controls to neutral,
+        /// its power off among them, and on a steam engine that puts the fire
+        /// out (Patches.ServiceFirePatch). Returns whether one was pending.
+        /// </summary>
+        internal bool KeepFire()
+        {
+            if (extinguishExtIn.Value != 1f)
+                return false;
+            extinguishExtIn.Value = 0f;
+            return true;
+        }
         private readonly Port heatReadOut;
         private readonly Port fireOnReadOut;
         private readonly Port coalDumpFlowNormalizedReadOut;
@@ -97,7 +111,7 @@ namespace RealisticFiring.Sim
                 fDef.temperatureSmoothTime));
             shovel = new ShovelDelivery(Model.Parameters);
             Character = FireboxCharacters.For(car);
-            Model.Character = Character.Grate;
+            Refit();
             Model.GrateSlope = FireboxCharacters.Slope(car,
                 car != null && car.carLivery != null && GrateSlopes.TryGetValue(car.carLivery.id, out var slope) ? slope : 0f);
             var livery = car?.carLivery?.id;
@@ -134,6 +148,26 @@ namespace RealisticFiring.Sim
 
         /// <summary>This loco's own firebox: its grate, its coal, and its stoker's habits.</summary>
         public FireboxCharacters.Firebox Character { get; }
+
+        /// <summary>Whether this box has its brick arch now, where the arch is an upgrade (<see cref="Upgrades.Fittings"/>).</summary>
+        public bool ArchFitted { get; private set; } = true;
+
+        private int fittedVersion = -1;
+
+        // The box's figures with its fittings as they are now: a stock
+        // engine's arch bought or not, every other box as it is.
+        private void Refit()
+        {
+            fittedVersion = Upgrades.Fittings.Version;
+            ArchFitted = !Character.ArchLength.HasValue || Upgrades.Fittings.Arch;
+            Model.Character = ArchFitted ? Character.Grate : Character.Grate.WithoutArch(Character.ArchLength.Value);
+            var jetsWere = JetsFitted;
+            JetsFitted = Character.Jets != null && Upgrades.Fittings.Jets;
+            Model.Jets = JetsFitted ? Character.Jets : null;
+            // The cab's valve comes and goes with the jets.
+            if (JetsFitted != jetsWere && Car != null && Car.loadedInterior != null)
+                Visuals.JetsCab.Rebuild(Car);
+        }
 
         /// <summary>The visible smoke the fire makes, for the firebox view and the stack.</summary>
         public FireboxSmoke Smoke { get; } = new FireboxSmoke();
@@ -236,6 +270,23 @@ namespace RealisticFiring.Sim
         public static readonly StokerJetControls.Valve DropGrateControl = new StokerJetControls.Valve("rfDropGrate", "Drop grate", null, 0f);
 
         public void AttachDropGratePort(Port port) => dropGratePort = port;
+
+        /// <summary>
+        /// The over-fire jets' globe valve in the cab, a saved control the mod
+        /// adds to engines whose box can have jets (<see cref="FireboxCharacters.Firebox.Jets"/>):
+        /// 0 shut, 1 wide open. It blows only while the jets are fitted.
+        /// </summary>
+        public static readonly StokerJetControls.Valve JetsControl = new StokerJetControls.Valve("rfOverFireJets", "Over-fire jets", null, 0f);
+
+        public void AttachJetsPort(Port port) => jetsPort = port;
+
+        private Port jetsPort;
+
+        /// <summary>The jets' valve as it stands, 0 to 1; 0 with no valve.</summary>
+        public float JetOpening => jetsPort != null ? Mathf.Clamp01(jetsPort.Value) : 0f;
+
+        /// <summary>Whether this box has its over-fire jets now (<see cref="Upgrades.Fittings"/>).</summary>
+        public bool JetsFitted { get; private set; }
 
         /// <summary>
         /// The ashpan's hopper lever, outside the loco, a control the mod adds
@@ -438,6 +489,14 @@ namespace RealisticFiring.Sim
             return fed;
         }
 
+        /// <summary>No stoker feeds this box now: an S282's not yet bought (<see cref="RealisticStoker.Fitted"/>).</summary>
+        internal void Unstoke()
+        {
+            LastStoker = null;
+            StokerModel = null;
+            StokerEngineSpeed = 0f;
+        }
+
         /// <summary>The iron or empty shovel knocks fuel off the distributor at the back of the fire.</summary>
         internal float ClearStokerTable()
         {
@@ -462,6 +521,8 @@ namespace RealisticFiring.Sim
 
         public override void Tick(float delta)
         {
+            if (fittedVersion != Upgrades.Fittings.Version)
+                Refit();
             FollowCoal(delta);
             if (Net.IsClient)
             {
@@ -520,6 +581,8 @@ namespace RealisticFiring.Sim
                 StartupMultiplier = StartupMultiplier,
                 BoilerTemperature = boilerTemperature.Value,
                 Speed = Mathf.Abs(forwardSpeed.Value),
+                JetOpening = JetOpening,
+                BoilerPressure = boilerPressure.Value,
             });
             if (consumed > 0f)
                 coalEnvDamage.Value += consumed;
@@ -586,6 +649,12 @@ namespace RealisticFiring.Sim
         // ports, and is pinned each second to the host's fire and coal.
         private void FollowHost(float delta)
         {
+            // The guest's lighter set the ignition request, and the
+            // Multiplayer mod sent it to the host as it changed; the host
+            // decides what lights. Cleared here as the host's sim clears its
+            // own, or a second request would not change it and never be sent.
+            if (ignitionExtIn.Value != 0f)
+                ignitionExtIn.Value = 0f;
             if (!(delta > 0f))
                 return;
             var hostFireOn = fireOnReadOut.Value == 1f;
@@ -612,14 +681,32 @@ namespace RealisticFiring.Sim
                 StartupMultiplier = 1f,
                 BoilerTemperature = boilerTemperature.Value,
                 Speed = Mathf.Abs(forwardSpeed.Value),
+                JetOpening = JetOpening,
+                BoilerPressure = boilerPressure.Value,
             });
             Smoke.Step(delta, Model);
         }
 
+        /// <summary>
+        /// Whether the lighter at the open door lights this fire now: with the
+        /// setting on (a guest's host's), laid coal on a dry grate, the fire
+        /// out. Otherwise the lighter lights only the rag.
+        /// </summary>
+        public bool LighterLightsCoal => LighterLighting.LightsCoal(LighterRule.LightsCoal, Model.CoalMass, IntakeWater, Model.FireOn);
+
+        // The stock ignition request (the lighter, the light-fire key, or a
+        // guest's lighter through the Multiplayer mod) lights laid coal only
+        // with the setting on; otherwise the wood and rag light the fire.
         private void CheckIgnition()
         {
             if (ignitionExtIn.Value == 1f)
             {
+                if (LighterLightsCoal)
+                {
+                    Model.Ignite();
+                    fireOnReadOut.Value = 1f;
+                    Main.Mod?.Logger.Log($"{Car?.ID}: the lighter lit {Model.CoalMass:F1} kg of laid coal");
+                }
                 ignitionExtIn.Value = 0f;
             }
             else if (extinguishExtIn.Value == 1f)

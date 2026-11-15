@@ -15,13 +15,22 @@ namespace RealisticFiring.Sim
 
         internal sealed class Fit
         {
-            public Fit(FeedHeaterType type, string name, float capacity, bool onInjectorLever)
+            public Fit(FeedHeaterType type, string name, float capacity, bool onInjectorLever, bool upgrade = false)
             {
                 Type = type;
                 Name = name;
                 Capacity = capacity;
                 OnInjectorLever = onInjectorLever;
+                Upgrade = upgrade;
             }
+
+            /// <summary>
+            /// Bought at a career manager (<see cref="Upgrades.Fittings.FeedPump"/>),
+            /// not the prototype's own: built into the engine but idle until
+            /// fitted, its valve and gauge on the backhead in a seat of their
+            /// own, whether or not a stoker manifold is fitted beside them.
+            /// </summary>
+            public bool Upgrade { get; }
 
             public FeedHeaterType Type { get; }
 
@@ -61,12 +70,18 @@ namespace RealisticFiring.Sim
             // L/min in service (Schaefer). Its capacity not found: the SA's
             // 9,000 gal/h, above that and the boiler's tested 8 kg/s (inferred).
             ["S2102-870"] = new Fit(FeedHeaterType.Open, "open heater (Worthington SA type)", 9.46f, onInjectorLever: false),
+            ["LocoS282A"] = new Fit(FeedHeaterType.Open, "Worthington SA", 6.94f, onInjectorLever: false, upgrade: true),
         };
 
         public static bool TryGet(string liveryId, out Fit fit)
         {
             fit = null;
-            return Main.Session.FitFeedPumps && liveryId != null && Fits.TryGetValue(liveryId, out fit);
+            if (liveryId == null || !Fits.TryGetValue(liveryId, out var found))
+                return false;
+            if (!(found.Upgrade ? Main.Session.S282FeedPump : Main.Session.FitFeedPumps))
+                return false;
+            fit = found;
+            return true;
         }
     }
 }

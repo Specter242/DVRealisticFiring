@@ -302,27 +302,16 @@ namespace RealisticFiring.Core
         public bool BlowingDown => blowingDown;
 
         /// <summary>The most steam a fire of these figures can make, in kg/s.</summary>
-        public static float MostSteam(FireboxParameters p) => p.MaxHeatOutput / SteamHeat;
+        public static float MostSteam(FireboxParameters p) => MostSteam(p.Efficiency);
+
+        /// <summary>The most steam a fire on this efficiency line can make, in kg/s.</summary>
+        public static float MostSteam(EfficiencyLine line) => line.MostHeat / SteamHeat;
 
         /// <summary>
         /// The burn rate that gives <paramref name="heat"/> W, in kg/s, as the
         /// boiler's efficiency falls with the rate (<see cref="FireboxParameters.EfficiencyAt"/>).
         /// </summary>
-        public static float RateFor(FireboxParameters p, float heat)
-        {
-            if (!(heat > 0f))
-                return 0f;
-            var most = p.MaxCombustionRate;
-            var c = FireboxParameters.CoalHeatContent;
-            var light = p.EfficiencyAt(0f);
-            // heat = r c (light + (e - light) r / most), solved for r.
-            var a = (p.EfficiencyAtMaxCombustion - light) * c / most;
-            var b = light * c;
-            var disc = b * b + 4f * a * heat;
-            if (disc <= 0f)
-                return most;
-            return Math.Min(most, 2f * heat / (b + (float)Math.Sqrt(disc)));
-        }
+        public static float RateFor(FireboxParameters p, float heat) => p.Efficiency.RateFor(heat);
 
         /// <summary>The pressure a mode holds, absolute bar, for a safety valve lifting at <paramref name="safetyValve"/>.</summary>
         public static float PressureFor(FiremanMode mode, float safetyValve)
@@ -337,9 +326,9 @@ namespace RealisticFiring.Core
         /// Hears and sees the moment: the work, the gauge, the engineer, the
         /// calls; sets his pressure and the steam he fires for.
         /// </summary>
-        protected Judgement Perceive(float dt, FiremanReadings r, FireboxParameters p)
+        protected Judgement Perceive(float dt, FiremanReadings r, EfficiencyLine efficiency)
         {
-            var most = MostSteam(p);
+            var most = MostSteam(efficiency);
             var full = r.FullWorkSteam > 0f ? r.FullWorkSteam : most;
             Hear(dt, r);
             reserveAhead = SlowRise(reserveAhead, Math.Max(0f, r.WorkAhead), dt);

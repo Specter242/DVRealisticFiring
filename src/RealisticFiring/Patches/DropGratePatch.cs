@@ -36,7 +36,18 @@ namespace RealisticFiring.Patches
             ashpan.ID = RealisticFirebox.AshpanControl.Id;
             ashpan.defaultValue = RealisticFirebox.AshpanControl.Default;
             ashpan.saveState = false;
-            graph.executionOrder = new SimComponentDefinition[] { dropGrate, ashpan }.Concat(graph.executionOrder).ToArray();
+            var added = new System.Collections.Generic.List<SimComponentDefinition> { dropGrate, ashpan };
+            // The over-fire jets' valve, on engines whose box can have them;
+            // saved, so a valve left open stays open.
+            if (FireboxCharacters.For(trainCar).Jets != null)
+            {
+                var jets = graph.gameObject.AddComponent<ExternalControlDefinition>();
+                jets.ID = RealisticFirebox.JetsControl.Id;
+                jets.defaultValue = RealisticFirebox.JetsControl.Default;
+                jets.saveState = true;
+                added.Add(jets);
+            }
+            graph.executionOrder = added.Concat(graph.executionOrder).ToArray();
         }
     }
 }

@@ -688,8 +688,16 @@ namespace RealisticFiring.Core.Tests;
         var engine = new Footplate(glass: 0.42f);
         engine.Standing = true;
         engine.StartComing = true;
-        engine.Run(60f);
-        Assert.True(engine.Fireman.GlassTarget >= AutoFireman.GlassBeforeWork);
+        // Standing for the start his building comes and goes with the
+        // pressure's room every 15 to 20 s, and the glass he wants with it:
+        // he raised it at some point in the minute, not at its last tick.
+        var raised = 0f;
+        engine.Run(60f, e =>
+        {
+            if (e.Time > 10f && e.Fireman.GlassTarget >= AutoFireman.GlassBeforeWork)
+                raised += Footplate.Dt;
+        });
+        Assert.True(raised > 0f, "the start called for no high glass");
         engine.Standing = false;
         engine.StartComing = false;
         engine.EngineSteam = 1.4f;
@@ -710,30 +718,44 @@ namespace RealisticFiring.Core.Tests;
         Assert.True(engine.BlownOff - blown < 1f, $"blew off {engine.BlownOff - blown:F1} kg");
     }
 
-    [Fact]
-    public void StandingOnAHeavyFireHeKeepsDraftToBurnTheSmoke()
+    [Theory]
+    [InlineData(14.6f)]
+    [InlineData(14.9f)]
+    public void StandingOnAHeavyFireHeKeepsDraftToBurnTheSmoke(float pressure)
     {
         // The S282 in game (2026-10-10): stopped with 75 kg on the grate and
         // the pressure over his mark, he shut the damper and it smoked black.
-        var engine = new Footplate(coal: 40f, pressure: 14.9f);
+        // With the pressure high (past where his check shuts the damper, or
+        // the safety valve about to lift) he leaves it less (2026-11-14).
+        var engine = new Footplate(coal: 40f, pressure: pressure);
         for (var i = 0; i < 12; i++)
             engine.Shovel.Deliver(engine.Fire, 3f, null);
         engine.Standing = true;
         var black = 0f;
         var leastDamper = 1f;
+        var leastDamperUnderHigh = 1f;
         var wasBlack = false;
+        var wasUnderHigh = false;
+        var high = AutoFireman.PressureFor(FiremanMode.Road, engine.SafetyValve) + 0.5f - 0.15f;
         engine.Run(180f, e =>
         {
             // He sets the damper for the stack he saw before this tick.
             if (wasBlack)
+            {
                 leastDamper = Math.Min(leastDamper, e.Last.Damper);
+                if (wasUnderHigh)
+                    leastDamperUnderHigh = Math.Min(leastDamperUnderHigh, e.Last.Damper);
+            }
             wasBlack = e.Fire.SootDensity > AutoFireman.BlackSmoke;
+            wasUnderHigh = e.Pressure < Math.Min(high, engine.SafetyValve - 0.3f);
             if (wasBlack)
                 black += Footplate.Dt;
         });
-        output.WriteLine($"black {black:F0} s, damper down to {leastDamper:F2} while black, pressure {engine.Pressure:F2}, fire {engine.Fire.CoalMass:F0} kg");
+        output.WriteLine($"black {black:F0} s, damper down to {leastDamper:F2} while black ({leastDamperUnderHigh:F2} under the high pressure), " +
+                         $"pressure {engine.Pressure:F2}, fire {engine.Fire.CoalMass:F0} kg, blown off {engine.BlownOff:F1} kg");
         Assert.True(black > 0f, "the fresh coal smokes");
-        Assert.True(leastDamper >= 0.4f - 1e-3f, $"the damper shut to {leastDamper:F2} on a black stack");
+        Assert.True(leastDamper >= AutoFireman.SmokeDamperHigh - 1e-3f, $"the damper shut to {leastDamper:F2} on a black stack");
+        Assert.True(leastDamperUnderHigh >= AutoFireman.SmokeDamper - 1e-3f, $"the damper shut to {leastDamperUnderHigh:F2} on a black stack");
     }
 
     [Fact]

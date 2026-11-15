@@ -44,9 +44,24 @@ namespace RealisticFiring.Core
         /// <summary>He fires no more while the stack is this black (the fire's soot density).</summary>
         public const float BlackSmoke = 0.35f;
 
+        /// <summary>
+        /// For the draft, a black stack has cleared when its soot falls under
+        /// this: the damper and blower take it as black above
+        /// <see cref="BlackSmoke"/> and clear only below this, not each tick
+        /// either side of one mark. On one mark the damper flicked between
+        /// 0.12 and its smoke floor of 0.4 several times a second at a stop,
+        /// the soot held at 0.35 by the draft it opened.
+        /// </summary>
+        public const float BlackSmokeClears = 0.3f;
+
         // After a round that smokes, the door is cracked this far for this long.
+        // Not working, he cracks it on smoke over SmokeToCrack and shuts it once
+        // under SmokeCrackClears; standing on a black stack he opens it wider
+        // from StandingSmokeToVent, back to the crack under StandingVentClears.
         private const float SmokeToCrack = 0.2f;
+        private const float SmokeCrackClears = 0.12f;
         private const float StandingSmokeToVent = 0.25f;
+        private const float StandingVentClears = 0.2f;
         private const float StandingSmokeDoorLimit = 0.5f;
         public const float DoorCrack = 0.15f;
         public const float CrackTime = 10f;
@@ -57,17 +72,40 @@ namespace RealisticFiring.Core
 
         /// <summary>Under this much work heard the damper checks the fire over his mark, as standing.</summary>
         public const float LightWork = 0.4f;
+
+        // Working with the damper wide, he checks it again only once the work
+        // heard is this much under LightWork: cruising at about 40 % it
+        // flicked between wide and his check with each beat heard.
+        private const float LightWorkBand = 0.05f;
+
+        // The door at rest (shut, cracked, or opened to burn smoke) and the
+        // damper: he changes either by this much at least, once what he wants
+        // has held that far off this long, and leaves it this long after
+        // (HeldSetting). A throw opens the door whatever its rest.
+        private const float SettingStep = 0.1f;
+        private const float SettingNotice = 2f;
+        private const float SettingDwell = 10f;
         private const float KeepAliveBlower = 0.15f;
         private const float RaisingBlower = 1f;
         private const float FiringBlower = 0.5f;
         private const float QuietBlower = 0.1f;
 
         // Not working, the damper closes as the pressure climbs this far over
-        // his target, in bar, but no further than this with the stack black:
-        // shut on a heavy fire it smothered and smoked black at a stop (S282
-        // in game, 2026-10-10: the draft 0.09 kg/s, 100 % smoke).
+        // his target, in bar.
         private const float DamperRange = 0.5f;
-        private const float SmokeDamper = 0.4f;
+
+        /// <summary>
+        /// With the stack black the damper is no further shut than this: shut
+        /// on a heavy fire it smothered and smoked black at a stop (S282 in
+        /// game, 2026-10-10: the draft 0.09 kg/s, 100 % smoke).
+        /// </summary>
+        public const float SmokeDamper = 0.4f;
+
+ public const float SmokeDamperHigh = 0.1f;
+
+        // The pressure counts as high until it falls this far under where
+        // it became so (or SoakMargin under the safety valve).
+        private const float HighPressureBand = 0.15f;
 
         /// <summary>A wiggle of the grate every this much work, in s heard at half work or more.</summary>
         public const float WiggleEvery = 720f;
@@ -102,9 +140,34 @@ namespace RealisticFiring.Core
         private float roundInterval;
         private float sinceRound = float.PositiveInfinity;
         private float crackLeft;
+
+        private float jetsLeft;
+        private float firedThisRound;
+        private bool jetsOpen;
+        public const float JetSecondsPerKg = 1.2f;
+        public const float LeastJetRun = 30f;
+        public const float MostJetRun = 240f;
+        private const float JetsSmokeOn = 0.15f;
+        private const float JetsSmokeOff = 0.05f;
+        // The L&N's trip valve fed the blower whenever the jets ran with the
+        // throttle shut (Benton and Engdahl p.41): wide open, or the jets'
+        // air outruns a standing box's draft and it blows back.
+        private const float JetsBlower = RaisingBlower;
+
+        /// <summary>Under his mark by this much, bar, he spares the jets' steam unless the stack smokes.</summary>
+        private const float JetsPressureMargin = 1f;
+
+        /// <summary>Over this much work heard he shuts the jets unless the stack smokes: they reach only part way, for their steam.</summary>
+        private const float JetsHardWork = 0.7f;
+
+        /// <summary>Whether he has the jets open.</summary>
+        public bool JetsOpen => jetsOpen;
         private float workClock;
         private float sinceShake;
         private float stokerHeavyTime, stokerReverseLeft, stokerReverseCooldown;
+        private bool blackStack, smokeCracked, smokeVented, checkingLight, pressureHigh;
+        private readonly HeldSetting doorRest = new HeldSetting(SettingStep, SettingNotice, SettingDwell);
+        private readonly HeldSetting damper = new HeldSetting(SettingStep, SettingNotice, SettingDwell);
 
         /// <summary>The coal he wants on the grate, in kg.</summary>
         public float CoalTarget { get; private set; }
@@ -127,13 +190,31 @@ namespace RealisticFiring.Core
             {
                 roundLeft = 0;
                 stokerHeavyTime = stokerReverseLeft = stokerReverseCooldown = 0f;
+                blackStack = smokeCracked = smokeVented = checkingLight = pressureHigh = false;
+                doorRest.Reset();
+                damper.Reset();
                 return actions;
             }
 
-            var j = Perceive(dt, r, fire.Parameters);
+            var j = Perceive(dt, r, fire.Efficiency);
+            // Black above BlackSmoke, clear only under BlackSmokeClears.
+            blackStack = fire.SootDensity > BlackSmoke || blackStack && fire.SootDensity >= BlackSmokeClears;
             Fire(dt, fire, r, j, ref actions);
             if (actions.ClearStokerTable) actions.Door = 1f;
-            Blower(fire, r, j, ref actions);
+            // The door wide for a throw or the stoker's table, or at rest.
+            var open = actions.Door >= 1f;
+            Blower(dt, fire, r, j, ref actions);
+            if (open)
+            {
+                doorRest.Idle(dt);
+                actions.Door = 1f;
+            }
+            else
+            {
+                actions.Door = doorRest.Hold(actions.Door, dt);
+            }
+            // The jets after the door is settled: shut while it is open.
+            Jets(dt, fire, r, j, ref actions);
             Water(dt, r, j, ref actions);
             Grate(dt, fire, ref actions);
             return actions;
@@ -154,7 +235,7 @@ namespace RealisticFiring.Core
 
             // Pressure still checks the fire while preparing for work ahead.
             var error = PressureTarget - r.Pressure;
-            var rate = RateFor(p, PlannedSteam * SteamHeat * Trim);
+            var rate = fire.Efficiency.RateFor(PlannedSteam * SteamHeat * Trim);
             var auxiliary = Math.Max(0f, r.AuxiliarySteam);
             var target = rate * p.BurnTime
                          + PressureGain * p.MaxCoalCapacity * (error > 0f ? error : j.Building ? 0f : 2f * error);
@@ -163,7 +244,7 @@ namespace RealisticFiring.Core
             // Building for a start, the blower he opens is for the fire.
             if (!j.Working)
                 target = Math.Min(target, IdleFire * p.MaxCoalCapacity
-                                          + (j.Building ? 0f : RateFor(p, auxiliary * SteamHeat * Trim) * p.BurnTime));
+                                          + (j.Building ? 0f : fire.Efficiency.RateFor(auxiliary * SteamHeat * Trim) * p.BurnTime));
             CoalTarget = Clamp(target, least, MaxFire * p.MaxCoalCapacity);
 
             WaitingOnSmoke = fire.SootDensity > BlackSmoke && coal > least;
@@ -217,15 +298,18 @@ namespace RealisticFiring.Core
 
             if (roundLeft > 0)
             {
+                // Each throw comes a door's lead into its interval; the door
+                // is open from the lead before it to the lead after.
                 // Wait without throwing away the rest of the round. Restarting
-                // its full rest after each smoky shovel can starve a working fire.
-                if (WaitingOnSmoke)
+                // its full rest after each smoky shovel can starve a working
+                // fire. He waits with the door shut between throws: one he has
+                // opened the door for he throws, not shutting it mid-swing as
+                // the stack flicks either side of black.
+                if (WaitingOnSmoke && roundClock >= 2f * DoorLead)
                 {
                     actions.Door = DoorCrack;
                     return;
                 }
-                // Each throw comes a door's lead into its interval; the door
-                // is open from the lead before it to the lead after.
                 var before = roundClock;
                 roundClock += dt;
                 var throwAt = DoorLead;
@@ -233,6 +317,7 @@ namespace RealisticFiring.Core
                 {
                     actions.Shovelful = Math.Min(shovel, Math.Max(0f, r.TenderCoal));
                     actions.Aim = fire.NeediestZone();
+                    firedThisRound += actions.Shovelful;
                 }
                 actions.Door = roundClock < 2f * DoorLead ? 1f : 0f;
                 if (roundClock >= roundInterval)
@@ -242,16 +327,23 @@ namespace RealisticFiring.Core
                     if (roundLeft == 0)
                     {
                         sinceRound = 0f;
-                        crackLeft = fire.SmokeDensity > SmokeToCrack ? CrackTime : 0f;
+                        // With jets, they burn the round's smoke with the door shut.
+                        crackLeft = fire.Jets == null && fire.SmokeDensity > SmokeToCrack ? CrackTime : 0f;
+                        if (fire.Jets != null)
+                            jetsLeft = Clamp(JetSecondsPerKg * firedThisRound, LeastJetRun, MostJetRun);
+                        firedThisRound = 0f;
                     }
                 }
             }
             if (roundLeft == 0)
             {
                 // Cracked after a smoky round, to burn the smoke of a fire the
-                // exhaust no longer draws, or to cool the fire off the safety valve.
-                var smoking = !j.Working && fire.SmokeDensity > SmokeToCrack;
-                actions.Door = fire.FireOn && (crackLeft > 0f || smoking || lifting) ? DoorCrack : 0f;
+                // exhaust no longer draws (until it has cleared), or to cool
+                // the fire off the safety valve; with over-fire jets they burn
+                // the smoke instead.
+                smokeCracked = !j.Working && fire.Jets == null
+                               && (fire.SmokeDensity > SmokeToCrack || smokeCracked && fire.SmokeDensity >= SmokeCrackClears);
+                actions.Door = fire.FireOn && (crackLeft > 0f || smokeCracked || lifting) ? DoorCrack : 0f;
             }
         }
 
@@ -366,20 +458,49 @@ namespace RealisticFiring.Core
             return (front, back);
         }
 
-        private void Blower(FireModel fire, FiremanReadings r, Judgement j, ref FiremanActions actions)
+        private void Blower(float dt, FireModel fire, FiremanReadings r, Judgement j, ref FiremanActions actions)
         {
-            actions.Damper = 1f;
+            var wanted = 1f;
+            var now = false;
+            Draft(fire, r, j, ref actions, ref wanted, ref now);
+            actions.Damper = damper.Hold(wanted, dt, now);
+        }
+
+        // The blower, the damper he wants (now: at once, not settled), and
+        // the door opened standing to burn the smoke.
+        private void Draft(FireModel fire, FiremanReadings r, Judgement j, ref FiremanActions actions, ref float damperWanted, ref bool now)
+        {
             if (!fire.FireOn)
                 return;
-            var smoking = fire.SootDensity > BlackSmoke;
-            if (j.Working ? HeardWork < LightWork : !j.Building)
-                actions.Damper = Clamp(1f - (r.Pressure - PressureTarget) / DamperRange, smoking ? SmokeDamper : 0f, 1f);
+            var smoking = blackStack;
+            checkingLight = j.Working
+                ? HeardWork < LightWork - LightWorkBand || checkingLight && HeardWork < LightWork
+                : !j.Building;
+            var shutAt = PressureTarget + DamperRange;
+            pressureHigh = r.Pressure >= Math.Min(r.SafetyValve - LiftMargin, shutAt)
+                           || pressureHigh && r.Pressure >= Math.Min(r.SafetyValve - SoakMargin, shutAt - HighPressureBand);
+            if (checkingLight)
+                damperWanted = Clamp(1f - (r.Pressure - PressureTarget) / DamperRange,
+                    smoking ? pressureHigh ? SmokeDamperHigh : SmokeDamper : 0f, 1f);
+            // At once: draft for a black stack and for the engine working
+            // past light work, and a step or more shut with the safety valve
+            // about to lift. Shutting at once off the smoke's opening
+            // whenever the pressure was over his mark, kept alive, it went
+            // back within seconds 94 times in four hours.
+            var held = damper.Value;
+            now = !float.IsNaN(held)
+                  && (fire.SootDensity > BlackSmoke && damperWanted > held
+                      || j.Working && !checkingLight && damperWanted > held
+                      || r.Pressure >= r.SafetyValve - LiftMargin && damperWanted <= held - SettingStep);
+            smokeVented = !j.Working && r.Standing
+                          && (fire.SootDensity > StandingSmokeToVent || smokeVented && fire.SootDensity >= StandingVentClears);
             if (j.Working)
                 return;
             var blower = Mode == FiremanMode.KeepAlive ? KeepAliveBlower : IdleBlower;
             if (r.Standing && (j.Building || r.Pressure < PressureTarget - 1f))
                 blower = RaisingBlower;
-            if (actions.Door > DoorCrack)
+            // Through a round he fires standing, not each throw's moment.
+            if (roundLeft > 0 || actions.Door > DoorCrack)
                 blower = Math.Max(blower, FiringBlower);
             // A black stack standing wants draft to burn its smoke.
             if (smoking)
@@ -392,11 +513,33 @@ namespace RealisticFiring.Core
             // At a stop, use secondary air to burn the remaining tar before
             // it becomes a prolonged dark stack. More blower would force
             // the coal bed and lift the safety valve on an already full boiler.
-            if (r.Standing && fire.SootDensity > StandingSmokeToVent && actions.Door <= DoorCrack)
+            if (smokeVented && fire.Jets == null && actions.Door <= DoorCrack)
             {
-                var smoke = Clamp((fire.SootDensity - StandingSmokeToVent) / (BlackSmoke - StandingSmokeToVent), 0f, 1f);
+                var smoke = Clamp((fire.SootDensity - StandingVentClears) / (BlackSmoke - StandingVentClears), 0f, 1f);
                 actions.Door = DoorCrack + (StandingSmokeDoorLimit - DoorCrack) * smoke;
             }
+        }
+
+        private void Jets(float dt, FireModel fire, FiremanReadings r, Judgement j, ref FiremanActions actions)
+        {
+            if (fire.Jets == null || !fire.FireOn)
+            {
+                jetsLeft = 0f;
+                jetsOpen = false;
+                actions.OverFireJets = 0f;
+                return;
+            }
+            jetsLeft = Math.Max(0f, jetsLeft - dt);
+            var smoking = fire.SootDensity > (jetsOpen ? JetsSmokeOff : JetsSmokeOn);
+            var want = jetsLeft > 0f || smoking;
+            if (roundLeft > 0 || actions.Door > 0.5f * DoorCrack)
+                want = false;
+            else if (!smoking && (r.Pressure < PressureTarget - JetsPressureMargin || j.Working && HeardWork > JetsHardWork))
+                want = false;
+            jetsOpen = want;
+            actions.OverFireJets = want ? 1f : 0f;
+            if (want && (!j.Working || HeardWork < LightWork))
+                actions.Blower = Math.Max(actions.Blower, JetsBlower);
         }
 
         private void Grate(float dt, FireModel fire, ref FiremanActions actions)

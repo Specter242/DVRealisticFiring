@@ -191,6 +191,10 @@ namespace RealisticFiring.Visuals
 
         private readonly HeapTerms[] heapTerms = new HeapTerms[MaxHeaps];
         private readonly float[] heat = new float[GrateLayout.ZoneCount];
+
+        // How fast the coal's glow follows its burning, s: rising, and falling as it cools.
+        internal static float GlowRises = 1.5f;
+        internal static float GlowFalls = 8f;
         private readonly float[] green = new float[GrateLayout.ZoneCount];
         private readonly float[] cover = new float[GrateLayout.ZoneCount];
         private readonly float[] forcing = new float[GrateLayout.ZoneCount];
@@ -633,7 +637,12 @@ namespace RealisticFiring.Visuals
                 // A thin, burning patch over a clean grate is a hole: the draft
                 // rushes through it white-hot. Over ash it is only dying.
                 var thin = fire.FireOn && zone.Burning > 0f ? 1f - Mathf.Clamp01(coal / (ThinShare * zoneShare)) : 0f;
-                heat[i] = Mathf.Min(Mathf.Clamp01(Mathf.Lerp(burn, 1f, 0.7f * thin * (1f - dirt))), 1f - DirtyFireDulling * dirt);
+                // The coal's glow follows its burning, quickly up and slowly
+                // down: a starved bed's incandescent coke dims over seconds as
+                // it cools, not at once (the council on the over-fire jets,
+                // 2026-11-14: with the grate starved it went dull in 5 to 8 s).
+                var glowing = Mathf.Min(Mathf.Clamp01(Mathf.Lerp(burn, 1f, 0.7f * thin * (1f - dirt))), 1f - DirtyFireDulling * dirt);
+                heat[i] += (glowing - heat[i]) * (1f - Mathf.Exp(-Time.deltaTime / (glowing < heat[i] ? GlowFalls : GlowRises)));
                 green[i] = coal > 0f ? zone.Fresh / coal : 0f;
                 cover[i] = green[i] * (1f - (1f - ForcedGreenShows) * forcing[i] * forcing[i]);
                 // Grey ash shows only where the fire has burned down to it.

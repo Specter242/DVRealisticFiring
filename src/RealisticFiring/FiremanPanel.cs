@@ -132,7 +132,7 @@ namespace RealisticFiring
             var c = new Card { Loco = rig.Car.ID };
             var man = rig.Fireman;
             var r = rig.Readings;
-            var warnings = Leveled(rig.Actions.Notices).ToList();
+            var warnings = Leveled(rig.Actions.Notices, rig.CoalFireman != null).ToList();
             if (Net.IsClient)
                 c.Notes.Add(new Note { Level = AdviceLevel.Ok, Text = "In multiplayer the host's fireman does the work." });
             else if (mode == FiremanMode.Off)
@@ -422,7 +422,7 @@ namespace RealisticFiring
             var held = rig.Hands.Where(h => h.YieldLeft > 0f).Select(h => $"{h.Name} ({h.YieldLeft:F0} s)").ToList();
             if (held.Count > 0)
                 yield return "Yours for now: " + string.Join(", ", held);
-            foreach (var notice in Notices(rig.Actions.Notices))
+            foreach (var notice in Notices(rig.Actions.Notices, rig.CoalFireman != null))
                 yield return notice;
         }
 
@@ -438,13 +438,15 @@ namespace RealisticFiring
 
         private static string Grade(float grade) => $"{grade * 100f:+0.0;-0.0;0.0} %";
 
-        internal static IEnumerable<string> Notices(FiremanNotice notices) => Leveled(notices).Select(n => n.Text);
+        internal static IEnumerable<string> Notices(FiremanNotice notices, bool coal) => Leveled(notices, coal).Select(n => n.Text);
 
         // His warnings, the ones that stop the engine marked to act on.
-        private static IEnumerable<(AdviceLevel Level, string Text)> Leveled(FiremanNotice notices)
+        private static IEnumerable<(AdviceLevel Level, string Text)> Leveled(FiremanNotice notices, bool coal)
         {
             if (notices.HasFlag(FiremanNotice.FireOut))
-                yield return (AdviceLevel.Act, "The fire is out: start wood with a burning oiled rag, then add coal once the wood burns well. He will tend the established coal fire.");
+                yield return (AdviceLevel.Act, coal && LighterRule.LightsCoal
+                    ? "The fire is out: shovel in some coal and light it with the lighter at the open fire door. He will tend it once it burns."
+                    : "The fire is out: start wood with a burning oiled rag, then add coal once the wood burns well. He will tend the established coal fire.");
             if (notices.HasFlag(FiremanNotice.TenderWaterOut))
                 yield return (AdviceLevel.Act, "The tender is dry: he has stopped firing.");
             if (notices.HasFlag(FiremanNotice.LowWater))

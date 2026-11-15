@@ -199,6 +199,12 @@ namespace RealisticFiring.Visuals
             if (flow == null || !flow.OrderedSimComps.Any(c => c != null && c.id == StokerJetControls.Master.Id)
                 || !flow.TryGetPort(StokerJetControls.Master.PortId, out _))
                 return null;
+            // The S282's stoker not yet bought: no manifold, until it is (EnsureBuilt).
+            if (!Fitted(flow))
+            {
+                Interiors[car] = interior;
+                return "the stoker is not fitted (an upgrade at a career manager): no manifold in the cab";
+            }
 
             if (car.carLivery.id == QjStokerCab.Livery)
             {
@@ -335,6 +341,8 @@ namespace RealisticFiring.Visuals
             if (Time.unscaledTime < nextCheck)
                 return;
             nextCheck = Time.unscaledTime + 1f;
+            var refit = fittedVersion != Upgrades.Fittings.Version;
+            fittedVersion = Upgrades.Fittings.Version;
             foreach (var car in Interiors.Keys.ToList())
             {
                 if (car == null)
@@ -343,13 +351,37 @@ namespace RealisticFiring.Visuals
                     continue;
                 }
                 var interior = car.loadedInterior != null ? car.loadedInterior.transform : null;
-                if (interior == null || interior.Find(RootName) != null)
+                if (interior == null)
+                    continue;
+                var root = interior.Find(RootName);
+                var fitted = Fitted(car.SimController != null ? car.SimController.SimulationFlow : null);
+                if (root != null && !fitted)
+                {
+                    // The upgrade's rule changed in the menu: the stoker comes off.
+                    Rebuilding = true;
+                    try { Object.DestroyImmediate(root.gameObject); }
+                    finally { Rebuilding = false; }
+                    if (Main.Settings.LogFireboxCreation)
+                        Main.Mod.Logger.Log($"{car.ID}: the stoker is no longer fitted; its manifold is taken out of the cab");
+                    continue;
+                }
+                if (root != null || !fitted)
                     continue;
                 var result = Attach(car, interior);
                 QjStokerCab.RefreshAttachments(car, interior);
                 if (result != null && Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{car.ID}: the cab had lost its stoker manifold; {result}");
+                    Main.Mod.Logger.Log(refit ? $"{car.ID}: the stoker fitted; {result}" : $"{car.ID}: the cab had lost its stoker manifold; {result}");
             }
+        }
+
+        private static int fittedVersion = -1;
+
+        // Whether the loco's stoker is on it now: the S282's is an upgrade
+        // (RealisticStoker.Fitted); every other stoker always is.
+        private static bool Fitted(SimulationFlow flow)
+        {
+            var stoker = flow?.OrderedSimComps.OfType<RealisticStoker>().FirstOrDefault();
+            return stoker == null || stoker.Fitted;
         }
 
         internal static Transform PlaceWheel(Transform sourceValve, Transform frame, Vector3 at, StokerJetControls.Valve valve, Port port)
@@ -605,6 +637,32 @@ namespace RealisticFiring.Visuals
             Pipe(frame, name, from, new Vector3(at.x, at.y, end + SupplyInto), radius);
             Pipe(frame, name + " flange", new Vector3(at.x, at.y, end - FlangeThickness), new Vector3(at.x, at.y, end + SupplyInto), flangeRadius);
             return $"{name} pipe {(end - fromDepth) * 100f:F0} cm back to {reached}";
+        }
+
+ internal static float WheelBack(Transform control, Transform frame)
+        {
+            var back = float.NegativeInfinity;
+            foreach (var filter in control.GetComponentsInChildren<MeshFilter>(true))
+            {
+                var renderer = filter.GetComponent<Renderer>();
+                if (filter.sharedMesh == null || renderer == null || !renderer.enabled)
+                    continue;
+                var b = filter.sharedMesh.bounds;
+                for (var i = 0; i < 8; i++)
+                {
+                    var corner = new Vector3((i & 1) == 0 ? b.min.x : b.max.x, (i & 2) == 0 ? b.min.y : b.max.y, (i & 4) == 0 ? b.min.z : b.max.z);
+                    back = Mathf.Max(back, frame.InverseTransformPoint(filter.transform.TransformPoint(corner)).z);
+                }
+            }
+            return back;
+        }
+
+        /// <summary>A valve's body from <paramref name="back"/> out to its wheel's back, or to <paramref name="front"/> if the wheel reaches that far.</summary>
+        internal static float BodyFrontTo(Transform control, Transform frame, float front)
+        {
+            var wheel = WheelBack(control, frame);
+            // A little into the wheel's hub, so no light shows between them.
+            return float.IsInfinity(wheel) ? front : Mathf.Min(front, wheel + 0.003f);
         }
 
         internal static void Pipe(Transform frame, string name, Vector3 from, Vector3 to, float radius)

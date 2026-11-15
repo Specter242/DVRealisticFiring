@@ -254,6 +254,46 @@ namespace RealisticFiring.Visuals
             },
             new Part
             {
+                Title = "Booster's latch, idling valve, and gauge (car frame; facing the wall on its side)",
+                Table = "BoosterCab.CarSeats",
+                Labels = new[] { "Across, m (+ right; + toward the right wall)", "Up, m", "Along, m (+ forward)" },
+                Spans = new[] { 0.3f, 0.6f, 0.6f },
+                Present = car => InCab(car, BoosterCab.Root),
+                Read = (part, car, id) =>
+                {
+                    // Pinned, or as built by the reverser, so the bench starts where it stands.
+                    var at = BoosterCab.CarSeatFor(id)
+                        ?? car.transform.InverseTransformPoint(Interior(car).Find(BoosterCab.Root).position);
+                    part.Values = new[] { at.x, at.y, at.z };
+                    return true;
+                },
+                Apply = (id, v) => BoosterCab.DevCarSeats[id] = new Vector3(v[0], v[1], v[2]),
+                Clear = id => BoosterCab.DevCarSeats.Remove(id),
+                Rebuild = car => BoosterCab.RebuildLoaded(),
+                Line = (id, v) => $"[\"{id}\"] = new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}),",
+            },
+            new Part
+            {
+                Title = "Over-fire jets' valve (its wheel's place in the car's frame)",
+                Table = "JetsCab.Seats",
+                Labels = new[] { "Across, m (+ right)", "Up, m", "Along, m (+ forward, into the backhead)", "Tilt, ° (about across)", "Turn, ° (about up)", "Twist, ° (about along)",
+                                 "JETS plate across, m (the wheel's x)", "Plate up, m (its y)", "Plate out, m (its z)", "Plate spin, ° (in its face)", "Plate turn, ° (about up)" },
+                Spans = new[] { 0.6f, 0.6f, 0.6f, 90f, 90f, 90f, 0.4f, 0.4f, 0.1f, 180f, 180f },
+                Present = car => InCab(car, JetsCab.RootName),
+                Read = (part, car, id) =>
+                {
+                    var seat = JetsCab.SeatInCar(car, id);
+                    part.Values = new[] { seat.Move.x, seat.Move.y, seat.Move.z, seat.Turns.x, seat.Turns.y, seat.Turns.z,
+                                          seat.PlateMove.x, seat.PlateMove.y, seat.PlateMove.z, seat.PlateSpin, seat.PlateTurn };
+                    return true;
+                },
+                Apply = (id, v) => JetsCab.DevSeats[id] = new JetsCab.Seat(new Vector3(v[0], v[1], v[2]), new Vector3(v[3], v[4], v[5]), new Vector3(v[6], v[7], v[8]), v[9], v[10], JetsCab.SeatFor(id).PlateSquare, inCar: true),
+                Clear = id => JetsCab.DevSeats.Remove(id),
+                Rebuild = car => JetsCab.RebuildLoaded(),
+                Line = (id, v) => $"[\"{id}\"] = new Seat(new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}), new Vector3({Deg(v[3])}, {Deg(v[4])}, {Deg(v[5])}), new Vector3({M(v[6])}, {M(v[7])}, {M(v[8])}), {Deg(v[9])}, {Deg(v[10])}, plateSquare: {(JetsCab.SeatFor(id).PlateSquare ? "true" : "false")}, inCar: true),",
+            },
+            new Part
+            {
                 Title = "Drop grate lever (from the fire-dump lever, car frame)",
                 Table = "DropGrateCab.Placements",
                 Labels = new[] { "Across, m (+ right)", "Up, m (where the floor is looked for)", "Along, m (+ forward)" },

@@ -138,8 +138,14 @@ namespace RealisticFiring.Core
 
         public const int LightingSteps = 5;
 
-        /// <summary>The next step on a coal fire; <paramref name="driftingHookedUp"/>, the engine drifts with its throttle shut and reverser hooked up.</summary>
-        public static Advice ForCoal(FireModel fire, float door, float glass, IReadOnlyList<InjectorReading> injectors, bool driftingHookedUp = false)
+        /// <summary>
+        /// The next step on a coal fire; <paramref name="driftingHookedUp"/>, the
+        /// engine drifts with its throttle shut and reverser hooked up;
+        /// <paramref name="lighterLightsCoal"/>, the lighter lights laid coal
+        /// as in the stock game (<see cref="LighterLighting"/>).
+        /// </summary>
+        public static Advice ForCoal(FireModel fire, float door, float glass, IReadOnlyList<InjectorReading> injectors, bool driftingHookedUp = false,
+            bool lighterLightsCoal = false)
         {
             if (fire == null)
                 throw new ArgumentNullException(nameof(fire));
@@ -147,6 +153,12 @@ namespace RealisticFiring.Core
                 return injector;
             if (glass < LowGlass)
                 return new Advice(AdviceLevel.Act, "Water's low in the glass: get the injector on.");
+            if (!fire.FireOn && lighterLightsCoal)
+                return new Advice(AdviceLevel.Watch, fire.CoalMass > 0f
+                    ? "Coal is laid: light it with the lighter at the open fire door."
+                    : fire.StarterMass > 0f
+                        ? "Wood is laid: lay some coal over it and light it with the lighter at the open door, or light the wood with a burning oiled rag."
+                        : "The fire's out: shovel in some coal and light it with the lighter at the open fire door.");
             if (!fire.FireOn)
                 return new Advice(AdviceLevel.Watch, fire.StarterMass > 0f
                     ? "Wood is laid: oil a rag, light it with the lighter, and throw it onto the wood. Four or more pieces together keep each other burning."

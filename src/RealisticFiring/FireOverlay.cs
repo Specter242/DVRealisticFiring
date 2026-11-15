@@ -248,7 +248,7 @@ namespace RealisticFiring
             WaterGauges(c, rig, waterRig);
             var door = firebox.HasDoorPort ? firebox.DoorOpening : 0f;
             c.Advice = Bursting(waterRig) ?? FiringAdvice.ForCoal(fire, door, rig != null ? Visuals.GaugeGlass.Read(rig) : 1f, Injectors(rig),
-                waterRig != null && waterRig.DriftingHookedUp);
+                waterRig != null && waterRig.DriftingHookedUp, LighterRule.LightsCoal);
             if (c.Advice.Level == AdviceLevel.Ok && firebox.StokerTableLoaded)
                 c.Advice = new Advice(AdviceLevel.Watch, "Rake the back of the fire to clear the stoker table. Ease the feed or raise the jets to keep it clear.");
 
@@ -428,7 +428,7 @@ namespace RealisticFiring
             c.Rows.Add(firebox != null && firebox.LastStoker is StokerFlow stoker
                 ? StokerRow(firebox, stoker)
                 : new Row { Label = "Stoker", Value = "none fitted" });
-            c.Rows.Add(RealisticBooster.TryGet(car, out var booster)
+            c.Rows.Add(RealisticBooster.TryGet(car, out var booster) && booster.Fitted
                 ? new Row { Label = "Booster", Value = $"{(booster.Flow.State != BoosterState.CutOut ? "up" : "down")} · warm {P0(booster.Model.Warmth)}" }
                 : new Row { Label = "Booster", Value = "none fitted" });
         }

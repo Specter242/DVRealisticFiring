@@ -81,6 +81,7 @@ namespace RealisticFiring.Sim
         private readonly FiremanHand blower;
         private readonly FiremanHand damper;
         private readonly FiremanHand blowdown;
+        private readonly FiremanHand jets;
         private FiremanHand firingValve;
         private readonly FiremanHand atomizer;
         private readonly FiremanHand heater;
@@ -133,10 +134,15 @@ namespace RealisticFiring.Sim
             // Its own steam valve, where it has one: the feed hand then works its water valve.
             var steamValve = rig != null && rig.Circuits.Count > 0 ? rig.Circuits[0].SteamValve : null;
             injectorSteam = steamValve != null ? new FiremanHand("injector steam", Control(steamValve), DoorPace) : null;
-            pump = rig != null && rig.Pump != null ? new FiremanHand("feed pump", Control(rig.PumpValvePort), ValvePace) : null;
+            // The valve port is there with the pump built, bought or not (an upgrade's), so his hand is ready once it is.
+            pump = rig != null && rig.PumpValvePort != null ? new FiremanHand("feed pump", Control(rig.PumpValvePort), ValvePace) : null;
             blowdown = new FiremanHand("blowdown", Control(boiler.blowdownControl), LeverPace);
             blower = new FiremanHand("blower", exhaust != null ? Control(exhaust.blowerControl) : null, ValvePace);
             damper = new FiremanHand("damper", exhaust != null ? Control(exhaust.damperControl) : null, LeverPace);
+            // The over-fire jets' globe valve, where the engine can have them.
+            jets = coal != null && flow.TryGetPort(RealisticFirebox.JetsControl.PortId, out var jetsPort, canBeNullOrEmpty: true)
+                ? new FiremanHand("over-fire jets", Control(jetsPort), ValvePace)
+                : null;
             if (OilFireman != null)
             {
                 atomizer = new FiremanHand("atomizer", Control(oil.AtomizerPort), ValvePace);
@@ -358,6 +364,7 @@ namespace RealisticFiring.Sim
             blower.Work(actions.Blower, clock);
             damper.Work(actions.Damper, clock);
             blowdown.Work(actions.Blowdown, clock);
+            jets?.Work(actions.OverFireJets, clock);
             LogAway(dt, readings);
         }
 

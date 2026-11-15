@@ -112,6 +112,8 @@ namespace RealisticFiring.Patches
                     Main.Mod.Logger.Warning($"{trainCar.carLivery.id}: no firebox door port; door air stays closed");
                 if (__instance.simFlow.TryGetPort(RealisticFirebox.DropGrateControl.PortId, out var dropGratePort, canBeNullOrEmpty: true))
                     firebox.AttachDropGratePort(dropGratePort);
+                if (__instance.simFlow.TryGetPort(RealisticFirebox.JetsControl.PortId, out var jetsPort, canBeNullOrEmpty: true))
+                    firebox.AttachJetsPort(jetsPort);
                 if (__instance.simFlow.TryGetPort(RealisticFirebox.AshpanControl.PortId, out var ashpanPort, canBeNullOrEmpty: true))
                 {
                     firebox.AttachAshpanPort(ashpanPort);

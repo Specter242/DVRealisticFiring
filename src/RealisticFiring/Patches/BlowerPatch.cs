@@ -31,7 +31,7 @@ namespace RealisticFiring.Patches
             __instance.airFlowReadOut.Value = air;
             var maxTotal = draft.MaxTotal(__instance.engineMaxFlowReader.Value);
             __instance.totalFlowNormalizedReadOut.Value = maxTotal > 0f ? (blower + exhaust + air) / maxTotal : 0f;
-            __instance.steamConsumptionReadOut.Value = blowerFromBoiler + whistle * __instance.maxWhistleFlow;
+            __instance.steamConsumptionReadOut.Value = blowerFromBoiler + whistle * __instance.maxWhistleFlow + BlowerFit.JetSteam(__instance);
             return false;
         }
     }

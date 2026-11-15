@@ -8,6 +8,7 @@ namespace RealisticFiring.Sim
     /// retrofit): the same ports and port references as Custom Car Loader's
     /// stoker, so <see cref="RealisticStoker"/> runs it the same way. Coal
     /// comes from the tender's coal pile when the loco has no tender coal ports.
+    /// The retrofit is an upgrade: it works only once fitted (<see cref="RealisticStoker.Fitted"/>).
     /// </summary>
     internal sealed class RealisticStokerDefinition : SimComponentDefinition
     {
@@ -34,7 +35,7 @@ namespace RealisticFiring.Sim
         public readonly PortReferenceDefinition CoalConsume = new PortReferenceDefinition(PortValueType.COAL, "COAL_CONSUMPTION", writeAllowed: true);
 
         public override SimComponent InstantiateImplementation() =>
-            new RealisticStoker(Values(), GetComponentInParent<TrainCar>(), CoalMultiplier, steamWired: false);
+            new RealisticStoker(Values(), GetComponentInParent<TrainCar>(), CoalMultiplier, steamWired: false, upgrade: true);
 
         internal StokerDefinitionValues Values() => new StokerDefinitionValues
         {

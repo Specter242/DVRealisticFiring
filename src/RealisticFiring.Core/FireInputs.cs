@@ -20,5 +20,11 @@ namespace RealisticFiring.Core
 
         /// <summary>Train speed, in m/s; its shaking works coal down a sloping grate.</summary>
         public float Speed;
+
+        /// <summary>The over-fire jets' valve, 0 shut to 1 wide open (<see cref="FireModel.Jets"/>).</summary>
+        public float JetOpening;
+
+        /// <summary>The boiler's pressure, absolute bar, which drives the jets; 0 unknown (no jets).</summary>
+        public float BoilerPressure;
     }
 }

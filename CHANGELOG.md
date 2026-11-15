@@ -1,5 +1,52 @@
 # Changelog
 
+## 1.20.0 (2026-11-14)
+
+- **New: career upgrades for the S282 and S060.** In a career the two
+  stock engines now start in their most basic form, and you buy their
+  fittings at any career manager's new Upgrades screen, paying at its
+  register with your wallet as for a license. Once bought, every engine it
+  fits has it, the one you're on included. Sandbox has them all, and the
+  mod's settings (Engine, Firebox Upgrades) can fit each always or never
+  instead. **Existing careers start without them too: an S282 that had
+  its stoker is hand fired until you buy it.**
+- **Brick arch** ($20,000, S282 and S060). Without it the engines burn
+  about 7 % more coal for the same work, up to 13 % more worked hard,
+  steam about 13 % less at their most, and smoke more after firing, as
+  the railways' tests found, and the front of the grate draws hardest
+  instead of the back.
+- **New: over-fire jets** ($15,000, S282 and S060, once the arch is
+  bought). Steam jets through the firebox's sides blow air across the box
+  over the fire, worked by a JETS valve beside the blower valve. Open them
+  after firing a round, standing, or drifting, and they burn the smoke,
+  keeping you clear of town smoke fees; worked hard they do less. They take
+  a little steam and some of the grate's draft: keep the blower on when
+  standing with them open, or the fire blows back. The automatic fireman
+  works them.
+- **Changed: the S282's mechanical stoker is an upgrade** ($40,000). Its
+  valves appear in the cab once bought. If you had switched the S282's
+  stoker off in the settings, it stays off.
+- **New: a feedwater heater and pump for the S282** ($25,000). A
+  Worthington open heater: the pump feeds the boiler water heated by the
+  exhaust, worked by a FEED PUMP valve on the backhead with its gauge
+  above; the injector stays as the second feed.
+- **New: a trailing-truck booster for the S282** ($30,000). A Franklin
+  booster geared to the trailing axle, for starting heavy trains and slow
+  climbs, worked by its latch and idling valve by the reverser, with its
+  gauge.
+- **New: an Upgrades page in the firing booklet and guide.** What each
+  upgrade does and how the S282 and S060 fire with and without them.
+- **New: an option to light the coal straight from the lighter, as in the
+  stock game.** Shovel some coal in and light it at the open fire door,
+  skipping the wood and rag; they still work. Off by default; it's under
+  Coal fire in the settings (F8). In multiplayer the host's setting applies.
+- **Fixed: paying a steam engine's fees at a career manager put its fire
+  out.** The service keeps the fire in now, so a hot engine needn't be
+  lit again with wood after it.
+- Fixed: the automatic fireman sets the damper and the fire door and
+  leaves them, where they fluttered in and out, mostly at a stop. He still
+  opens the door for each shovelful.
+
 ## 1.19.1 (2026-11-13)
 
 - Fixed: steam around the engine follows its valve. A blowdown cracked open

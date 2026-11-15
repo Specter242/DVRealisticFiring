@@ -71,6 +71,7 @@ namespace RealisticFiring.Sim
         {
             this.def = def;
             this.car = car;
+            upgrade = car != null && BoosterFit.TryGet(car.carLivery.id, out var fit) && fit.Upgrade;
             Model = new Booster(BoosterFit.SpecFor(car));
             torqueOut = AddPort(def.TorqueOut);
             mainTorque = AddPortReference(def.MainTorque);
@@ -89,6 +90,30 @@ namespace RealisticFiring.Sim
         }
 
         public Booster Model { get; }
+
+        private readonly bool upgrade;
+        private int fittedVersion = -1;
+        private bool fitted;
+
+        /// <summary>
+        /// Whether the booster is on the engine now: always, but for the stock
+        /// S282's, an upgrade bought at a career manager (<see cref="Upgrades.Fittings.Booster"/>).
+        /// Unfitted, it is built but idle, so buying it fits it at once.
+        /// </summary>
+        public bool Fitted
+        {
+            get
+            {
+                if (!upgrade)
+                    return true;
+                if (fittedVersion != Upgrades.Fittings.Version)
+                {
+                    fittedVersion = Upgrades.Fittings.Version;
+                    fitted = Upgrades.Fittings.Booster;
+                }
+                return fitted;
+            }
+        }
 
         /// <summary>The loco it is fitted to.</summary>
         public TrainCar Car => car;
@@ -123,6 +148,18 @@ namespace RealisticFiring.Sim
             if (!(delta > 0f))
             {
                 torqueOut.Value = main;
+                return;
+            }
+            if (!Fitted)
+            {
+                // Not bought: the main engine's torque straight through, the
+                // latch held down, no steam, and only the drivers powered.
+                torqueOut.Value = main;
+                if (latch.Value > 0f)
+                    latch.Value = 0f;
+                Flow = default;
+                if (poweredAxles != null && !Mathf.Approximately(poweredAxles.Value, def.DrivingAxles))
+                    poweredAxles.Value = def.DrivingAxles;
                 return;
             }
 

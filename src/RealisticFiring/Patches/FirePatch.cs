@@ -41,6 +41,7 @@ namespace RealisticFiring.Patches
                 SetupGuard.Logged(car, "flames", () => FireboxFlames.Attach(__instance, __instance.GetComponent<ZonedCoalBed>(), firebox));
                 SetupGuard.Logged(car, "fire volume", () => FireboxVolume.Attach(__instance, __instance.GetComponent<ZonedCoalBed>(), firebox));
                 SetupGuard.Logged(car, "brick arch", () => BrickArch.Attach(__instance, __instance.GetComponent<ZonedCoalBed>(), firebox));
+                SetupGuard.Logged(car, "over-fire jet tubes", () => JetTubes.Attach(__instance, __instance.GetComponent<ZonedCoalBed>(), firebox));
                 SetupGuard.Logged(car, "coal lumps", () => CoalLumps.Attach(__instance, __instance.GetComponent<ZonedCoalBed>()));
                 SetupGuard.Logged(car, "firebox cinders", () => FireboxCinders.Attach(__instance, __instance.GetComponent<ZonedCoalBed>()));
                 SetupGuard.Logged(car, "firebox lighting", () =>
@@ -54,6 +55,7 @@ namespace RealisticFiring.Patches
             SetupGuard.Logged(car, "feed pump on the backhead", () => FeedPumpCab.AttachOnBackhead(car, interior));
             SetupGuard.Logged(car, "booster's cab controls", () => BoosterCab.Attach(car, interior));
             SetupGuard.Logged(car, "drop grate lever", () => DropGrateCab.Attach(car, interior));
+            SetupGuard.Logged(car, "over-fire jets' valve", () => JetsCab.Attach(car, interior));
             SetupGuard.Logged(car, "feed pump's lever", () => FeedPumpCab.RebindInjectorLever(car, interior));
             // After the feed pump takes the fireman's lever on a cab with two.
             SetupGuard.Logged(car, "injector steam levers", () => InjectorSteamCab.Attach(car, interior));

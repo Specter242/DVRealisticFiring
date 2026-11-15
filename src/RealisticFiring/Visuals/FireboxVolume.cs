@@ -110,6 +110,12 @@ namespace RealisticFiring.Visuals
         private static readonly int PulseMeanId = Shader.PropertyToID("_PulseMean");
         private static readonly int RootOffsetId = Shader.PropertyToID("_RootOffset");
         private static readonly int ArchLineId = Shader.PropertyToID("_ArchLine");
+        private static readonly int JetsId = Shader.PropertyToID("_Jets");
+        private static readonly int JetWaysId = Shader.PropertyToID("_JetWays");
+        private static readonly int JetCountId = Shader.PropertyToID("_JetCount");
+        private static readonly int JetShapeId = Shader.PropertyToID("_JetShape");
+        private static readonly int JetBendId = Shader.PropertyToID("_JetBend");
+        private static readonly int JetClearId = Shader.PropertyToID("_JetClear");
         private static readonly int ArchFlameId = Shader.PropertyToID("_ArchFlame");
         private static readonly int ArchBendId = Shader.PropertyToID("_ArchBend");
         private static readonly int ArchFlowId = Shader.PropertyToID("_ArchFlow");
@@ -435,6 +441,9 @@ namespace RealisticFiring.Visuals
 
         private BrickArch arch;
 
+        // Whether the arch was fitted when the constants were last set.
+        private bool archFitted;
+
         public float ZoneStrength(GrateZone zone) => strength[(int)zone];
 
         /// <summary>How tall a zone's flames stand over its coal this frame, m.</summary>
@@ -443,7 +452,7 @@ namespace RealisticFiring.Visuals
         /// <summary>The zones' flames and smoke as the volume draws them, for the test bed's log.</summary>
         internal string Describe()
         {
-            var b = new System.Text.StringBuilder($"draft {flames.Draft:F2}, pulse {pulse:F2}; drawing {boxRenderer?.enabled}, viewed {Viewed}, quality {Main.Settings?.FireboxQuality}, half resolution {FireboxOffscreen.Drawing}, steps {material?.GetFloat(StepsId):F0}, spacing {material?.GetFloat(StepLengthId):F3} m; motion {lickOffset:F3}, dither {material?.GetFloat(DitherFrameId):F0}, source refreshes {sourceRefreshes}, clock {Time.unscaledTime:F3}; fire's light {FireColors.Light:F2}, exposure {FireColors.Exposed:F2}; gas burned over the fire {firebox.Model.OverFireBurnout:P0}, overwhelm {FireColors.Overwhelm:F2}; ceiling {material?.GetFloat(CeilingId):F2}, smoke's {smokeCeiling:F2}; ");
+            var b = new System.Text.StringBuilder($"draft {flames.Draft:F2}, pulse {pulse:F2}; drawing {boxRenderer?.enabled}, viewed {Viewed}, quality {Main.Settings?.FireboxQuality}, half resolution {FireboxOffscreen.Drawing}, steps {material?.GetFloat(StepsId):F0}, spacing {material?.GetFloat(StepLengthId):F3} m; motion {lickOffset:F3}, dither {material?.GetFloat(DitherFrameId):F0}, source refreshes {sourceRefreshes}, clock {Time.unscaledTime:F3}; fire's light {FireColors.Light:F2}, exposure {FireColors.Exposed:F2}; gas burned over the fire {firebox.Model.OverFireBurnout:P0}, jets {firebox.Model.JetAirFlow:F2} kg/s of air (reach {firebox.Model.JetPenetration:P0}, burning {firebox.Model.JetBurnout:P0} of the gas, blowback {firebox.Model.Blowback:F2} kg/s, {material?.GetFloat(JetCountId):F0} drawn), overwhelm {FireColors.Overwhelm:F2}; ceiling {material?.GetFloat(CeilingId):F2}, smoke's {smokeCeiling:F2}; ");
             if (arch != null)
                 b.Append($"brick arch's heat {arch.Heat:F2}; ");
             if (airflow != null)
@@ -696,6 +705,7 @@ namespace RealisticFiring.Visuals
             var beat = flames.Pulse;
             pulse = beat > pulse ? pulse + (beat - pulse) * (1f - Mathf.Exp(-dt / BeatAttack)) : beat;
             pulseMean += (pulse - pulseMean) * (1f - Mathf.Exp(-dt / PulseMeanTime));
+            jetBurnout += (firebox.Model.JetBurnout - jetBurnout) * (1f - Mathf.Exp(-dt / JetClearTime));
             Remember(Time.time, pulse);
             if (!Viewed && !closed)
                 return;
@@ -766,7 +776,7 @@ namespace RealisticFiring.Visuals
                 zonesDueAt = Time.time + FlowStep;
             }
             Carry(dt, rise, forcing);
-            if (constantsVersion != FireboxTestBed.TuningVersion)
+            if (constantsVersion != FireboxTestBed.TuningVersion || archFitted != (Arch != null && Arch.Fitted))
             {
                 SetConstants();
                 constantsVersion = FireboxTestBed.TuningVersion;
@@ -789,12 +799,80 @@ namespace RealisticFiring.Visuals
             // A choked fire's soot gathers into a fuller cloud in still gas;
             // a drawing fire keeps its thinner, broken wisps.
             var smoky = Mathf.Clamp01(firebox.Model.SmokeDensity);
-            var choked = (1f - Mathf.SmoothStep(0f, 1f, draft / 0.15f)) * smoky * smoky;
+            // Over a few seconds, as the smoke in the box is drawn off or
+            // burned: at once, opening the blower and the jets cleared a
+            // murky box between two frames (the council, round 1).
+            var chokedNow = (1f - Mathf.SmoothStep(0f, 1f, draft / 0.15f)) * smoky * smoky;
+            choked += (chokedNow - choked) * (1f - Mathf.Exp(-Time.deltaTime / JetClearTime));
             material.SetFloat(SmokeDensityId, SmokeDensity * (1f + ChokedSmoke * choked));
             material.SetFloat(WarpId, warp);
             material.SetFloat(SmokeClumpsId, SmokeClumps * (1f - 0.4f * choked));
+            SetJets();
             FireColors.Publish();
             material.SetFloat(DebugId, FireboxTestBed.Enabled ? FireboxTestBed.VolumeView : 0);
+        }
+
+        internal static float JetSpread = 0.2f;
+        internal static float JetPush = 0.5f;
+        internal static float JetCore = 10f;
+        internal static float JetBendBy = 0.6f;
+        internal static float JetClear = 0.85f;
+        // The box's smoke cleared by the share of the gas the jets burn
+        // (FireModel.JetBurnout), and the flames over the bed shorter by it:
+        // the gas burns the faster for their air, not the more.
+        internal static float JetSmokeClear = 0.7f;
+        internal static float JetShorten = 0.5f;
+        // The share of the gas the jets burn that the flames over the bed are drawn by.
+        internal static float JetFlameShare = 0.4f;
+        // How long the smoke already in the box takes to clear when the jets
+        // open, s, as the box's smoke follows the share they burn (the
+        // flames shorten at once: the gas burns faster as their air reaches
+        // it; lagged too, the flare as they opened stood tall and washed the
+        // view out: the council, round 3): at once,
+        // the box went from brown to clear between two frames (the council,
+        // round 1; Steins, in Benton and Engdahl p.44: Ringelmann 4 to 0 in
+        // about 9 s standing).
+        internal static float JetClearTime = 3f;
+        private float jetBurnout;
+        private float choked;
+        private const int MostJets = 6;
+        private readonly Vector4[] jetPlaces = new Vector4[MostJets];
+        private readonly Vector4[] jetWays = new Vector4[MostJets];
+        private JetTubes jetTubes;
+        private float jetsFull = -1f;
+
+        private void SetJets()
+        {
+            if (jetTubes == null)
+                jetTubes = GetComponent<JetTubes>();
+            var model = firebox.Model;
+            var air = model.JetAirFlow;
+            var count = 0;
+            if (jetTubes != null && jetTubes.Shown && air > 0f && model.Jets != null && box != null)
+            {
+                if (jetsFull < 0f)
+                    jetsFull = model.Jets.Count * OverFireJets.PerJet(model.Jets.Tube, 150f / 14.5038f).Air;
+                var strength = Mathf.Clamp01(Mathf.Sqrt(air / Mathf.Max(jetsFull, 1e-4f)));
+                var reach = Mathf.Max(0.05f, model.JetPenetration * boxSize.x);
+                foreach (var (mouth, inward) in jetTubes.Mouths)
+                {
+                    if (count >= MostJets)
+                        break;
+                    var at = box.InverseTransformPoint(mouth) + 0.5f * Vector3.one;
+                    var way = Vector3.Scale(box.InverseTransformDirection(inward), boxSize).normalized;
+                    jetPlaces[count] = new Vector4(at.x, at.y, at.z, strength);
+                    jetWays[count] = new Vector4(way.x, way.y, way.z, reach);
+                    count++;
+                }
+                // Bent up with the gas, and on toward the tube plate.
+                var bend = new Vector3(0f, 1f, 0.5f * alongSign).normalized;
+                material.SetVector(JetBendId, new Vector4(bend.x, bend.y, bend.z, JetBendBy));
+                material.SetVector(JetShapeId, new Vector4(JetCore * jetTubes.Radius, jetTubes.Radius, JetSpread, JetPush));
+                material.SetVectorArray(JetsId, jetPlaces);
+                material.SetVectorArray(JetWaysId, jetWays);
+            }
+            material.SetFloat(JetCountId, count);
+            material.SetFloat(JetClearId, JetClear);
         }
 
         // The values that change only when the test bed tunes them: set once,
@@ -803,7 +881,8 @@ namespace RealisticFiring.Visuals
         {
             // The brick arch, where the engine has one (BrickArch): where its
             // bricks are in the box, and how the flames go under and round them.
-            if (Arch != null && BrickArch.ArchShown > 0.5f)
+            archFitted = Arch != null && Arch.Fitted;
+            if (archFitted && BrickArch.ArchShown > 0.5f)
             {
                 material.SetVector(ArchLineId, Arch.Line);
                 material.SetVector(ArchFlameId, new Vector4(Mathf.Clamp(BrickArch.ArchLayer, 0.05f, 0.95f), BrickArch.ArchBack, BrickArch.ArchOver, Arch.LipAlongBed));
@@ -939,11 +1018,16 @@ namespace RealisticFiring.Visuals
                 var burn = flames.ZoneFlame(zone);
                 var green = bed.ZoneCover(zone);
                 // The gas leaving the bed, burning over it, smothered as its coke's flame is.
-                var share = firebox.Model.ZoneOverFireGas(zone) * firebox.Model.OverFireBurnout / forced;
+                // (The gas the jets burn burns in their streams, short and
+                // quick: counted whole, a smoky round lit by them as they
+                // opened filled the view with soft flame: the council.)
+                var share = firebox.Model.ZoneOverFireGas(zone) * (firebox.Model.OverFireBurnout - (1f - JetFlameShare) * firebox.Model.JetBurnout) / forced;
                 var gas = Mathf.Pow(Mathf.Clamp01(share / GasFull), GasExponent) * flames.ZoneFlameShown(zone);
                 strength[i] = Mathf.Clamp01(burn * (0.35f + 0.65f * heat) + GasStrength * gas);
                 this.gas[i] = share;
                 var smoke = GasSmoke * source.GasRate(zone) / FireboxSmoke.SmokePerZone + SmokeOutPerKg * source.Charge(zone);
+                // Less of it where the jets burn it.
+                smoke *= 1f - JetSmokeClear * jetBurnout;
 
                 var x = (GrateLayout.Column(zone) + 0.5f) / GrateLayout.Columns;
                 var z = (GrateLayout.Row(zone) + 0.5f) / GrateLayout.Rows;
@@ -952,7 +1036,7 @@ namespace RealisticFiring.Visuals
                 // raised bed, saturating at the crown even at a light firing.
                 var lazy = LazyTop * (1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0f, LazyDraft, draft))) * Mathf.Clamp01((heat - 0.25f) * 4f);
                 top[i] = strength[i] < 0.01f ? 0f
-                    : Mathf.Clamp01(0.05f + CokeFlame * burn + GasFlame * gas * length + lazy) * Mathf.Max(0f, 1f - surface);
+                    : Mathf.Clamp01(0.05f + CokeFlame * burn + GasFlame * gas * length * (1f - JetShorten * firebox.Model.JetBurnout) + lazy) * Mathf.Max(0f, 1f - surface);
                 // Its wood and rag fire, in the same flames (WoodFlame): from
                 // the grate, over any coal laid on it, to the pile's flame top.
                 var starter = firebox.Model.Starters[i];

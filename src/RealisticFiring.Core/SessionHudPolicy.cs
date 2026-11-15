@@ -3,7 +3,8 @@ namespace RealisticFiring.Core
     /// <summary>Host-owned display policy, separate from a player's saved display preferences.</summary>
     public sealed class SessionHudPolicy
     {
-        public const string Protocol = "session HUD 1";
+        // 2: the host's lighter rule rides with its display rule.
+        public const string Protocol = "session HUD 2";
         private bool received, hidden;
 
         // A new client waits for the host rather than showing locally enabled

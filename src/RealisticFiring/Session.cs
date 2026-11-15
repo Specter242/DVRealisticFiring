@@ -17,8 +17,13 @@ namespace RealisticFiring
         public bool RealisticOilBurners { get; private set; }
         public bool FitBoosters { get; private set; }
         public bool FitFeedPumps { get; private set; }
+        /// <summary>Whether the stock S282 is built with the mod's stoker: unless its upgrade is never fitted. Whether it works is <see cref="Upgrades.Fittings.Stoker"/>.</summary>
         public bool RetrofitS282Stoker { get; private set; }
         public bool StokerJams { get; private set; }
+        /// <summary>Whether the stock S282 is built with the feed pump upgrade: unless it is never fitted. Whether it works is <see cref="Upgrades.Fittings.FeedPump"/>.</summary>
+        public bool S282FeedPump { get; private set; }
+        /// <summary>Whether the stock S282 is built with the booster upgrade: unless it is never fitted. Whether it works is <see cref="Upgrades.Fittings.Booster"/>.</summary>
+        public bool S282Booster { get; private set; }
         public bool UnlistedEngines { get; private set; }
 
         public static Session From(Settings settings) => new Session
@@ -32,8 +37,10 @@ namespace RealisticFiring
             RealisticOilBurners = settings.RealisticOilBurners,
             FitBoosters = settings.FitBoosters,
             FitFeedPumps = settings.FitFeedPumps,
-            RetrofitS282Stoker = settings.RetrofitS282Stoker,
+            RetrofitS282Stoker = settings.S282Stoker != Upgrades.UpgradeRule.NeverFitted,
             StokerJams = settings.StokerJams,
+            S282Booster = settings.S282Booster != Upgrades.UpgradeRule.NeverFitted,
+            S282FeedPump = settings.RealisticInjectors && settings.S282FeedPump != Upgrades.UpgradeRule.NeverFitted,
             UnlistedEngines = settings.UnlistedLocomotives,
         };
     }

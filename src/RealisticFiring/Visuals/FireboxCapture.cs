@@ -1,9 +1,11 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
 using DV;
+using DV.Simulation.Ports;
 using DV.Utils;
 using HarmonyLib;
 using LocoSim.Implementations;
@@ -47,6 +49,20 @@ namespace RealisticFiring.Visuals
 
             /// <summary>The cab's blower, 0 to 1, for the state; as it stands when not given.</summary>
             public float? Blower;
+
+            /// <summary>The over-fire jets' valve, 0 to 1, where they are fitted; as it stands when not given.</summary>
+            public float? Jets;
+
+            /// <summary>
+            /// For a clip: seconds into each view's clip at which the state
+            /// changes to <see cref="Then"/>'s valves and air, as a fireman
+            /// opens them (the jets and the blower together), to film the
+            /// change; and back before the next view. 0 for none.
+            /// </summary>
+            public float ThenAt;
+
+            /// <summary>The valves and air <see cref="ThenAt"/> into the clip (its Jets, Blower, Air, Draft; the rest unused).</summary>
+            public State Then;
             public float? Stoker;
             public float? StokerMaster;
 
@@ -110,6 +126,20 @@ namespace RealisticFiring.Visuals
 
             /// <summary>Keep the normal fire overlay visible when it is enabled in settings.</summary>
             public bool ShowOverlay;
+
+            /// <summary>
+            /// The boiler brought to this pressure, bar absolute, before each
+            /// state, by heat into its water (a spawned engine's boiler is
+            /// cold, and the jets and the blower blow nothing); none when not given.
+            /// </summary>
+            public float? Steam;
+
+            /// <summary>
+            /// Logs the cab's parts within this many metres of the over-fire
+            /// jets' valve (their paths, places in the car, and sizes), to seat
+            /// it by the cab's own fittings; 0 for none.
+            /// </summary>
+            public float DumpNearJets;
 
             /// <summary>The camera's vertical field of view for the shots, degrees; the player's when not given.</summary>
             public float? Fov;
@@ -257,6 +287,8 @@ namespace RealisticFiring.Visuals
             var stokerPort = stokerControl != null && stokerControl.IsConnected ? ReferencedPort(stokerControl) : null;
             var masterId = StokerJetControls.Valves.First(v => v.Jet == null).PortId;
             var masterPort = stoker != null && flow != null && flow.TryGetPort(masterId, out var master, canBeNullOrEmpty: true) ? master : null;
+            var jetsPort = flow != null && flow.TryGetPort(RealisticFirebox.JetsControl.PortId, out var jetsFound, canBeNullOrEmpty: true) ? jetsFound : null;
+            var jetsBefore = jetsPort?.Value ?? 0f;
             var stokerBefore = stokerPort?.Value ?? 0f;
             var masterBefore = masterPort?.Value ?? 0f;
 
@@ -294,6 +326,18 @@ namespace RealisticFiring.Visuals
                         yield return null;
                 }
                 Main.Mod.Logger.Log($"Firebox capture: rendering at {Screen.width} x {Screen.height}");
+                // A state's valves and air, set again mid-clip and back.
+                void Apply(State valves)
+                {
+                    if (valves.Air.HasValue)
+                        FireboxTestBed.Air = valves.Air;
+                    if (valves.Draft.HasValue)
+                        FireboxTestBed.Draft = valves.Draft;
+                    if (blower != null && valves.Blower is float vb)
+                        blower.ExternalValueUpdate(Mathf.Clamp01(vb));
+                    if (jetsPort != null && valves.Jets is float vj)
+                        jetsPort.ExternalValueUpdate(Mathf.Clamp01(vj));
+                }
                 foreach (var state in request.States)
                 {
                     Main.Settings.FireboxQuality = state.Quality ?? qualityBefore;
@@ -339,6 +383,8 @@ namespace RealisticFiring.Visuals
                     FireboxTestBed.BeatStrength = state.BeatStrength;
                     if (blower != null && state.Blower is float b)
                         blower.ExternalValueUpdate(Mathf.Clamp01(b));
+                    if (jetsPort != null && state.Jets is float jets)
+                        jetsPort.ExternalValueUpdate(Mathf.Clamp01(jets));
                     if (stokerPort != null && state.Stoker is float s)
                         stokerPort.ExternalValueUpdate(Mathf.Clamp01(s));
                     if (masterPort != null && state.StokerMaster is float m)
@@ -350,6 +396,21 @@ namespace RealisticFiring.Visuals
                         firebox.Model.Ignite();
                         Main.Mod.Logger.Log($"Firebox capture: lit the fire on {car.ID} ({firebox.Model.CoalMass:F0} kg of coal)");
                     }
+                    if (request.Steam is float steam)
+                    {
+                        var boiler = flow?.OrderedSimComps.OfType<Boiler>().FirstOrDefault();
+                        var vessel = boiler != null ? AccessTools.Field(typeof(Boiler), "vessel").GetValue(boiler) as WaterPressureVessel : null;
+                        for (var n = 0; n < 600 && vessel != null && vessel.pressure < steam; n++)
+                        {
+                            vessel.AddEnergy(2e8f);
+                            vessel.Update();
+                            if (n % 20 == 19)
+                                yield return null;
+                        }
+                        Main.Mod.Logger.Log($"Firebox capture: boiler at {(vessel != null ? vessel.pressure : 0f):F1} bar");
+                    }
+                    if (request.DumpNearJets > 0f)
+                        DumpNearJets(car, request.DumpNearJets);
                     var stateName = state.Name ?? $"draft {(state.Draft is float d ? d.ToString("0.##") : "fire's")} beats {state.Beats:0.#}";
                     held = View(car, hole, request.Views.FirstOrDefault());
                     for (var waited = 0f; waited < state.Settle; waited += Time.unscaledDeltaTime)
@@ -379,9 +440,15 @@ namespace RealisticFiring.Visuals
                             var frames = Mathf.CeilToInt(request.Clip * rate);
                             Time.captureFramerate = rate;
                             var trace = request.Trace ? new StringBuilder() : null;
+                            var changed = false;
                             for (var frame = 0; frame < frames; frame++)
                             {
                                 door.Set(opening);
+                                if (!changed && state.Then != null && state.ThenAt > 0f && frame >= state.ThenAt * rate)
+                                {
+                                    changed = true;
+                                    Apply(state.Then);
+                                }
                                 yield return new WaitForEndOfFrame();
                                 File.WriteAllBytes(Path.Combine(clip, $"{frame:0000}.jpg"), PlumeCapture.Frame(request.ClipWidth));
                                 var traced = trace != null && car.loadedInterior != null ? car.loadedInterior.GetComponentInChildren<FireboxVolume>(true) : null;
@@ -391,6 +458,15 @@ namespace RealisticFiring.Visuals
                             if (trace != null)
                                 File.WriteAllText(Path.Combine(clip, "trace.tsv"), trace.ToString());
                             Time.captureFramerate = 0;
+                            if (changed)
+                            {
+                                Apply(state);
+                                for (var waited = 0f; waited < state.Settle; waited += Time.unscaledDeltaTime)
+                                {
+                                    door.Set(opening);
+                                    yield return null;
+                                }
+                            }
                         }
                         else
                         {
@@ -445,6 +521,7 @@ namespace RealisticFiring.Visuals
                     blower.ExternalValueUpdate(blowerBefore);
                 stokerPort?.ExternalValueUpdate(stokerBefore);
                 masterPort?.ExternalValueUpdate(masterBefore);
+                jetsPort?.ExternalValueUpdate(jetsBefore);
                 Running = false;
                 ShowOverlay = false;
                 File.WriteAllText(Path.Combine(folder, "shots.tsv"), shots.ToString());
@@ -587,6 +664,55 @@ namespace RealisticFiring.Visuals
                     var toward = corner + 0.8f * across + 0.2f * along.normalized - 0.05f * up;
                     return new Pose(eye, Quaternion.LookRotation(toward - eye, car.transform.up));
                 }
+                case "jets-left":
+                case "jets-right":
+                {
+                    // From near one side sheet, a little over the jets, looking
+                    // across at the other sheet's tube mouths.
+                    var tubes = UnityEngine.Object.FindObjectsOfType<JetTubes>().FirstOrDefault(j => j.Shown);
+                    if (tubes == null)
+                        return null;
+                    // A left sheet's tubes blow toward the car's right.
+                    var right = view == "jets-left";
+                    var seen = tubes.Mouths.Where(m => Vector3.Dot(m.Inward, car.transform.right) > 0f == right).ToList();
+                    if (seen.Count == 0)
+                        return null;
+                    var target = seen.Aggregate(Vector3.zero, (sum, m) => sum + m.Mouth) / seen.Count;
+                    var eye = target + 0.85f * seen[0].Inward + 0.15f * car.transform.up;
+                    return new Pose(eye, Quaternion.LookRotation(target - eye, car.transform.up));
+                }
+                case "jets-valve":
+                case "jets-valve-wide":
+                {
+                    // In the cab, square in front of the over-fire jets'
+                    // valve and its plate, for seating them.
+                    var root = car.loadedInterior != null ? car.loadedInterior.transform.Find(JetsCab.RootName) : null;
+                    var wheel = root != null ? root.GetComponentInChildren<InteractablePortFeeder>(true) : null;
+                    if (wheel == null)
+                        return null;
+                    var plate = root.GetComponentsInChildren<Transform>(true).FirstOrDefault(c => c.name.StartsWith("label "));
+                    var target = plate != null ? 0.5f * (wheel.transform.position + plate.position) : wheel.transform.position;
+                    var back = view == "jets-valve" ? 0.55f : 1.3f;
+                    var valveEye = target - car.transform.forward * back + car.transform.up * 0.05f;
+                    return new Pose(valveEye, Quaternion.LookRotation(target - valveEye, car.transform.up));
+                }
+                case "jets-hole":
+                {
+                    // From the firehole, where the inside view stands (the
+                    // volume is drawn only through the hole), turned toward
+                    // the left sheet's jets: they blow across the view, side
+                    // on, so a core and a flame carried out of a mouth show
+                    // (seen head on, a core hides in its mouth's own dark).
+                    var tubes = UnityEngine.Object.FindObjectsOfType<JetTubes>().FirstOrDefault(j => j.Shown);
+                    if (tubes == null)
+                        return null;
+                    var left = tubes.Mouths.Where(m => Vector3.Dot(m.Inward, car.transform.right) > 0f).ToList();
+                    if (left.Count == 0)
+                        return null;
+                    var target = left.Aggregate(Vector3.zero, (sum, m) => sum + m.Mouth) / left.Count + 0.3f * left[0].Inward;
+                    var holeEye = car.transform.TransformPoint(new Vector3(hole.Middle, middle, hole.Plane + 0.12f));
+                    return new Pose(holeEye, Quaternion.LookRotation(target - holeEye, car.transform.up));
+                }
                 case "inside-low":
                     // Low over the bed, looking along it to the tube plate.
                     at = new Vector3(hole.Middle, hole.Foot + 0.05f, hole.Plane + 0.15f);
@@ -598,6 +724,41 @@ namespace RealisticFiring.Visuals
             var t = car.transform;
             var from = t.TransformPoint(at);
             return new Pose(from, Quaternion.LookRotation(t.TransformPoint(look) - from, t.up));
+        }
+
+        // The cab's parts near the jets' valve, for the log.
+        private static void DumpNearJets(TrainCar car, float within)
+        {
+            var interior = car.loadedInterior != null ? car.loadedInterior.transform : null;
+            var root = interior != null ? interior.Find(JetsCab.RootName) : null;
+            var wheel = root != null ? root.GetComponentInChildren<InteractablePortFeeder>(true) : null;
+            if (wheel == null)
+            {
+                Main.Mod.Logger.Log("Firebox capture: no jets' valve to dump round");
+                return;
+            }
+            var lines = new StringBuilder($"Firebox capture: the cab's parts within {within:F2} m of the jets' valve at {Local(car, wheel.transform.position)}:\n");
+            foreach (var renderer in interior.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer.transform.IsChildOf(root))
+                    continue;
+                var at = renderer.bounds.center;
+                if ((at - wheel.transform.position).magnitude > within)
+                    continue;
+                var path = new List<string>();
+                for (var t = renderer.transform; t != null && t != interior; t = t.parent)
+                    path.Add(t.name);
+                path.Reverse();
+                var mesh = renderer.GetComponent<MeshFilter>()?.sharedMesh;
+                lines.Append($"  {string.Join("/", path)} | mesh {(mesh != null ? mesh.name : "-")} | centre {Local(car, at)} | size {renderer.bounds.size.x:F2} {renderer.bounds.size.y:F2} {renderer.bounds.size.z:F2} | transform {Local(car, renderer.transform.position)}\n");
+            }
+            Main.Mod.Logger.Log(lines.ToString());
+        }
+
+        private static string Local(TrainCar car, Vector3 world)
+        {
+            var l = car.transform.InverseTransformPoint(world);
+            return $"({l.x:F3}, {l.y:F3}, {l.z:F3})";
         }
 
         // The game's camera, held at the view (and the field of view) for each

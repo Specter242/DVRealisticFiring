@@ -189,8 +189,37 @@ namespace RealisticFiring.Sim
         /// <summary>The stock combined opening, used to locate the last handle moved on a shared valve.</summary>
         public float LeverValue => boiler.injectorControl.Value;
 
-        /// <summary>The feedwater heater and pump, on a loco whose prototype had one; else null.</summary>
-        public FeedPump Pump { get; private set; }
+        /// <summary>
+        /// The feedwater heater and pump, on a loco whose prototype had one or
+        /// that has bought one (the S282's upgrade); else null. An upgrade not
+        /// yet bought is built but idle, and null here, so the cab, fireman,
+        /// and overlay see no pump until it is fitted.
+        /// </summary>
+        public FeedPump Pump => pump != null && PumpFitted ? pump : null;
+
+        private FeedPump pump;
+        private bool pumpUpgrade;
+        private int pumpFittedVersion = -1;
+        private bool pumpFitted;
+
+        // Whether the pump is on the engine now: always, but for an upgrade.
+        private bool PumpFitted
+        {
+            get
+            {
+                if (!pumpUpgrade)
+                    return true;
+                if (pumpFittedVersion != Upgrades.Fittings.Version)
+                {
+                    pumpFittedVersion = Upgrades.Fittings.Version;
+                    pumpFitted = Upgrades.Fittings.FeedPump;
+                }
+                return pumpFitted;
+            }
+        }
+
+        /// <summary>Whether this rig carries a pump not yet bought (built, idle until fitted).</summary>
+        internal bool PumpWaiting => pump != null && !PumpFitted;
 
         /// <summary>Its make and type.</summary>
         public string PumpName { get; private set; }
@@ -220,14 +249,16 @@ namespace RealisticFiring.Sim
             var engine = flow.OrderedSimComps.OfType<ReciprocatingSteamEngine>().FirstOrDefault();
             AttachPump(new FeedPump(new FeedPumpSpec(fit.Type, fit.Capacity), TenderWaterTemperature), fit.Name, valve,
                 engine?.exhaustFlowReadOut, engine?.maxFlowReadOut, engine?.steamChestPressureReadOut);
-            return $"{fit.Name} feedwater heater and pump: {Pump.Spec.Capacity:F1} kg/s, worked by '{valve.id}'" +
+            pumpUpgrade = fit.Upgrade;
+            return $"{fit.Name} feedwater heater and pump: {pump.Spec.Capacity:F1} kg/s, worked by '{valve.id}'" +
+                   (fit.Upgrade ? $", an upgrade {(PumpFitted ? "fitted" : "not yet fitted")}" : "") +
                    (engine == null ? "; no steam engine to heat it" : "");
         }
 
         /// <summary>Gives the rig a pump directly, for checks outside the game.</summary>
         internal void AttachPump(FeedPump pump, string name, Port valve, Port exhaust, Port fullExhaust, Port chest)
         {
-            Pump = pump;
+            this.pump = pump;
             PumpName = name;
             pumpValve = valve;
             exhaustFlow = exhaust;
@@ -837,6 +868,8 @@ namespace RealisticFiring.Sim
                     pendingPumpSteam = 0f;
                 }
             }
+            else if (PumpWaiting && !Net.IsClient)
+                PumpFlow = default;
 
             // Filling with no steam: the shed's hose from the mains, or the hand pump from the tender.
             if (!Net.IsClient)
