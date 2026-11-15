@@ -17,6 +17,8 @@ namespace RealisticFiring.Sim
             // Class 5 4-6-0 was most thoroughly tested", its firebox identical.
             ["em_lms_8f_loc_black"] = 23050f * LbPerHour,
             ["em_lms_8f_loc_grey"] = 23050f * LbPerHour,
+            ["em_fowler_4f_44422"] = 12000f * LbPerHour,
+            ["em_fowler_4f_4027"] = 12000f * LbPerHour,
             // NYC J-3a, 85,000 lb/h with the standard front end, Selkirk
             // standing tests (Railway Age, 18 Jan 1941, p.181).
             ["S464-730"] = 85000f * LbPerHour,
@@ -47,12 +49,26 @@ namespace RealisticFiring.Sim
         public static float? Apply(FireboxDefinition definition, TrainCar car, bool oil)
         {
             var livery = car != null && car.carLivery != null ? car.carLivery.id : null;
-            if (definition == null || livery == null || !Steam.TryGetValue(livery, out var steam))
+            if (definition == null || !TryBurnTime(livery, definition.maxCoalCapacity, definition.efficiencyAtMaxCombustion, oil, out var burnTime))
                 return null;
             var maker = definition.burnTime;
-            definition.burnTime = FireboxParameters.BurnTimeFor(definition.maxCoalCapacity, definition.efficiencyAtMaxCombustion,
-                steam * AutoFiremanBase.SteamHeat, oil ? OilFire.MaxFeedFactor : 1f);
+            definition.burnTime = burnTime;
             return maker;
+        }
+
+        /// <summary>
+        /// The burn time that sizes a box of <paramref name="maxCoalCapacity"/>
+        /// kg at <paramref name="efficiencyAtMaxCombustion"/> to
+        /// <paramref name="livery"/>'s prototype, if it is listed.
+        /// </summary>
+        internal static bool TryBurnTime(string livery, float maxCoalCapacity, float efficiencyAtMaxCombustion, bool oil, out float burnTime)
+        {
+            burnTime = 0f;
+            if (livery == null || !Steam.TryGetValue(livery, out var steam))
+                return false;
+            burnTime = FireboxParameters.BurnTimeFor(maxCoalCapacity, efficiencyAtMaxCombustion,
+                steam * AutoFiremanBase.SteamHeat, oil ? OilFire.MaxFeedFactor : 1f);
+            return true;
         }
     }
 }

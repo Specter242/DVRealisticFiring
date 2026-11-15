@@ -28,6 +28,8 @@ namespace RealisticFiring.Visuals
         {
             [QjStokerCab.Livery] = new Vector3(0.95f, -0.17f, -0.3f), 
             ["S2102-720"] = new Vector3(0f, 0f, -0.3f), 
+            ["em_fowler_4f_4027"] = new Vector3(0f, 0f, -0.3f), 
+            ["em_fowler_4f_44422"] = new Vector3(0f, 0f, -0.3f),
         };
 
         // Seats set this session on the seating bench (SeatingBench, a

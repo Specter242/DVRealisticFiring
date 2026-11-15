@@ -419,7 +419,7 @@ namespace RealisticFiring.Visuals
             if (previewFirehole && target != null && FireholeOpening.SeedForBench(target) && FireholeOpening.TryHole(livery, out var hole))
             {
                 var bounds = new Bounds(new Vector3(hole.Middle, hole.Foot + hole.Height / 2f, hole.Plane), new Vector3(hole.Width, hole.Height, 0f));
-                AimKeypad.Draw(new DoorAimSample(Core.GrateLayout.At(1, 1), 0.5f, 0.5f, false, Time.time, target.transform, bounds));
+                AimKeypad.Draw(new DoorAimSample(Core.GrateLayout.At(1, 1), 0.5f, 0.5f, Core.DoorAimKind.Shovel, Time.time, target.transform, bounds));
             }
 
             var k = OverlayStyle.Scale;

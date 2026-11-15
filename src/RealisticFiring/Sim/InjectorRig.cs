@@ -140,6 +140,21 @@ namespace RealisticFiring.Sim
             // is 20 together.
             ["em_lms_8f_loc_black"] = 7f,
             ["em_lms_8f_loc_grey"] = 7f,
+            // LMS Fowler 4F: two Gresham & Craven live-steam injectors, about
+            // No. 9-10 (Derby drawings 9756, "No 10 injector - Gresham &
+            // Craven", Jan 1917, beside the Class 4 freight's "Pipe & rod
+            // arrangement"; LMS DD 3307, "Injector No. 9 cones for standard
+            // 0-6-0 No. 4 class freight engine"), non-lifting below the
+            // footplate as the 8F's (Midland practice, drawing 8103,
+            // "Arrangement of injectors under footplate", 1913; the cab's
+            // water valves on rods down through its floor); "frequently
+            // temperamental starters" with "little range of delivery"
+            // (Powell, Living with L.M.S. Locomotives, 1977, ch. 4). Their
+            // delivery not found: about 2.7 kg/s each, a Sellers No. 8½'s
+            // 2,587 gal/h at 200 psi (Swingle p.348), above the boiler's most
+            // as the 8F's are (inferred). The game's is 7 together.
+            ["em_fowler_4f_44422"] = 5.4f,
+            ["em_fowler_4f_4027"] = 5.4f,
             // UP FEF: "one Nathan non-lifting injector ... 10,000 gal. per hr."
             // (FEF-1, RME Feb 1938 p.47); the FEF-3 was built like the FEF-1
             // and FEF-2. The game's are 60 (844) and 50.
@@ -480,7 +495,7 @@ namespace RealisticFiring.Sim
         /// Sets up a realistic injector on each boiler of <paramref name="car"/>
         /// whose injector is worked by a cab control. A boiler whose injector
         /// port is driven by anything else keeps the stock behavior, except
-        /// verified two-valve averaging graphs (JK3, LMS 8F). Returns a line for
+        /// verified two-valve averaging graphs (JK3, LMS 8F and 4F). Returns a line for
         /// the log, or null when the car has no boiler.
         /// </summary>
         public static string Attach(TrainCar car, SimulationFlow flow)
@@ -598,7 +613,9 @@ namespace RealisticFiring.Sim
             public string Add, AddA, AddB, Multiplier, MultiplierOut, Factor, FactorPort, Right, Left;
         }
 
-        private static readonly TwoValveGraph Lms8F = new TwoValveGraph
+        // Emerald's engines' graph: the LMS 8F 1.2.1 and the LMS 4F 1.1.1 wire
+        // the same IDs, read from each bundle.
+        private static readonly TwoValveGraph Emerald = new TwoValveGraph
         {
             Add = "injectoradding", AddA = "injector1", AddB = "injector2", Multiplier = "injector_calc", MultiplierOut = "injector_calc.injectorhalf",
             Factor = "injector_multiplier", FactorPort = "injector_multiplier.multiplier", Right = "injector2", Left = "injector1",
@@ -613,8 +630,14 @@ namespace RealisticFiring.Sim
                 Factor = "injectorDivisor", FactorPort = "injectorDivisor.DIVISOR", Right = "injector", Left = "injector2",
             },
             // Emerald's LMS 8F 1.2.1: the fireman's (right) injector 'injector2', the driver's (left) 'injector1'.
-            ["em_lms_8f_loc_black"] = Lms8F,
-            ["em_lms_8f_loc_grey"] = Lms8F,
+            ["em_lms_8f_loc_black"] = Emerald,
+            ["em_lms_8f_loc_grey"] = Emerald,
+            // Emerald's LMS 4F 1.1.1, its cab left-hand drive (the reverser on
+            // the left), as the LMS engines were from No. 4207 (Brassmasters,
+            // MR/LMS/BR 4F prototype notes, 2004): the fireman's (right)
+            // 'injector2', the driver's (left) 'injector1', as on the 8F.
+            ["em_fowler_4f_44422"] = Emerald,
+            ["em_fowler_4f_4027"] = Emerald,
         };
 
         /// <summary>Whether <paramref name="livery"/>'s cab works two injectors through a verified calculated feed.</summary>

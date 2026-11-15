@@ -673,8 +673,8 @@ namespace RealisticFiring
             if (Main.Settings.ShowOverlay)
                 overlay.Draw(firebox, Time.time);
             if (Main.Settings.ShowAimLabel && firebox.HoverAim is DoorAimSample aim && aim.IsLiveAt(Time.time)
-                && (!aim.Raking || firebox.DoorOpening >= ShovelNonPhysicalCoal.REQUIRED_DOOR_OPENED_PERCENTAGE_NON_VR))
-                DrawLabel((aim.Raking ? "Rake → " : "Shovel → ") + GrateLayout.Describe(aim.Zone), AimLabelOffset, new Color(0.55f, 0.8f, 1f));
+                && (!DoorAimRules.LabelNeedsOpenDoor(aim.Kind) || firebox.DoorOpening >= ShovelNonPhysicalCoal.REQUIRED_DOOR_OPENED_PERCENTAGE_NON_VR))
+                DrawLabel(DoorAimRules.Label(aim.Kind) + " → " + GrateLayout.Describe(aim.Zone), AimLabelOffset, new Color(0.55f, 0.8f, 1f));
             if (Main.Settings.ShowAimKeypad && firebox.HoverAim is DoorAimSample keypad && keypad.IsLiveAt(Time.time))
                 AimKeypad.Draw(keypad);
         }

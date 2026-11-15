@@ -30,7 +30,7 @@ namespace RealisticFiring.AdapterCheck
                 "a missing field under the simulation keeps the mod off whole; under a control's feel or a cab fitting, only that");
 
             // Unlisted steam locos stay stock unless the player asks (audit 2026-11-09).
-            var listed = new[] { "LocoS282A", "LocoS060", "Jk3A", "S464-730", "S484-840A", "FEF-3", "em_lms_8f_loc_black", "S2102-870", "A.T.&S.F. 2901-A", "GWI40xx", "GWI_Manor" };
+            var listed = new[] { "LocoS282A", "LocoS060", "Jk3A", "S464-730", "S484-840A", "FEF-3", "em_lms_8f_loc_black", "em_fowler_4f_44422", "em_fowler_4f_4027", "S2102-870", "A.T.&S.F. 2901-A", "GWI40xx", "GWI_Manor" };
             check(listed.All(l => !Sim.LeftStock.Is(l, null, false)) && Sim.LeftStock.Is("SomeNewEngine", "SomeNewType", false)
                   && !Sim.LeftStock.Is("SomeNewEngine", "SomeNewType", true)
                   && Sim.LeftStock.Is("S484-841A", null, true) && Sim.LeftStock.Is("AnyPaint", "S040F", true),

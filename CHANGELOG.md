@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.22.0 (2026-11-15)
+
+- **New: Emerald's LMS Fowler 4F** (4F 1.1.1, both liveries). It gets
+  the realistic firebox, hand fired, with the real 4F's safety valves,
+  two injectors worked by their steam handles and the cab's own water
+  valves, superheater, and fusible plug, and its boiler sized to the real
+  4F's as built. The water valves, at the back corners of the cab, work
+  where they stand but don't move when turned; their label shows how far
+  open they are.
+- **New: try cocks on the S282 and S060.** The three small handwheels
+  beside the glass now open, with a spout under each: steam above the
+  water, water flashing to a wet white gush below it, and both by turns
+  at the surface. An open one under the water drains the boiler. Crack
+  the glass's own cocks, above and below it, to blow it through: its
+  water boils and drops, and comes straight back to the level when shut,
+  so a full glass can be told from an empty one.
+- **Fixed: cab parts out of place after the cab reloads on the move.**
+  Stepping off a moving engine onto the tender and back could leave the
+  S282's injector and the jets, feed pump, and booster controls a little
+  off their places, and an invisible wall in front of the firehole that
+  stopped the shovel and thrown wood.
+- **Fixed:** a firewood crate or rag tin you carried off never filled
+  again. Set it down by the free supplies at any engine shed or spawn
+  track and it fills within half a minute.
+- **Fixed:** wood and rags aimed at the fire door showed no aim. The
+  keypad and the zones now show where they'll go, as for the shovel.
+- **Fixed:** in VR, a crate's or tin's description said to reach in for
+  a piece, which takes hold of the crate. It now says to hold it and pull
+  the trigger.
+
 ## 1.21.0 (2026-11-14)
 
 - **New: E_noob's DB BR95, a Prussian T 20 tank engine** (BR95 1.0.1). It

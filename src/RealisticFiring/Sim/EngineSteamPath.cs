@@ -74,11 +74,12 @@ namespace RealisticFiring.Sim
         internal static bool TryFit(string livery, float volume, float capacity, out SteamPathSpec spec)
         {
             spec = null;
+            var lms4F = livery == "em_fowler_4f_44422" || livery == "em_fowler_4f_4027";
             var upstream = livery == "LocoS282A" || livery == "em_lms_8f_loc_black" || livery == "em_lms_8f_loc_grey"
-                || livery == "S2102-870";
+                || livery == "S2102-870" || lms4F;
             var front = livery == "S464-730" || livery == "FEF-3" || livery == "S484-840A" || livery == "A.T.&S.F. 2901-A";
             if ((!upstream && !front) || !Finite(volume) || volume <= 0 || !Finite(capacity) || capacity <= 0) return false;
-            var pipe = livery == "S2102-870" ? 500 : livery == "LocoS282A" ? 300 : upstream ? 120
+            var pipe = livery == "S2102-870" ? 500 : livery == "LocoS282A" ? 300 : lms4F ? 130 : upstream ? 120
                 : livery == "S464-730" ? 600 : livery == "A.T.&S.F. 2901-A" ? 800 : 500;
             spec = new SteamPathSpec(upstream ? RegulatorLocation.BeforeSuperheater : RegulatorLocation.AfterSuperheater,
                 pipe, volume, capacity);

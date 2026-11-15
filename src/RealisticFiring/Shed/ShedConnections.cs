@@ -70,6 +70,8 @@ namespace RealisticFiring.Shed
             ["A.T.&S.F. 2901-A"] = (new Vector3(-1.22f, 2.03f, -7.98f), 0f, 0f, 0f, 0f),
             [QjStokerCab.Livery] = (QjWaterMouth, 0f, 0f, 0f, 0f), 
             ["S2102-720"] = (new Vector3(-1.28f, 1.24f, -3.36f), 0f, 90f, 0f, 0f), 
+            ["em_fowler_4f_4027"] = (new Vector3(-0.8f, 1.41f, -1.52f), 0f, 0f, 0f, 0f), 
+            ["em_fowler_4f_44422"] = (new Vector3(-0.8f, 1.41f, -1.52f), 0f, 0f, 0f, 0f),
         };
 
         // Seats set this session on the seating bench (Visuals.SeatingBench, a
@@ -82,7 +84,10 @@ namespace RealisticFiring.Shed
 
  private static readonly HashSet<string> RightSide = new HashSet<string> { "LocoS060" };
 
- private static readonly HashSet<string> NoConnection = new HashSet<string> { "em_lms_8f_loc_black", "em_lms_8f_loc_grey" };
+ private static readonly HashSet<string> NoConnection = new HashSet<string>
+        {
+            "em_lms_8f_loc_black", "em_lms_8f_loc_grey", "em_fowler_4f_44422", "em_fowler_4f_4027",
+        };
 
         private sealed class Connection
         {

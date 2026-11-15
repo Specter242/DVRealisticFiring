@@ -33,6 +33,12 @@ namespace RealisticFiring.Sim
             // at the full rate is inferred.
             ["em_lms_8f_loc_black"] = Superheat("Type A", 100f, 0.72f),
             ["em_lms_8f_loc_grey"] = Superheat("Type A", 100f, 0.72f),
+            // LMS Fowler 4F: a Schmidt (the Midland 3835 class's, Wikipedia),
+            // 246 to 252 sq ft on 1,158 (Wikipedia): by its surface over the
+            // evaporative, between the 8F's 100 °C on 215/1,650 and the
+            // S282's 136 on 882/3,783, about 130 °C at the full rate (inferred).
+            ["em_fowler_4f_44422"] = Superheat("Schmidt", 130f, 0.72f),
+            ["em_fowler_4f_4027"] = Superheat("Schmidt", 130f, 0.72f),
             // China Railways QJ: Schmidt Type A, 69 elements, 144.1 m² on
             // 255.3; steam "close to 400 °C" at its design rate (the works
             // book), about 195 °C over saturation at 15 kgf/cm².

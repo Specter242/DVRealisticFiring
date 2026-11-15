@@ -59,7 +59,7 @@ namespace RealisticFiring.AdapterCheck
 
             // No broader allowance for other engines, unknown liveries, or a changed GWI graph.
             foreach (var livery in new[] { "LocoS282A", "LocoS060", "Jk3A", "S464-730", "FEF-3", "S484-840A",
-                "em_lms_8f_loc_black", "em_lms_8f_loc_grey", "A.T.&S.F. 2901-A", "S2102-870", "unknown", null, "GWI_Small_Tender" })
+                "em_lms_8f_loc_black", "em_lms_8f_loc_grey", "em_fowler_4f_44422", "em_fowler_4f_4027", "A.T.&S.F. 2901-A", "S2102-870", "unknown", null, "GWI_Small_Tender" })
             {
                 var lever = new Port("injector", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.CONTROL, "EXT_IN"));
                 var boiler = NewBoiler(gameParams, lever);

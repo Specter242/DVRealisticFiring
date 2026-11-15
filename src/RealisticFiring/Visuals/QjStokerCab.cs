@@ -79,15 +79,17 @@ namespace RealisticFiring.Visuals
             // Start just above foot level, below the casing and control
             // hover areas. The native teleport point is 9 mm below the
             // walkable deck's top; using it as the surface buried the plate.
+            // In the cab's frame, as the lever is placed in it (CabFrame).
+            var cab = CabFrame.Of(car);
             var deck = car.cabTeleportDestination != null
-                ? car.transform.InverseTransformPoint(car.cabTeleportDestination.transform.position).y : 1.985f;
-            var at = car.transform.TransformPoint(new Vector3(1.15f, deck, -0.7f) + move);
+                ? cab.InverseTransformPoint(car.cabTeleportDestination.transform.position).y : 1.985f;
+            var at = cab.TransformPoint(new Vector3(1.15f, deck, -0.7f) + move);
             Physics.SyncTransforms();
-            foreach (var hit in Physics.RaycastAll(at + car.transform.up * 0.15f, -car.transform.up, 0.3f,
+            foreach (var hit in Physics.RaycastAll(at + cab.up * 0.15f, -cab.up, 0.3f,
                          LayerMask.GetMask("Train_Walkable"), QueryTriggerInteraction.Ignore).OrderBy(h => h.distance))
-                if (TrainCar.Resolve(hit.collider.gameObject) == car && Vector3.Dot(hit.normal, car.transform.up) > 0.9f)
+                if (TrainCar.Resolve(hit.collider.gameObject) == car && Vector3.Dot(hit.normal, cab.up) > 0.9f)
                     return hit.point;
-            return at + car.transform.up * 0.009f;
+            return at + cab.up * 0.009f;
         }
 
         internal static bool HiddenOriginal(Component component) => component.GetComponentInParent<QjHiddenControl>() != null;

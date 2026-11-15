@@ -99,7 +99,7 @@ namespace RealisticFiring.Items
                 aimTime = Time.time;
                 // Highlights the zone on the bed as the shovel's aim does; as a
                 // rake's, so a shovelful thrown next ignores it.
-                firebox.NoteAim(new DoorAimSample(aimedZone, across, depth, raking: true, Time.time));
+                firebox.NoteAim(new DoorAimSample(aimedZone, across, depth, DoorAimKind.Rake, Time.time));
             }
             if (text != null && AimIsLive(firebox))
                 text.DisplayText($"Fire iron at {GrateLayout.Describe(aimedZone)}: click to slice; wheel to push forward or pull back (Shift: sideways)");

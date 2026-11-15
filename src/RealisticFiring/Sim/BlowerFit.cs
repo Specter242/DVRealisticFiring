@@ -27,6 +27,12 @@ namespace RealisticFiring.Sim
             // the chimney.
             ["em_lms_8f_loc_black"] = (0.4f, 0.26f, AirPump.NineAndHalf, 1, 0f),
             ["em_lms_8f_loc_grey"] = (0.4f, 0.26f, AirPump.NineAndHalf, 1, 0f),
+            // LMS Fowler 4F: a 21.1 sq ft grate (loco-info.com); its blower
+            // the S060's and the 8F's, its grate between theirs (inferred),
+            // natural draft by grate area. Vacuum braked (Wikipedia): its
+            // pump stands in for the ejector, as the 8F's does.
+            ["em_fowler_4f_44422"] = (0.4f, 0.19f, AirPump.NineAndHalf, 1, 0f),
+            ["em_fowler_4f_4027"] = (0.4f, 0.19f, AirPump.NineAndHalf, 1, 0f),
             // China Railways QJ: a 6.8 m² (73.2 sq ft) grate; its blower
             // between the S282's and the Hudson's by grate area, natural draft
             // by grate area (both inferred). One steam cross-compound pump low

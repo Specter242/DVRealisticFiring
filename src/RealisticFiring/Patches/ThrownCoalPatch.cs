@@ -23,7 +23,7 @@ namespace RealisticFiring.Patches
             if (!ThrownCoal.TryLanding(firebox, car, other.attachedRigidbody, out var across, out var along))
                 return;
             var zone = DoorAim.ZoneFor(across, along);
-            firebox.NoteAim(new DoorAimSample(zone, across, along, false, Time.time));
+            firebox.NoteAim(new DoorAimSample(zone, across, along, DoorAimKind.Shovel, Time.time));
             // For trying it in a headset: where each throw was taken to land.
             if (Time.time - logged >= LogEvery)
             {

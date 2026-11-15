@@ -192,6 +192,12 @@ namespace RealisticFiring.Core
             return fromAnchor <= GuestSpotReach && fromGuest <= stockingRange + GuestRangeSlack;
         }
 
+        /// <summary>How near a supply place's spot a crate or tin set down is refilled, m.</summary>
+        public const float RefillReach = 2f;
+
+ public static bool Refills(float dx, float dy, float dz, bool held) =>
+            !held && Finite(dx) && Finite(dy) && Finite(dz) && Sq(dx) + Sq(dy) + Sq(dz) < RefillReach * RefillReach;
+
         private static bool Finite(float v) => !float.IsNaN(v) && !float.IsInfinity(v);
 
         private static float Sq(float v) => v * v;

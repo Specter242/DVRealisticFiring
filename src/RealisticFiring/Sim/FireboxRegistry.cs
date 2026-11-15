@@ -32,6 +32,11 @@ namespace RealisticFiring.Sim
             // 2026-10-14; the WD Photographic scheme is a paint, not a livery.
             "em_lms_8f_loc_black",
             "em_lms_8f_loc_grey",
+            // Emerald's LMS Fowler 4F 0-6-0 (Nexus 1457, 1.1.1), read from its
+            // bundle 2026-11-15: its BR livery (No. 44422) and its LMS one
+            // (No. 4027). em_lms_4f_tender_br and _lms are its tenders.
+            "em_fowler_4f_44422",
+            "em_fowler_4f_4027",
             // LittleNiko36's S2102-870 (Nexus 1779, 1.0.0), a China Railways
             // QJ 2-10-2 with CCL's steam stoker, read from its bundle
             // 2026-10-19. S2102-870B is its tender.

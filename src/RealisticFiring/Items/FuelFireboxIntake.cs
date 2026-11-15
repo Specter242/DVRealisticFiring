@@ -127,7 +127,10 @@ namespace RealisticFiring.Items
             var layer = own != null ? own.gameObject.layer : LayerMask.NameToLayer("Train_Interior");
             if (layer < 0) return;
             frame = new GameObject("RealisticFiring firehole frame") { layer = layer };
-            frame.transform.SetPositionAndRotation(Car.transform.position, Car.transform.rotation);
+            // By the cab's frame: the car's is a frame ahead of the cab's while
+            // it moves, and the plate stood off the backhead (CabFrame).
+            var cab = Visuals.CabFrame.Of(Car);
+            frame.transform.SetPositionAndRotation(cab.position, cab.rotation);
             frame.transform.SetParent(items != null ? items : loaded, true);
             float x0 = doorway.min.x, x1 = doorway.max.x, y0 = doorway.min.y, y1 = doorway.max.y;
             void Strip(float left, float right, float bottom, float top)
@@ -255,14 +258,39 @@ namespace RealisticFiring.Items
             return "No fire here";
         }
 
-        /// <summary>The zone the player aims at through the door, as the shovel aims; the door's zone otherwise.</summary>
-        internal GrateZone AimedZone(ItemUseTarget useTarget, GrabHandlerItem handle)
+        /// <summary>
+        /// Where the player aims a held piece through the door now, as the
+        /// shovel aims (<see cref="FireboxAim"/>, by the "How to aim"
+        /// setting), as a sample of <paramref name="kind"/> for the label,
+        /// the keypad, and the bed; false off a coal fire or with no aim.
+        /// Wood and rags aim whatever "Aim through the fire door" says: that
+        /// setting is the shovel's, and a piece laid always went where it
+        /// was aimed.
+        /// </summary>
+        internal bool TryAim(ItemUseTarget useTarget, GrabHandlerItem handle, DoorAimKind kind, out RealisticFirebox firebox, out DoorAimSample aim)
         {
+            aim = default;
+            firebox = null;
             var grabber = handle != null ? handle.GetGrabber() : null;
-            if (grabber != null && grabber.Cursor != null && FireboxRegistry.TryGet(Car, out var firebox)
-                && FireboxAim.TryAim(grabber.Cursor.GetRay(), useTarget, Car, firebox, out var across, out var depth))
-                return DoorAim.ZoneFor(across, depth);
-            return GrateZone.UnderDoor;
+            if (grabber == null || grabber.Cursor == null || !FireboxRegistry.TryGet(Car, out firebox)
+                || !FireboxAim.TryAim(grabber.Cursor.GetRay(), useTarget, Car, firebox, out var across, out var depth, out var box))
+                return false;
+            aim = new DoorAimSample(DoorAim.ZoneFor(across, depth), across, depth, kind, Time.time, Car.transform, box);
+            return true;
+        }
+
+        /// <summary>
+        /// The zone a piece of <paramref name="kind"/> laid now goes to: the
+        /// last aim its hover showed, as a shovelful takes the shovel's (the
+        /// use runs after the game's working animation); else where the
+        /// player aims now; else under the door.
+        /// </summary>
+        internal GrateZone AimedZone(ItemUseTarget useTarget, GrabHandlerItem handle, DoorAimKind kind)
+        {
+            if (FireboxRegistry.TryGet(Car, out var firebox) && firebox.HoverAim is DoorAimSample shown
+                && DoorAimRules.AimsLay(shown.Kind, kind, shown.AgeAt(Time.time), RealisticFirebox.AimHoldTime))
+                return shown.Zone;
+            return TryAim(useTarget, handle, kind, out _, out var aim) ? aim.Zone : GrateZone.UnderDoor;
         }
 
         /// <summary>Lays the held item in (the place use). Host: at once; a client lets it go just inside the door, for the host to take.</summary>

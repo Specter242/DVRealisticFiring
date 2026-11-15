@@ -104,7 +104,7 @@ Startup setting speeds up a cold fire (×25 at 100 %). Set it to 2500 % for a
 real-time light-up. At a roundhouse stall or engine shed, plug the stand's
 blower line into the fitting on the smokebox and open its handwheel a
 little as you lay the fire, more as it catches; take it off at about 3.5 bar
-and use the cab's blower (the 8F has no fitting).
+and use the cab's blower (the 8F and 4F have no fitting).
 
 Left and right below mean looking toward the chimney. Steam sockets sit low
 on the smokebox, usually facing down; water sockets are low on the firebox near the cab.
@@ -143,6 +143,13 @@ Use a shed or service location; tow a dead engine there if needed.
   handwheel, the driver's a handle; anticlockwise opens), and the tender
   water valves on the tender front must be down at OPEN. Water first, then
   steam to Prime, then Feed.
+- **LMS 4F:** a small, narrow Belpaire box with a brick arch. Fire it thin
+  and often, as the 8F. Its boiler is the real 4F's as built, small for
+  its cylinders: worked hard for long, the pressure falls back, so ease
+  it between climbs. Its two injectors work as the 8F's: the backhead
+  handles are the steam valves, and the water valves are the cab's own, by
+  the back corners on each side (they don't move when turned; the label
+  shows how far open). Water first, then steam to Prime, then Feed.
 - **NYC Hudson:** the back corners thin out at speed, and the stoker runs the
   right back corner short. Its coal leaves a little more ash and clinker.
 - **844:** burns its smoke clean and draws more evenly than most, its arch
@@ -399,10 +406,24 @@ they're fitted. The booster is the engineer's.
 - **Foaming** (the glass bobs and reads high): ease the throttle, open the
   cylinder cocks, and lower the water. Water in the exhaust means it's
   carrying over and can crack a cylinder.
+- **Try cocks** (S282 and S060): the three small handwheels on a slant
+  beside the glass, top, middle, and bottom. Open one a moment and look at
+  its spout: dry steam, clear at the spout with a sharp hiss, means the
+  water is below it; a wet white gush with spray falling means it is
+  above; at the surface it spits both by turns. Normally the top shows
+  steam and the bottom water. They read the same water as the glass, so a
+  foaming boiler froths out of them high too. Shut them again: an open
+  cock under the water wastes about half a kilogram a second.
+- **Blow the glass through** when you can't tell where the level is (a
+  full glass and an empty one look alike): crack one of the glass's own
+  cocks, the wheels above and below it. The water in it boils and is drawn
+  down toward the drain; shut the cock and it comes straight back to the
+  level. A full glass falls from the top and comes back; an empty one
+  shows nothing, so the water is below it: put the fire out.
 - **Wash out** with a shed stand's water hose (boiler cold) when blowdowns
   no longer keep it quiet.
 - **Never run low.** A bared crown sheet melts the fusible plug and kills the
-  engine (S282, S060, S484-840, 844, 8F, QJ, BR95) or bursts the boiler
+  engine (S282, S060, S484-840, 844, 8F, 4F, QJ, BR95) or bursts the boiler
   (Hudson, which whistles a warning with an inch left). A repair at a
   service station, or a washout with a shed stand's water hose, renews the
   plug. The JK3 keeps the game's own low-water failure.
@@ -444,12 +465,12 @@ hold that steam:
 
 | Engines | Throttle arrangement |
 | --- | --- |
-| S282 (provisional), LMS 8F, QJ | Before the superheater |
+| S282 (provisional), LMS 8F, LMS 4F (provisional), QJ | Before the superheater |
 | NYC Hudson (provisional), 844, S484-840, 2901 | After the superheater |
 | S060, JK3 | Existing response; no added superheater steam-storage model |
 
 These fits retain each maker's chest and throttle capacity and add a
-separate, provisionally sized superheater circuit. On the S282, 8F and QJ,
+separate, provisionally sized superheater circuit. On the S282, 8F, 4F and QJ,
 that circuit fills when the regulator opens and runs down with the chest
 after closing: allow for a gradual change in pull. A front-end throttle
 isolates the charged circuit from the cylinders, so it answers sooner
@@ -535,7 +556,9 @@ A grinding clash means the booster was turning or you were going too fast.
 ## Starting a cold coal fire
 
 Bring a free firewood crate and rag tin from an engine shed or the track
-where steam engines spawn, or reach into them where they stand. Lay four or more pieces of wood together through
+where steam engines spawn, or reach into them where they stand (in VR, hold
+one and pull the trigger). Set an empty one down beside any of those
+supplies and it fills again. Lay four or more pieces of wood together through
 the open fire door: look at the doorway and throw them (they fly to where
 you look), or aim at the door and use them to lay them on the grate where
 you point. A door only partly open may stop a throw. One or two

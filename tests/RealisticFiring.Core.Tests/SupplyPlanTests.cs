@@ -177,4 +177,29 @@ public class SupplyPlanTests
         Assert.Equal(5f, SupplyPlan.DistanceToLine(3f, 24f, line), 3);
         Assert.True(float.IsPositiveInfinity(SupplyPlan.DistanceToLine(0f, 0f, new List<(float X, float Z)>())));
     }
+
+    [Fact] public void ACrateSetDownBySupplyPlaceIsRefilled()
+    {
+        // At the spot, beside it where the tin stands, and just inside the reach.
+        Assert.True(SupplyPlan.Refills(0f, 0.3f, 0f, held: false));
+        Assert.True(SupplyPlan.Refills(0f, 0.3f, 0.8f, held: false));
+        Assert.True(SupplyPlan.Refills(1.4f, 0.2f, -1.3f, held: false));
+    }
+
+    [Fact] public void ACrateHeldOrAwayFromTheSpotIsNotRefilled()
+    {
+        // Carried past the place, in a player's hand.
+        Assert.False(SupplyPlan.Refills(0f, 0.3f, 0f, held: true));
+        // Set down a few steps off.
+        Assert.False(SupplyPlan.Refills(SupplyPlan.RefillReach + 0.1f, 0f, 0f, held: false));
+        Assert.False(SupplyPlan.Refills(1.5f, 0f, 1.5f, held: false));
+        // Up on a platform or a cab floor well above it.
+        Assert.False(SupplyPlan.Refills(0f, 2.5f, 0f, held: false));
+    }
+
+    [Fact] public void ACrateWhoseDistanceIsNoNumberIsNotRefilled()
+    {
+        Assert.False(SupplyPlan.Refills(float.NaN, 0f, 0f, held: false));
+        Assert.False(SupplyPlan.Refills(0f, float.PositiveInfinity, 0f, held: false));
+    }
 }

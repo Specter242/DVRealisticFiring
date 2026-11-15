@@ -110,8 +110,9 @@ namespace RealisticFiring.Visuals
             if (pinned is Vector3 at)
             {
                 side = at.x < 0f ? -1f : 1f;
-                frame.rotation = Quaternion.LookRotation(car.transform.right * side, car.transform.up);
-                frame.position = car.transform.TransformPoint(at);
+                var cab = CabFrame.Of(car);
+                frame.rotation = Quaternion.LookRotation(cab.right * side, cab.up);
+                frame.position = cab.TransformPoint(at);
                 where = "pinned in the car frame";
             }
             else

@@ -73,7 +73,10 @@ namespace RealisticFiring.Visuals
                 lifetime.Detach = () => { if (car != null) car.InteriorAboutToBeUnloaded -= unloading; };
                 root.SetActive(false);
                 root.transform.SetParent(interior, false);
-                root.transform.SetPositionAndRotation(car.transform.position, car.transform.rotation);
+                // By the cab's frame, not the car's: built while the car moves,
+                // the car's pose is a frame ahead of the cab's (CabFrame).
+                var cab = CabFrame.Of(car);
+                root.transform.SetPositionAndRotation(cab.position, cab.rotation);
                 foreach (var mask in data.Masks) PrepareCut(car, interior, mask, lifetime);
                 var water = Control(waterSource, root.transform, car, V(data.WaterPivot), circuit.WaterValve,
                     () => InjectorSteamCab.WaterHover(circuit));
@@ -111,8 +114,8 @@ namespace RealisticFiring.Visuals
                         : p.Role == "stem" ? stem : p.Role == "carrier" ? carrier : root.transform;
                     var part = new GameObject(p.Name);
                     part.transform.SetParent(parent, false);
-                    part.transform.position = car.transform.TransformPoint(V(p.Pivot));
-                    part.transform.rotation = car.transform.rotation;
+                    part.transform.position = cab.TransformPoint(V(p.Pivot));
+                    part.transform.rotation = cab.rotation;
                     var mesh = InjectorModelMesh.Create(p);
                     lifetime.Meshes.Add(mesh);
                     part.AddComponent<MeshFilter>().sharedMesh = mesh;
@@ -197,7 +200,8 @@ namespace RealisticFiring.Visuals
                 lever.interactionPoint = null;
                 StripHandGuides(control.gameObject);
             }
-            control.SetPositionAndRotation(car.transform.TransformPoint(pivot), car.transform.rotation);
+            var cab = CabFrame.Of(car);
+            control.SetPositionAndRotation(cab.TransformPoint(pivot), cab.rotation);
             var feeder = control.GetComponent<InteractablePortFeeder>();
             if (feeder == null) throw new InvalidDataException("Cloned control has no port feeder");
             feeder.portId = port.id;

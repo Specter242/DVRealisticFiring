@@ -27,6 +27,8 @@ namespace RealisticFiring
                 ["em_lms_8f_loc_grey"] = (0.000f, 2.018f, 0.540f, 0.410f, -4.379f),
                 ["S2102-870"] = (0.000f, 2.407f, 0.650f, 0.350f, -0.358f),
                 ["S2102-720"] = (0.000f, 2.312f, 0.763f, 0.517f, -3.550f),
+                ["em_fowler_4f_4027"] = (0.000f, 1.946f, 0.423f, 0.432f, -2.773f),
+                ["em_fowler_4f_44422"] = (0.000f, 1.946f, 0.423f, 0.432f, -2.773f),
             };
 
         // Holes set this session on the seating bench (Visuals.SeatingBench, a

@@ -60,6 +60,7 @@ namespace RealisticFiring.Patches
             // After the feed pump takes the fireman's lever on a cab with two.
             SetupGuard.Logged(car, "injector steam levers", () => InjectorSteamCab.Attach(car, interior));
             SetupGuard.Logged(car, "boiler alarms", () => BoilerAlarms.Attach(car, __instance));
+            SetupGuard.Logged(car, "try cocks", () => TryCockCab.Attach(car, interior));
             if (InjectorRig.TryGet(car, out var rig))
             {
                 SetupGuard.Logged(car, "injector overflow", () =>

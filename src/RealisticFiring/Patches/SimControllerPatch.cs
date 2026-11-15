@@ -81,6 +81,7 @@ namespace RealisticFiring.Patches
                 SetupGuard.Logged(trainCar, "superheater", () => EngineSuperheater.Attach(trainCar, __instance));
                 SetupGuard.Logged(trainCar, "throttle steam storage", () => EngineSteamPath.Attach(trainCar, __instance.simFlow));
                 SetupGuard.Logged(trainCar, "boiler water", () => BoilerWaterRig.Attach(trainCar, __instance.simFlow));
+                SetupGuard.Logged(trainCar, "try cocks", () => TryCockRig.Attach(trainCar, __instance.simFlow));
             }
 
             if (__instance.simFlow != null && RealisticOilFirebox.TryGet(trainCar, out var oil))

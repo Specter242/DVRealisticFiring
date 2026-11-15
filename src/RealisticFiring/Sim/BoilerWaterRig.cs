@@ -29,6 +29,8 @@ namespace RealisticFiring.Sim
             // British practice: lead plugs in the firebox crown.
             ["em_lms_8f_loc_black"] = Guard.FusiblePlug,
             ["em_lms_8f_loc_grey"] = Guard.FusiblePlug,
+            ["em_fowler_4f_44422"] = Guard.FusiblePlug,
+            ["em_fowler_4f_4027"] = Guard.FusiblePlug,
             // China Railways QJ: fusible plugs in the crown sheet (three, by an
             // ex-crewman; the LV it came from had two).
             ["S2102-870"] = Guard.FusiblePlug,
@@ -115,6 +117,8 @@ namespace RealisticFiring.Sim
         private float fed;
         private float blown;
         private float pendingVent;
+        private float pendingCockWater;
+        private float pendingCockSteam;
         private bool wasOn;
         private DamageController damage;
         private float bodyHealth = float.NaN;
@@ -514,8 +518,35 @@ namespace RealisticFiring.Sim
         /// <summary>After the blowdown step, with the water before it.</summary>
         public void AfterBlowdown(float massBefore) => blown += Mathf.Max(0f, massBefore - MassNow);
 
-        /// <summary>After the stock level step: steps the water, then shows its foam and swell in the glass, and the foam in the steam.</summary>
+        /// <summary>The engine's try cocks, on an engine with them; else null.</summary>
+        public TryCockRig TryCocks { get; internal set; }
+
+        /// <summary>After the stock level step: steps the water, then shows its foam and swell in the glass, and the foam in the steam; then what the try cocks let out at that level leaves the boiler.</summary>
         public void AfterWaterLevel(float delta)
+        {
+            StepWaterLevel(delta);
+            DrainTryCocks(delta);
+        }
+
+        // The try cocks' water and steam out of the boiler, gathered into
+        // lots as the plug's steam is (a tick's few grams are lost to a
+        // vessel's rounding).
+        private void DrainTryCocks(float delta)
+        {
+            var vessel = Vessel(boiler);
+            if (TryCocks == null || vessel == null || !(delta > 0f) || !TryCocks.AnyOpen)
+                return;
+            var (water, steam) = TryCocks.Total();
+            pendingCockWater += water * delta;
+            pendingCockSteam += steam * delta;
+            if (pendingCockWater + pendingCockSteam < RealisticStoker.SteamLot)
+                return;
+            vessel.RemoveWater(Mathf.Min(pendingCockWater, vessel.mass));
+            vessel.RemoveSteam(Mathf.Min(pendingCockSteam, vessel.mass));
+            pendingCockWater = pendingCockSteam = 0f;
+        }
+
+        private void StepWaterLevel(float delta)
         {
             var vessel = Vessel(boiler);
             StepFouling(delta, vessel);

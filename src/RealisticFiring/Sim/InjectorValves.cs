@@ -22,7 +22,13 @@ namespace RealisticFiring.Sim
         /// <summary>The tender's water valve to the injector at <paramref name="index"/> (the right is 0, the left 1).</summary>
         public static StokerJetControls.Valve TenderValve(int index) => index == 0 ? TenderWater : TenderWaterLeft;
 
-        private static readonly HashSet<string> OwnLeverSteam = new HashSet<string> { "em_lms_8f_loc_black", "em_lms_8f_loc_grey" };
+        // The 4F's injector steam valves are on its backplate too (Powell,
+        // Living with L.M.S. Locomotives, 1977, ch. 4), where its cab has its
+        // two injector handles.
+        private static readonly HashSet<string> OwnLeverSteam = new HashSet<string>
+        {
+            "em_lms_8f_loc_black", "em_lms_8f_loc_grey", "em_fowler_4f_44422", "em_fowler_4f_4027",
+        };
 
         /// <summary>Whether <paramref name="livery"/>'s own injector levers are the steam valves, and the added controls the water regulators.</summary>
         public static bool OwnLeverIsSteam(string livery) => livery != null && OwnLeverSteam.Contains(livery);
@@ -33,7 +39,7 @@ namespace RealisticFiring.Sim
         private static readonly HashSet<string> Fitted = new HashSet<string>
         {
             "LocoS282A", "LocoS060", "Jk3A", "S464-730", "FEF-3", "S484-840A", "A.T.&S.F. 2901-A",
-            "em_lms_8f_loc_black", "em_lms_8f_loc_grey", "S2102-870", "S2102-720",
+            "em_lms_8f_loc_black", "em_lms_8f_loc_grey", "S2102-870", "S2102-720", "em_fowler_4f_44422", "em_fowler_4f_4027",
         };
 
         // The S282's cab-mounted replacement and the JK3's lift their water.

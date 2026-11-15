@@ -200,8 +200,9 @@ namespace RealisticFiring.Visuals
             root.transform.SetParent(interior, false);
             // A frame on the blower's wheel, turned by the seat.
             var frame = root.transform;
+            var cab = CabFrame.Of(car);
             if (seat.InCar)
-                frame.SetPositionAndRotation(car.transform.TransformPoint(seat.Move), car.transform.rotation * Quaternion.Euler(seat.Turns));
+                frame.SetPositionAndRotation(cab.TransformPoint(seat.Move), cab.rotation * Quaternion.Euler(seat.Turns));
             else
                 frame.SetPositionAndRotation(blower.position, blower.rotation * Quaternion.Euler(seat.Turns));
             var control = StokerCab.PlaceWheel(sourceValve, frame, seat.InCar ? Vector3.zero : seat.Move, RealisticFirebox.JetsControl, port);
@@ -214,7 +215,7 @@ namespace RealisticFiring.Visuals
                 StokerCab.PlaceLabel(sourceControl, sourceLabel, control, frame, plateAt, Plate, 1f);
                 var plate = frame.Find("label " + Plate);
                 if (plate != null && seat.PlateSquare)
-                    plate.rotation = Quaternion.LookRotation(car.transform.forward, car.transform.up);
+                    plate.rotation = Quaternion.LookRotation(cab.forward, cab.up);
                 if (plate != null && seat.PlateSpin != 0f)
                     plate.rotation *= Quaternion.Euler(0f, 0f, seat.PlateSpin);
                 if (plate != null && seat.PlateTurn != 0f)

@@ -222,15 +222,19 @@ namespace RealisticFiring.Items
     /// the first spot from <see cref="SupplyPlan.Spots"/> clear of every
     /// other track, the shed's stands, and anything built there. Every 30 s,
     /// while a player is near, a container at its place is filled again and
-    /// a missing one replaced; one carried away keeps what is left in it.
+    /// a missing one replaced; one carried away keeps what is left in it
+    /// until it is set down by any supply place, which fills it again
+    /// (<see cref="SupplyPlan.Refills"/>), whichever place it came from.
     /// The site keeps its own containers by reference: the game deactivates
     /// world items far from the player (ItemDisabler, 192 m), and a site
     /// that lost sight of its sleeping crate would stock another every 30 s.
     /// In multiplayer the host stocks every site: a guest's game finds the
     /// spot where its player is (the host's may not have that ground loaded)
     /// and asks the host for it (2026-11-12: guests saw none where the host
-    /// had not been). The host's containers there sleep until the host comes
-    /// near, and the Multiplayer mod shows them to guests.
+    /// had not been), and asks again while a container set down there is not
+    /// full; the host alone fills and stocks. The host's containers there
+    /// sleep until the host comes near, and the Multiplayer mod shows them to
+    /// guests.
     /// </summary>
     internal sealed class StartingSupplySite : MonoBehaviour
     {
@@ -278,13 +282,37 @@ namespace RealisticFiring.Items
             }
             if (Net.IsClient)
             {
-                if (!Stands(StartingFuelKind.WoodCrate, WoodAt) || !Stands(StartingFuelKind.RagBox, RagAt))
+                if (!Stands(StartingFuelKind.WoodCrate, WoodAt) || !Stands(StartingFuelKind.RagBox, RagAt)
+                    || WantsRefill(StartingFuelKind.WoodCrate) || WantsRefill(StartingFuelKind.RagBox))
                     RequestStock?.Invoke(Id, transform.position - WorldMover.currentMove, transform.rotation);
                 return;
             }
             Supply(ref crate, StartingFuelKind.WoodCrate, WoodAt);
             Supply(ref tin, StartingFuelKind.RagBox, RagAt);
         }
+
+        // A crate or tin set down by this place, not full: the host fills it (Supply).
+        private bool WantsRefill(StartingFuelKind kind)
+        {
+            foreach (var item in SetDownHere(kind))
+                if (item.Count < FireStartingItems.ContainerCapacity) return true;
+            return false;
+        }
+
+        // The containers of a kind set down by this place's spot, whichever place they came from.
+        private IEnumerable<StartingFuelItem> SetDownHere(StartingFuelKind kind)
+        {
+            var spot = transform.position + Vector3.up * Lift(kind);
+            foreach (var item in StartingFuelItem.Live)
+            {
+                if (item == null || item.Kind != kind || item.Consumed) continue;
+                var d = item.transform.position - spot;
+                if (SupplyPlan.Refills(d.x, d.y, d.z, item.Held)) yield return item;
+            }
+        }
+
+        // A container's middle above the ground it stands on, m.
+        private static float Lift(StartingFuelKind kind) => StartingFuelBody.Bounds(kind).extents.y + 0.02f;
 
         // On a guest: whether the host's container stands at its place here.
         private bool Stands(StartingFuelKind kind, Vector3 offset)
@@ -479,7 +507,7 @@ namespace RealisticFiring.Items
             var at = transform.TransformPoint(offset);
             var ground = Ground(at);
             if (ground != null) at.y = ground.Value;
-            at += Vector3.up * (StartingFuelBody.Bounds(kind).extents.y + 0.02f);
+            at += Vector3.up * Lift(kind);
             var key = Id + "/" + kind;
             // Its own container, carried off (the carrier's now) or gone, is forgotten.
             if (stock != null && (stock.Consumed || (stock.transform.position - at).sqrMagnitude > 4f))
@@ -497,6 +525,10 @@ namespace RealisticFiring.Items
                         break;
                     }
             }
+            // Any other set down by the place is filled too: a player's from
+            // here or from another place (a crate carried off never refilled).
+            foreach (var item in SetDownHere(kind))
+                if (item != stock) item.Count = FireStartingItems.ContainerCapacity;
             if (stock != null)
             {
                 if (!stock.Held) stock.Count = FireStartingItems.ContainerCapacity;

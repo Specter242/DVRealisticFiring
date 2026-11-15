@@ -223,6 +223,7 @@ namespace RealisticFiring.AdapterCheck
             CheckInjectorNeutralState();
             CheckJk3Injectors(gameParams);
             CheckLms8FInjectors(gameParams);
+            Lms4FChecks.Run(gameParams, Check);
             CheckJk3Firebox(gameParams);
             CheckBoilerWater();
             CheckGlassTilt();
@@ -236,6 +237,7 @@ namespace RealisticFiring.AdapterCheck
             InjectorAudioChecks.Run(Check);
             CheckOilBurner(gameParams);
             TenderSandChecks.Run(Check);
+            StartingSupplyChecks.Run(Check);
             CheckClientMirror(gameParams, def);
             CheckBooster();
             CheckCylinders(gameParams);
@@ -2059,9 +2061,10 @@ namespace RealisticFiring.AdapterCheck
 
         // Emerald's LMS 8F 1.2.1, as its bundle wires it: injector1 (left) and
         // injector2 (right) added, halved by a constant port, into the
-        // boiler's injector, the halved output typed as a cab control.
-        private static (Boiler Boiler, SimComponent[] Components)
-            Lms8FInjectorSetup(SimGameParams gameParams, float factorValue = 0.5f)
+        // boiler's injector, the halved output typed as a cab control. Its LMS
+        // 4F 1.1.1 wires the same graph to its own boiler (Lms4FChecks).
+        internal static (Boiler Boiler, SimComponent[] Components)
+            Lms8FInjectorSetup(SimGameParams gameParams, float factorValue = 0.5f, BoilerDefinition boilerDefinition = null, float tenderWater = 18000f)
         {
             var left = new ExternalControl(new ExternalControlDefinition { ID = "injector1", saveState = true });
             var right = new ExternalControl(new ExternalControlDefinition { ID = "injector2", saveState = true });
@@ -2088,7 +2091,7 @@ namespace RealisticFiring.AdapterCheck
             });
             calc.aReader.SetPortReference(add.addReadOut);
             calc.bReader.SetPortReference(factor.GetAllPorts().Single());
-            var boiler = new Boiler(new BoilerDefinition
+            var boiler = new Boiler(boilerDefinition ?? new BoilerDefinition
             {
                 ID = "boiler", diameter = 1.737f, length = 5.467f, capacityMultiplier = 0.85f,
                 maxInjectorRate = 20f, waterConsumptionMultiplier = 2.5f,
@@ -2097,7 +2100,7 @@ namespace RealisticFiring.AdapterCheck
             });
             boiler.SetGameParams(gameParams);
             boiler.injectorControl.SetPortReference(calc.mulReadOut);
-            var water = new Port("tenderWater", new PortDefinition(PortType.READONLY_OUT, PortValueType.WATER, "AMOUNT"), 18000f);
+            var water = new Port("tenderWater", new PortDefinition(PortType.READONLY_OUT, PortValueType.WATER, "AMOUNT"), tenderWater);
             var consumed = new Port("tenderWater", new PortDefinition(PortType.EXTERNAL_IN, PortValueType.WATER, "CONSUME_EXT_IN"));
             boiler.water.SetPortReference(water);
             boiler.waterConsumption.SetPortReference(consumed);
@@ -2317,7 +2320,7 @@ namespace RealisticFiring.AdapterCheck
                     && resumed.Circuits[0].Flow.WaterIn > 0f && steam.Value == 1f && water.Value == .6f,
                     "an S282 injector reconstructed with saved feeding controls resumes without re-priming or moving either valve");
                 Check(InjectorValves.Lifting("Jk3A")
-                    && new[] { "LocoS060", "em_lms_8f_loc_black", "em_lms_8f_loc_grey", "S464-730", "FEF-3", "S484-840A", "A.T.&S.F. 2901-A", "unknown", null }
+                    && new[] { "LocoS060", "em_lms_8f_loc_black", "em_lms_8f_loc_grey", "em_fowler_4f_44422", "em_fowler_4f_4027", "S464-730", "FEF-3", "S484-840A", "A.T.&S.F. 2901-A", "unknown", null }
                         .All(id => !InjectorValves.Lifting(id)),
                     "the JK3 keeps lifting and other released injector families stay unchanged");
             }
@@ -2870,7 +2873,7 @@ namespace RealisticFiring.AdapterCheck
                 Check(black.PipeVolume == grey.PipeVolume && black.ChestVolume == grey.ChestVolume && black.MaxFlow == grey.MaxFlow
                       && black.ChestVolume == 800 && black.PipeVolume == 120,
                     "both 8F liveries keep their maker chest and share the dimensional circuit estimate");
-                foreach (var id in new[] { "LocoS282A", "em_lms_8f_loc_black", "S464-730", "FEF-3", "S484-840A", "A.T.&S.F. 2901-A", "S2102-870" })
+                foreach (var id in new[] { "LocoS282A", "em_lms_8f_loc_black", "em_fowler_4f_44422", "S464-730", "FEF-3", "S484-840A", "A.T.&S.F. 2901-A", "S2102-870" })
                 {
                     var cases = new List<(float Throttle, float Cutoff, float Temperature, EngineRun Before, EngineRun After)>();
                     foreach (var cutoff in new[] { 0.25f, 0.5f, 0.9f })
@@ -3464,6 +3467,8 @@ namespace RealisticFiring.AdapterCheck
                 switch (livery)
                 {
                     case "em_lms_8f_loc_black": def.cylinderBore = 0.47f; def.pistonStroke = 0.711f; def.steamChestVolume = 800; def.throttleMaxFlow = 5; break;
+                    // The LMS 4F 1.1.1's, read from its bundle 2026-11-15.
+                    case "em_fowler_4f_44422": def.cylinderBore = 0.508f; def.pistonStroke = 0.66f; def.steamChestVolume = 400; def.throttleMaxFlow = 3; break;
                     case "S464-730": def.cylinderBore = 0.696f; def.pistonStroke = 0.813f; def.steamChestVolume = 1500; def.throttleMaxFlow = 15; break;
                     case "FEF-3": def.cylinderBore = 0.655f; def.pistonStroke = 0.833f; def.steamChestVolume = 1500; def.throttleMaxFlow = 10; break;
                     case "S484-840A": def.cylinderBore = 0.645f; def.pistonStroke = 0.823f; def.steamChestVolume = 1400; def.throttleMaxFlow = 20; break;

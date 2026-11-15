@@ -31,6 +31,13 @@ namespace RealisticFiring.Sim
             // The 8F's 225 psi, which its maker set as 15.5 bar, gauge.
             ["em_lms_8f_loc_black"] = (16.5f, 4f),
             ["em_lms_8f_loc_grey"] = (16.5f, 4f),
+            // The 4F's 175 psi (Wikipedia) is 13.1 bar absolute; its maker's
+            // 13.3 (178 psi), within 6 psi, is kept. Ross pops from No. 4027
+            // (Brassmasters, 2004); their size not found. Sized for its
+            // standing fire, about 3.5 MW on its as-built boiler (BoilerFit),
+            // where the maker's 5 kg/s reseats 19 psi under its lift.
+            ["em_fowler_4f_44422"] = (13.3f, 2.5f),
+            ["em_fowler_4f_4027"] = (13.3f, 2.5f),
             ["S2102-870"] = (17.3f, 7.5f),
             // The T 20's 14 at gauge (kgf/cm²) is 14.7 bar absolute; its
             // maker's 15.0, within 6 psi, is kept. Sized for its standing fire, 8.4 MW on its
@@ -53,6 +60,9 @@ namespace RealisticFiring.Sim
             AccessTools.FieldRefAccess<Boiler, AnimationCurve>("explosionPressureThreshold");
         private static readonly AccessTools.FieldRef<SimComponent, SimGameParams> GameParams =
             AccessTools.FieldRefAccess<SimComponent, SimGameParams>("gameParams");
+
+        /// <summary>A livery's fitted lift, absolute bar, and capacity, kg/s, if it has a fit.</summary>
+        internal static bool TryGetFit(string livery, out (float Lift, float Capacity) fit) => Fits.TryGetValue(livery, out fit);
 
         /// <summary>Fits a fired engine's safety valves. Returns a line for the log, or null.</summary>
         public static string Attach(TrainCar car, SimulationFlow flow)

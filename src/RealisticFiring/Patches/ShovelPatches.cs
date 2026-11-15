@@ -92,7 +92,7 @@ namespace RealisticFiring.Patches
                 return;
 
             if (FireboxAim.TryAim(grabber.Cursor.GetRay(), target, car, firebox, out var across, out var depth, out var box))
-                firebox.NoteAim(new DoorAimSample(DoorAim.ZoneFor(across, depth), across, depth, !__instance.IsLoaded, Time.time, car.transform, box));
+                firebox.NoteAim(new DoorAimSample(DoorAim.ZoneFor(across, depth), across, depth, __instance.IsLoaded ? DoorAimKind.Shovel : DoorAimKind.Rake, Time.time, car.transform, box));
         }
 
         // Places the nearest hit on the target's colliders within that
@@ -227,7 +227,8 @@ namespace RealisticFiring.Patches
 
     /// <summary>
     /// At the end of that thrust, rakes the zone the empty shovel was aimed
-    /// at (the center if no aim was recorded).
+    /// at (the center if no rake's aim was recorded: wood's or a shovelful's
+    /// aim is not a rake's).
     /// </summary>
     [HarmonyPatch(typeof(ShovelNonPhysicalCoal), nameof(ShovelNonPhysicalCoal.HandleUse))]
     internal static class ShovelRakePatch
@@ -244,7 +245,7 @@ namespace RealisticFiring.Patches
             }
 
             var aim = firebox.HoverAim;
-            firebox.Rake(aim.HasValue && aim.Value.Raking && Time.time - aim.Value.Time <= RealisticFirebox.AimHoldTime ? aim.Value.Zone : GrateZone.Center);
+            firebox.Rake(aim.HasValue && DoorAimRules.AimsRake(aim.Value.Kind, aim.Value.AgeAt(Time.time), RealisticFirebox.AimHoldTime) ? aim.Value.Zone : GrateZone.Center);
             __result = true;
             return false;
         }

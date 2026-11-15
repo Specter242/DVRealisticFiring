@@ -49,6 +49,25 @@ namespace RealisticFiring.Items
             IsContainer(kind)
                 ? (DV.CabControls.Spec.ItemControllerAttachMethod.ReparentToController, DV.CabControls.Spec.ItemUseApproach.OneShot, 0)
                 : (DV.CabControls.Spec.ItemControllerAttachMethod.ReparentToController, DV.CabControls.Spec.ItemUseApproach.OneShotNonVROnly, 1);
+        /// <summary>How an empty crate or tin is filled again (<see cref="StartingSupplySite"/>): set down by any supply place, whichever it came from.</summary>
+        internal const string RefillHint = "Set it down beside the free supplies at any engine shed or spawn track to refill it.";
+
+        /// <summary>What an empty crate or tin says when a piece is asked of it.</summary>
+        internal static string EmptyNotice(StartingFuelKind kind) =>
+            (kind == StartingFuelKind.WoodCrate ? "The crate is empty. " : "The tin is empty. ") + RefillHint;
+
+        /// <summary>
+        /// A crate's or tin's description: what is left, how to take one, and
+        /// how it refills. In VR a piece comes from holding it and pulling
+        /// the trigger (<see cref="VrGrab"/>): a hand reaching in takes hold
+        /// of the crate itself, its top being one of the crate's own grab
+        /// colliders.
+        /// </summary>
+        internal static string ContainerDescription(int count, bool vr) =>
+            $"Free starting supplies: {count} left. "
+            + (vr ? "Hold it and pull the trigger: a piece comes out on top for your other hand. " : "Reach in to take one, or use it while carrying it. ")
+            + RefillHint;
+
         internal static StartingFuelKind Content(StartingFuelKind kind) => kind == StartingFuelKind.WoodCrate ? StartingFuelKind.Wood : StartingFuelKind.Rag;
         internal static bool IsFuel(string path) => path != null && path.StartsWith(Prefix, StringComparison.Ordinal);
         internal static GameObject Load(string path) => Enum.TryParse(path.Substring(Prefix.Length), out StartingFuelKind kind)
@@ -352,7 +371,7 @@ namespace RealisticFiring.Items
             if (!FireStartingItems.IsContainer(Kind) || Net.IsClient) return null;
             if (Count <= 0)
             {
-                FireController.Announce(Kind == StartingFuelKind.WoodCrate ? "The crate is empty. Refill it at a service-track supply." : "The tin is empty. Refill it at a service-track supply.");
+                FireController.Announce(FireStartingItems.EmptyNotice(Kind));
                 return null;
             }
             var mouth = at ?? transform.TransformPoint(Vector3.up * (StartingFuelBody.Bounds(Kind).extents.y + 0.12f));
@@ -428,6 +447,6 @@ namespace RealisticFiring.Items
                 ? "Split firewood. Throw it through the open fire door, or aim at the door and use it to lay it on the grate. Light it with a burning oiled rag."
             : Kind == StartingFuelKind.Rag ? (Rag.Lit ? $"Burning lighting rag, about {Rag.RemainingSeconds:F0} s of oil left. Throw it onto the wood, or into a prepared oil burner."
                 : Rag.Oil > 0 ? "Oiled rag. Light it with your lighter, then throw it onto the wood." : "Dry lighting rag. Use the oil can on it, then your lighter.")
-            : $"Free starting supplies: {Count} left. Reach in to take one, or use it while carrying it. Refills at its service-track supply.";
+            : FireStartingItems.ContainerDescription(Count, VRManager.IsVREnabled());
     }
 }

@@ -249,7 +249,7 @@ namespace RealisticFiring.Sim
         /// <summary>Where the last delivery was aimed; null when it followed the fire.</summary>
         public DoorAimSample? LastDeliveryAim { get; private set; }
 
-        /// <summary>Where a shovel last pointed in this firebox's door.</summary>
+        /// <summary>Where a shovel, the fire iron, or wood or a rag being laid last pointed in this firebox's door.</summary>
         public DoorAimSample? HoverAim { get; private set; }
 
         private float continuousFeed;
@@ -313,7 +313,7 @@ namespace RealisticFiring.Sim
             Model.ShakeGrate(stroke);
         }
 
-        /// <summary>Records where the player points a shovel in the door.</summary>
+        /// <summary>Records where the player points into the door; its kind says what it may steer (<see cref="DoorAimRules"/>).</summary>
         public void NoteAim(DoorAimSample aim) => HoverAim = aim;
 
         /// <summary>Runs the slice bar under <paramref name="zone"/>'s fire, as with the fire iron.</summary>
@@ -508,12 +508,14 @@ namespace RealisticFiring.Sim
         }
 
         // Coal from anything but a shovel the player just pointed into this
-        // door (the keyboard shovel, a stoker, another mod) goes where the fire needs it.
+        // door (the keyboard shovel, a stoker, another mod) goes where the
+        // fire needs it: a rake's aim, or wood or a rag being laid, is not a
+        // shovel's (DoorAimRules.AimsCoal).
         private DoorAimSample? TakeFreshAim()
         {
             var aim = HoverAim;
             HoverAim = null;
-            return aim.HasValue && !aim.Value.Raking && Time.time - aim.Value.Time <= AimHoldTime ? aim : null;
+            return aim.HasValue && DoorAimRules.AimsCoal(aim.Value.Kind, aim.Value.AgeAt(Time.time), AimHoldTime) ? aim : null;
         }
 
         /// <summary>Puts the heat port at nothing, for a tick that failed (<see cref="Patches.TickGuard"/>).</summary>

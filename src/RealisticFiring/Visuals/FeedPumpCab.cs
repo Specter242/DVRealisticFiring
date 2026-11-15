@@ -137,7 +137,8 @@ namespace RealisticFiring.Visuals
             root.transform.SetParent(interior, false);
             var frame = new GameObject("frame").transform;
             frame.SetParent(root.transform, false);
-            frame.SetPositionAndRotation(car.transform.TransformPoint(spot.ValveInCar.Value), Quaternion.LookRotation(car.transform.forward, car.transform.up));
+            var cab = CabFrame.Of(car);
+            frame.SetPositionAndRotation(cab.TransformPoint(spot.ValveInCar.Value), Quaternion.LookRotation(cab.forward, cab.up));
             var built = BuildInManifold(car, flow, frame, source.interiorPrefab.transform, sourceValve, sourceControl, sourceLabel, null, spot,
                 lever != null ? $"by the injector lever '{lever.name}'" : "on the backhead");
             root.SetActive(true);
@@ -278,7 +279,7 @@ namespace RealisticFiring.Visuals
             var gaugeAt = spot.Gauge;
             if (spot.ValveInCar is Vector3 inCar)
             {
-                var local = frame.InverseTransformPoint(car.transform.TransformPoint(inCar));
+                var local = frame.InverseTransformPoint(CabFrame.Of(car).TransformPoint(inCar));
                 valveAt = new Vector2(local.x, local.y);
                 gaugeAt = valveAt + spot.Gauge;
             }

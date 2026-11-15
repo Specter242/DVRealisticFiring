@@ -4,23 +4,24 @@ using UnityEngine;
 namespace RealisticFiring.Sim
 {
     /// <summary>
-    /// Where the player pointed a shovel into a firebox: the zone, the
-    /// point's place across (0 left, 1 right) and up the door's coal target
-    /// (0 bottom, 1 top, a higher throw going deeper), whether the shovel was
-    /// empty (a rake rather than a throw), when, in Unity time, and the
-    /// target's box in the car's frame, for drawing its keypad.
+    /// Where the player pointed into a firebox: the zone, the point's place
+    /// across (0 left, 1 right) and up the door's coal target (0 bottom, 1
+    /// top, a higher throw going deeper), what was aimed (a shovelful, a
+    /// rake, wood or a rag laid; <see cref="DoorAimRules"/> says what each
+    /// steers), when, in Unity time, and the target's box in the car's
+    /// frame, for drawing its keypad.
     /// </summary>
     internal readonly struct DoorAimSample
     {
-        /// <summary>Seconds a sample counts as the shovel still pointing into the door; hovering samples every frame.</summary>
+        /// <summary>Seconds a sample counts as the hand still pointing into the door; hovering samples every frame.</summary>
         public const float LiveAge = 0.25f;
 
-        public DoorAimSample(GrateZone zone, float across, float depth, bool raking, float time, Transform car = null, Bounds box = default)
+        public DoorAimSample(GrateZone zone, float across, float depth, DoorAimKind kind, float time, Transform car = null, Bounds box = default)
         {
             Zone = zone;
             Across = across;
             Depth = depth;
-            Raking = raking;
+            Kind = kind;
             Time = time;
             Car = car;
             Box = box;
@@ -38,12 +39,15 @@ namespace RealisticFiring.Sim
 
         public float Depth { get; }
 
-        /// <summary>True when the shovel was empty, so a click rakes the zone.</summary>
-        public bool Raking { get; }
+        /// <summary>What was aimed: a shovelful, a rake (an empty shovel or the fire iron), or wood or a rag laid by hand.</summary>
+        public DoorAimKind Kind { get; }
 
         public float Time { get; }
 
         public bool IsLiveAt(float now) => now - Time <= LiveAge;
+
+        /// <summary>How long ago it was taken, s, at <paramref name="now"/>.</summary>
+        public float AgeAt(float now) => now - Time;
 
         public override string ToString() => $"{Zone} (across {Across:F2}, deep {Depth:F2})";
     }

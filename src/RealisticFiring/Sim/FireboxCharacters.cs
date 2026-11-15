@@ -18,7 +18,11 @@ namespace RealisticFiring.Sim
 
             public GrateCharacter Grate { get; }
 
-            /// <summary>Known physical grate area, m², when the visible coal mesh represents only part of it.</summary>
+            /// <summary>
+            /// Known physical grate area, m², when the visible coal mesh does
+            /// not stand for it: the QJ's shows only part of it, the 4F's runs
+            /// through its box's sides.
+            /// </summary>
             public float? PrototypeGrateArea { get; set; }
 
             /// <summary>The prototype's grate slope in degrees (negative falling to the front), used when the coal pile measures level.</summary>
@@ -67,10 +71,18 @@ namespace RealisticFiring.Sim
             PrototypeSlopeOverPile = true,
         };
 
+        private static readonly Firebox Lms4F = new Firebox("a narrow Belpaire box between the frames: brick arch, hand fired",
+            new GrateCharacter { BackRowDraft = 1.08f, FrontRowDraft = 0.92f, SideDraft = 1.03f, OverFireMixing = 0.9f })
+        {
+            PrototypeGrateArea = 21.1f * 0.09290304f,
+        };
+
         private static readonly Dictionary<string, Firebox> ByLivery = new Dictionary<string, Firebox>
         {
             ["em_lms_8f_loc_black"] = Lms8F,
             ["em_lms_8f_loc_grey"] = Lms8F,
+            ["em_fowler_4f_44422"] = Lms4F,
+            ["em_fowler_4f_4027"] = Lms4F,
 
             // No prototype (Altfuture: "all ... locomotives in DV are fictive");
             // taken as a light Mikado's wide firebox over the trailing truck,
