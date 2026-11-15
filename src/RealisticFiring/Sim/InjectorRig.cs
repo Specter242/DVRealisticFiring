@@ -157,6 +157,10 @@ namespace RealisticFiring.Sim
             // not found: by its 16.5 against the JK3's 8.5 mm, 2.5 kg/s
             // scaled by the area, about 9.4 kg/s (inferred).
             ["S2102-870"] = 9.4f,
+            // Prussian T 20: "Rechts Dampfstrahlpumpe 250 l/Min." (Hanomag-
+            // Lehrblatt 131, 1924), worked by a pull rod (Lehrblatt 081);
+            // the cab's one lever. The game's is 20.
+            ["S2102-720"] = 4.17f,
         };
 
         private static readonly HashSet<string> OneLeverForTwo = new HashSet<string> { "LocoS282A", "LocoS060" };

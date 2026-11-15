@@ -32,6 +32,10 @@ namespace RealisticFiring.Sim
             ["em_lms_8f_loc_black"] = (16.5f, 4f),
             ["em_lms_8f_loc_grey"] = (16.5f, 4f),
             ["S2102-870"] = (17.3f, 7.5f),
+            // The T 20's 14 at gauge (kgf/cm²) is 14.7 bar absolute; its
+            // maker's 15.0, within 6 psi, is kept. Sized for its standing fire, 8.4 MW on its
+            // prototype's boiler, where the maker's 15 kg/s popped.
+            ["S2102-720"] = (15.0f, 5.5f),
         };
 
         /// <summary>

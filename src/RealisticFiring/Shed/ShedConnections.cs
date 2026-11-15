@@ -50,6 +50,7 @@ namespace RealisticFiring.Shed
             ["A.T.&S.F. 2901-A"] = (new Vector3(-0.64f, 2.31f, 8.08f), 0f, 79f, 0f, 0f),
             ["Jk3A"] = (new Vector3(-0.90f, 1.35f, 3.25f), 0f, -13f, 0f, 0f),
             [QjStokerCab.Livery] = (new Vector3(-1.25f, 2.11f, 11.69f), 0f, -15f, 0f, 0f), 
+            ["S2102-720"] = (new Vector3(-1f, 2.21f, 4.85f), 0f, 0f, 0f, 0f), 
         };
 
  private static readonly Dictionary<string, (Vector3 At, float Swing, float Down, float Spin, float Out)> WaterSeated =
@@ -68,6 +69,7 @@ namespace RealisticFiring.Shed
             // The Santa Fe 2901: far back on its long boiler.
             ["A.T.&S.F. 2901-A"] = (new Vector3(-1.22f, 2.03f, -7.98f), 0f, 0f, 0f, 0f),
             [QjStokerCab.Livery] = (QjWaterMouth, 0f, 0f, 0f, 0f), 
+            ["S2102-720"] = (new Vector3(-1.28f, 1.24f, -3.36f), 0f, 90f, 0f, 0f), 
         };
 
         // Seats set this session on the seating bench (Visuals.SeatingBench, a

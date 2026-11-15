@@ -41,6 +41,7 @@ namespace RealisticFiring.Visuals
             ["S464-730"] = (new Vector3(0f, -0.22f, 0f), new Vector3(-180f, 0f, 2f)), // 2026-10-11
             ["FEF-3"] = (new Vector3(-0.14f, -0.48f, -0.03f), new Vector3(-180f, 0f, 2f)), // 2026-10-11
             [QjStokerCab.Livery] = (new Vector3(-0.2f, 0f, 0f), new Vector3(-180f, 0f, 2f)), 
+            ["S2102-720"] = (new Vector3(0.09f, -0.17f, 0f), new Vector3(-180f, 0f, 2f)), 
         };
 
         private static readonly Vector3 SeatTurns = new Vector3(-180f, 0f, 2f);

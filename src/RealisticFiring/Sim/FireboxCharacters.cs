@@ -167,6 +167,8 @@ namespace RealisticFiring.Sim
                 StokerBackLanes = 0.6f,
             },
 
+            ["S2102-720"] = new Firebox("the T 20's box: a copper Belpaire over the frames, hand fired; coal of varying quality",
+                new GrateCharacter { ClinkerFactor = 1.1f, AshFactor = 1.2f }),
         };
 
         public static Firebox For(TrainCar car) =>

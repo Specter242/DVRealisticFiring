@@ -37,6 +37,11 @@ namespace RealisticFiring.Sim
             // 255.3; steam "close to 400 °C" at its design rate (the works
             // book), about 195 °C over saturation at 15 kgf/cm².
             ["S2102-870"] = Superheat("Type A", 195f, 0.75f),
+            // Prussian T 20: 34 flues, 62.5 m² on 198.8; the superheater's
+            // steam about 300 to 350 °C on the EZA's 1923 runs (Nordmann,
+            // Organ 1924), about 150 °C over saturation at 14 at. A Schmidt,
+            // as the Prussian engines' (inferred).
+            ["S2102-720"] = Superheat("Schmidt", 150f, 0.72f),
         };
 
         private static readonly HashSet<string> Exempt = new HashSet<string> { "LocoS060" };

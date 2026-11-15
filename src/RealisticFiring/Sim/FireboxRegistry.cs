@@ -36,6 +36,10 @@ namespace RealisticFiring.Sim
             // QJ 2-10-2 with CCL's steam stoker, read from its bundle
             // 2026-10-19. S2102-870B is its tender.
             "S2102-870",
+            // E_noob's DB BR95 (Nexus 1792, 1.0.0), a Prussian T 20 2-10-2
+            // tank engine, hand fired from its bunker, read from its bundle
+            // 2026-10-24.
+            "S2102-720",
         };
 
         private static readonly Dictionary<TrainCar, RealisticFirebox> Fireboxes = new Dictionary<TrainCar, RealisticFirebox>();

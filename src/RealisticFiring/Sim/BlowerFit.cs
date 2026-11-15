@@ -34,6 +34,13 @@ namespace RealisticFiring.Sim
             // from No. 6243 (the LV's МТЗ pump, 3,100 L/min, close to the
             // 8½-in.'s); the maker's 1,000 L reservoir, the LV's two 500 L.
             ["S2102-870"] = (0.6f, 0.66f, AirPump.CrossCompound, 1, 0f),
+            // Prussian T 20: a 4.36 m² (46.9 sq ft) grate; its blower between
+            // the 8F's and the S282's by grate area, natural draft by grate
+            // area (both inferred). "Two two-stage air pumps" front right on
+            // the smokebox, for the rack lines' air (Hanomag-Lehrblatt 081,
+            // 1924); their capacity not found, each taken as a 9½-in.
+            // (inferred); the maker's reservoir.
+            ["S2102-720"] = (0.45f, 0.42f, AirPump.NineAndHalf, 2, 0f),
         };
 
         // The FEF-1's 91,000 cu in, L.

@@ -52,6 +52,7 @@ namespace RealisticFiring.Visuals
             // Beside the QJ's triangle, clear of the speedometer above it.
             [QjStokerCab.Livery] = new Spot(new Vector2(0.26f, -0.28f), new Vector2(0.26f, -0.14f)),
             ["LocoS282A"] = new Spot(Vector2.zero, new Vector2(0f, 0.12f), new Vector3(-0.46f, 2.9f, 0.06f)),
+            ["S2102-720"] = new Spot(Vector2.zero, new Vector2(0f, 0.12f), new Vector3(-0.8f, 3.11f, -3.53f)),
         };
 
         private static readonly Spot DefaultSpot = new Spot(new Vector2(-0.165f, -0.12f), new Vector2(-0.165f, 0.03f));

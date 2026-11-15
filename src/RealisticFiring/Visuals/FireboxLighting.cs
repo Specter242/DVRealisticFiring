@@ -8,7 +8,15 @@ using UnityEngine;
 
 namespace RealisticFiring.Visuals
 {
- internal sealed class FireboxLighting : MonoBehaviour
+ internal static class PlainFireboxWalls
+    {
+        internal static readonly Dictionary<string, Color> Tones = new Dictionary<string, Color>
+        {
+            ["S2102-720"] = new Color(0.30f, 0.24f, 0.20f),
+        };
+    }
+
+    internal sealed class FireboxLighting : MonoBehaviour
     {
         private static readonly int ZonesId = Shader.PropertyToID("_FireZones");
         private static readonly int ZoneLightId = Shader.PropertyToID("_FireZoneLight");
@@ -112,15 +120,18 @@ namespace RealisticFiring.Visuals
             lighting.arch = fire.GetComponent<BrickArch>();
             lighting.block = new MaterialPropertyBlock();
             lighting.stockEmissive = fire.emissiveRenderersAffectedByFire;
+            var livery = firebox?.Car?.carLivery?.id;
+            Color? plain = livery != null && PlainFireboxWalls.Tones.TryGetValue(livery, out var tone) ? tone : (Color?)null;
             foreach (var renderer in BoxRenderers(fire, bed))
             {
                 var stock = renderer.sharedMaterials;
-                var lit = stock.Select(m => WallFor(wall, m)).ToArray();
+                var lit = stock.Select(m => WallFor(wall, m, plain)).ToArray();
                 lighting.taken.Add((renderer, stock, lit));
             }
             if (lighting.taken.Count == 0)
                 return "no firebox shell to light by the fire";
-            return "lit by its fire alone: " + string.Join(", ", lighting.taken.Select(t => $"'{t.Renderer.name}'")) + " and the coal bed";
+            return "lit by its fire alone: " + string.Join(", ", lighting.taken.Select(t => $"'{t.Renderer.name}'")) + " and the coal bed"
+                   + (plain is Color p ? $"; its walls plain ({p.r:F2}, {p.g:F2}, {p.b:F2}) for its maker's black texture" : "");
         }
 
         // The box's own surfaces: those the game's fire made glow, and the
@@ -133,19 +144,22 @@ namespace RealisticFiring.Visuals
             .Distinct();
 
         // The wall material with the stock material's surface: its texture,
-        // tint, and relief, its holes where it had them.
-        internal static Material WallFor(Material wall, Material stock)
+        // tint, and relief, its holes where it had them. With a plain tone
+        // (PlainFireboxWalls) the texture and tint give way to it, the relief kept.
+        internal static Material WallFor(Material wall, Material stock, Color? plain = null)
         {
             var lit = new Material(wall) { name = $"{wall.name} ({(stock != null ? stock.name : "none")})" };
+            if (plain is Color tone)
+                lit.SetColor(ColorId, tone);
             if (stock == null)
                 return lit;
-            if (stock.HasProperty(MainTexId))
+            if (plain == null && stock.HasProperty(MainTexId))
             {
                 lit.SetTexture(MainTexId, stock.GetTexture(MainTexId));
                 lit.SetTextureScale(MainTexId, stock.GetTextureScale(MainTexId));
                 lit.SetTextureOffset(MainTexId, stock.GetTextureOffset(MainTexId));
             }
-            if (stock.HasProperty(ColorId))
+            if (plain == null && stock.HasProperty(ColorId))
                 lit.SetColor(ColorId, stock.GetColor(ColorId));
             if (stock.HasProperty(BumpMapId) && stock.GetTexture(BumpMapId) != null)
                 lit.SetTexture(BumpMapId, stock.GetTexture(BumpMapId));

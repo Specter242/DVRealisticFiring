@@ -31,6 +31,11 @@ namespace RealisticFiring.Sim
             // China Railways QJ, "up to 95 kg steam per square meter and
             // hour" on 255.3 m² (Hans Schaefer's QJ pages; Datong's figures).
             ["S2102-870"] = 95f * 255.3f / 3600f,
+            // Prussian T 20 No. 77 001's best on the EZA's 1923 runs, 75 kg of
+            // water per m² of heating surface and hour on 200 m², a light
+            // train up 1:10; the heavy trains 44 to 53 (Nordmann, Organ 1924,
+            // p.100).
+            ["S2102-720"] = 75f * 200f / 3600f,
         };
 
         /// <summary>

@@ -159,6 +159,8 @@ Use a shed or service location; tow a dead engine there if needed.
   compressor, blowdown, dynamo and blower are overhead. The engineer's
   water wheel and steam lever work the non-lifting injector. Start on
   that injector, then use the pump as the feedwater heater warms.
+- **BR95:** a plain copper box, hand fired, with an even draft. Its coal
+  leaves a little more ash and clinker.
 
 ## Smoke in towns
 
@@ -387,8 +389,8 @@ they're fitted. The booster is the engineer's.
   see [Throttle characteristics](#throttle-characteristics).
 - **Don't run the tender dry:** nearly empty, a climb or a hard start runs
   the water off the outlet and the injectors lose it until it runs back.
-- **Feed pump and heater** (Hudson, 844, S484-840, 2901, QJ, and the S282
-  once bought): start on the injector, then switch to the pump once the engine has worked a few
+- **Feed pump and heater** (Hudson, 844, S484-840, 2901, QJ, BR95, and the
+  S282 once bought): start on the injector, then switch to the pump once the engine has worked a few
   minutes. It feeds hot water and holds the pressure better. Ease it before
   you shut off.
 - **Blow down** in short bursts, about three seconds open and five or six
@@ -400,7 +402,7 @@ they're fitted. The booster is the engineer's.
 - **Wash out** with a shed stand's water hose (boiler cold) when blowdowns
   no longer keep it quiet.
 - **Never run low.** A bared crown sheet melts the fusible plug and kills the
-  engine (S282, S060, S484-840, 844, 8F, QJ) or bursts the boiler
+  engine (S282, S060, S484-840, 844, 8F, QJ, BR95) or bursts the boiler
   (Hudson, which whistles a warning with an inch left). A repair at a
   service station, or a washout with a shed stand's water hose, renews the
   plug. The JK3 keeps the game's own low-water failure.

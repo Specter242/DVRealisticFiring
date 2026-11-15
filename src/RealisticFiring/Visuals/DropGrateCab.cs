@@ -27,6 +27,7 @@ namespace RealisticFiring.Visuals
         private static readonly Dictionary<string, Vector3> Placements = new Dictionary<string, Vector3>
         {
             [QjStokerCab.Livery] = new Vector3(0.95f, -0.17f, -0.3f), 
+            ["S2102-720"] = new Vector3(0f, 0f, -0.3f), 
         };
 
         // Seats set this session on the seating bench (SeatingBench, a

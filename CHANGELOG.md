@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.21.0 (2026-11-14)
+
+- **New: E_noob's DB BR95, a Prussian T 20 tank engine** (BR95 1.0.1). It
+  gets the realistic firebox, hand fired, with the real T 20's safety
+  valves, two air pumps, feedwater heater and pump, superheater, injector,
+  and fusible plug, and its boiler sized to the real T 20's. Its new
+  valves and levers sit in its own cab, and its firebox walls show by the
+  fire's light.
+
 ## 1.20.0 (2026-11-14)
 
 - **New: career upgrades for the S282 and S060.** In a career the two

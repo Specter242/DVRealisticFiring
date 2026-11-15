@@ -885,6 +885,9 @@ namespace RealisticFiring.AdapterCheck
             var fire = Create(def, gameParams);
             Check(FireboxRegistry.SupportedLiveries.Contains("Jk3A") && !FireboxRegistry.SupportedLiveries.Contains("Jk3B"),
                 "the JK3 engine gets a realistic firebox; its tender does not");
+            // A held engine comes out of both tables on a release branch.
+            Check(RealisticFiring.Visuals.PlainFireboxWalls.Tones.Keys.All(FireboxRegistry.SupportedLiveries.Contains),
+                "each box taken with plain walls (its maker's walls black) is a fitted engine's");
             Check(Describe(stock) == Describe(fire), "the JK3 firebox preserves its stock ports and defaults");
             Check(fire.Model.Parameters.MaxCoalCapacity == 70f && fire.Model.Parameters.BurnTime == 200f,
                 "the JK3 keeps its 70 kg firebox and 200 s burn time");

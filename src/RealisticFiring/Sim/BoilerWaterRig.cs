@@ -32,6 +32,9 @@ namespace RealisticFiring.Sim
             // China Railways QJ: fusible plugs in the crown sheet (three, by an
             // ex-crewman; the LV it came from had two).
             ["S2102-870"] = Guard.FusiblePlug,
+            // Prussian T 20: none named in the 1924 descriptions; German rules
+            // had one or more fusible plugs in the crown sheet.
+            ["S2102-720"] = Guard.FusiblePlug,
         };
 
         /// <summary>What players near the loco are told when its plug melts.</summary>

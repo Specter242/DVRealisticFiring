@@ -70,6 +70,13 @@ namespace RealisticFiring.Sim
             // L/min in service (Schaefer). Its capacity not found: the SA's
             // 9,000 gal/h, above that and the boiler's tested 8 kg/s (inferred).
             ["S2102-870"] = new Fit(FeedHeaterType.Open, "open heater (Worthington SA type)", 9.46f, onInjectorLever: false),
+            // Prussian T 20 as built: "links Kolbenspeisewasserpumpe Knorr,
+            // Abdampfvorwärmer Knorr" (Hanomag-Lehrblatt 131, 1924), a surface
+            // heater on the exhaust and a piston pump on the smokebox, set
+            // from the cab by its own handwheel and gauge (Lehrblatt 081). Its
+            // capacity not found: the injector's 250 L/min, as German practice
+            // sized each feed for the whole boiler (inferred).
+            ["S2102-720"] = new Fit(FeedHeaterType.Closed, "Knorr surface heater and pump", 4.17f, onInjectorLever: false),
             ["LocoS282A"] = new Fit(FeedHeaterType.Open, "Worthington SA", 6.94f, onInjectorLever: false, upgrade: true),
         };
 
