@@ -176,6 +176,21 @@ namespace RealisticFiring.Sim
             // Lehrblatt 131, 1924), worked by a pull rod (Lehrblatt 081);
             // the cab's one lever. The game's is 20.
             ["S2102-720"] = 4.17f,
+            // BorING's narrow-gauge engines: the cab's one lever, a lifting
+            // injector on the boiler as American engines of their day carried
+            // (Porter's catalogs: "two injectors, or one injector and a
+            // crosshead pump"; their makes and sizes not found). Each feeds
+            // what its fire makes flat out on its maker's grate, 1.08, 0.41
+            // and 1.44 kg/s (FireModel at the maker's throttles' most), with room to
+            // spare (inferred). The game's are 5, 4 and 12.
+            ["S260N-580A"] = 1.5f,
+            ["S040N-270"] = 0.6f,
+            ["S0440NG-890"] = 2f,
+            // The cab-forward's fire makes 1.29 kg/s flat out on its maker's
+            // grate at his throttle's most (FireModel); the FS 670 had at
+            // least two injectors, fed by hoses from its tank wagon, their
+            // make not found. The game's is 6.
+            ["S440NCF-400A"] = 1.8f,
         };
 
         private static readonly HashSet<string> OneLeverForTwo = new HashSet<string> { "LocoS282A", "LocoS060" };

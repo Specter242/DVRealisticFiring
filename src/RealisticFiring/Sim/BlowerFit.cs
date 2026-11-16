@@ -47,6 +47,16 @@ namespace RealisticFiring.Sim
             // 1924); their capacity not found, each taken as a 9½-in.
             // (inferred); the maker's reservoir.
             ["S2102-720"] = (0.45f, 0.42f, AirPump.NineAndHalf, 2, 0f),
+            // BorING's narrow-gauge engines: their maker's grates, 0.44, 0.30
+            // and 0.77 m²; their blowers by grate area from the JK3's, natural
+            // draft by grate area (all inferred). The maker gave each an air
+            // pump and train brakes; one 9½-in. stands for it, as on the
+            // engines above, into the maker's reservoir. Their prototypes had hand
+            // brakes or none (the X class in 1890, Porter's standard engine).
+            ["S260N-580A"] = (0.06f, 0.04f, AirPump.NineAndHalf, 1, 0f),
+            ["S040N-270"] = (0.04f, 0.03f, AirPump.NineAndHalf, 1, 0f),
+            ["S0440NG-890"] = (0.11f, 0.07f, AirPump.NineAndHalf, 1, 0f),
+            ["S440NCF-400A"] = (0.11f, 0.07f, AirPump.NineAndHalf, 1, 0f),
         };
 
         // The FEF-1's 91,000 cu in, L.
@@ -69,6 +79,16 @@ namespace RealisticFiring.Sim
 
         private static readonly ConditionalWeakTable<SteamExhaust, Fitted> ByExhaust = new ConditionalWeakTable<SteamExhaust, Fitted>();
         private static readonly ConditionalWeakTable<SteamCompressor, FittedPump> ByPump = new ConditionalWeakTable<SteamCompressor, FittedPump>();
+
+        /// <summary>A livery's fitted blower, kg/s of steam wide open at working pressure, and natural draft, kg/s of air, if it has a fit.</summary>
+        internal static bool TryGetDraft(string livery, out (float MaxBlower, float Natural) draft)
+        {
+            draft = default;
+            if (livery == null || !Fits.TryGetValue(livery, out var fit))
+                return false;
+            draft = (fit.MaxBlower, fit.Natural);
+            return true;
+        }
 
         /// <summary>Fits the period blower to a fired engine's exhaust. Returns a line for the log, or null.</summary>
         public static string Attach(TrainCar car, SimulationFlow flow)

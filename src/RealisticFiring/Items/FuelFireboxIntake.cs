@@ -39,6 +39,10 @@ namespace RealisticFiring.Items
         private bool haveCarFrame;
         private FireboxLighting lighting;
 
+        // The firing frame: the car's, turned half about on an engine fired
+        // from the front (FiringFrame), so the box lies at greater z.
+        private Transform Frame => FiringFrame.Of(Car);
+
         private void OnEnable() { if (!active.Contains(this)) active.Add(this); }
         private void OnDisable() => active.Remove(this);
         private void OnDestroy() => ClearVisuals();
@@ -46,7 +50,7 @@ namespace RealisticFiring.Items
         private void LateUpdate()
         {
             if (Car == null) return;
-            previousCarFrame = Car.transform.worldToLocalMatrix;
+            previousCarFrame = Frame.worldToLocalMatrix;
             haveCarFrame = true;
         }
 
@@ -78,7 +82,7 @@ namespace RealisticFiring.Items
             var first = true;
             foreach (var c in target.targetColliders.Where(c => c != null))
             {
-                var b = CarSpace.LocalBounds(Car.transform, c);
+                var b = CarSpace.LocalBounds(Frame, c);
                 if (first) { hole = b; first = false; } else hole.Encapsulate(b);
             }
             var opening = FireholeOpening.For(Car, hole);
@@ -91,8 +95,9 @@ namespace RealisticFiring.Items
             // It is an outline only: entry is judged by the doorway (FireholeGate).
             volume = new Bounds();
             volume.SetMinMax(new Vector3(hole.min.x - 0.35f, hole.min.y - 0.6f, plane), new Vector3(hole.max.x + 0.35f, hole.max.y + 0.5f, plane + 1.6f));
-            if (FireboxRegistry.TryGet(Car, out var fire) && fire.GrateBox is Bounds grate)
+            if (FireboxRegistry.TryGet(Car, out var fire) && fire.GrateBox is Bounds carGrate)
             {
+                var grate = FiringFrame.FromCar(Car, carGrate);
                 var min = Vector3.Min(volume.min, new Vector3(grate.min.x, grate.min.y - 0.05f, plane));
                 var max = Vector3.Max(new Vector3(volume.max.x, volume.max.y, plane), new Vector3(grate.max.x, hole.max.y + 0.6f, grate.max.z + 0.1f));
                 volume.SetMinMax(min, max);
@@ -130,7 +135,7 @@ namespace RealisticFiring.Items
             // By the cab's frame: the car's is a frame ahead of the cab's while
             // it moves, and the plate stood off the backhead (CabFrame).
             var cab = Visuals.CabFrame.Of(Car);
-            frame.transform.SetPositionAndRotation(cab.position, cab.rotation);
+            frame.transform.SetPositionAndRotation(cab.position, cab.rotation * FiringFrame.Turn(Car));
             frame.transform.SetParent(items != null ? items : loaded, true);
             float x0 = doorway.min.x, x1 = doorway.max.x, y0 = doorway.min.y, y1 = doorway.max.y;
             void Strip(float left, float right, float bottom, float top)
@@ -193,7 +198,7 @@ namespace RealisticFiring.Items
 
         private Doorway Survey(Bounds area, float fromZ, float length, int mask, float? knownPlane)
         {
-            var car = Car.transform;
+            var car = Frame;
             var along = car.forward;
             var hits = new float?[SurveyColumns * SurveyRows];
             var walls = new bool[hits.Length];
@@ -275,7 +280,7 @@ namespace RealisticFiring.Items
             if (grabber == null || grabber.Cursor == null || !FireboxRegistry.TryGet(Car, out firebox)
                 || !FireboxAim.TryAim(grabber.Cursor.GetRay(), useTarget, Car, firebox, out var across, out var depth, out var box))
                 return false;
-            aim = new DoorAimSample(DoorAim.ZoneFor(across, depth), across, depth, kind, Time.time, Car.transform, box);
+            aim = new DoorAimSample(DoorAim.ZoneFor(across, depth), across, depth, kind, Time.time, Frame, box);
             return true;
         }
 
@@ -301,13 +306,13 @@ namespace RealisticFiring.Items
             {
                 // Let go just inside the hole, moving toward the zone aimed
                 // at; the host takes it as released through the door.
-                var inside = Car.transform.TransformPoint(InsidePoint(zone));
+                var inside = Frame.TransformPoint(InsidePoint(zone));
                 var handler = PlayerManager.PlayerTransform != null ? PlayerManager.PlayerTransform.GetComponentInChildren<GrabberInteractionHandlerDV>() : null;
                 handler?.RequestDrop();
                 item.transform.position = inside;
                 var laid = item.Body;
                 if (laid != null)
-                    laid.velocity = (Car.rb != null ? Car.rb.GetPointVelocity(inside) : Vector3.zero) + Car.transform.TransformVector(TowardZone(zone));
+                    laid.velocity = (Car.rb != null ? Car.rb.GetPointVelocity(inside) : Vector3.zero) + Frame.TransformVector(TowardZone(zone));
                 return true;
             }
             if (!Accept(item, zone, true)) return false;
@@ -328,7 +333,8 @@ namespace RealisticFiring.Items
         // A velocity in the car's frame that carries a piece from the hole to the zone's middle (see FireholeGate.LandingZone).
         private Vector3 TowardZone(GrateZone zone)
         {
-            if (!FireboxRegistry.TryGet(Car, out var fire) || !(fire.GrateBox is Bounds grate)) return Vector3.zero;
+            if (!FireboxRegistry.TryGet(Car, out var fire) || !(fire.GrateBox is Bounds carGrate)) return Vector3.zero;
+            var grate = FiringFrame.FromCar(Car, carGrate);
             var x = Mathf.Lerp(grate.min.x, grate.max.x, (GrateLayout.Column(zone) + 0.5f) / GrateLayout.Columns);
             var z = Mathf.Lerp(grate.min.z, grate.max.z, (GrateLayout.Row(zone) + 0.5f) / GrateLayout.Rows);
             var from = InsidePoint(zone);
@@ -396,7 +402,7 @@ namespace RealisticFiring.Items
             {
                 if (intake == null || !intake.ready || intake.Car == null) continue;
                 if ((intake.Car.transform.position - eye).sqrMagnitude > Reach * Reach) continue;
-                var car = intake.Car.transform;
+                var car = FiringFrame.Of(intake.Car);
                 intake.gate.Opening = intake.DoorOpening < PhysicalOpening ? 0f : intake.DoorOpening;
                 if (intake.gate.AimsThrough(Point(car.InverseTransformPoint(eye)), Point(car.InverseTransformPoint(target)), out var aim))
                     return car.TransformPoint(new Vector3(aim.X, aim.Y, aim.Z));
@@ -406,10 +412,10 @@ namespace RealisticFiring.Items
 
         private bool CheckStrike(StartingFuelItem item, Vector3 centre)
         {
-            var local = Car.transform.InverseTransformPoint(centre);
+            var local = Frame.InverseTransformPoint(centre);
             var carVelocity = Car.rb != null ? Car.rb.GetPointVelocity(centre) : Vector3.zero;
-            var flight = Car.transform.InverseTransformVector(item.LastVelocity - carVelocity);
-            var gravity = Car.transform.InverseTransformVector(Physics.gravity).y;
+            var flight = Frame.InverseTransformVector(item.LastVelocity - carVelocity);
+            var gravity = Frame.InverseTransformVector(Physics.gravity).y;
             gate.Opening = DoorOpening < PhysicalOpening ? 0f : DoorOpening;
             if (!gate.StrikesDoorway(Point(local), Point(flight), gravity)) return false;
             Resolve(item, FireholeEntry.Through, local, flight);
@@ -424,11 +430,11 @@ namespace RealisticFiring.Items
         // eye before the door to judge by.
         private bool CheckRelease(StartingFuelItem item, Vector3 at, bool local)
         {
-            var b = Car.transform.InverseTransformPoint(at);
+            var b = Frame.InverseTransformPoint(at);
             gate.Opening = DoorOpening < PhysicalOpening ? 0f : DoorOpening;
             var camera = PlayerManager.ActiveCamera;
             var eye = local && camera != null
-                ? Car.transform.InverseTransformPoint(camera.transform.position)
+                ? Frame.InverseTransformPoint(camera.transform.position)
                 : new Vector3(hole.center.x, hole.center.y + 1.0f, gate.Plane - 0.85f);
             return Resolve(item, gate.ClassifyRelease(Point(eye), Point(b)), b);
         }
@@ -436,8 +442,8 @@ namespace RealisticFiring.Items
         private bool Check(StartingFuelItem item, Vector3 from, Vector3 to)
         {
             // Each endpoint in the car's frame of its own moment.
-            var a = haveCarFrame ? previousCarFrame.MultiplyPoint3x4(from) : Car.transform.InverseTransformPoint(from);
-            var b = Car.transform.InverseTransformPoint(to);
+            var a = haveCarFrame ? previousCarFrame.MultiplyPoint3x4(from) : Frame.InverseTransformPoint(from);
+            var b = Frame.InverseTransformPoint(to);
             gate.Opening = DoorOpening < PhysicalOpening ? 0f : DoorOpening;
             return Resolve(item, gate.Classify(Point(a), Point(b)), b);
         }
@@ -463,11 +469,12 @@ namespace RealisticFiring.Items
         // to the engine meets the grate.
         private GrateZone LandingZone(StartingFuelItem item, Vector3 local, Vector3? flight = null)
         {
-            if (!FireboxRegistry.TryGet(Car, out var fire) || !(fire.GrateBox is Bounds grate)) return GrateZone.UnderDoor;
+            if (!FireboxRegistry.TryGet(Car, out var fire) || !(fire.GrateBox is Bounds carGrate)) return GrateZone.UnderDoor;
+            var grate = FiringFrame.FromCar(Car, carGrate);
             var body = item.Body;
-            var velocity = flight ?? (body != null ? Car.transform.InverseTransformVector(body.velocity) : Vector3.zero);
+            var velocity = flight ?? (body != null ? Frame.InverseTransformVector(body.velocity) : Vector3.zero);
             // A strike's flight is already the engine's own frame's.
-            var carVelocity = flight.HasValue || Car.rb == null ? Vector3.zero : Car.transform.InverseTransformVector(Car.rb.GetPointVelocity(item.transform.position));
+            var carVelocity = flight.HasValue || Car.rb == null ? Vector3.zero : Frame.InverseTransformVector(Car.rb.GetPointVelocity(item.transform.position));
             return FireholeGate.LandingZone(Point(local), Point(velocity), Point(carVelocity), grate.min.x, grate.max.x, grate.min.z, grate.max.z, grate.max.y, Physics.gravity.y);
         }
 
@@ -520,12 +527,12 @@ namespace RealisticFiring.Items
         // Back out of the door into the cab, settling there.
         private void Eject(StartingFuelItem item, string why)
         {
-            var back = Car.transform.TransformPoint(new Vector3(hole.center.x, hole.center.y, hole.center.z - 0.35f));
+            var back = Frame.TransformPoint(new Vector3(hole.center.x, hole.center.y, hole.center.z - 0.35f));
             item.transform.position = back;
             var body = item.Body;
             if (body != null)
             {
-                body.velocity = (Car.rb != null ? Car.rb.velocity : Vector3.zero) - Car.transform.forward * 0.6f;
+                body.velocity = (Car.rb != null ? Car.rb.velocity : Vector3.zero) - Frame.forward * 0.6f;
                 body.angularVelocity = Vector3.zero;
             }
             item.Previous = back;

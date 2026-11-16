@@ -14,7 +14,7 @@ namespace RealisticFiring.Sim
         public static readonly CylinderSpec Spec = new CylinderSpec();
 
         private static readonly System.Collections.Generic.HashSet<string> StockSteamLiveries =
-            new System.Collections.Generic.HashSet<string> { "Jk3A", "LocoS060" };
+            new System.Collections.Generic.HashSet<string> { "Jk3A", "LocoS060", "S260N-580A", "S040N-270", "S0440NG-890", "S440NCF-400A" };
 
         private static readonly object StockSteamMark = new object();
         private static readonly ConditionalWeakTable<ReciprocatingSteamEngine, object> StockSteamEngines =

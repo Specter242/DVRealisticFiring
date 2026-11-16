@@ -86,10 +86,18 @@ namespace RealisticFiring.Sim
             return true;
         }
 
+        private static readonly HashSet<string> SaturatedLiveries = new HashSet<string>
+        {
+            "LocoS060", "Jk3A", "S260N-580A", "S040N-270", "S0440NG-890", "S440NCF-400A",
+        };
+
+        /// <summary>Whether <paramref name="livery"/> keeps its native saturated throttle and chest.</summary>
+        internal static bool SaturatedPath(string livery) => livery != null && SaturatedLiveries.Contains(livery);
+
         internal static string Attach(TrainCar car, SimulationFlow flow)
         {
             var engine = flow?.OrderedSimComps.OfType<ReciprocatingSteamEngine>().FirstOrDefault();
-            if (engine != null && (car?.carLivery?.id == "LocoS060" || car?.carLivery?.id == "Jk3A"))
+            if (engine != null && SaturatedPath(car?.carLivery?.id))
             {
                 AttachSaturated(engine);
                 return "native saturated throttle and chest; closed-circuit leakage and cooling";

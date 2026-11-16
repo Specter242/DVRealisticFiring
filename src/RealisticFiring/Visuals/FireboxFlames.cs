@@ -760,7 +760,7 @@ namespace RealisticFiring.Visuals
             doorSmokeDue = Mathf.Min(doorSmokeDue + dt * DoorSmokePerSecond * firebox.DoorOpening, MaxPerFrame);
             if (doorSmokeDue < 1f || !EnsureDoorSmoke(car))
                 return;
-            var frame = car.transform;
+            var frame = FiringFrame.Of(car);
             var glow = Mathf.Clamp01(glowLevel * 1.6f);
             var light = Mathf.Lerp(0.15f, 1f, PlumeWeather.Daylight);
             for (; doorSmokeDue >= 1f; doorSmokeDue -= 1f)

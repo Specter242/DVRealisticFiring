@@ -67,6 +67,10 @@ namespace RealisticFiring.Visuals
             ["S2102-720"] = new Vector3(-1.46f, 1.05f, -3.9f), 
             ["em_fowler_4f_4027"] = new Vector3(-0.92f, 0.79f, -3.45f), 
             ["em_fowler_4f_44422"] = new Vector3(-0.92f, 0.79f, -3.45f),
+            ["S260N-580A"] = new Vector3(-0.79f, 0.8f, -0.03f), 
+            ["S040N-270"] = new Vector3(-0.63f, 0.53f, -1.26f), 
+            ["S0440NG-890"] = new Vector3(-1.09f, 0.84f, -0.9f), 
+            ["S440NCF-400A"] = new Vector3(-0.92f, 0.86f, 0.4f), 
         };
 
         // Seats set this session on the seating bench (SeatingBench, a
@@ -192,7 +196,9 @@ namespace RealisticFiring.Visuals
             {
                 var grate = firebox.GrateBox.Value;
                 y = grate.min.y - BelowGrate;
-                z = grate.min.z + AlongFromGrateBack;
+                // From the grate's back, by the door: its forward end on an
+                // engine fired from the front (FiringFrame).
+                z = FiringFrame.Reversed(car) ? grate.max.z - AlongFromGrateBack : grate.min.z + AlongFromGrateBack;
                 found = TryFindSide(-SideSearch, y, z, out side);
                 if (!found)
                     side = -FallbackHalfWidth;

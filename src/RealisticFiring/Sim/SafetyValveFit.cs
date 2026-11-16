@@ -43,6 +43,13 @@ namespace RealisticFiring.Sim
             // maker's 15.0, within 6 psi, is kept. Sized for its standing fire, 8.4 MW on its
             // prototype's boiler, where the maker's 15 kg/s popped.
             ["S2102-720"] = (15.0f, 5.5f),
+            ["S260N-580A"] = (12.0f, 1.0f),
+            ["S040N-270"] = (10.0f, 0.5f),
+            ["S0440NG-890"] = (13.5f, 1.0f),
+            // The cab-forward at its maker's 11.5 bar (152 psi; NPC No. 21
+            // worked at 140, the FS 670 at 15 kg/cm²), sized for its standing
+            // fire, about 1.4 MW on his grate of 0.77 m².
+            ["S440NCF-400A"] = (11.5f, 1.0f),
         };
 
         /// <summary>

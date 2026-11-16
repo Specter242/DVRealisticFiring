@@ -340,7 +340,8 @@ namespace RealisticFiring.Sim
                 PendingFlareback = Mathf.Max(PendingFlareback, Model.Flareback);
                 Main.Mod?.Logger.Log($"{Car?.ID}: oil fire flared back ({Model.Flareback:P0}): lit into gathered vapor and pooled oil");
             }
-            if (drawn > 0f)
+            // Not while a paid engine's standing costs are held (Patches.ServiceGrace).
+            if (drawn > 0f && !Patches.ServiceGrace.Holds(Car))
                 coalEnvDamage.Value += drawn;
 
             fireOnReadOut.Value = Model.FireOn ? 1f : 0f;

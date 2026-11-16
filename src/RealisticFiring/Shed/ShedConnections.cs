@@ -51,6 +51,8 @@ namespace RealisticFiring.Shed
             ["Jk3A"] = (new Vector3(-0.90f, 1.35f, 3.25f), 0f, -13f, 0f, 0f),
             [QjStokerCab.Livery] = (new Vector3(-1.25f, 2.11f, 11.69f), 0f, -15f, 0f, 0f), 
             ["S2102-720"] = (new Vector3(-1f, 2.21f, 4.85f), 0f, 0f, 0f, 0f), 
+            ["S260N-580A"] = (new Vector3(-0.23f, 1f, 4.25f), 0f, 0f, 0f, 0f), 
+            ["S0440NG-890"] = (new Vector3(-0.53f, 1.46f, 3.3f), 0f, -8f, 0f, 0f), 
         };
 
  private static readonly Dictionary<string, (Vector3 At, float Swing, float Down, float Spin, float Out)> WaterSeated =
@@ -72,6 +74,9 @@ namespace RealisticFiring.Shed
             ["S2102-720"] = (new Vector3(-1.28f, 1.24f, -3.36f), 0f, 90f, 0f, 0f), 
             ["em_fowler_4f_4027"] = (new Vector3(-0.8f, 1.41f, -1.52f), 0f, 0f, 0f, 0f), 
             ["em_fowler_4f_44422"] = (new Vector3(-0.8f, 1.41f, -1.52f), 0f, 0f, 0f, 0f),
+            ["S260N-580A"] = (new Vector3(-0.41f, 0.93f, -0.35f), 0f, 0f, 0f, 0f), 
+            ["S0440NG-890"] = (new Vector3(-1.24f, 1.05f, -0.45f), 0f, 90f, 0f, 0f), 
+            ["S440NCF-400A"] = (new Vector3(-0.61f, 1.04f, 0.09f), 0f, 0f, 0f, 0f), 
         };
 
         // Seats set this session on the seating bench (Visuals.SeatingBench, a
@@ -86,8 +91,16 @@ namespace RealisticFiring.Shed
 
  private static readonly HashSet<string> NoConnection = new HashSet<string>
         {
-            "em_lms_8f_loc_black", "em_lms_8f_loc_grey", "em_fowler_4f_44422", "em_fowler_4f_4027",
+            "em_lms_8f_loc_black", "em_lms_8f_loc_grey", "em_fowler_4f_44422", "em_fowler_4f_4027", "S040N-270", "S440NCF-400A",
         };
+
+        /// <summary>Whether <paramref name="livery"/> gets a shed blower line connection.</summary>
+        internal static bool HasBlowerConnection(string livery) => livery == null || !NoConnection.Contains(livery);
+
+ private static readonly HashSet<string> NoWater = new HashSet<string> { "S040N-270" };
+
+        /// <summary>Whether <paramref name="livery"/> gets a shed water connection.</summary>
+        internal static bool HasWaterConnection(string livery) => livery == null || !NoWater.Contains(livery);
 
         private sealed class Connection
         {
@@ -360,13 +373,16 @@ namespace RealisticFiring.Shed
 
         private static string AttachWater(TrainCar car, SimulationFlow flow, Vector3? stackGuess)
         {
-            if (car == null || flow == null || !flow.OrderedSimComps.OfType<Boiler>().Any())
+            if (car == null || flow == null || !flow.OrderedSimComps.OfType<Boiler>().Any()
+                || car.carLivery != null && !HasWaterConnection(car.carLivery.id))
                 return null;
             Vector3 local;
             if (FireholeOpening.Backhead(car, out var plane, out var foot))
             {
                 var height = foot - UnderFirehole;
-                var z = plane + AheadOfBackhead;
+                // The backhead's plane is in the firing frame: on an engine
+                // fired from the front its z runs toward the car's back.
+                var z = FiringFrame.Reversed(car) ? -(plane + AheadOfBackhead) : plane + AheadOfBackhead;
                 local = new Vector3(-Side(car, new Vector3(0f, height, z), false), height, z);
             }
             else

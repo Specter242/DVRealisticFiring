@@ -131,6 +131,16 @@ namespace RealisticFiring
                 settings.GiveFiringTablet = false;
                 Notify(Net.IsClient ? "In multiplayer, buy the firing tablet at a gadget shop, beside the clinometer" : Items.FiringTablet.GiveToPlayer());
             }
+            if (settings.GiveWoodCrate)
+            {
+                settings.GiveWoodCrate = false;
+                Notify(Net.IsClient ? "In multiplayer, only the host can give a firewood crate" : Items.FireStartingItems.GiveToPlayer(Items.StartingFuelKind.WoodCrate));
+            }
+            if (settings.GiveRagTin)
+            {
+                settings.GiveRagTin = false;
+                Notify(Net.IsClient ? "In multiplayer, only the host can give a rag tin" : Items.FireStartingItems.GiveToPlayer(Items.StartingFuelKind.RagBox));
+            }
             if (settings.GiveFireIron)
             {
                 settings.GiveFireIron = false;

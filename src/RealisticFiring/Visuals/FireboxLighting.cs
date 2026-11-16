@@ -360,7 +360,7 @@ namespace RealisticFiring.Visuals
             var opening = firebox.HasDoorPort ? firebox.DoorOpening : 1f;
             if (opening < 0.01f)
                 return;
-            var frame = car.transform;
+            var frame = FiringFrame.Of(car);
             var middle = frame.TransformPoint(new Vector3(hole.Middle, hole.Foot + 0.5f * hole.Height, hole.Plane));
             var cabward = frame.TransformDirection(Vector3.back);
             LightProbes.GetInterpolatedProbe(middle + 0.3f * cabward, null, out var probe);

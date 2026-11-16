@@ -214,7 +214,7 @@ namespace RealisticFiring.Visuals
             },
             new Part
             {
-                Title = "Injector steam lever on the backhead (from the stock handle)",
+                Title = "Injector steam lever on the backhead (from the stock handle; on a manifold's side, the first slider runs along it)",
                 Table = "InjectorSteamCab.Seats",
                 Labels = new[] { "Toward the cab's middle, m", "Up, m", "Out from the backhead, m", "Turn, ° (about the backhead's up)",
                     "Tilt, ° (about across)", "Twist, ° (about its face)" },
@@ -419,7 +419,7 @@ namespace RealisticFiring.Visuals
             if (previewFirehole && target != null && FireholeOpening.SeedForBench(target) && FireholeOpening.TryHole(livery, out var hole))
             {
                 var bounds = new Bounds(new Vector3(hole.Middle, hole.Foot + hole.Height / 2f, hole.Plane), new Vector3(hole.Width, hole.Height, 0f));
-                AimKeypad.Draw(new DoorAimSample(Core.GrateLayout.At(1, 1), 0.5f, 0.5f, Core.DoorAimKind.Shovel, Time.time, target.transform, bounds));
+                AimKeypad.Draw(new DoorAimSample(Core.GrateLayout.At(1, 1), 0.5f, 0.5f, Core.DoorAimKind.Shovel, Time.time, FiringFrame.Of(target), bounds));
             }
 
             var k = OverlayStyle.Scale;

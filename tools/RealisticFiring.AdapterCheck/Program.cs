@@ -224,8 +224,10 @@ namespace RealisticFiring.AdapterCheck
             CheckJk3Injectors(gameParams);
             CheckLms8FInjectors(gameParams);
             Lms4FChecks.Run(gameParams, Check);
+            BoringNarrowGaugeChecks.Run(gameParams, Check);
             CheckJk3Firebox(gameParams);
             CheckBoilerWater();
+            CheckServiceGrace();
             CheckGlassTilt();
             CheckFiremanGlassDisplay();
             CheckOverlayBoilerFallback();
@@ -3694,6 +3696,23 @@ namespace RealisticFiring.AdapterCheck
                 type == typeof(bool) ? (object)true : 1f + Math.Abs(name.GetHashCode() % 1000) / 7f;
         }
 
+        // A paid engine with its fire kept in stands unbilled for a while, as the
+        // stock payment (which puts the fire out) bills nothing after it.
+        private static void CheckServiceGrace()
+        {
+            const float until = 100f + Patches.ServiceGrace.Seconds;
+            Check(Patches.ServiceGrace.Holds(100f, until, 0f) && Patches.ServiceGrace.Holds(until - 1f, until, -0.4f)
+                  && !Patches.ServiceGrace.Holds(until, until, 0f) && !Patches.ServiceGrace.Holds(150f, until, 1f)
+                  && Patches.ServiceGrace.Seconds >= 120f && Patches.ServiceGrace.Seconds <= 300f,
+                $"a paid engine with its fire in stands unbilled for {Patches.ServiceGrace.Seconds:F0} s, ending when it moves off or the time is up");
+            Check(Patches.ServiceGrace.Held(DV.ThingTypes.ResourceType.Coal) && Patches.ServiceGrace.Held(DV.ThingTypes.ResourceType.Water)
+                  && Patches.ServiceGrace.Held(DV.ThingTypes.ResourceType.Fuel)
+                  && !Patches.ServiceGrace.Held(DV.ThingTypes.ResourceType.Oil) && !Patches.ServiceGrace.Held(DV.ThingTypes.ResourceType.Sand)
+                  && !Patches.ServiceGrace.Held(DV.ThingTypes.ResourceType.MechanicalPowertrain_DMG)
+                  && !Patches.ServiceGrace.Held(DV.ThingTypes.ResourceType.EnvironmentDamageCoal),
+                "while it stands paid, the coal, water, and oil fuel its fire draws are not owed; oil, sand, and damage still are");
+        }
+
         private static void CheckPatchTargets()
         {
             var patches = typeof(RealisticFiring.Main).Assembly.GetTypes()
@@ -4087,6 +4106,10 @@ namespace RealisticFiring.AdapterCheck
             FireOverlay.Step(settings);
             Check(first && !settings.ShowOverlay && settings.OverlayPage == 2 && !settings.GiveFiringTablet,
                 "F6 retains its show/three-pages/hide cycle and does not create a tablet");
+            var fresh = new Settings();
+            Check(!fresh.GiveWoodCrate && !fresh.GiveRagTin && !fresh.GiveFireIron
+                  && typeof(Items.FireStartingItems).GetMethod("GiveToPlayer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static) != null,
+                "F8's Give firewood crate and Give rag tin start unticked, beside the fire iron, and give a full container");
         }
 
         private static List<StartingItems.StartingItem> tabletStartingKit;

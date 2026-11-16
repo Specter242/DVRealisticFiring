@@ -607,7 +607,7 @@ namespace RealisticFiring.Visuals
             var livery = car != null && car.carLivery != null ? car.carLivery.id : null;
             if (livery != null && FireholeOpening.TryHole(livery, out var hole))
             {
-                var toCar = car.transform.worldToLocalMatrix * box.localToWorldMatrix;
+                var toCar = FiringFrame.Of(car).worldToLocalMatrix * box.localToWorldMatrix;
                 var acrossHole = toCar.GetRow(0);
                 acrossHole.w -= hole.Middle - hole.Width / 2f;
                 var upHole = toCar.GetRow(1);

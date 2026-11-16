@@ -104,7 +104,8 @@ Startup setting speeds up a cold fire (×25 at 100 %). Set it to 2500 % for a
 real-time light-up. At a roundhouse stall or engine shed, plug the stand's
 blower line into the fitting on the smokebox and open its handwheel a
 little as you lay the fire, more as it catches; take it off at about 3.5 bar
-and use the cab's blower (the 8F and 4F have no fitting).
+and use the cab's blower (the 8F, the 4F, and BorING's 0-4-0 and cab-forward have no
+fitting; the 0-4-0 has no water connection either).
 
 Left and right below mean looking toward the chimney. Steam sockets sit low
 on the smokebox, usually facing down; water sockets are low on the firebox near the cab.
@@ -168,6 +169,17 @@ Use a shed or service location; tow a dead engine there if needed.
   that injector, then use the pump as the feedwater heater warms.
 - **BR95:** a plain copper box, hand fired, with an even draft. Its coal
   leaves a little more ash and clinker.
+- **BorING's narrow-gauge engines** (the 2-6-0, the 0-4-0 saddle tank, the
+  geared engine, and the cab-forward): small, level boxes with a modest pull
+  to the front, as the JK3's. Fire small amounts often. Their boilers and
+  fires are their maker's, small grates under big cylinders: notch up early.
+  One lifting injector each, the cab's lever its water valve beside its own
+  steam lever: water, then steam to Prime, then Feed.
+- **BorING's cab-forward:** fired from the front. Its fire door faces
+  forward, and you face the rear to fire it; the back of its grate is the
+  end under the door, as on any other engine, so fire the corners by the
+  door as you would at the back of any box. Its coal is beside the box on
+  the left.
 
 ## Smoke in towns
 
@@ -423,7 +435,7 @@ they're fitted. The booster is the engineer's.
 - **Wash out** with a shed stand's water hose (boiler cold) when blowdowns
   no longer keep it quiet.
 - **Never run low.** A bared crown sheet melts the fusible plug and kills the
-  engine (S282, S060, S484-840, 844, 8F, 4F, QJ, BR95) or bursts the boiler
+  engine (S282, S060, S484-840, 844, 8F, 4F, QJ, BR95, BorING's narrow-gauge engines) or bursts the boiler
   (Hudson, which whistles a warning with an inch left). A repair at a
   service station, or a washout with a shed stand's water hose, renews the
   plug. The JK3 keeps the game's own low-water failure.
@@ -467,7 +479,7 @@ hold that steam:
 | --- | --- |
 | S282 (provisional), LMS 8F, LMS 4F (provisional), QJ | Before the superheater |
 | NYC Hudson (provisional), 844, S484-840, 2901 | After the superheater |
-| S060, JK3 | Existing response; no added superheater steam-storage model |
+| S060, JK3, BorING's narrow-gauge engines | Existing response; no added superheater steam-storage model |
 
 These fits retain each maker's chest and throttle capacity and add a
 separate, provisionally sized superheater circuit. On the S282, 8F, 4F and QJ,

@@ -185,6 +185,27 @@ namespace RealisticFiring.Items
             return copy.GetComponent<StartingFuelItem>();
         }
 
+        /// <summary>
+        /// A full crate or tin of <paramref name="kind"/> on the ground in
+        /// front of the player, theirs to keep (F8, Equipment). Returns a
+        /// line for the notice.
+        /// </summary>
+        internal static string GiveToPlayer(StartingFuelKind kind)
+        {
+            var camera = PlayerManager.ActiveCamera;
+            if (camera == null)
+                return "nothing given: the player's camera is missing";
+            var view = camera.transform;
+            var ahead = Vector3.ProjectOnPlane(view.forward, Vector3.up);
+            if (ahead.sqrMagnitude < 1e-4f)
+                ahead = Vector3.ProjectOnPlane(view.up, Vector3.up);
+            ahead.Normalize();
+            var at = view.position + ahead * 0.7f;
+            var item = Spawn(kind, at, Quaternion.LookRotation(-ahead, Vector3.up));
+            var name = Name(kind).ToLowerInvariant();
+            return item != null ? $"a full {name} is in front of you" : $"no {name}: the shovel to make it from is missing";
+        }
+
         internal static void Register()
         {
             var items = DV.Globals.G?.Items?.items;

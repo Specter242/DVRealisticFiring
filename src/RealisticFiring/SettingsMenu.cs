@@ -252,6 +252,10 @@ namespace RealisticFiring
                 s.GiveFiringManual = true;
             if (Action("Give fire iron", "Through the open door: click to slice, scroll to push or pull, Shift + scroll to move sideways."))
                 s.GiveFireIron = true;
+            if (Action("Give firewood crate", "A full crate of firewood for lighting a cold fire, when none is at hand."))
+                s.GiveWoodCrate = true;
+            if (Action("Give rag tin", "A full tin of rags to oil and light, when none is at hand."))
+                s.GiveRagTin = true;
             End();
 
             Begin("RECOVERY", "For a locomotive stranded with a melted fusible plug.");

@@ -77,8 +77,15 @@ namespace RealisticFiring.Sim
             PrototypeGrateArea = 21.1f * 0.09290304f,
         };
 
+        private static readonly Firebox BoringNarrowGauge = new Firebox("a small, level narrow-gauge box between the frames: modest pull to the front; fresh rounds smoke readily",
+            new GrateCharacter { BackRowDraft = 0.94f, FrontRowDraft = 1.08f, SideDraft = 1.03f, OverFireMixing = 0.85f });
+
         private static readonly Dictionary<string, Firebox> ByLivery = new Dictionary<string, Firebox>
         {
+            ["S260N-580A"] = BoringNarrowGauge,
+            ["S040N-270"] = BoringNarrowGauge,
+            ["S0440NG-890"] = BoringNarrowGauge,
+            ["S440NCF-400A"] = BoringNarrowGauge,
             ["em_lms_8f_loc_black"] = Lms8F,
             ["em_lms_8f_loc_grey"] = Lms8F,
             ["em_fowler_4f_44422"] = Lms4F,

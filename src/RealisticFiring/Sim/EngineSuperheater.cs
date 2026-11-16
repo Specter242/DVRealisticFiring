@@ -48,6 +48,13 @@ namespace RealisticFiring.Sim
             // Organ 1924), about 150 °C over saturation at 14 at. A Schmidt,
             // as the Prussian engines' (inferred).
             ["S2102-720"] = Superheat("Schmidt", 150f, 0.72f),
+            // BorING's narrow-gauge engines: their prototypes were saturated
+            // (the SAR X class of 1880, Porter's saddle tanks, the 1900
+            // Heisler, NPC No. 21 and the FS 670 of 1900).
+            ["S260N-580A"] = SuperheaterSpec.None,
+            ["S040N-270"] = SuperheaterSpec.None,
+            ["S0440NG-890"] = SuperheaterSpec.None,
+            ["S440NCF-400A"] = SuperheaterSpec.None,
         };
 
         private static readonly HashSet<string> Exempt = new HashSet<string> { "LocoS060" };

@@ -136,6 +136,12 @@ namespace RealisticFiring
         [Draw("Put an illustrated firing manual in front of me (unticks itself)")]
         public bool GiveFiringManual;
 
+        [Draw("Put a full firewood crate in front of me (unticks itself), for when none is at hand")]
+        public bool GiveWoodCrate;
+
+        [Draw("Put a full rag tin in front of me (unticks itself), for when none is at hand")]
+        public bool GiveRagTin;
+
         [Draw("Toggle fire overlay")]
         public KeyBinding ToggleOverlayKey = Bind(KeyCode.F6);
 

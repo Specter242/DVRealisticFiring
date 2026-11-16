@@ -586,7 +586,8 @@ namespace RealisticFiring.Sim
                 JetOpening = JetOpening,
                 BoilerPressure = boilerPressure.Value,
             });
-            if (consumed > 0f)
+            // Not while a paid engine's standing costs are held (Patches.ServiceGrace).
+            if (consumed > 0f && !Patches.ServiceGrace.Holds(Car))
                 coalEnvDamage.Value += consumed;
             Smoke.Step(delta, Model);
             SmokeFees.Tick(delta, coalEnvDamage, Car, SmokeNuisance.CoalSmoke(Model), Model.FireOn && Model.ConsumptionRate > 0f,

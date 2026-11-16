@@ -30,6 +30,10 @@ namespace RealisticFiring.Visuals
             ["S2102-720"] = new Vector3(0f, 0f, -0.3f), 
             ["em_fowler_4f_4027"] = new Vector3(0f, 0f, -0.3f), 
             ["em_fowler_4f_44422"] = new Vector3(0f, 0f, -0.3f),
+            ["S260N-580A"] = new Vector3(0f, 0f, -0.3f), 
+            ["S040N-270"] = new Vector3(0.72f, 0f, -0.3f), 
+            ["S0440NG-890"] = new Vector3(0.88f, 0f, -0.05f), 
+            ["S440NCF-400A"] = new Vector3(0f, 0f, 0.3f), 
         };
 
         // Seats set this session on the seating bench (SeatingBench, a
@@ -41,6 +45,7 @@ namespace RealisticFiring.Visuals
         internal static Vector3 SeatFor(string livery) =>
             DevPlacements.TryGetValue(livery, out var dev) ? dev
             : Placements.TryGetValue(livery, out var seated) ? seated
+            : FiringFrame.Reversed(livery) ? -DefaultFromDump // aft of the door is forward on an engine fired from the front
             : DefaultFromDump;
 
         private static readonly Dictionary<TrainCar, Transform> Interiors = new Dictionary<TrainCar, Transform>();

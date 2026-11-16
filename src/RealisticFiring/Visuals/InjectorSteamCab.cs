@@ -42,6 +42,10 @@ namespace RealisticFiring.Visuals
             ["FEF-3"] = (new Vector3(-0.14f, -0.48f, -0.03f), new Vector3(-180f, 0f, 2f)), // 2026-10-11
             [QjStokerCab.Livery] = (new Vector3(-0.2f, 0f, 0f), new Vector3(-180f, 0f, 2f)), 
             ["S2102-720"] = (new Vector3(0.09f, -0.17f, 0f), new Vector3(-180f, 0f, 2f)), 
+            ["S260N-580A"] = (new Vector3(0f, 0f, 0f), new Vector3(-180f, 0f, 2f)), 
+            ["S040N-270"] = (new Vector3(0f, 0f, 0f), new Vector3(-180f, 0f, 2f)), 
+            ["S0440NG-890"] = (new Vector3(0f, 0f, 0f), new Vector3(-180f, 0f, 2f)), 
+            ["S440NCF-400A"] = (new Vector3(0.02f, -0.01f, 0.11f), new Vector3(-360f, 0f, 2f)),
         };
 
         private static readonly Vector3 SeatTurns = new Vector3(-180f, 0f, 2f);
@@ -78,6 +82,14 @@ namespace RealisticFiring.Visuals
         {
             ["LocoS282A"] = new Vector3(0.26f, 0.13f, 0.21f),
         };
+
+        private static readonly Dictionary<string, Vector3> SideSeats = new Dictionary<string, Vector3>
+        {
+            ["S440NCF-400A"] = new Vector3(0.07f, -0.01f, 0.15f),
+        };
+
+        /// <summary>Whether <paramref name="livery"/>'s lever sits on the side of its handle's fitting (<see cref="SideSeats"/>), where the bench's x runs along the fitting.</summary>
+        internal static bool OnSide(string livery) => livery != null && SideSeats.ContainsKey(livery);
 
         /// <summary>Builds the steam levers in a newly loaded cab interior. Returns a line for the log, or null.</summary>
         public static string Attach(TrainCar car, Transform interior)
@@ -307,19 +319,28 @@ namespace RealisticFiring.Visuals
             var local = car.transform.InverseTransformPoint(stock.position);
             var middle = local.x > 0f ? -car.transform.right : car.transform.right;
             var up = car.transform.up;
-            var forward = car.transform.forward;
+            // Toward the backhead: the firing frame's forward, the car's on
+            // every engine but one fired from the front (FiringFrame).
+            var forward = FiringFrame.Of(car).forward;
             var seatedHere = DevSeats.TryGetValue(car.carLivery.id, out var seat) || Seats.TryGetValue(car.carLivery.id, out seat);
             var aim = stock.position + middle * (Across + seat.Move.x) + up * (Up + seat.Move.y);
             var proud = seat.Move.z;
             var fixedSeat = FixedSeats.TryGetValue(car.carLivery.id, out var fromHandle);
+            var sideSeat = SideSeats.TryGetValue(car.carLivery.id, out var onSide);
             var surface = aim;
             var normal = -forward;
             var surfaceName = "none";
-            var onBoiler = !fixedSeat && TryFindBackhead(car, aim - forward * LookFrom, forward, out surface, out normal, out surfaceName);
+            var onBoiler = !fixedSeat && !sideSeat && TryFindBackhead(car, aim - forward * LookFrom, forward, out surface, out normal, out surfaceName);
             if (!onBoiler)
             {
                 surface = aim;
                 normal = -forward;
+            }
+            if (sideSeat)
+            {
+                // On the fitting's side toward the cab's middle, facing it.
+                surface = stock.position + middle * onSide.x + up * (onSide.y + seat.Move.y) + forward * (onSide.z + seat.Move.x);
+                normal = middle;
             }
 
             var shape = Shape(holder, control);
@@ -363,10 +384,11 @@ namespace RealisticFiring.Visuals
 
             var bottom = Reach(holder, -upOnFace);
             var plateAt = holder.position - upOnFace * (bottom + PlateGap) - normal * (Back(holder, -normal) - PlateProud);
-            var plates = Plates(interior, stock, root, plateAt, Quaternion.FromToRotation(-forward, normal));
+            var plates = Plates(interior, stock, root, plateAt,
+                Quaternion.AngleAxis(turns.x - SeatTurns.x, upOnFace) * Quaternion.FromToRotation(-forward, normal));
             var at = car.transform.InverseTransformPoint(control.position);
             var handle = car.transform.InverseTransformPoint(stock.position);
-            return $"'{valve.Id}' {(onBoiler ? $"on the backhead ('{surfaceName}')" : fixedSeat ? "on its fixed seat" : "beside (no backhead found)")} by '{feeder.name}' (its handle at ({handle.x:F2}, {handle.y:F2}, {handle.z:F2}) m) " +
+            return $"'{valve.Id}' {(onBoiler ? $"on the backhead ('{surfaceName}')" : fixedSeat ? "on its fixed seat" : sideSeat ? "on the side of its handle's fitting" : "beside (no backhead found)")} by '{feeder.name}' (its handle at ({handle.x:F2}, {handle.y:F2}, {handle.z:F2}) m) " +
                    $"at ({at.x:F2}, {at.y:F2}, {at.z:F2}) m, " +
                    $"a copy of the S282's sander lever" + plates;
         }

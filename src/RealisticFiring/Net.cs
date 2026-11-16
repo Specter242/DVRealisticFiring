@@ -79,7 +79,7 @@ namespace RealisticFiring
                     break;
                 case FireEvent.PlugMelted:
                     // Named: every guest hears of it, wherever they are.
-                    FireController.Announce($"{Sim.CarNames.LogName(car)}: {Sim.BoilerWaterRig.PlugMeltedNotice}");
+                    FireController.Announce($"{Sim.CarNames.LogName(car)}: {Sim.BoilerWaterRig.PlugMeltedNoticeFor(car)}");
                     break;
             }
         }

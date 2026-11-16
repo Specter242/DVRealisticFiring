@@ -274,8 +274,11 @@ namespace RealisticFiring.Visuals
                 return $"coal pile '{coal.name}' has no mesh; keeping the stock coal";
             var (axisOf, toPivot) = BedAxes(car, pivot);
             var frameRotation = pivot.rotation * toPivot;
-            var forward = car.transform.InverseTransformDirection(frameRotation * Vector3.forward);
-            var right = car.transform.InverseTransformDirection(frameRotation * Vector3.right);
+            // In the firing frame: on an engine fired from the front, the
+            // car's turned half about, so the door is at the bed's back.
+            var firing = FiringFrame.Of(car);
+            var forward = firing.InverseTransformDirection(frameRotation * Vector3.forward);
+            var right = firing.InverseTransformDirection(frameRotation * Vector3.right);
             if (forward.z < MinAxisAlignment || right.x < MinAxisAlignment)
             {
                 var grate = StockPileBox(car, pivot, coal, filter.sharedMesh, slider);
@@ -312,11 +315,13 @@ namespace RealisticFiring.Visuals
         }
 
         // Which of the pivot's axes runs across the car (the bed's x), up (y),
-        // and along it (z), each signed to point right, up, and forward, and
-        // the turn from the bed's frame to the pivot's.
+        // and along it (z), each signed to point right, up, and forward in
+        // the firing frame (the fireman's right, and from the door toward
+        // the tubes), and the turn from the bed's frame to the pivot's.
         private static (int[] AxisOf, Quaternion ToPivot) BedAxes(TrainCar car, Transform pivot)
         {
-            Vector3 Local(Vector3 carDirection) => pivot.InverseTransformDirection(car.transform.TransformDirection(carDirection));
+            var firing = FiringFrame.Of(car);
+            Vector3 Local(Vector3 carDirection) => pivot.InverseTransformDirection(firing.TransformDirection(carDirection));
             int Largest(Vector3 v, int skip) => Enumerable.Range(0, 3).Where(i => i != skip)
                 .OrderByDescending(i => Mathf.Abs(v[i])).First();
             Vector3 Axis(int index, float sign)

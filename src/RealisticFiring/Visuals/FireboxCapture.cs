@@ -710,7 +710,7 @@ namespace RealisticFiring.Visuals
                     if (left.Count == 0)
                         return null;
                     var target = left.Aggregate(Vector3.zero, (sum, m) => sum + m.Mouth) / left.Count + 0.3f * left[0].Inward;
-                    var holeEye = car.transform.TransformPoint(new Vector3(hole.Middle, middle, hole.Plane + 0.12f));
+                    var holeEye = FiringFrame.Of(car).TransformPoint(new Vector3(hole.Middle, middle, hole.Plane + 0.12f));
                     return new Pose(holeEye, Quaternion.LookRotation(target - holeEye, car.transform.up));
                 }
                 case "inside-low":
@@ -721,7 +721,7 @@ namespace RealisticFiring.Visuals
                 default:
                     return null;
             }
-            var t = car.transform;
+            var t = FiringFrame.Of(car);
             var from = t.TransformPoint(at);
             return new Pose(from, Quaternion.LookRotation(t.TransformPoint(look) - from, t.up));
         }

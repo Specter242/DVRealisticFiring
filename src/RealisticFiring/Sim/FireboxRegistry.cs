@@ -45,6 +45,10 @@ namespace RealisticFiring.Sim
             // tank engine, hand fired from its bunker, read from its bundle
             // 2026-10-24.
             "S2102-720",
+            "S260N-580A",
+            "S040N-270",
+            "S0440NG-890",
+            "S440NCF-400A",
         };
 
         private static readonly Dictionary<TrainCar, RealisticFirebox> Fireboxes = new Dictionary<TrainCar, RealisticFirebox>();

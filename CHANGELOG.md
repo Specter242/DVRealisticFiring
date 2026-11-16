@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.23.0 (2026-11-15)
+
+- **New: My Name Is BorING's narrow-gauge engines** (S260N-580 1.0.5,
+  S040N-270 1.0.1, S0440NG-890 1.0.1, S440NCF-400 1.0.0). The 2-6-0, the
+  0-4-0 saddle tank, the geared engine, and the cab-forward get the
+  realistic firebox, hand fired, with a lifting injector and its own steam
+  valve, a fusible plug, and safety valves set for their fires. Their
+  fires, boilers, and engines stay as their maker built them.
+- **The cab-forward is fired from the front.** Its door faces forward, and
+  the shovel's aim, the firehole, and the grate's rows follow it.
+- The 0-4-0 has no shed connections, and the cab-forward no shed blower
+  line.
+- **Paying an engine's fees clears it with the fire still in.** For three
+  minutes after you pay, while it stands, its fire runs up no new fees, so
+  you can buy licenses right away. Since 1.20.0 the fees came back within
+  seconds and kept the licenses locked.
+- **F8 can give you a firewood crate or a rag tin,** full, in front of
+  you, for when none is at hand. In multiplayer only the host can.
+
 ## 1.22.0 (2026-11-15)
 
 - **New: Emerald's LMS Fowler 4F** (4F 1.1.1, both liveries). It gets

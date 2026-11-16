@@ -37,11 +37,25 @@ namespace RealisticFiring.Sim
             // Prussian T 20: none named in the 1924 descriptions; German rules
             // had one or more fusible plugs in the crown sheet.
             ["S2102-720"] = Guard.FusiblePlug,
+            // BorING's narrow-gauge engines: the plug many American roads fitted
+            // (none found for their prototypes).
+            ["S260N-580A"] = Guard.FusiblePlug,
+            ["S040N-270"] = Guard.FusiblePlug,
+            ["S0440NG-890"] = Guard.FusiblePlug,
+            ["S440NCF-400A"] = Guard.FusiblePlug,
         };
 
         /// <summary>What players near the loco are told when its plug melts.</summary>
         public const string PlugMeltedNotice = "The fusible plug has melted: steam is blowing into the firebox and has put the fire out. " +
                                                "Have the engine repaired at a service station, or wash out the boiler with a shed stand's water hose (boiler cold), to renew it.";
+
+        /// <summary>What players near the loco are told when its plug melts, on an engine with no shed water connection.</summary>
+        public const string PlugMeltedRepairOnlyNotice = "The fusible plug has melted: steam is blowing into the firebox and has put the fire out. " +
+                                                         "Have the engine repaired at a service station to renew it.";
+
+        /// <summary>The melted-plug notice for <paramref name="car"/>: the hose washout only where it has a shed water connection.</summary>
+        public static string PlugMeltedNoticeFor(TrainCar car) =>
+            car != null && car.carLivery != null && !Shed.ShedConnections.HasWaterConnection(car.carLivery.id) ? PlugMeltedRepairOnlyNotice : PlugMeltedNotice;
 
         private const string SolidsKey = "rfSolids";
         private const string SettledKey = "rfSludgeSettled";
@@ -389,6 +403,10 @@ namespace RealisticFiring.Sim
             var train = damage != null ? damage.mechanicalPT : null;
             if (train == null || Net.IsClient)
                 return;
+            // A paid engine standing with its fire in: its soot wear waits
+            // (Patches.ServiceGrace), charged once the grace ends.
+            if (Patches.ServiceGrace.Holds(Car))
+                return;
             var change = WearPerLoss * FoulingLoss - foulingWear;
             if (change >= LeastWear)
                 train.ApplyDamage(train.fullHitPoints * change);
@@ -673,7 +691,7 @@ namespace RealisticFiring.Sim
             {
                 Log($"fusible plug melted at {vessel.pressure:F1} bar, crown sheet {crown:F0} C, water {TrueLevel:F2} " +
                     $"(crown sheet at {CrownSheetLevel(boiler):F2}, glass showing {GlassLevel:F2})");
-                FireController.Announce(PlugMeltedNotice);
+                FireController.Announce(PlugMeltedNoticeFor(Car));
                 Net.Broadcast(Car, FireEvent.PlugMelted);
             }
             if (!Plug.Melted)

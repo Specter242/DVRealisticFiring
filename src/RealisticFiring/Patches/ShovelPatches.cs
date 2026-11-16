@@ -92,12 +92,12 @@ namespace RealisticFiring.Patches
                 return;
 
             if (FireboxAim.TryAim(grabber.Cursor.GetRay(), target, car, firebox, out var across, out var depth, out var box))
-                firebox.NoteAim(new DoorAimSample(DoorAim.ZoneFor(across, depth), across, depth, __instance.IsLoaded ? DoorAimKind.Shovel : DoorAimKind.Rake, Time.time, car.transform, box));
+                firebox.NoteAim(new DoorAimSample(DoorAim.ZoneFor(across, depth), across, depth, __instance.IsLoaded ? DoorAimKind.Shovel : DoorAimKind.Rake, Time.time, FiringFrame.Of(car), box));
         }
 
         // Places the nearest hit on the target's colliders within that
-        // collider's extent in the car's frame. Facing the firebox means
-        // facing the car's front (+Z), so -X is the fireman's left.
+        // collider's extent in the firing frame (FiringFrame). Facing the
+        // firebox means facing its +Z, so -X is the fireman's left.
         internal static bool TryMeasure(Ray ray, ItemUseTarget target, Transform car, out float across, out float height) =>
             TryMeasure(ray, target, car, out across, out height, out _);
 
@@ -136,19 +136,20 @@ namespace RealisticFiring.Patches
         public static bool TryAim(Ray ray, ItemUseTarget target, TrainCar car, RealisticFirebox firebox, out float across, out float depth) =>
             TryAim(ray, target, car, firebox, out across, out depth, out _);
 
-        /// <summary>As <see cref="TryAim(Ray, ItemUseTarget, TrainCar, RealisticFirebox, out float, out float)"/>, with the firehole's rectangle in the car's frame, or none when aiming at the grate.</summary>
+        /// <summary>As <see cref="TryAim(Ray, ItemUseTarget, TrainCar, RealisticFirebox, out float, out float)"/>, with the firehole's rectangle in the firing frame, or none when aiming at the grate.</summary>
         public static bool TryAim(Ray ray, ItemUseTarget target, TrainCar car, RealisticFirebox firebox, out float across, out float depth, out Bounds hole)
         {
             hole = default;
             var grate = Main.Settings.Aim == ShovelAim.Grate;
             if (grate && Visuals.ZonedCoalBed.TryGet(firebox, out var bed) && bed.TryAim(ray, out across, out depth))
                 return true;
-            if (!ShovelHoverPatch.TryMeasure(ray, target, car.transform, out across, out depth, out var box))
+            var firing = FiringFrame.Of(car);
+            if (!ShovelHoverPatch.TryMeasure(ray, target, firing, out across, out depth, out var box))
                 return false;
             var opening = FireholeOpening.For(car, box);
             if (!grate)
                 hole = opening.Bounds;
-            if (opening.TryPlace(ray, car.transform, out var holeAcross, out var holeUp))
+            if (opening.TryPlace(ray, firing, out var holeAcross, out var holeUp))
             {
                 across = holeAcross;
                 depth = holeUp;

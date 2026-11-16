@@ -12,7 +12,8 @@ namespace RealisticFiring
         private const float UsualFootAbove = 0.09f;
 
         // Each cab's hole: its middle across, its foot, width, height, and its
-        // plane's place along the car, m, in the car's frame.
+        // plane's place along the car, m, in the firing frame (FiringFrame:
+        // the car's, turned half about on an engine fired from the front).
         private static readonly Dictionary<string, (float Middle, float Foot, float Width, float Height, float Plane)> Holes =
             new Dictionary<string, (float, float, float, float, float)>
             {
@@ -29,6 +30,10 @@ namespace RealisticFiring
                 ["S2102-720"] = (0.000f, 2.312f, 0.763f, 0.517f, -3.550f),
                 ["em_fowler_4f_4027"] = (0.000f, 1.946f, 0.423f, 0.432f, -2.773f),
                 ["em_fowler_4f_44422"] = (0.000f, 1.946f, 0.423f, 0.432f, -2.773f),
+                ["S260N-580A"] = (-0.006f, 1.307f, 0.335f, 0.355f, -0.449f),
+                ["S040N-270"] = (-0.002f, 0.788f, 0.260f, 0.235f, -1.316f),
+                ["S0440NG-890"] = (0.004f, 1.404f, 0.450f, 0.428f, -1.144f),
+                ["S440NCF-400A"] = (0.001f, 1.183f, 0.450f, 0.324f, -1.408f),
             };
 
         // Holes set this session on the seating bench (Visuals.SeatingBench, a
@@ -89,7 +94,7 @@ namespace RealisticFiring
             foreach (var collider in target.targetColliders)
             {
                 if (collider == null) continue;
-                var part = CarSpace.LocalBounds(car.transform, collider);
+                var part = CarSpace.LocalBounds(FiringFrame.Of(car), collider);
                 if (bounds.HasValue) { var all = bounds.Value; all.Encapsulate(part); bounds = all; }
                 else bounds = part;
             }
@@ -104,7 +109,7 @@ namespace RealisticFiring
             Max = max;
         }
 
-        /// <summary>The hole's lower left and upper right, in the car's frame, in the door's plane.</summary>
+        /// <summary>The hole's lower left and upper right, in the firing frame, in the door's plane.</summary>
         public Vector3 Min { get; }
         public Vector3 Max { get; }
 

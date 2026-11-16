@@ -29,7 +29,7 @@ namespace RealisticFiring
                 var livery = car != null && car.carLivery != null ? car.carLivery.id : aim.Car.name;
                 Main.Mod?.Logger.Log($"Firehole for the aim on '{livery}': {hole}");
             }
-            // The face toward the cab: facing the firebox faces the car's front.
+            // The face toward the cab: facing the firebox faces the firing frame's +Z.
             Vector2? Point(float across, float up)
             {
                 var local = new Vector3(Mathf.Lerp(box.min.x, box.max.x, across), Mathf.Lerp(box.min.y, box.max.y, up), box.min.z);

@@ -40,11 +40,17 @@ namespace RealisticFiring.Sim
         {
             "LocoS282A", "LocoS060", "Jk3A", "S464-730", "FEF-3", "S484-840A", "A.T.&S.F. 2901-A",
             "em_lms_8f_loc_black", "em_lms_8f_loc_grey", "S2102-870", "S2102-720", "em_fowler_4f_44422", "em_fowler_4f_4027",
+            "S260N-580A", "S040N-270", "S0440NG-890", "S440NCF-400A",
         };
 
-        // The S282's cab-mounted replacement and the JK3's lift their water.
-        // The other supported engines keep their non-lifting equipment.
-        private static readonly HashSet<string> Lifters = new HashSet<string> { "LocoS282A", "Jk3A" };
+        // The S282's cab-mounted replacement and the JK3's lift their water,
+        // as do BorING's narrow-gauge engines' (American practice of their
+        // day, inferred). The other supported engines keep their non-lifting
+        // equipment.
+        private static readonly HashSet<string> Lifters = new HashSet<string>
+        {
+            "LocoS282A", "Jk3A", "S260N-580A", "S040N-270", "S0440NG-890", "S440NCF-400A",
+        };
 
         /// <summary>Whether this session fits <paramref name="livery"/> with steam valves.</summary>
         public static bool Fits(string livery) => livery != null && Main.Session.InjectorSteamValves && Fitted.Contains(livery);
