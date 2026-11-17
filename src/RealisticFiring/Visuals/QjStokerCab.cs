@@ -156,6 +156,9 @@ namespace RealisticFiring.Visuals
                 fittings.SetPositionAndRotation(anchor.TransformPoint(placement.OffsetCm / 100f),
                     anchor.rotation * Quaternion.Euler(placement.Tilt, placement.Turn, 0f));
                 var jetLabels = new List<(Transform Label, string Text)>();
+                // The right front jet's wheel (the cab's stoker wheel), whose
+                // steps every jet takes.
+                var rightJet = prefab.Find(NativeBank + RightJetHolder)?.GetComponentsInChildren<DV.CabControls.Spec.Rotary>(true).FirstOrDefault();
                 foreach (var wheel in Wheels)
                 {
                     var live = interior.Find(NativeBank + wheel.Holder);
@@ -195,6 +198,7 @@ namespace RealisticFiring.Visuals
                     var holder = Object.Instantiate(source.gameObject, root.transform, false).transform;
                     holder.name = jet.Id;
                     holder.SetPositionAndRotation(live.position, live.rotation);
+                    StepAsJet(holder.GetComponentsInChildren<DV.CabControls.Spec.Rotary>(true).FirstOrDefault(), rightJet);
                     Bind(holder, wheel.Port, jet.PortId, jetPort, true, jet.Label);
                     // Reuse the QJ's own plate, at its exact native seat.
                     // A stock S282 plate uses a different facing convention.
@@ -250,6 +254,31 @@ namespace RealisticFiring.Visuals
             feeder.gameObject.AddComponent<SimControlBinder>().Bind(feeder, port);
             if (name != null) feeder.gameObject.AddComponent<HoverName>().Text = name;
             return feeder.transform;
+        }
+
+        // The wheel whose steps every jet takes: the right front jet's (the
+        // cab's own stoker wheel, 11 steps over 177 degrees).
+        internal const string RightJetHolder = "Stoker";
+
+        /// <summary>
+        /// The left jets' wheels are the cab's compressor and dynamo switches,
+        /// two positions over 90 degrees, so those jets only opened or shut
+        /// (whydidimake, 16 Nov: "its either on or off"; LittleNiko36's 1.0.2
+        /// cab). A jet's wheel with fewer steps than <paramref name="like"/>
+        /// (the right-hand jets') takes its steps, its travel, and its mouse
+        /// wheel's rate, before the wheel is built. The switches' own copies
+        /// overhead stay two-position.
+        /// </summary>
+        internal static void StepAsJet(DV.CabControls.Spec.Rotary rotary, DV.CabControls.Spec.Rotary like)
+        {
+            // By reference: the wheels are fresh copies, never destroyed ones.
+            if (rotary is null || like is null || ReferenceEquals(rotary, like) || rotary.notches >= like.notches)
+                return;
+            rotary.useSteppedJoint = like.useSteppedJoint;
+            rotary.notches = like.notches;
+            rotary.jointLimitMin = like.jointLimitMin;
+            rotary.jointLimitMax = like.jointLimitMax;
+            rotary.scrollWheelHoverScroll = like.scrollWheelHoverScroll;
         }
 
         private static string JetPlate(int jet) => new[] { "MASTER", "L BACK", "R BACK", "L FRONT", "R FRONT", "FINES" }[jet];

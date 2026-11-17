@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.24.1 (2026-11-17)
+
+- Fixed: the QJ's left stoker jets now turn in steps like the others;
+  they only opened or shut.
+
 ## 1.24.0 (2026-11-17)
 
 - **Drifting brakes the engine.** With the throttle shut the cylinders
