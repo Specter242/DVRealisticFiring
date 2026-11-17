@@ -39,12 +39,18 @@ namespace RealisticFiring.Visuals
         // Seats set this session on the seating bench (SeatingBench, a
         // development tool), by livery, as Placements: they come first and
         // are never saved.
+#if !PUBLIC_RELEASE
         internal static readonly Dictionary<string, Vector3> DevPlacements = new Dictionary<string, Vector3>();
+#endif
 
         /// <summary>Where the lever stands from the fire-dump lever for <paramref name="livery"/>: the bench's seat, the table's, or the default.</summary>
         internal static Vector3 SeatFor(string livery) =>
+#if PUBLIC_RELEASE
+            Placements.TryGetValue(livery, out var seated) ? seated
+#else
             DevPlacements.TryGetValue(livery, out var dev) ? dev
             : Placements.TryGetValue(livery, out var seated) ? seated
+#endif
             : FiringFrame.Reversed(livery) ? -DefaultFromDump // aft of the door is forward on an engine fired from the front
             : DefaultFromDump;
 
@@ -66,7 +72,7 @@ namespace RealisticFiring.Visuals
                 if (old != null)
                     Object.DestroyImmediate(old.gameObject);
                 var result = Attach(car, interior);
-                if (result != null && Main.Settings.LogFireboxCreation)
+                if (result != null)
                     Main.Mod.Logger.Log($"{car.LogName()}: {result}");
             }
         }

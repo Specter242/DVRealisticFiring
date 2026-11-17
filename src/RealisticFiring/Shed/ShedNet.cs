@@ -955,8 +955,7 @@ namespace RealisticFiring.Shed
 
         private static void Say(Stand stand, string what)
         {
-            if (Main.Settings.LogFireboxCreation)
-                Main.Mod.Logger.Log($"Shed stand '{stand.Key}' plug: {what}");
+            Main.Mod.Logger.Log($"Shed stand '{stand.Key}' plug: {what}");
         }
     }
 

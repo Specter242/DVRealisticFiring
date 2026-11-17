@@ -40,10 +40,12 @@ namespace RealisticFiring
         // development tool), by livery, as Holes: they come first and are
         // never saved. And the hole last worked out for a cab not fitted,
         // kept only while the bench is open, for it to start from.
+#if !PUBLIC_RELEASE
         internal static readonly Dictionary<string, (float Middle, float Foot, float Width, float Height, float Plane)> DevHoles =
             new Dictionary<string, (float, float, float, float, float)>();
         private static readonly Dictionary<string, (float Middle, float Foot, float Width, float Height, float Plane)> LastUnfitted =
             new Dictionary<string, (float, float, float, float, float)>();
+#endif
         private static readonly Dictionary<string, (float Middle, float Foot, float Width, float Height, float Plane)> NativeHoles =
             new Dictionary<string, (float, float, float, float, float)>();
 
@@ -53,11 +55,19 @@ namespace RealisticFiring
         /// one is known.
         /// </summary>
         internal static bool TryHole(string livery, out (float Middle, float Foot, float Width, float Height, float Plane) hole) =>
+#if PUBLIC_RELEASE
+            Holes.TryGetValue(livery, out hole) || NativeHoles.TryGetValue(livery, out hole);
+#else
             DevHoles.TryGetValue(livery, out hole) || Holes.TryGetValue(livery, out hole) || NativeHoles.TryGetValue(livery, out hole) || LastUnfitted.TryGetValue(livery, out hole);
+#endif
 
         // The bench's hole, then the table's.
         private static bool TryFitted(string livery, out (float Middle, float Foot, float Width, float Height, float Plane) hole) =>
+#if PUBLIC_RELEASE
+            Holes.TryGetValue(livery, out hole) || NativeHoles.TryGetValue(livery, out hole);
+#else
             DevHoles.Count > 0 && DevHoles.TryGetValue(livery, out hole) || Holes.TryGetValue(livery, out hole) || NativeHoles.TryGetValue(livery, out hole);
+#endif
 
         // The QJ's shovel target reaches into the box. Its two closed door
         // leaves in the prefab are a better starting rectangle, independent
@@ -153,8 +163,10 @@ namespace RealisticFiring
             var width = Mathf.Min(UsualWidth, target.size.x);
             var height = UsualHeight;
             var face = target.max.z;
+#if !PUBLIC_RELEASE
             if (livery != null && Visuals.SeatingBench.Open)
                 LastUnfitted[livery] = (middle, foot, width, height, face);
+#endif
             return new FireholeOpening(new Vector3(middle - width / 2f, foot, face), new Vector3(middle + width / 2f, foot + height, face));
         }
 

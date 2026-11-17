@@ -111,9 +111,13 @@ namespace RealisticFiring.Shed
 
         private void LateUpdate()
         {
+#if PUBLIC_RELEASE
+            TimedLateUpdate();
+#else
             var start = Diagnostics.PerfMeter.Start();
             try { TimedLateUpdate(); }
             finally { Diagnostics.PerfMeter.Stop(Diagnostics.PerfSection.ShedHoses, start); }
+#endif
         }
 
         private void TimedLateUpdate()

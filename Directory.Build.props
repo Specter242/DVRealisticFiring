@@ -13,5 +13,13 @@
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <PathMap>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)'))=/RealisticFiring/</PathMap>
   </PropertyGroup>
+  <!-- The public release (scripts/package.sh and package-stack-effects.sh for
+       a three-part version, -p:PublicRelease=true): the developer tools are
+       compiled out (owner, 2026-11-17: "No developer options or testbeds"),
+       and scripts/check-public-dll.py checks they are. Development builds and
+       private previews keep them. -->
+  <PropertyGroup Condition="'$(PublicRelease)' == 'true'">
+    <DefineConstants>$(DefineConstants);PUBLIC_RELEASE</DefineConstants>
+  </PropertyGroup>
 
 </Project>

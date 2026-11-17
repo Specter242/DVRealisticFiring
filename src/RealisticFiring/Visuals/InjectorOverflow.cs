@@ -4,7 +4,9 @@ using DV.CabControls;
 using DV.HUD;
 using DV.Simulation.Ports;
 using RealisticFiring.Core;
+#if !PUBLIC_RELEASE
 using RealisticFiring.Diagnostics;
+#endif
 using RealisticFiring.Sim;
 using RealisticStackEffects;
 using UnityEngine;
@@ -248,9 +250,13 @@ namespace RealisticFiring.Visuals
 
         private void LateUpdate()
         {
+#if !PUBLIC_RELEASE
             var start = PerfMeter.Start();
+#endif
             UpdateOverflow();
+#if !PUBLIC_RELEASE
             PerfMeter.Stop(PerfSection.Overflow, start);
+#endif
         }
 
         private void UpdateOverflow()
@@ -260,10 +266,12 @@ namespace RealisticFiring.Visuals
             var flow = circuit.Flow;
             var full = circuit.Injector.Spec.MaxDelivery;
             var spilling = Spilling();
+#if !PUBLIC_RELEASE
             if (spilling && !wasSpilling && group.Length > 1 && Main.Settings.LogCoalDeliveries)
                 Main.Mod.Logger.Log($"{rig.Car?.ID}: injector overflow spills on the {(side < 0f ? "left" : "right")} (valve {circuit.Control.Value:F2}; " +
                                     string.Join(", ", group.Where(o => o != null).Select(o => $"{(o.side < 0f ? "left" : "right")} lever " +
                                         (o.Lever() != null ? o.Lever().Value.ToString("F2") : "not spawned"))) + ")");
+#endif
             wasSpilling = spilling;
             var share = spilling ? 1f : 0f;
             SetRate(water, Mathf.Min(MaxWaterParticles, share * flow.Overflow * WaterParticlesPerKg));

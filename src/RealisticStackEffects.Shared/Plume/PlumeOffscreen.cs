@@ -196,7 +196,7 @@ namespace RealisticStackEffects
             // effective distance, including the stock steam's offset (10 m
             // on the S060), or this overlay always covers nearby steam.
             var sortingDistance = Vector3.Distance(viewer.transform.position, cloud.bounds.center) + cloud.sortingFudge;
-            overlay.transform.position = PlumeTestBed.Look.MatchSteamOrder > 0.5f
+            overlay.transform.position = PlumeCurrent.Look.MatchSteamOrder > 0.5f
                 ? viewer.transform.position + away * Mathf.Max(0.01f, sortingDistance)
                 : stack + away * BehindStack;
             var renderer = overlay.GetComponent<MeshRenderer>();
@@ -315,7 +315,7 @@ namespace RealisticStackEffects
                 }
             }
             buffer.SetGlobalFloat(OffscreenPass, 0f);
-            buffer.SetGlobalFloat(Debug, PlumeTestBed.Look.OffscreenDebug);
+            buffer.SetGlobalFloat(Debug, PlumeCurrent.Look.OffscreenDebug);
             buffer.SetGlobalFloat(Ready, 1f);
             buffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
 

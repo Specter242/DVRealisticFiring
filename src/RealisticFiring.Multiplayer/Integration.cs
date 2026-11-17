@@ -116,6 +116,7 @@ namespace RealisticFiring.Multiplayer
                 $"oil burners {session.RealisticOilBurners}",
                 $"unlisted engines {session.UnlistedEngines}",
                 $"realistic cylinders {settings.RealisticCylinders}",
+                // The largest only: each player's mouse wheel picks their own below it.
                 $"shovelful {settings.Shovelful.ToString("F1", CultureInfo.InvariantCulture)} kg",
             });
         }
@@ -218,6 +219,9 @@ namespace RealisticFiring.Multiplayer
                 Upgrades.Fittings.StokerFromHost = null;
                 Upgrades.Fittings.FeedPumpFromHost = null;
                 Upgrades.Fittings.BoosterFromHost = null;
+                Upgrades.Fittings.SniftingFromHost = null;
+                Upgrades.Fittings.DriftingValveFromHost = null;
+                Upgrades.Fittings.ByPassFromHost = null;
                 Upgrades.Fittings.Changed();
                 LighterRule.Reset();
                 Shed.ShedNet.Reset();
@@ -258,7 +262,7 @@ namespace RealisticFiring.Multiplayer
         // The host's fittings in the order they were sent.
         private static ushort fittingsSent;
         private static ushort? fittingsHeard;
-        private static (bool Arch, bool Jets, bool Stoker, bool FeedPump, bool Booster)? lastFittings;
+        private static (bool Arch, bool Jets, bool Stoker, bool FeedPump, bool Booster, bool Snifting, bool DriftingValve, bool ByPass)? lastFittings;
 
         private static void OnFittings(FittingsPacket packet)
         {
@@ -270,6 +274,9 @@ namespace RealisticFiring.Multiplayer
             Upgrades.Fittings.StokerFromHost = packet.Stoker;
             Upgrades.Fittings.FeedPumpFromHost = packet.FeedPump;
             Upgrades.Fittings.BoosterFromHost = packet.Booster;
+            Upgrades.Fittings.SniftingFromHost = packet.Snifting;
+            Upgrades.Fittings.DriftingValveFromHost = packet.DriftingValve;
+            Upgrades.Fittings.ByPassFromHost = packet.ByPass;
             Upgrades.Fittings.Changed();
         }
 
@@ -279,11 +286,13 @@ namespace RealisticFiring.Multiplayer
             var api = MultiplayerAPI.Instance;
             if (server == null || api == null || !api.IsHost || !InSession())
                 return;
-            var now = (Upgrades.Fittings.Arch, Upgrades.Fittings.Jets, Upgrades.Fittings.Stoker, Upgrades.Fittings.FeedPump, Upgrades.Fittings.Booster);
+            var now = (Upgrades.Fittings.Arch, Upgrades.Fittings.Jets, Upgrades.Fittings.Stoker, Upgrades.Fittings.FeedPump, Upgrades.Fittings.Booster,
+                Upgrades.Fittings.Snifting, Upgrades.Fittings.DriftingValve, Upgrades.Fittings.ByPass);
             if (lastFittings == now)
                 return;
             lastFittings = now;
-            server.SendSerializablePacketToAll(new FittingsPacket { Arch = now.Item1, Jets = now.Item2, Stoker = now.Item3, FeedPump = now.Item4, Booster = now.Item5, Seq = ++fittingsSent }, reliable: true, excludeSelf: true);
+            server.SendSerializablePacketToAll(new FittingsPacket { Arch = now.Item1, Jets = now.Item2, Stoker = now.Item3, FeedPump = now.Item4, Booster = now.Item5, Snifting = now.Item6,
+                DriftingValve = now.Item7, ByPass = now.Item8, Seq = ++fittingsSent }, reliable: true, excludeSelf: true);
         }
 
         private static void OnHudPolicy(HudPolicyPacket packet)
@@ -505,7 +514,8 @@ namespace RealisticFiring.Multiplayer
                 mod.Logger.Log($"{sender.DisplayName} joined with Realistic Firing {hello.Version}, settings matching");
                 StandSync.SendStands(sender);
                 MultiplayerAPI.Server?.SendSerializablePacketToPlayer(SessionRules(), sender);
-                MultiplayerAPI.Server?.SendSerializablePacketToPlayer(new FittingsPacket { Arch = Upgrades.Fittings.Arch, Jets = Upgrades.Fittings.Jets, Stoker = Upgrades.Fittings.Stoker, FeedPump = Upgrades.Fittings.FeedPump, Booster = Upgrades.Fittings.Booster, Seq = ++fittingsSent }, sender);
+                MultiplayerAPI.Server?.SendSerializablePacketToPlayer(new FittingsPacket { Arch = Upgrades.Fittings.Arch, Jets = Upgrades.Fittings.Jets, Stoker = Upgrades.Fittings.Stoker, FeedPump = Upgrades.Fittings.FeedPump, Booster = Upgrades.Fittings.Booster, Snifting = Upgrades.Fittings.Snifting,
+                    DriftingValve = Upgrades.Fittings.DriftingValve, ByPass = Upgrades.Fittings.ByPass, Seq = ++fittingsSent }, sender);
                 return;
             }
             var reason = hello.Version != version

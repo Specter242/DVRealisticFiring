@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using RealisticFiring.Core;
+#if !PUBLIC_RELEASE
 using RealisticFiring.Diagnostics;
+#endif
 using RealisticFiring.Sim;
 using RealisticStackEffects;
 using UnityEngine;
@@ -170,9 +172,13 @@ namespace RealisticFiring.Visuals
 
         private void LateUpdate()
         {
+#if !PUBLIC_RELEASE
             var start = PerfMeter.Start();
+#endif
             UpdateLighting();
+#if !PUBLIC_RELEASE
             PerfMeter.Stop(PerfSection.FireboxLighting, start);
+#endif
         }
 
         private void UpdateLighting()
@@ -423,7 +429,11 @@ namespace RealisticFiring.Visuals
             block.SetVector(ArchGlowId, archGlow);
             block.SetVector(DoorId, door);
             block.SetVector(DoorLightId, doorLight);
+#if PUBLIC_RELEASE
+            block.SetFloat(DebugId, 0);
+#else
             block.SetFloat(DebugId, FireboxTestBed.Enabled ? FireboxTestBed.LightView : 0);
+#endif
             block.SetFloat(LightScaleId, scale);
             if (glow >= 0f)
                 block.SetFloat(GlowStrengthId, glow);

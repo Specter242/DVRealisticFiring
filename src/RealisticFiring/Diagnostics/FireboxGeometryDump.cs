@@ -7,6 +7,7 @@ using DV.HUD;
 using DV.Interaction;
 using UnityEngine;
 
+#if !PUBLIC_RELEASE
 namespace RealisticFiring.Diagnostics
 {
     /// <summary>
@@ -153,3 +154,4 @@ namespace RealisticFiring.Diagnostics
         private static string Format(Bounds b) => $"min {Format(b.min)} max {Format(b.max)}";
     }
 }
+#endif

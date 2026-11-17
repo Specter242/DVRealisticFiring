@@ -97,6 +97,60 @@ namespace RealisticFiring.Upgrades
             BoughtLine = "Bought. Every S282 and S060 has its over-fire jets now: open the JETS valve in the cab.",
         };
 
+ public const double SniftingPrice = 8_000;
+
+        internal static readonly Upgrade Snifting = new Upgrade
+        {
+            Name = "Snifting valves",
+            Price = SniftingPrice,
+            Page = "Vacuum relief valves on the steam chests. Drifting with the throttle shut, the pistons pull the chests below the air outside; " +
+                   "the valves lift and let air in, so the cylinders draw much less smokebox gas and grit through the blast pipe. " +
+                   "Drifting hooked up then wears the engine about a third as much; full gear or a cracked throttle still spares it entirely. " +
+                   "They work by themselves: you hear them lift as you shut off at speed, breathe with the beats, and seat when steam goes back on. " +
+                   "Bought once, they are fitted to every S282 and S060.",
+            Rule = () => Main.Settings?.SniftingValves ?? UpgradeRule.BuyInCareer,
+            Bought = () => Fittings.SniftingBought,
+            Fitted = () => Fittings.Snifting,
+            Buy = Fittings.BuySnifting,
+            BoughtLine = "Bought. Every S282 and S060 has its snifting valves now: they lift by themselves when you drift.",
+        };
+
+ public const double DriftingValvePrice = 6_000;
+
+        internal static readonly Upgrade DriftingValve = new Upgrade
+        {
+            Name = "Drifting valve",
+            Price = DriftingValvePrice,
+            Page = "A DRIFTING valve in the cab feeds a little saturated steam from the turret to the steam chests. " +
+                   "Open it as you shut off to drift, and shut it before opening the throttle or stopping: with the reverser hooked up, " +
+                   "its steam fills much of what the cylinders draw, sparing most of the wear (all of it slower, or with by-pass valves); " +
+                   "in full gear it can't keep up. With by-pass valves it also ends the cylinders' braking at any speed. " +
+                   "It takes a little steam while the engine drifts. Bought once, it is fitted to every S282 and S060.",
+            Rule = () => Main.Settings?.DriftingValve ?? UpgradeRule.BuyInCareer,
+            Bought = () => Fittings.DriftingValveBought,
+            Fitted = () => Fittings.DriftingValve,
+            Buy = Fittings.BuyDriftingValve,
+            BoughtLine = "Bought. Every S282 and S060 has its drifting valve now: open the DRIFTING valve in the cab when you drift.",
+        };
+
+ public const double ByPassPrice = 12_000;
+
+        internal static readonly Upgrade ByPass = new Upgrade
+        {
+            Name = "By-pass valves",
+            Price = ByPassPrice,
+            Page = "By-pass valves on the cylinders open by themselves once the steam in the chests is gone, joining each cylinder's ends, " +
+                   "so the pistons hardly pump: the engine drifts freely in any notch until it runs fast (half the braking at a big engine's 40 mph), " +
+                   "and with the drifting valve open at any speed; it draws much less smokebox gas, wearing a third as much hooked up. " +
+                   "Opening the throttle closes them. " +
+                   "Bought once, they are fitted to every S282 and S060.",
+            Rule = () => Main.Settings?.ByPassValves ?? UpgradeRule.BuyInCareer,
+            Bought = () => Fittings.ByPassBought,
+            Fitted = () => Fittings.ByPass,
+            Buy = Fittings.BuyByPass,
+            BoughtLine = "Bought. Every S282 and S060 has its by-pass valves now: they open by themselves when you drift.",
+        };
+
  public const double StokerPrice = 40_000;
 
         internal static readonly Upgrade Stoker = new Upgrade
@@ -156,7 +210,7 @@ namespace RealisticFiring.Upgrades
             Engines = "every S282",
         };
 
-        private static readonly Upgrade[] All = { Arch, Jets, Stoker, FeedPump, Booster };
+        private static readonly Upgrade[] All = { Arch, Jets, Snifting, DriftingValve, ByPass, Stoker, FeedPump, Booster };
 
         private DisplayScreenSwitcher kiosk;
         private CareerManagerMainScreen main;

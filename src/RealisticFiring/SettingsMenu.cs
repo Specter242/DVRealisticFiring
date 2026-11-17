@@ -117,8 +117,12 @@ namespace RealisticFiring
                 "Replace the fire model on supported coal locomotives, including the S282, S060, and JK3.", restart: true);
             s.LighterLightsCoal = Toggle("Light the coal from the lighter", s.LighterLightsCoal,
                 "Light the coal straight from the lighter, as in the stock game, skipping the wood and rag. They still work. In multiplayer the host's setting applies.");
-            s.ShovelfulMass = Slider("Coal per shovelful", s.Shovelful, Settings.MinShovelful, Settings.MaxShovelful, 1, "kg",
-                "Affects supported coal locomotives. A normal shovelful is 3 kg.");
+            var largest = Slider("Largest shovelful", s.Shovelful, Settings.MinShovelful, Settings.MaxShovelful, 1, "kg",
+                "A full shovel on supported coal locomotives, and the fireman's (never under 3 kg for him). With the shovel in hand, the mouse wheel takes less, half a kilogram a click down to 1 kg. A normal shovelful is 3 kg.");
+            // A new largest: the wheel starts again from a full shovel.
+            if (largest != s.Shovelful)
+                s.ScoopMass = 0f;
+            s.ShovelfulMass = largest;
             s.RainWetsCoal = Toggle("Rain wets the coal", s.RainWetsCoal,
                 "Coal in open tenders and bunkers gets wet, catches slower, and can stick on a stoker table.");
             s.ClinkerTendency = Slider("Clinker tendency", s.ClinkerTendency, 0f, 20f, 1, "×",
@@ -176,29 +180,32 @@ namespace RealisticFiring
                 "Fit the Hudson, 844, S484-840, QJ, and Santa Fe 2901 with their prototype equipment.", restart: true);
             End();
 
+            // A changed rule refits the engines through Settings.OnChange, run below on any change.
             Begin("FIREBOX UPGRADES", "Fittings the stock S282 and S060 start without in a career.");
-            var arch = s.BrickArch;
             s.BrickArch = Choice("Brick arch", s.BrickArch, UpgradeChoices,
                 "Without it the engines burn about 7 to 13 % more coal for the same work, steam about 13 % less at their most, and smoke more after firing. " +
                 "Buy it in a career at a career manager's Upgrades screen; sandbox has it unless set to Never fitted.");
-            var jets = s.OverFireJets;
             s.OverFireJets = Choice("Over-fire jets", s.OverFireJets, UpgradeChoices,
                 "Steam jets through the firebox sides, worked by a valve in the cab, that blow air over the fire and burn its smoke. " +
                 "Fitted only with the brick arch. Buy them in a career at a career manager's Upgrades screen after the arch.");
-            var stoker = s.S282Stoker;
+            s.SniftingValves = Choice("Snifting valves", s.SniftingValves, UpgradeChoices,
+                "Vacuum relief valves on the steam chests that let air in when drifting with the throttle shut, so the cylinders draw less smokebox gas: " +
+                "drifting hooked up wears the engine a third as much. Buy them in a career at a career manager's Upgrades screen.");
+            s.DriftingValve = Choice("Drifting valve", s.DriftingValve, UpgradeChoices,
+                "A DRIFTING valve in the cab that feeds a little steam to the steam chests while drifting with the throttle shut: hooked up, " +
+                "it spares most of the wear, for a little steam, and with by-pass valves ends the cylinders' braking. Buy it in a career at a career manager's Upgrades screen.");
+            s.ByPassValves = Choice("By-pass valves", s.ByPassValves, UpgradeChoices,
+                "Valves on the cylinders that join their ends when drifting with the throttle shut, so the engine drifts freely in any notch until it runs fast. " +
+                "Buy them in a career at a career manager's Upgrades screen.");
             s.S282Stoker = Choice("S282 stoker", s.S282Stoker, UpgradeChoices,
                 "A mechanical stoker for the S282, worked from the cab, that feeds the fire from the tender. " +
                 "Buy it in a career at a career manager's Upgrades screen. Changing to or from Never fitted takes a restart.");
-            var feedPump = s.S282FeedPump;
             s.S282FeedPump = Choice("S282 feed pump", s.S282FeedPump, UpgradeChoices,
                 "A Worthington feedwater heater and pump for the S282, worked from the cab, that feeds the boiler hot water heated by the exhaust. " +
                 "Needs the realistic injectors. Buy it in a career at a career manager's Upgrades screen. Changing to or from Never fitted takes a restart.");
-            var booster = s.S282Booster;
             s.S282Booster = Choice("S282 booster", s.S282Booster, UpgradeChoices,
                 "A Franklin trailing-truck booster for the S282, worked from the cab by the reverser, for starting and slow climbing. " +
                 "Buy it in a career at a career manager's Upgrades screen. Changing to or from Never fitted takes a restart.");
-            if (s.BrickArch != arch || s.OverFireJets != jets || s.S282Stoker != stoker || s.S282FeedPump != feedPump || s.S282Booster != booster)
-                Upgrades.Fittings.Changed();
             End();
 
             Begin("MECHANICAL STOKER", "Feed, distribution, and cab controls.");
@@ -246,7 +253,13 @@ namespace RealisticFiring
             End();
 
             Begin("EQUIPMENT", "Place an item in front of you in a loaded game.");
-            if (Action("Give firing tablet", "Hold it to read the engine, or fit it to a large gadget mount."))
+            // Merged into the Comms Tablet, the firing tablet is retired and not given.
+            if (CommsTabletLink.MergedLately)
+            {
+                GUILayout.Label(CommsTabletLink.RetiredNotice + ".", help);
+                GUILayout.Space(Pixels(10f));
+            }
+            else if (Action("Give firing tablet", "Hold it to read the engine, or fit it to a large gadget mount."))
                 s.GiveFiringTablet = true;
             if (Action("Give firing manual", "An illustrated booklet with a clickable table of contents."))
                 s.GiveFiringManual = true;

@@ -8,7 +8,11 @@ using Object = UnityEngine.Object;
 
 namespace RealisticFiring.Items
 {
-    /// <summary>Sells the tablet beside the stock clinometer, using its price and stock.</summary>
+    /// <summary>
+    /// Sells the tablet beside the stock clinometer, using its price and stock;
+    /// neither the shops' items nor the shelf tags while merged into the Comms
+    /// Tablet (<see cref="CommsTabletLink"/>), whose tablet is sold instead.
+    /// </summary>
     [HarmonyPatch(typeof(GlobalShopController), "Awake")]
     internal static class FiringTabletShop
     {
@@ -16,6 +20,11 @@ namespace RealisticFiring.Items
         {
             try
             {
+                if (CommsTabletLink.Merged)
+                {
+                    Main.Mod?.Logger.Log("Firing tablet not sold: " + CommsTabletLink.RetiredNotice);
+                    return;
+                }
                 var prefab = FiringTablet.Template;
                 var spec = prefab != null ? prefab.GetComponent<InventoryItemSpec>() : null;
                 if (spec == null || __instance.shopItemsData == null || __instance.shopItemsData.Any(d => d?.item == spec))
@@ -45,6 +54,8 @@ namespace RealisticFiring.Items
         {
             try
             {
+                if (CommsTabletLink.Merged)
+                    return;
                 var prefab = FiringTablet.Template;
                 var spec = prefab != null ? prefab.GetComponent<InventoryItemSpec>() : null;
                 if (spec == null || __instance.globalShopList == null)

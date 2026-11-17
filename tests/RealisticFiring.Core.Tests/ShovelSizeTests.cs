@@ -38,4 +38,40 @@ public class ShovelSizeTests
     {
         Assert.Equal(3f, ShovelSize.PileCapacity(3f, chunks, multiplier), 4);
     }
+
+    [Theory]
+    [InlineData(3f, 1, 3.5f)]
+    [InlineData(3f, -1, 2.5f)]
+    [InlineData(3.2f, 1, 3.5f)]
+    [InlineData(3.2f, -1, 3f)]
+    [InlineData(2.5f, 2, 3.5f)]
+    [InlineData(8f, 1, 8f)]
+    [InlineData(1f, -1, 1f)]
+    [InlineData(7.8f, 1, 8f)]
+    [InlineData(1.2f, -1, 1f)]
+    public void The_wheel_steps_the_shovelful_half_a_kilogram_a_click_within_the_settings_range(float shovelful, int clicks, float after)
+    {
+        Assert.Equal(after, ShovelSize.Wheeled(shovelful, clicks, 1f, 8f), 4);
+    }
+
+    [Theory]
+    [InlineData(0f, 3f, 3f)]
+    [InlineData(2.5f, 3f, 2.5f)]
+    [InlineData(5f, 3f, 3f)]
+    [InlineData(0.5f, 3f, 3f)]
+    [InlineData(float.NaN, 3f, 3f)]
+    public void The_players_shovelful_is_the_wheels_pick_up_to_the_largest_or_a_full_one(float picked, float largest, float scoop)
+    {
+        Assert.Equal(scoop, ShovelSize.Scoop(picked, largest, 1f), 4);
+    }
+
+    [Theory]
+    [InlineData(1f, 3f)]
+    [InlineData(2.5f, 3f)]
+    [InlineData(3f, 3f)]
+    [InlineData(6f, 6f)]
+    public void The_fireman_fires_the_largest_but_never_less_than_a_normal_shovelful(float largest, float his)
+    {
+        Assert.Equal(his, ShovelSize.Fireman(largest), 4);
+    }
 }

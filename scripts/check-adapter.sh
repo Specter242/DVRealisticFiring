@@ -21,14 +21,14 @@ for csproj in "$project/RealisticFiring.AdapterCheck.csproj" "$stack/RealisticSt
         exit 1
     fi
 done
-# Optional Multiplayer, Skin Manager, and DV Seasons checks load their
+# Optional Multiplayer, Skin Manager, DV Seasons, and Comms Tablet checks load their
 # installed assemblies and dependencies in place, never copying third-party
 # mod binaries into a package; missing ones are skipped. Further assemblies
 # (another copy of Skin Manager, say) can be given as arguments.
 status=0
 mono "$project/bin/Release/net48/RealisticFiring.AdapterCheck.exe" \
     "$dv/Mods/Multiplayer/Multiplayer.dll" "$dv/Mods/SkinManagerMod/SkinManagerMod.dll" \
-    "$dv/Mods/DVSeasons/DVSeasons.dll" "$@" || status=$?
+    "$dv/Mods/DVSeasons/DVSeasons.dll" "$dv/Mods/CommsTablet/CommsTablet.dll" "$@" || status=$?
 # Realistic Stack Effects' reading of the stock firebox and exhaust.
 mono "$stack/bin/Release/net48/RealisticStackEffects.AdapterCheck.exe" || status=$?
 exit "$status"

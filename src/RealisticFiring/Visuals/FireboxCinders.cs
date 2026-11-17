@@ -1,5 +1,7 @@
 using RealisticFiring.Core;
+#if !PUBLIC_RELEASE
 using RealisticFiring.Diagnostics;
+#endif
 using UnityEngine;
 
 namespace RealisticFiring.Visuals
@@ -129,14 +131,22 @@ namespace RealisticFiring.Visuals
 
         private void LateUpdate()
         {
+#if !PUBLIC_RELEASE
             var start = PerfMeter.Start();
+#endif
             Emit();
+#if !PUBLIC_RELEASE
             PerfMeter.Stop(PerfSection.FireboxVolume, start);
+#endif
         }
 
         private void Emit()
         {
+#if PUBLIC_RELEASE
+            if (system == null || volume == null || !volume.Viewed)
+#else
             if (system == null || volume == null || !volume.Viewed || FireboxTestBed.HidingFlames)
+#endif
             {
                 due = 0f;
                 return;

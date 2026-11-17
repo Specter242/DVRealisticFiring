@@ -47,6 +47,16 @@ namespace RealisticFiring.Patches
                 jets.saveState = true;
                 added.Add(jets);
             }
+            // The drifting valve's control, on engines that can have one
+            // (Sim.DriftingFittings); saved, so a valve left open stays open.
+            if (DriftingFittings.CanHaveValve(trainCar.carLivery != null ? trainCar.carLivery.id : null))
+            {
+                var drifting = graph.gameObject.AddComponent<ExternalControlDefinition>();
+                drifting.ID = DriftingFittings.ValveControl.Id;
+                drifting.defaultValue = DriftingFittings.ValveControl.Default;
+                drifting.saveState = true;
+                added.Add(drifting);
+            }
             graph.executionOrder = added.Concat(graph.executionOrder).ToArray();
         }
     }

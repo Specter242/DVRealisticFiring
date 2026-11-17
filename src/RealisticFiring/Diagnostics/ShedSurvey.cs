@@ -7,6 +7,7 @@ using DV.ThingTypes;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
+#if !PUBLIC_RELEASE
 namespace RealisticFiring.Diagnostics
 {
  internal static class ShedSurvey
@@ -231,3 +232,4 @@ namespace RealisticFiring.Diagnostics
         private static string Fmt(Vector3 v) => $"({v.x:F1}, {v.y:F1}, {v.z:F1})";
     }
 }
+#endif

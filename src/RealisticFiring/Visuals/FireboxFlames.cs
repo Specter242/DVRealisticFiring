@@ -1,7 +1,9 @@
 using System.Linq;
 using LocoSim.Implementations;
 using RealisticFiring.Core;
+#if !PUBLIC_RELEASE
 using RealisticFiring.Diagnostics;
+#endif
 using RealisticFiring.Sim;
 using RealisticStackEffects;
 using RealisticStackEffects.Core;
@@ -149,7 +151,9 @@ namespace RealisticFiring.Visuals
         private ZonedCoalBed bed;
 
         // The test bed's laid beats on this fire, run to here.
+#if !PUBLIC_RELEASE
         private float testBeatClock;
+#endif
         private ParticleSystemRenderer smokeRenderer;
 
         // Each zone's flames this frame: how hard they burn, and their height, m.
@@ -405,9 +409,13 @@ namespace RealisticFiring.Visuals
 
         private void LateUpdate()
         {
+#if !PUBLIC_RELEASE
             var start = PerfMeter.Start();
+#endif
             Step();
+#if !PUBLIC_RELEASE
             PerfMeter.Stop(PerfSection.CoalBed, start);
+#endif
         }
 
         private void Step()
@@ -430,9 +438,17 @@ namespace RealisticFiring.Visuals
             if (oldFlames != null && oldFlames.isPlaying)
                 oldFlames.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
             if (cardRenderer != null)
+#if PUBLIC_RELEASE
+                cardRenderer.enabled = shown && !VolumeDraws;
+#else
                 cardRenderer.enabled = shown && !VolumeDraws && !FireboxTestBed.HidingFlames;
+#endif
             if (smokeRenderer != null)
+#if PUBLIC_RELEASE
+                smokeRenderer.enabled = shown;
+#else
                 smokeRenderer.enabled = shown && !FireboxTestBed.HidingSmoke;
+#endif
             var model = firebox.Model;
             if (smoke != null && shown)
                 BlowSteam(Time.deltaTime);
@@ -446,7 +462,11 @@ namespace RealisticFiring.Visuals
             }
 
             var dt = Time.deltaTime;
+#if PUBLIC_RELEASE
+            var draft = Mathf.Clamp01(model.PrimaryAirFlow / Mathf.Max(1e-3f, model.Parameters.MaxCombustionRate * AirPerCoal));
+#else
             var draft = FireboxTestBed.DraftOr(Mathf.Clamp01(model.PrimaryAirFlow / Mathf.Max(1e-3f, model.Parameters.MaxCombustionRate * AirPerCoal)));
+#endif
             Draft = draft;
 
             // The exhaust beats: each one a surge through the fire.
@@ -457,8 +477,10 @@ namespace RealisticFiring.Visuals
                 if (beat > 0.02f)
                     Pulse = Mathf.Max(Pulse, beat);
             }
+#if !PUBLIC_RELEASE
             if (FireboxTestBed.Beat(ref testBeatClock, dt))
                 Pulse = Mathf.Max(Pulse, Mathf.Clamp01(FireboxTestBed.BeatStrength));
+#endif
 
             var hottest = 0f;
             var meanHeat = 0f;
@@ -523,7 +545,7 @@ namespace RealisticFiring.Visuals
             if (Time.time < diagnoseAt || float.IsInfinity(diagnoseAt))
                 return;
             diagnoseAt = float.PositiveInfinity;
-            if (!Main.Settings.LogFireboxCreation || cardColors == null)
+            if (cardColors == null)
                 return;
             var burning = 0;
             var burnSum = 0f;

@@ -60,23 +60,37 @@ namespace RealisticFiring.Visuals
         // Seats set this session on the seating bench (SeatingBench, a
         // development tool), by livery, as Spots and LeverGaugeSeats: they
         // come first and are never saved.
+#if !PUBLIC_RELEASE
         internal static readonly Dictionary<string, Spot> DevSpots = new Dictionary<string, Spot>();
         internal static readonly Dictionary<string, Vector3> DevLeverGaugeSeats = new Dictionary<string, Vector3>();
+#endif
 
         /// <summary>Where the pump's valve and gauge go beside the manifold for <paramref name="livery"/>: the bench's seat, the table's, or the default.</summary>
         internal static Spot SpotFor(string livery) =>
+#if PUBLIC_RELEASE
+            Spots.TryGetValue(livery, out var seated) ? seated
+#else
             DevSpots.TryGetValue(livery, out var dev) ? dev
             : Spots.TryGetValue(livery, out var seated) ? seated
+#endif
             : DefaultSpot;
 
         /// <summary>Where an oil burner's wall gauge goes from its handwheel for <paramref name="livery"/>: the bench's seat, the table's, or the default.</summary>
         internal static Vector3 LeverGaugeSeatFor(string livery) =>
+#if PUBLIC_RELEASE
+            LeverGaugeSeats.TryGetValue(livery, out var seated) ? seated
+#else
             DevLeverGaugeSeats.TryGetValue(livery, out var dev) ? dev
             : LeverGaugeSeats.TryGetValue(livery, out var seated) ? seated
+#endif
             : LeverGaugeDefault;
 
         // Whether a livery's wall gauge is seated (by the bench or the table).
+#if PUBLIC_RELEASE
+        private static bool LeverGaugeSeated(string livery) => LeverGaugeSeats.ContainsKey(livery);
+#else
         private static bool LeverGaugeSeated(string livery) => DevLeverGaugeSeats.ContainsKey(livery) || LeverGaugeSeats.ContainsKey(livery);
+#endif
 
         // A hand-fired engine with a feed pump has no stoker manifold to carry
         // its valve and gauge: they stand on the backhead in a frame of their
@@ -91,8 +105,12 @@ namespace RealisticFiring.Visuals
 
         // A spot that gives the valve in the car's frame, from the bench or the table.
         private static Spot? SeatedInCar(string livery) =>
+#if PUBLIC_RELEASE
+            Spots.TryGetValue(livery, out var seated) && seated.ValveInCar.HasValue ? seated
+#else
             DevSpots.TryGetValue(livery, out var dev) && dev.ValveInCar.HasValue ? dev
             : Spots.TryGetValue(livery, out var seated) && seated.ValveInCar.HasValue ? seated
+#endif
             : (Spot?)null;
 
         /// <summary>Where a backhead pump valve and gauge stand for <paramref name="livery"/>: seated, or as last built.</summary>
@@ -181,14 +199,13 @@ namespace RealisticFiring.Visuals
                 if (root != null && rig.Pump == null)
                 {
                     Object.DestroyImmediate(root.gameObject);
-                    if (Main.Settings.LogFireboxCreation)
-                        Main.Mod.Logger.Log($"{car.ID}: the feed pump is no longer fitted; its valve and gauge are taken out of the cab");
+                    Main.Mod.Logger.Log($"{car.ID}: the feed pump is no longer fitted; its valve and gauge are taken out of the cab");
                     continue;
                 }
                 if (root != null || rig.Pump == null)
                     continue;
                 var result = AttachOnBackhead(car, interior);
-                if (result != null && Main.Settings.LogFireboxCreation)
+                if (result != null)
                     Main.Mod.Logger.Log(refit ? $"{car.ID}: the feed pump fitted; {result}" : $"{car.ID}: the cab had lost its feed pump; {result}");
             }
         }
@@ -205,7 +222,7 @@ namespace RealisticFiring.Visuals
                     continue;
                 Object.DestroyImmediate(old.gameObject);
                 var result = AttachOnBackhead(car, interior);
-                if (result != null && Main.Settings.LogFireboxCreation)
+                if (result != null)
                     Main.Mod.Logger.Log($"{car.LogName()}: {result}");
             }
         }
@@ -225,7 +242,7 @@ namespace RealisticFiring.Visuals
                 if (lever == null)
                     continue;
                 var result = BuildLeverGauge(car, interior, rig, fit, lever.transform);
-                if (result != null && Main.Settings.LogFireboxCreation)
+                if (result != null)
                     Main.Mod.Logger.Log($"{car.LogName()}: feed pump {result}");
             }
         }

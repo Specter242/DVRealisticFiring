@@ -53,9 +53,8 @@ namespace RealisticFiring.Shed
             var axis = new Vector3(0f, height, RiserZ);
             var out_ = new Vector3(hub.x, 0f, hub.z - RiserZ);
             var reach = out_.magnitude;
-            if (Main.Settings.LogFireboxCreation)
-                Main.Mod.Logger.Log(System.FormattableString.Invariant(
-                    $"{name}: direct steam handwheel drawn at ({hub.x:F3}, {hub.y:F3}, {hub.z:F3}) m in the stand's frame, {reach - RiserRadius:F3} m off the riser"));
+            Main.Mod.Logger.Log(System.FormattableString.Invariant(
+                $"{name}: direct steam handwheel drawn at ({hub.x:F3}, {hub.y:F3}, {hub.z:F3}) m in the stand's frame, {reach - RiserRadius:F3} m off the riser"));
             if (reach < 1e-3f)
                 return;
             var along = out_ / reach;

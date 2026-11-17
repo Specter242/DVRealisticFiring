@@ -1,5 +1,6 @@
 using UnityEngine;
 
+#if !PUBLIC_RELEASE
 namespace RealisticFiring.Visuals
 {
  internal static class FireboxTestBed
@@ -146,3 +147,4 @@ namespace RealisticFiring.Visuals
         }
     }
 }
+#endif

@@ -85,9 +85,8 @@ namespace RealisticFiring.Items
                     where.Add(NearestStation(shop.transform.position));
                     shops++;
                 }
-                if (Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"Fire iron for sale in {shops} shops ({string.Join(", ", where)}) at {__instance.GetShopItemData(spec)?.basePrice:F0} " +
-                                        $"(the shovel's price; the game makes everything free outside Career), stock {__instance.GetShopItemData(spec)?.ItemsInStock}{shown}");
+                Main.Mod.Logger.Log($"Fire iron for sale in {shops} shops ({string.Join(", ", where)}) at {__instance.GetShopItemData(spec)?.basePrice:F0} " +
+                                    $"(the shovel's price; the game makes everything free outside Career), stock {__instance.GetShopItemData(spec)?.ItemsInStock}{shown}");
             }
             catch (Exception e)
             {

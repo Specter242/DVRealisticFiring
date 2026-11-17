@@ -77,7 +77,7 @@ namespace RealisticFiring.Visuals
                 if (interior == null || interior.Find(RootName) != null)
                     continue;
                 var result = Attach(car, firebox, interior);
-                if (result != null && Main.Settings.LogFireboxCreation)
+                if (result != null)
                     Main.Mod.Logger.Log($"{car.ID}: {result}");
             }
         }

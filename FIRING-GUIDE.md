@@ -229,6 +229,9 @@ settings (F8) can fit each always or never instead.
 | --- | --- | --- |
 | Brick arch | S282, S060 | $20,000 |
 | Over-fire jets | S282, S060, once the arch is bought | $15,000 |
+| Snifting valves | S282, S060 | $8,000 |
+| Drifting valve | S282, S060 | $6,000 |
+| By-pass valves | S282, S060 | $12,000 |
 | Stoker | S282 | $40,000 |
 | Feed pump and heater | S282 | $25,000 |
 | Booster | S282 | $30,000 |
@@ -258,6 +261,32 @@ smoke of a fresh round. You'll hear them hiss.
   pays off in town: a fresh round standing at a station clears before it
   runs up an environmental fee (see
   [Smoke in towns](#smoke-in-towns)).
+
+**With the snifting valves** (on the steam chests) the engine breathes air
+instead of smokebox gas when you drift with the throttle shut. You'll hear
+them lift as you shut off at speed and breathe with the beats. Drifting
+hooked up then wears the engine about a third as much; drop the reverser to
+full gear or crack the throttle to spare it entirely, as without them.
+Against the motion they stay shut and change nothing. They hardly ease the
+cylinders' braking, which is mostly the cushions' compression.
+
+**With the drifting valve** (the DRIFTING valve in the cab) a little steam
+from the turret fills the steam chests while you drift. Shut off, hook the
+reverser up toward mid-gear, and open it: hooked up the cylinders draw
+little, and its steam fills much of it, sparing most of the wear (all of it
+at moderate speed), as a cracked throttle does but for much less steam. In
+full gear the cylinders draw more than it gives. On its own it doesn't ease
+the braking; with by-pass valves it ends it. You'll hear it hiss. Shut it
+before opening the throttle, and before stopping: steam in the chests can
+move a standing engine.
+
+**With the by-pass valves** the engine drifts freely in any notch until it
+runs fast: shut off, they open by themselves and join each cylinder's ends,
+so the pistons hardly pump. On a big engine they take away all the
+cylinders' braking up to about 20 mph and half of it at 40; with the
+drifting valve open too, all of it at any speed. The engine draws much less
+smokebox gas (a third of the wear hooked up). Opening the throttle closes
+them with a clunk.
 
 **With the stoker** (S282) the fireman shovels only where it runs short.
 It feeds steadily as long as you keep the jets set and the engine
@@ -402,7 +431,9 @@ they're fitted. The booster is the engineer's.
   are cleaned by repairing the engine at a service station.
 - **Drifting:** throttle shut, put the reverser down to full gear (or keep
   the throttle cracked). Hooked up, the engine sucks smokebox grit into its
-  cylinders and wears.
+  cylinders and wears, and the cylinders brake it: in mid-gear they pump
+  and compress hard enough to slow a light engine noticeably. Full gear
+  lets it drift farthest.
 - **Allow for stored steam:** closing the throttle does not empty the pipes
   and steam chest. Watch the chest pressure as the engine uses that steam;
   see [Throttle characteristics](#throttle-characteristics).
@@ -549,7 +580,7 @@ A grinding clash means the booster was turning or you were going too fast.
 
 | What | Target |
 | --- | --- |
-| Shovelful | 3 kg; a few at a time |
+| Shovelful | 3 kg; a few at a time (mouse wheel with the shovel in hand for lighter ones) |
 | Fresh coal catches | about 30 s: fire ahead of the work |
 | Wiggle the grate | every 10–15 min of hard work |
 | Clean the fire | when clinker shows, about every 2 h of hard work |

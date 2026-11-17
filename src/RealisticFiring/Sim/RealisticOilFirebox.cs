@@ -261,8 +261,10 @@ namespace RealisticFiring.Sim
             var before = Model.FlueSoot;
             Model.ThrowSand(sand, Drawing);
             LastSand = sand;
+#if !PUBLIC_RELEASE
             if (Main.Settings.LogCoalDeliveries)
                 Main.Mod?.Logger.Log($"{Car?.ID}: {sand:F1} kg of sand thrown in under {Drawing:P0} of the full pull: flue soot {before:P0} -> {Model.FlueSoot:P0}");
+#endif
         }
 
         /// <summary>Gives the firebox its cab ports, once the sim graph is built.</summary>
@@ -404,11 +406,10 @@ namespace RealisticFiring.Sim
             // A loco spawned cold has cold oil and brick.
             if (!restored && !Model.FireOn && boilerPressure.Value < 2f)
                 Model.Restore(false, Mathf.Max(OilFire.ColdBrick, boilerTemperature.Value), Ambient.TenderOil, Model.FlueSoot);
-            if (Main.Settings.LogFireboxCreation)
-                Main.Mod?.Logger.Log($"{Car?.ID}: realistic oil burner '{id}': up to {Model.MaxFeed:F2} kg/s of oil (firebox kg), " +
-                                     $"firing valve from {(Feed != null ? $"'{Feed.ControlName}'" : "nothing: no feed found")}, " +
-                                     $"atomizer {(atomizerPort != null ? "from its cab valve" : "fixed")}, heater {(heaterPort != null ? "from its cab valve" : "off")}, " +
-                                     $"fire door {(doorPort != null ? "found" : "not found")}");
+            Main.Mod?.Logger.Log($"{Car?.ID}: realistic oil burner '{id}': up to {Model.MaxFeed:F2} kg/s of oil (firebox kg), " +
+                                 $"firing valve from {(Feed != null ? $"'{Feed.ControlName}'" : "nothing: no feed found")}, " +
+                                 $"atomizer {(atomizerPort != null ? "from its cab valve" : "fixed")}, heater {(heaterPort != null ? "from its cab valve" : "off")}, " +
+                                 $"fire door {(doorPort != null ? "found" : "not found")}");
         }
 
         public override JObject GetSaveStateData()

@@ -6,7 +6,14 @@ using HarmonyLib;
 
 namespace RealisticFiring.Items
 {
-    /// <summary>Offers a tablet once per save when the starting kit includes the steam shovel.</summary>
+    /// <summary>
+    /// Offers a tablet once per save when the starting kit includes the steam
+    /// shovel. Not while merged into the Comms Tablet (<see cref="CommsTabletLink"/>),
+    /// which gives its own: then the kit is left as it is and the key cleared
+    /// while merged, so a player who later removes the Comms Tablet gets the
+    /// firing tablet once (the Comms Tablet's decision: each guest clears its
+    /// own key while merged; Sol's review, 2026-11-17).
+    /// </summary>
     [HarmonyPatch(typeof(StartingItemsController), "GetStartingItemsPrefabs")]
     internal static class FiringTabletStartingItems
     {
@@ -28,7 +35,16 @@ namespace RealisticFiring.Items
         internal static List<StartingItems.StartingItem> WithTabletOnce(SaveGameData data,
             List<StartingItems.StartingItem> items, Func<InventoryItemSpec> create)
         {
-            if (data == null || items == null || data.GetBool(GivenKey) == true) return items;
+            if (data == null || items == null) return items;
+            if (CommsTabletLink.Merged)
+            {
+                // Merged, this mod's tablet is not in the save (the Comms Tablet loads it as its own), so the grant
+                // is not spent: a player who later removes the Comms Tablet gets the firing tablet once, as a new player.
+                // No double: the stock safeguard adds no starting item whose prefab is already among the save's items.
+                data.RemoveData(GivenKey);
+                return items;
+            }
+            if (data.GetBool(GivenKey) == true) return items;
             var result = WithTablet(items, create);
             // Saved world, inventory, lost-and-found and mounted copies all
             // satisfy the stock safeguard. Subsequent disposal stays respected.

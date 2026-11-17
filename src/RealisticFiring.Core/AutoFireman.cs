@@ -283,7 +283,7 @@ namespace RealisticFiring.Core
             var far = !Stoking && j.Working && (deficit > HeavyRound * shovel || r.Pressure < PressureTarget - .5f);
             // Larger shovelfuls take longer to handle; the accelerated startup
             // remains a separate aid, keeping its original cadence.
-            var massTime = boosted ? 1f : Math.Max(1f, shovel / 3f);
+            var massTime = boosted ? 1f : Math.Max(1f, shovel / ShovelSize.Normal);
             var rest = boosted ? (far ? BoostedHurriedRoundGap : BoostedRoundGap)
                 : (far ? HurriedRoundGap : RoundGap) * massTime;
             if (roundLeft == 0 && fire.FireOn && !outOfWater && !WaitingOnSmoke && (!lifting || coal < least)

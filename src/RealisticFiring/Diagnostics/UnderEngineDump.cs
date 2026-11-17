@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text;
 using UnityEngine;
 
+#if !PUBLIC_RELEASE
 namespace RealisticFiring.Diagnostics
 {
  internal static class UnderEngineDump
@@ -167,3 +168,4 @@ namespace RealisticFiring.Diagnostics
         }
     }
 }
+#endif

@@ -12,6 +12,7 @@ using Newtonsoft.Json;
 using RealisticStackEffects.Core;
 using UnityEngine;
 
+#if !PUBLIC_RELEASE
 namespace RealisticStackEffects
 {
  internal sealed class PlumeCapture : MonoBehaviour
@@ -818,3 +819,4 @@ namespace RealisticStackEffects
         }
     }
 }
+#endif

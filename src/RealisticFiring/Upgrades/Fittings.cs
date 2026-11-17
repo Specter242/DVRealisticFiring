@@ -16,9 +16,12 @@ namespace RealisticFiring.Upgrades
         private const string StokerKey = "s282Stoker";
         private const string FeedPumpKey = "s282FeedPump";
         private const string BoosterKey = "s282Booster";
+        private const string SniftingKey = "sniftingValves";
+        private const string DriftingValveKey = "driftingValve";
+        private const string ByPassKey = "byPassValves";
 
         private static SaveGameData readFrom;
-        private static bool archBought, jetsBought, stokerBought, feedPumpBought, boosterBought;
+        private static bool archBought, jetsBought, stokerBought, feedPumpBought, boosterBought, sniftingBought, driftingValveBought, byPassBought;
 
         /// <summary>The host's word on the arch, in a Multiplayer session where this game is a client; null otherwise.</summary>
         public static bool? FromHost;
@@ -34,6 +37,15 @@ namespace RealisticFiring.Upgrades
 
         /// <summary>The host's word on the S282's booster, as <see cref="FromHost"/>.</summary>
         public static bool? BoosterFromHost;
+
+        /// <summary>The host's word on the snifting valves, as <see cref="FromHost"/>.</summary>
+        public static bool? SniftingFromHost;
+
+        /// <summary>The host's word on the drifting valve, as <see cref="FromHost"/>.</summary>
+        public static bool? DriftingValveFromHost;
+
+        /// <summary>The host's word on the by-pass valves, as <see cref="FromHost"/>.</summary>
+        public static bool? ByPassFromHost;
 
         /// <summary>One more each time what is fitted may have changed, so fireboxes refit.</summary>
         public static int Version { get; private set; }
@@ -102,6 +114,39 @@ namespace RealisticFiring.Upgrades
                 if (BoosterFromHost.HasValue)
                     return BoosterFromHost.Value;
                 return Allowed(Main.Settings?.S282Booster ?? UpgradeRule.BuyInCareer, BoosterBought);
+            }
+        }
+
+        /// <summary>Whether the S282s and S060s have their snifting valves now.</summary>
+        public static bool Snifting
+        {
+            get
+            {
+                if (SniftingFromHost.HasValue)
+                    return SniftingFromHost.Value;
+                return Allowed(Main.Settings?.SniftingValves ?? UpgradeRule.BuyInCareer, SniftingBought);
+            }
+        }
+
+        /// <summary>Whether the S282s and S060s have their drifting valve now.</summary>
+        public static bool DriftingValve
+        {
+            get
+            {
+                if (DriftingValveFromHost.HasValue)
+                    return DriftingValveFromHost.Value;
+                return Allowed(Main.Settings?.DriftingValve ?? UpgradeRule.BuyInCareer, DriftingValveBought);
+            }
+        }
+
+        /// <summary>Whether the S282s and S060s have their by-pass valves now.</summary>
+        public static bool ByPass
+        {
+            get
+            {
+                if (ByPassFromHost.HasValue)
+                    return ByPassFromHost.Value;
+                return Allowed(Main.Settings?.ByPassValves ?? UpgradeRule.BuyInCareer, ByPassBought);
             }
         }
 
@@ -184,6 +229,36 @@ namespace RealisticFiring.Upgrades
             }
         }
 
+        /// <summary>Whether the player of this save has bought the snifting valves.</summary>
+        public static bool SniftingBought
+        {
+            get
+            {
+                Read();
+                return sniftingBought;
+            }
+        }
+
+        /// <summary>Whether the player of this save has bought the drifting valve.</summary>
+        public static bool DriftingValveBought
+        {
+            get
+            {
+                Read();
+                return driftingValveBought;
+            }
+        }
+
+        /// <summary>Whether the player of this save has bought the by-pass valves.</summary>
+        public static bool ByPassBought
+        {
+            get
+            {
+                Read();
+                return byPassBought;
+            }
+        }
+
         /// <summary>Buys the arch: every engine has it from now on, and the save keeps it.</summary>
         public static void BuyArch()
         {
@@ -229,6 +304,33 @@ namespace RealisticFiring.Upgrades
             Changed();
         }
 
+        /// <summary>Buys the snifting valves: every S282 and S060 has them from now on, and the save keeps it.</summary>
+        public static void BuySnifting()
+        {
+            Read();
+            sniftingBought = true;
+            Write(SingletonBehaviour<SaveGameManager>.Instance?.data);
+            Changed();
+        }
+
+        /// <summary>Buys the drifting valve: every S282 and S060 has one from now on, and the save keeps it.</summary>
+        public static void BuyDriftingValve()
+        {
+            Read();
+            driftingValveBought = true;
+            Write(SingletonBehaviour<SaveGameManager>.Instance?.data);
+            Changed();
+        }
+
+        /// <summary>Buys the by-pass valves: every S282 and S060 has them from now on, and the save keeps it.</summary>
+        public static void BuyByPass()
+        {
+            Read();
+            byPassBought = true;
+            Write(SingletonBehaviour<SaveGameManager>.Instance?.data);
+            Changed();
+        }
+
         /// <summary>Marks what is fitted as possibly changed (the override, the host's word).</summary>
         public static void Changed() => Version++;
 
@@ -245,6 +347,9 @@ namespace RealisticFiring.Upgrades
             stokerBought = record?[StokerKey]?.Value<bool>() ?? false;
             feedPumpBought = record?[FeedPumpKey]?.Value<bool>() ?? false;
             boosterBought = record?[BoosterKey]?.Value<bool>() ?? false;
+            sniftingBought = record?[SniftingKey]?.Value<bool>() ?? false;
+            driftingValveBought = record?[DriftingValveKey]?.Value<bool>() ?? false;
+            byPassBought = record?[ByPassKey]?.Value<bool>() ?? false;
             Version++;
         }
 
@@ -252,7 +357,7 @@ namespace RealisticFiring.Upgrades
         // doesn't know are kept.
         private static void Write(SaveGameData data)
         {
-            if (data == null || !archBought && !jetsBought && !stokerBought && !feedPumpBought && !boosterBought)
+            if (data == null || !archBought && !jetsBought && !stokerBought && !feedPumpBought && !boosterBought && !sniftingBought && !driftingValveBought && !byPassBought)
                 return;
             var record = data.GetJObject(SaveKey) ?? new JObject();
             if (archBought)
@@ -265,6 +370,12 @@ namespace RealisticFiring.Upgrades
                 record[FeedPumpKey] = true;
             if (boosterBought)
                 record[BoosterKey] = true;
+            if (sniftingBought)
+                record[SniftingKey] = true;
+            if (driftingValveBought)
+                record[DriftingValveKey] = true;
+            if (byPassBought)
+                record[ByPassKey] = true;
             data.SetJObject(SaveKey, record);
         }
 

@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.24.0 (2026-11-17)
+
+- **Drifting brakes the engine.** With the throttle shut the cylinders
+  pump and compress, most in mid-gear: drop the reverser to full gear to
+  drift farther.
+- **New upgrades for drifting** on the S282 and S060, at a career
+  manager's Upgrades screen:
+  - **Snifting valves** ($8,000) on the steam chests lift by themselves
+    when you drift, so the cylinders breathe air instead of smokebox gas:
+    a third of the wear hooked up. You hear them lift, breathe with the
+    beats, and seat.
+  - **A drifting valve** ($6,000), a DRIFTING valve in the cab that feeds
+    a little steam to the steam chests: hooked up, most of the wear spared.
+  - **By-pass valves** ($12,000) that join the cylinders' ends when you
+    drift, so the engine drifts freely in any notch until it runs fast,
+    and with the drifting valve open at any speed.
+- The Santa Fe 2901, the BR95, and the QJ drift on their prototypes'
+  by-pass valves, and the 8F and 4F on their snifting valves.
+- **The mouse wheel sets the shovelful.** With the shovel in hand, roll it
+  back for a lighter shovelful or forward for a heavier one, half a
+  kilogram a click from 1 kg up to a full shovel. The size shows under the
+  crosshair and on the coal.
+- **"Coal per shovelful" is now "Largest shovelful":** a full shovel, and
+  what the fireman fires, though never less than 3 kg. In multiplayer only
+  the largest has to match.
+- **Works with the Comms Tablet.** With the Comms Tablet installed, the
+  firing tablet's pages (fire, water, engine, and the fireman's orders)
+  are its Firing app, and the separate firing tablet isn't given or sold.
+  Without the Comms Tablet, the firing tablet works as before, and if you
+  remove the Comms Tablet later, your save gets a firing tablet again.
+- **Works with AI Engineer.** When its engineer drives a steam engine, it
+  puts the fireman to work (Shunting, Road, or Easing off) and puts him
+  back as he was when it hands the engine back.
+- **The settings on the Comms Tablet** are grouped like the F8 window,
+  with short names and the details as tooltips, and the upgrade rules
+  (brick arch, over-fire jets, the drifting fittings, stoker, feed pump,
+  booster) can be set there too.
+
 ## 1.23.0 (2026-11-15)
 
 - **New: My Name Is BorING's narrow-gauge engines** (S260N-580 1.0.5,

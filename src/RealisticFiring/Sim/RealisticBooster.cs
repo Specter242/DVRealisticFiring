@@ -182,8 +182,10 @@ namespace RealisticFiring.Sim
                 latch.Value = 0f;
             if (flow.Event == BoosterEvent.Clash)
                 Clashes++;
+#if !PUBLIC_RELEASE
             if (flow.Event != BoosterEvent.None && Main.Settings.LogCoalDeliveries)
                 Main.Mod.Logger.Log($"{car?.ID}: booster {flow.Event} at {(car != null ? car.GetForwardSpeed() * 2.237f : 0f):F1} mph");
+#endif
 
             torqueOut.Value = main + flow.Force * wheelRadius;
             if (poweredAxles != null)
@@ -213,11 +215,10 @@ namespace RealisticFiring.Sim
             boiler = flow != null ? flow.OrderedSimComps.OfType<Boiler>().FirstOrDefault() : null;
             if (flow != null && !string.IsNullOrEmpty(def.PoweredAxlesPortId))
                 flow.TryGetPort(def.PoweredAxlesPortId, out poweredAxles);
-            if (Main.Settings.LogFireboxCreation)
-                Main.Mod.Logger.Log($"{car.ID}: booster '{id}' on the trailer axle: {Model.Spec.StartingPull(Model.Spec.MaxInletPressure) / 4.44822f:F0} lb at " +
-                                    $"{Model.Spec.MaxInletPressure:F1} bar, axle {def.TrailerLoad:F0} kg, " +
-                                    $"{(poweredAxles != null ? $"powered axles {def.DrivingAxles} + 1 in gear" : "no powered-axle port")}, " +
-                                    $"steam {(boiler != null ? "from the boiler" : "nowhere: no boiler found")}");
+            Main.Mod.Logger.Log($"{car.ID}: booster '{id}' on the trailer axle: {Model.Spec.StartingPull(Model.Spec.MaxInletPressure) / 4.44822f:F0} lb at " +
+                                $"{Model.Spec.MaxInletPressure:F1} bar, axle {def.TrailerLoad:F0} kg, " +
+                                $"{(poweredAxles != null ? $"powered axles {def.DrivingAxles} + 1 in gear" : "no powered-axle port")}, " +
+                                $"steam {(boiler != null ? "from the boiler" : "nowhere: no boiler found")}");
         }
     }
 }

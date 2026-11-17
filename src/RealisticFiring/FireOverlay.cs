@@ -248,7 +248,8 @@ namespace RealisticFiring
             WaterGauges(c, rig, waterRig);
             var door = firebox.HasDoorPort ? firebox.DoorOpening : 0f;
             c.Advice = Bursting(waterRig) ?? FiringAdvice.ForCoal(fire, door, rig != null ? Visuals.GaugeGlass.Read(rig) : 1f, Injectors(rig),
-                waterRig != null && waterRig.DriftingHookedUp, LighterRule.LightsCoal);
+                waterRig != null && waterRig.DriftingWearing, LighterRule.LightsCoal, waterRig != null && waterRig.Drift.SniftingOpen,
+                DriftingFittings.Valve(car));
             if (c.Advice.Level == AdviceLevel.Ok && firebox.StokerTableLoaded)
                 c.Advice = new Advice(AdviceLevel.Watch, "Rake the back of the fire to clear the stoker table. Ease the feed or raise the jets to keep it clear.");
 

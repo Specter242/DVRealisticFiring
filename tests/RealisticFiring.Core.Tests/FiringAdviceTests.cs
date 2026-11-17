@@ -235,4 +235,19 @@ namespace RealisticFiring.Core.Tests;
         oil.SteamLineOpening = 1f;
         Assert.Contains("shut the stand's valve", FiringAdvice.ForOil(oil).Text);
     }
+
+    [Fact]
+    public void Drifting_hooked_up_says_to_drop_the_reverser_and_whether_snifting_valves_spare_it()
+    {
+        var bare = FiringAdvice.ForCoal(Bed(Even(10f)), 0.1f, 0.6f, Feeding, driftingHookedUp: true);
+        Assert.Equal(AdviceLevel.Watch, bare.Level);
+        Assert.Contains("drop the reverser to full gear", bare.Text);
+        Assert.DoesNotContain("snifting", bare.Text);
+        var snifting = FiringAdvice.ForCoal(Bed(Even(10f)), 0.1f, 0.6f, Feeding, driftingHookedUp: true, sniftingOpen: true);
+        Assert.Equal(AdviceLevel.Watch, snifting.Level);
+        Assert.Contains("snifting valves spare most of it", snifting.Text);
+        Assert.Contains("drop the reverser to full gear", snifting.Text);
+        var valve = FiringAdvice.ForCoal(Bed(Even(10f)), 0.1f, 0.6f, Feeding, driftingHookedUp: true, driftingValve: true);
+        Assert.Contains("open the drifting valve", valve.Text);
+    }
 }

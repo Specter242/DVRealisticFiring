@@ -176,6 +176,16 @@ namespace RealisticFiring.Sim
                 ? Mathf.Max(0f, fitted.Firebox.Model.JetSteamFlow)
                 : 0f;
 
+        /// <summary>
+        /// The steam the engine's drifting valve takes from the boiler now,
+        /// kg/s: from the turret like the blower's, so drawn with it
+        /// (<see cref="EngineDrift.SteamUsed"/>).
+        /// </summary>
+        public static float DriftingSteam(SteamExhaust exhaust) =>
+            exhaust != null && ByExhaust.TryGetValue(exhaust, out var fitted) && fitted.Firebox != null
+                ? EngineDrift.SteamUsed(fitted.Firebox.Car)
+                : 0f;
+
         public static bool TryGet(SteamExhaust exhaust, out SteamDraft draft)
         {
             draft = default(SteamDraft);

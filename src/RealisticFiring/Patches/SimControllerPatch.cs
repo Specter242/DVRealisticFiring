@@ -3,7 +3,9 @@ using System.Linq;
 using DV.Simulation.Cars;
 using HarmonyLib;
 using LocoSim.Definitions;
+#if !PUBLIC_RELEASE
 using RealisticFiring.Diagnostics;
+#endif
 using RealisticFiring.Sim;
 
 namespace RealisticFiring.Patches
@@ -29,6 +31,7 @@ namespace RealisticFiring.Patches
 
         private static void Postfix(SimController __instance, TrainCar trainCar)
         {
+#if !PUBLIC_RELEASE
             if (Main.Settings.DumpSimGraphs)
                 SimGraphDump.DumpOnce(trainCar, __instance.connectionsDefinition);
             if (Main.Settings.DumpFireboxGeometry && HasFirebox(__instance))
@@ -43,6 +46,7 @@ namespace RealisticFiring.Patches
                     Main.Mod.Logger.LogException("Chimney smoke dump failed", e);
                 }
             }
+#endif
 
             if (Main.RealisticInjectorsEnabled && __instance.simFlow != null)
                 SetupGuard.Logged(trainCar, "tender water valves", () => Visuals.TenderWaterValves.Attach(trainCar, __instance.simFlow));
@@ -60,6 +64,8 @@ namespace RealisticFiring.Patches
             }
 
             EngineCylinders.MarkStockSteam(trainCar, __instance.simFlow);
+            foreach (var engine in __instance.simFlow.OrderedSimComps.OfType<LocoSim.Implementations.ReciprocatingSteamEngine>())
+                EngineDrift.Register(trainCar, engine);
 
             if (FireboxRegistry.TryGet(trainCar, out _) || RealisticOilFirebox.TryGet(trainCar, out _))
             {

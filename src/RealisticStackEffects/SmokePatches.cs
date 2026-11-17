@@ -36,8 +36,7 @@ namespace RealisticStackEffects
                 if (by != null)
                     how = $"the fire from {by}";
                 var result = ChimneyPlume.Attach(__instance, simFlow, car, fire);
-                if (Main.Settings.LogSetup)
-                    Main.Mod.Logger.Log($"{LogName(car)}: {result}; {how}");
+                Main.Mod.Logger.Log($"{LogName(car)}: {result}; {how}");
             }
             catch (Exception e)
             {

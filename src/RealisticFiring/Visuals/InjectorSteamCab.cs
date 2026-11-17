@@ -53,12 +53,18 @@ namespace RealisticFiring.Visuals
         // Seats set this session on the seating bench (SeatingBench, a
         // development tool), by livery, as Seats: they come first and are
         // never saved.
+#if !PUBLIC_RELEASE
         internal static readonly Dictionary<string, (Vector3 Move, Vector3 Turns)> DevSeats = new Dictionary<string, (Vector3, Vector3)>();
+#endif
 
         /// <summary>The backhead lever's seat for <paramref name="livery"/>: the bench's, the table's, or none (no move, the usual turns).</summary>
         internal static (Vector3 Move, Vector3 Turns) SeatFor(string livery) =>
+#if PUBLIC_RELEASE
+            Seats.TryGetValue(livery, out var seat) ? seat
+#else
             DevSeats.TryGetValue(livery, out var dev) ? dev
             : Seats.TryGetValue(livery, out var seat) ? seat
+#endif
             : (Vector3.zero, SeatTurns);
 
         /// <summary>Rebuilds every loaded cab's steam levers, as the seating bench moves them.</summary>
@@ -73,7 +79,7 @@ namespace RealisticFiring.Visuals
                     continue;
                 Object.DestroyImmediate(old.gameObject);
                 var result = Attach(car, interior);
-                if (result != null && Main.Settings.LogFireboxCreation)
+                if (result != null)
                     Main.Mod.Logger.Log($"{car.LogName()}: {result}");
             }
         }
@@ -322,7 +328,11 @@ namespace RealisticFiring.Visuals
             // Toward the backhead: the firing frame's forward, the car's on
             // every engine but one fired from the front (FiringFrame).
             var forward = FiringFrame.Of(car).forward;
+#if PUBLIC_RELEASE
+            var seatedHere = Seats.TryGetValue(car.carLivery.id, out var seat);
+#else
             var seatedHere = DevSeats.TryGetValue(car.carLivery.id, out var seat) || Seats.TryGetValue(car.carLivery.id, out seat);
+#endif
             var aim = stock.position + middle * (Across + seat.Move.x) + up * (Up + seat.Move.y);
             var proud = seat.Move.z;
             var fixedSeat = FixedSeats.TryGetValue(car.carLivery.id, out var fromHandle);

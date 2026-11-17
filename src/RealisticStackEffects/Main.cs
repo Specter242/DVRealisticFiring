@@ -31,9 +31,11 @@ namespace RealisticStackEffects
             StackHost.Mod = modEntry;
             StackHost.Settings = new HostSettings();
             StackHost.Assets = new HostAssets();
+#if !PUBLIC_RELEASE
             // The test bed's tuning only on a development setup (its key bound).
             if (Settings.PlumeTestBedEnabled)
                 PlumeTestBed.Restore(Settings.PlumeTestBed);
+#endif
             modEntry.OnGUI = entry => Settings.Draw(entry);
             modEntry.OnSaveGUI = entry => Settings.Save(entry);
 
@@ -46,8 +48,11 @@ namespace RealisticStackEffects
 
             var host = new GameObject("RealisticStackEffects");
             Object.DontDestroyOnLoad(host);
+#if !PUBLIC_RELEASE
+            // The developer's plume tools: development builds only.
             host.AddComponent<StackController>();
             host.AddComponent<PlumeCapture>();
+#endif
             modEntry.Logger.Log("Realistic chimney smoke on every steam locomotive" + (customEffects ? "" : ", on the game's own smoke systems"));
             return true;
         }
@@ -84,15 +89,20 @@ namespace RealisticStackEffects
             public bool HeatShimmer => Settings.HeatShimmer;
             public bool EngineSteam => Settings.EngineSteam;
             public bool CustomEffects => customEffects;
+#if !PUBLIC_RELEASE
             public int StatusLogInterval => Settings.StatusLogInterval;
-            public bool DeveloperTools => Settings.PlumeTestBedEnabled;
+#endif
             public bool HalfResolutionAllowed => !SmokeReaderInitPatch.OlderFiringFound;
+
+#if !PUBLIC_RELEASE
+            public bool DeveloperTools => Settings.PlumeTestBedEnabled;
 
             public string TestBed
             {
                 get => Settings.PlumeTestBed;
                 set => Settings.PlumeTestBed = value;
             }
+#endif
 
             public void Save() => Settings.Save(Mod);
         }

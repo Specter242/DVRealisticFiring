@@ -6,7 +6,9 @@ using LocoSim.Definitions;
 using LocoSim.Implementations;
 using Newtonsoft.Json.Linq;
 using RealisticFiring.Core;
+#if !PUBLIC_RELEASE
 using RealisticFiring.Diagnostics;
+#endif
 using RealisticStackEffects;
 using UnityEngine;
 
@@ -324,9 +326,11 @@ namespace RealisticFiring.Sim
             var before = Model.Zones[(int)zone].Clinker;
             Model.Slice(zone);
             if (GrateLayout.Row(zone) == 0) ClearStokerTable();
+#if !PUBLIC_RELEASE
             if (Main.Settings.LogCoalDeliveries)
                 Main.Mod.Logger.Log($"{Car?.ID}: sliced {zone}, clinker {before:F2} -> {Model.Zones[(int)zone].Clinker:F2} kg, " +
                                     $"stirred {Model.Zones[(int)zone].Stirred:P0}");
+#endif
         }
 
         /// <summary>Works <paramref name="zone"/> with the fire iron as a hoe toward <paramref name="direction"/>.</summary>
@@ -338,9 +342,11 @@ namespace RealisticFiring.Sim
             var hookedBefore = Model.HookedOut;
             Model.Push(zone, direction);
             if (GrateLayout.Row(zone) == 0) ClearStokerTable();
+#if !PUBLIC_RELEASE
             if (Main.Settings.LogCoalDeliveries)
                 Main.Mod.Logger.Log($"{Car?.ID}: worked {zone} {direction.ToString().ToLowerInvariant()}, coal there {before:F1} -> {Model.Zones[(int)zone].Coal:F1} kg" +
                                     (Model.HookedOut > hookedBefore ? $", {Model.HookedOut - hookedBefore:F2} kg of ash and clinker hooked out" : ""));
+#endif
         }
 
         /// <summary>
@@ -354,8 +360,10 @@ namespace RealisticFiring.Sim
             var before = Model.Zones[(int)zone].Coal;
             Model.Rake(zone);
             if (GrateLayout.Row(zone) == 0) ClearStokerTable();
+#if !PUBLIC_RELEASE
             if (Main.Settings.LogCoalDeliveries)
                 Main.Mod.Logger.Log($"{Car?.ID}: raked {zone}, {before:F1} -> {Model.Zones[(int)zone].Coal:F1} kg there");
+#endif
         }
 
         /// <summary>
@@ -373,8 +381,10 @@ namespace RealisticFiring.Sim
             LastDeliveryMass = 0f;
             LastDeliveryAim = null;
             UpdateCoalLevel();
+#if !PUBLIC_RELEASE
             if (Main.Settings.LogCoalDeliveries)
                 Main.Mod.Logger.Log($"{Car?.ID}: start-up laid a {(lit ? "burning" : "flooded, unlit")} fire of {Model.CoalMass:F1} kg");
+#endif
         }
 
         public override void InitializationAfterConnecting()
@@ -430,12 +440,14 @@ namespace RealisticFiring.Sim
             LastDeliveryMass = accepted;
             LastDeliveryAim = aim;
             UpdateCoalLevel();
+#if !PUBLIC_RELEASE
             if (Main.Settings.LogCoalDeliveries)
             {
                 Main.Mod.Logger.Log($"{Car?.ID}: {mass:F2} kg delivered " +
                                     $"({(aim.HasValue ? "aimed at " + aim.Value : zone.HasValue ? "aimed at " + zone.Value : "following the fire")}), " +
                                     $"{accepted:F2} kg accepted, door {DoorOpening:P0}, door air {Model.DoorAirFlow:F2} kg/s");
             }
+#endif
             return accepted;
         }
 
@@ -531,9 +543,13 @@ namespace RealisticFiring.Sim
                 FollowHost(delta);
                 return;
             }
+#if !PUBLIC_RELEASE
             var start = PerfMeter.Start();
+#endif
             Step(delta);
+#if !PUBLIC_RELEASE
             PerfMeter.Stop(PerfSection.Firebox, start);
+#endif
             Fireman?.Step(delta);
         }
 
@@ -574,10 +590,18 @@ namespace RealisticFiring.Sim
             AshpanHopper(delta);
 
             // The test bed's air burns the fire at its working rate, not a cold boiler's start-up speedup.
+#if PUBLIC_RELEASE
+            StartupMultiplier = ComputeStartupMultiplier();
+#else
             StartupMultiplier = Visuals.FireboxTestBed.AirSet ? 1f : ComputeStartupMultiplier();
+#endif
             var consumed = Model.Step(delta, new FireInputs
             {
+#if PUBLIC_RELEASE
+                AirFlow = airFlow.Value,
+#else
                 AirFlow = Visuals.FireboxTestBed.AirOr(airFlow.Value),
+#endif
                 IntakeWater = IntakeWater,
                 DoorOpening = DoorOpening,
                 StartupMultiplier = StartupMultiplier,
@@ -626,13 +650,16 @@ namespace RealisticFiring.Sim
                 doorMaxAirFlow = Model.DoorAirFlow;
                 heatAtDoorOpen = Model.Heat;
                 temperatureAtDoorOpen = Model.Temperature;
+#if !PUBLIC_RELEASE
                 if (Main.Settings.LogCoalDeliveries)
                 {
                     Main.Mod.Logger.Log($"{Car?.ID}: door opening: heat {Model.Heat / 1e6f:F2} MW, " +
                                         $"temp {Model.Temperature:F0} C, smoke {Model.SmokeDensity:P0}, " +
                                         $"draft {AirFlowIn:F2} kg/s (grate {Model.PrimaryAirFlow:F2}, door {Model.DoorAirFlow:F2})");
                 }
+#endif
             }
+#if !PUBLIC_RELEASE
             else if (Main.Settings.LogCoalDeliveries)
             {
                 Main.Mod.Logger.Log($"{Car?.ID}: door closed after {doorOpenTime:F1} s, up to {doorMaxOpening:P0} open " +
@@ -640,6 +667,7 @@ namespace RealisticFiring.Sim
                                     $"temp {temperatureAtDoorOpen:F0} -> {Model.Temperature:F0} C, smoke {Model.SmokeDensity:P0}, " +
                                     $"smoke burnt {Model.OverFireBurnout:P0}");
             }
+#endif
         }
 
         // Seconds between pinning a client's fire to the host's.
@@ -752,11 +780,13 @@ namespace RealisticFiring.Sim
                 dropGrateCoalBefore = Model.CoalDumped;
                 dropGrateAshBefore = Model.DroppedAshAndClinker;
             }
+#if !PUBLIC_RELEASE
             else if (!open && dropGrateWasOpen && Main.Settings.LogCoalDeliveries)
             {
                 Main.Mod.Logger.Log($"{Car?.ID}: drop grate shut; {Model.DroppedAshAndClinker - dropGrateAshBefore:F1} kg of ash and clinker " +
                                     $"and {Model.CoalDumped - dropGrateCoalBefore:F1} kg of fire went through; clinker left {Model.ClinkerMass:F1} kg");
             }
+#endif
             dropGrateWasOpen = open;
             Model.OpenDropGrate(open ? opening : 0f, delta);
         }
@@ -769,9 +799,11 @@ namespace RealisticFiring.Sim
             var open = opening > 0.05f;
             if (open && !ashpanWasOpen)
                 ashpanEmptiedBefore = Model.AshpanEmptied;
+#if !PUBLIC_RELEASE
             else if (!open && ashpanWasOpen && Main.Settings.LogCoalDeliveries)
                 Main.Mod.Logger.Log($"{Car?.ID}: ashpan hopper shut; {Model.AshpanEmptied - ashpanEmptiedBefore:F0} kg of ashes let out, " +
                                     $"{Model.Ashpan:F0} kg left ({Model.AshpanFill:P0})");
+#endif
             ashpanWasOpen = open;
             if (open && Model.Ashpan > 0f)
                 EmptyAshpan(opening, delta, Shed.ShedStands.CanDisposeAsh(Car));
@@ -799,11 +831,13 @@ namespace RealisticFiring.Sim
             var cindersBefore = Model.ShakeCinders;
             var drawing = Model.Drawing;
             Model.ShakeGrate(stroke);
+#if !PUBLIC_RELEASE
             if (Main.Settings.LogCoalDeliveries)
                 Main.Mod.Logger.Log($"{Car?.ID}: grate {(stroke == ShakeStroke.Shake ? "shaken" : "wiggled")} at {drawing:P0} draft, " +
                                     $"ash {ashBefore:F2} -> {Model.AshMass:F2} kg, clinker {clinkerBefore:F2} -> {Model.ClinkerMass:F2} kg, " +
                                     $"{Model.CoalDroppedThroughGrate - droppedBefore:F2} kg of fire into the ashpan, " +
                                     $"{Model.ShakeCinders - cindersBefore:F2} kg up the stack");
+#endif
         }
 
         // Stock fast startup: up to 25× faster combustion while the boiler is

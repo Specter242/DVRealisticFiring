@@ -8,6 +8,7 @@ using LocoSim.Attributes;
 using LocoSim.Definitions;
 using UnityEngine;
 
+#if !PUBLIC_RELEASE
 namespace RealisticFiring.Diagnostics
 {
     /// <summary>
@@ -137,3 +138,4 @@ namespace RealisticFiring.Diagnostics
         }
     }
 }
+#endif

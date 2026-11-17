@@ -4,6 +4,7 @@ using System.Text;
 using DV.Simulation.Controllers;
 using UnityEngine;
 
+#if !PUBLIC_RELEASE
 namespace RealisticFiring.Diagnostics
 {
     /// <summary>
@@ -156,3 +157,4 @@ namespace RealisticFiring.Diagnostics
         private static string Path(TrainCar car, Transform t) => CarSpace.PathFrom(car.transform, t);
     }
 }
+#endif

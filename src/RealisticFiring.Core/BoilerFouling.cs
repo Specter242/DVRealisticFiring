@@ -88,30 +88,4 @@ namespace RealisticFiring.Core
             SootLoss = Math.Max(0f, Math.Min(MostLoss, Smoothing.Finite(sootLoss)));
         }
     }
-
- public static class Drifting
-    {
-        /// <summary>The reverser's travel from mid-gear at which an engine drifts freely: about three-quarter stroke.</summary>
-        public const float FreeReverser = 0.8f;
-
-        /// <summary>A throttle open this far keeps steam in the cylinders.</summary>
-        public const float CrackedThrottle = 0.02f;
-
-        /// <summary>Below this speed, m/s, it does no harm worth counting.</summary>
-        public const float HarmlessSpeed = 5.5f;
-
-        /// <summary>The engine's health lost per hour drifting in mid-gear at <see cref="FullHarmSpeed"/> m/s, throttle shut (inferred).</summary>
-        public const float WearPerHour = 0.05f;
-        public const float FullHarmSpeed = 20f;
-
-        /// <summary>Whether drifting this way draws smokebox gas into the cylinders.</summary>
-        public static bool HookedUp(float throttle, float reverser, float speed) =>
-            throttle < CrackedThrottle && Math.Abs(speed) > HarmlessSpeed && Math.Abs(reverser) < FreeReverser;
-
-        /// <summary>The engine's health lost per second drifting so, 0 to 1.</summary>
-        public static float Wear(float throttle, float reverser, float speed) =>
-            HookedUp(throttle, reverser, speed)
-                ? WearPerHour / 3600f * Math.Abs(speed) / FullHarmSpeed * (FreeReverser - Math.Abs(reverser)) / FreeReverser
-                : 0f;
-    }
 }

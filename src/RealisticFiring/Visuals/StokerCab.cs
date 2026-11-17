@@ -156,19 +156,29 @@ namespace RealisticFiring.Visuals
         // Seats set this session on the seating bench (SeatingBench, a
         // development tool), by livery: they come before the tables and are
         // never saved.
+#if !PUBLIC_RELEASE
         internal static readonly Dictionary<string, Placement> DevPlacements = new Dictionary<string, Placement>();
         internal static readonly Dictionary<string, Vector3> DevLeverMoves = new Dictionary<string, Vector3>();
+#endif
 
         /// <summary>Where the manifold sits for <paramref name="livery"/>: the bench's seat, the table's, or the default.</summary>
         internal static Placement PlacementFor(string livery) =>
+#if PUBLIC_RELEASE
+            Placements.TryGetValue(livery, out var known) ? known
+#else
             DevPlacements.TryGetValue(livery, out var dev) ? dev
             : Placements.TryGetValue(livery, out var known) ? known
+#endif
             : DefaultPlacement;
 
         /// <summary>Where the operating lever moves from its place under the manifold, for <paramref name="livery"/>, in the car frame, m.</summary>
         internal static Vector3 LeverMoveFor(string livery) =>
+#if PUBLIC_RELEASE
+            LeverMoves.TryGetValue(livery, out var seated) ? seated
+#else
             DevLeverMoves.TryGetValue(livery, out var dev) ? dev
             : LeverMoves.TryGetValue(livery, out var seated) ? seated
+#endif
             : Vector3.zero;
 
         private static readonly Dictionary<string, float> SupplyPipeAt = new Dictionary<string, float>
@@ -322,7 +332,7 @@ namespace RealisticFiring.Visuals
                         Object.DestroyImmediate(old.gameObject);
                     var result = Attach(car, interior);
                     QjStokerCab.RefreshAttachments(car, interior);
-                    if (result != null && Main.Settings.LogFireboxCreation)
+                    if (result != null)
                         Main.Mod.Logger.Log($"{car.LogName()}: {result}");
                 }
             }
@@ -361,15 +371,14 @@ namespace RealisticFiring.Visuals
                     Rebuilding = true;
                     try { Object.DestroyImmediate(root.gameObject); }
                     finally { Rebuilding = false; }
-                    if (Main.Settings.LogFireboxCreation)
-                        Main.Mod.Logger.Log($"{car.ID}: the stoker is no longer fitted; its manifold is taken out of the cab");
+                    Main.Mod.Logger.Log($"{car.ID}: the stoker is no longer fitted; its manifold is taken out of the cab");
                     continue;
                 }
                 if (root != null || !fitted)
                     continue;
                 var result = Attach(car, interior);
                 QjStokerCab.RefreshAttachments(car, interior);
-                if (result != null && Main.Settings.LogFireboxCreation)
+                if (result != null)
                     Main.Mod.Logger.Log(refit ? $"{car.ID}: the stoker fitted; {result}" : $"{car.ID}: the cab had lost its stoker manifold; {result}");
             }
         }
@@ -750,7 +759,7 @@ namespace RealisticFiring.Visuals
 
         private void OnDestroy()
         {
-            if (StokerCab.Rebuilding || Car == null || Car.loadedInterior == null || !Main.Settings.LogFireboxCreation)
+            if (StokerCab.Rebuilding || Car == null || Car.loadedInterior == null)
                 return;
             var ownCab = transform.parent != null && transform.parent.gameObject == Car.loadedInterior;
             Main.Mod.Logger.Log($"{Car.ID}: stoker manifold removed while {(ownCab ? "its" : "another")} cab is loaded; " +

@@ -228,6 +228,7 @@ namespace RealisticFiring.AdapterCheck
             CheckJk3Firebox(gameParams);
             CheckBoilerWater();
             CheckServiceGrace();
+            CheckSniftingValves();
             CheckGlassTilt();
             CheckFiremanGlassDisplay();
             CheckOverlayBoilerFallback();
@@ -243,6 +244,7 @@ namespace RealisticFiring.AdapterCheck
             CheckClientMirror(gameParams, def);
             CheckBooster();
             CheckCylinders(gameParams);
+            CheckDriftDrag(gameParams);
             CheckSteamPath(gameParams);
             CheckBlower(gameParams);
             CheckAirPump(gameParams);
@@ -279,6 +281,9 @@ namespace RealisticFiring.AdapterCheck
             CheckFiringTabletVrButtonSpec();
             CheckFiremanOrders();
             CheckFiringTabletStartingItems();
+            CommsTabletChecks.Run(Check);
+            TabletSettingsChecks.Run(Check);
+            FiremanApiChecks.Run(Check);
             CheckNewDefaults();
             CheckOilIgnitionBinding();
             CheckFireboxQualitySettings();
@@ -299,6 +304,8 @@ namespace RealisticFiring.AdapterCheck
                     CheckSkinManagerFireIron(path);
                 else if (Path.GetFileName(path) == SeasonsMod.AssemblyName + ".dll")
                     CheckDvSeasons(path);
+                else if (Path.GetFileName(path) == CommsTabletLink.HostAssembly + ".dll")
+                    CommsTabletChecks.CheckWithHost(path, Check);
             }
             Console.WriteLine(failures == 0 ? "All adapter checks passed" : $"{failures} adapter checks failed");
             return failures == 0 ? 0 : 1;
@@ -2858,6 +2865,45 @@ namespace RealisticFiring.AdapterCheck
             }
         }
 
+        private static void CheckDriftDrag(SimGameParams gameParams)
+        {
+            var harmony = new HarmonyLib.Harmony("RealisticFiring.AdapterCheck.DriftDrag");
+            foreach (var patch in new[] { typeof(CylinderAdmissionPatch), typeof(CylinderMeanTorquePatch), typeof(CylinderPistonForcePatch), typeof(CylinderExhaustPatch), typeof(DriftDragPatch) })
+                harmony.CreateClassProcessor(patch).Patch();
+            try
+            {
+                float Notch(float cutoff) => (cutoff - 0.05f) / 0.85f;
+                float Drift(float reverser, float rpm, DriftState state)
+                {
+                    DriftDragPatch.Assumed = state;
+                    return RunEngine(gameParams, true, reverser, rpm, throttle: 0f).Torque;
+                }
+                var bare = new DriftState(true, Core.Drifting.ChestVacuum, 0f, false, false);
+                var snifting = new DriftState(true, 1f, 0f, true, false);
+                var byPass = new DriftState(true, Core.Drifting.ChestVacuum, 0f, false, true);
+                var byPassSteam = new DriftState(true, 1.5f, 1f, false, true);
+                var hookedUp = Drift(Notch(0.22f), 180f, bare);
+                var sniftingHooked = Drift(Notch(0.22f), 180f, snifting);
+                var fullGear = Drift(1f, 180f, bare);
+                var bypassed = Drift(Notch(0.22f), 180f, byPass);
+                var bypassedSteam = Drift(Notch(0.22f), 180f, byPassSteam);
+                var slowBypassed = Drift(Notch(0.22f), 100f, byPass);
+                var standing = Drift(Notch(0.22f), 0f, bare);
+                var none = Drift(Notch(0.22f), 180f, DriftState.NotDrifting);
+                Check(hookedUp < -3000f && hookedUp > -6000f && Math.Abs(sniftingHooked - hookedUp) < 0.01f * -hookedUp
+                      && fullGear < -400f && fullGear > -1200f && bypassed > 0.4f * hookedUp && bypassed < 0.2f * hookedUp
+                      && Math.Abs(bypassedSteam) < 1f && Math.Abs(slowBypassed) < 1f && Math.Abs(standing) < 1f && Math.Abs(none) < 1f,
+                    $"drifting with the throttle shut the cylinders brake the engine (Newell 1922): hooked up to 22 % at 3 turns a second {hookedUp:F0} N·m, " +
+                    $"{sniftingHooked:F0} with snifting valves, {fullGear:F0} in full gear, {bypassed:F0} with by-pass valves, none with drifting steam " +
+                    $"through them ({bypassedSteam:F0}) or slower ({slowBypassed:F0} at 100 rpm), {standing:F0} standing, {none:F0} not drifting");
+            }
+            finally
+            {
+                DriftDragPatch.Assumed = null;
+                harmony.UnpatchAll(harmony.Id);
+            }
+        }
+
         private static void CheckSteamPath(SimGameParams gameParams)
         {
             var harmony = new Harmony("RealisticFiring.AdapterCheck.SteamPath");
@@ -3711,6 +3757,27 @@ namespace RealisticFiring.AdapterCheck
                   && !Patches.ServiceGrace.Held(DV.ThingTypes.ResourceType.MechanicalPowertrain_DMG)
                   && !Patches.ServiceGrace.Held(DV.ThingTypes.ResourceType.EnvironmentDamageCoal),
                 "while it stands paid, the coal, water, and oil fuel its fire draws are not owed; oil, sand, and damage still are");
+        }
+
+        private static void CheckSniftingValves()
+        {
+            var settings = new Settings();
+            var screens = new[] { Upgrades.UpgradesScreen.Snifting, Upgrades.UpgradesScreen.DriftingValve, Upgrades.UpgradesScreen.ByPass };
+            Check(Sim.DriftingFittings.Upgradable("LocoS282A") && Sim.DriftingFittings.Upgradable("LocoS060")
+                  && !Sim.DriftingFittings.Upgradable("LocoS282B") && !Sim.DriftingFittings.Upgradable("LocoS484-840") && !Sim.DriftingFittings.Upgradable(null)
+                  && Sim.DriftingFittings.CanHaveValve("LocoS282A") && Sim.DriftingFittings.CanHaveValve("LocoS060")
+                  && settings.SniftingValves == Upgrades.UpgradeRule.BuyInCareer && settings.DriftingValve == Upgrades.UpgradeRule.BuyInCareer
+                  && settings.ByPassValves == Upgrades.UpgradeRule.BuyInCareer
+                  && screens.All(s => s.Engines == "every S282 and S060")
+                  && Upgrades.UpgradesScreen.Snifting.Price == 8_000 && Upgrades.UpgradesScreen.DriftingValve.Price == 6_000
+                  && Upgrades.UpgradesScreen.ByPass.Price == 12_000
+                  && Sim.DriftingFittings.MayHave("A.T.&S.F. 2901-A") && Sim.DriftingFittings.MayHave("S2102-720") && Sim.DriftingFittings.MayHave("S2102-870")
+                  && !Sim.DriftingFittings.MayHave("FEF-3") && !Sim.DriftingFittings.MayHave("S484-840A")
+                  && Sim.DriftingFittings.MayHave("em_lms_8f_loc_black") && Sim.DriftingFittings.MayHave("em_fowler_4f_4027")
+                  && !Sim.DriftingFittings.MayHave("S464-730") && !Sim.DriftingFittings.MayHave("Jk3A") && !Sim.DriftingFittings.MayHave("S260N-580A")
+                  && !Sim.DriftingFittings.CanHaveValve("A.T.&S.F. 2901-A") && !Sim.DriftingFittings.CanHaveValve("em_lms_8f_loc_black"),
+                "snifting valves ($8,000), a drifting valve ($6,000), and by-pass valves ($12,000) are sold for every S282 and S060, bought in a career by default; " +
+                "the S282 and S060 carry the drifting valve's control; the 2901, BR95, and QJ their prototypes' by-pass valves, the 8F and 4F their snifting valves, the J-3a, FEF-3, S484-840, JK3, and narrow-gauge engines none");
         }
 
         private static void CheckPatchTargets()

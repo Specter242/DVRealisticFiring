@@ -180,6 +180,13 @@ namespace RealisticFiring.Sim
         public bool DriftingHookedUp => engine != null && Car != null
                                         && Drifting.HookedUp(engine.throttleControl.Value, engine.reverserControl.Value, Car.GetForwardSpeed());
 
+        /// <summary>The engine's drifting now: its chests and fittings (<see cref="EngineDrift"/>).</summary>
+        public DriftState Drift => engine != null ? EngineDrift.Read(Car, engine) : DriftState.NotDrifting;
+
+        /// <summary>Whether drifting hooked up wears the engine now, after its fittings and drifting steam.</summary>
+        public bool DriftingWearing => engine != null && Car != null
+                                       && Drifting.Wear(engine.throttleControl.Value, engine.reverserControl.Value, Car.GetForwardSpeed(), Drift) > 0f;
+
         public TrainCar Car { get; }
 
         public BoilerWater Water { get; }
@@ -399,7 +406,7 @@ namespace RealisticFiring.Sim
         private void ChargeWear(float delta)
         {
             if (engine != null && Car != null && delta > 0f)
-                driftWear += Drifting.Wear(engine.throttleControl.Value, engine.reverserControl.Value, Car.GetForwardSpeed()) * delta;
+                driftWear += Drifting.Wear(engine.throttleControl.Value, engine.reverserControl.Value, Car.GetForwardSpeed(), Drift) * delta;
             var train = damage != null ? damage.mechanicalPT : null;
             if (train == null || Net.IsClient)
                 return;

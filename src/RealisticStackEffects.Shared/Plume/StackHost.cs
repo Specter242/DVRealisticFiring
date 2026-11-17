@@ -31,14 +31,18 @@ namespace RealisticStackEffects
         /// <summary>Whether the custom effects draw the smoke, as the session started (a change needs a restart).</summary>
         bool CustomEffects { get; }
 
-        /// <summary>Seconds between the plume's status lines in the log on the player's engine; 0 for none.</summary>
+#if !PUBLIC_RELEASE
+        /// <summary>Seconds between the plume's status lines in the log on the player's engine; 0 for none (developer builds only).</summary>
         int StatusLogInterval { get; }
+#endif
 
+#if !PUBLIC_RELEASE
         /// <summary>Whether the developer's plume tools (the test bed, captures) are on: their key bound.</summary>
         bool DeveloperTools { get; }
 
         /// <summary>The test bed's tuning and look, kept with the settings.</summary>
         string TestBed { get; set; }
+#endif
 
         /// <summary>
         /// Whether the smoke may be drawn at half resolution: not beside
@@ -78,7 +82,10 @@ namespace RealisticStackEffects
         public static SmokeQuality Quality =>
             Settings == null ? SmokeQuality.High
             : Settings.SmokeQuality != SmokeQuality.Auto ? Settings.SmokeQuality
-            : PlumeCapture.Running ? SmokeQuality.High : Auto.Quality;
+#if !PUBLIC_RELEASE
+            : PlumeCapture.Running ? SmokeQuality.High
+#endif
+            : Auto.Quality;
 
         /// <summary>Notes that a plume has particles in the air this frame, for the automatic quality.</summary>
         public static void SmokeInTheAir() => smokeSeen = Time.unscaledTime;
@@ -95,8 +102,10 @@ namespace RealisticStackEffects
                     Auto.Reset();
                 return;
             }
+#if !PUBLIC_RELEASE
             if (PlumeCapture.Running)
                 return;
+#endif
             // The rate the game is held to: none in VR, where the headset paces it.
             var camera = PlayerManager.ActiveCamera;
             var heldTo = camera != null && camera.stereoEnabled ? 0f
@@ -125,8 +134,12 @@ namespace RealisticStackEffects
             internal PhaseTiming(PlumePhase phase)
             {
                 this.phase = phase;
+#if PUBLIC_RELEASE
+                started = 0L;
+#else
                 started = PhaseTimed != null && Settings != null && Settings.StatusLogInterval > 0
                     ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
+#endif
             }
             public void Dispose()
             {

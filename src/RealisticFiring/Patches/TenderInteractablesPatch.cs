@@ -17,7 +17,7 @@ namespace RealisticFiring.Patches
             {
                 var interactables = __instance.loadedExternalInteractables;
                 var note = TenderWaterValves.AttachControls(__instance, interactables != null ? interactables.transform : null);
-                if (note != null && Main.Settings.LogFireboxCreation)
+                if (note != null)
                     Main.Mod.Logger.Log($"{__instance.ID}: {note}");
             }
             catch (Exception e)

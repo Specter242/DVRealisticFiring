@@ -1,3 +1,4 @@
+#if !PUBLIC_RELEASE
 using UnityEngine;
 
 namespace RealisticStackEffects
@@ -19,3 +20,4 @@ namespace RealisticStackEffects
         }
     }
 }
+#endif

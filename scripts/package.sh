@@ -20,11 +20,11 @@ if [[ -f "$repo/src/RealisticFiring.Multiplayer/RealisticFiring.Multiplayer.cspr
     project="$repo/src/RealisticFiring.Multiplayer/RealisticFiring.Multiplayer.csproj"
 fi
 dotnet build "$project" \
-    -c Release -p:DvInstallDir="$dv" -warnaserror -nologo
+    -c Release -p:DvInstallDir="$dv" -p:PublicRelease=true -warnaserror -nologo
 # The add-on that feeds Realistic Stack Effects, loaded only when it runs.
 se="$repo/src/RealisticFiring.StackEffects/bin/Release/net48"
 dotnet build "$repo/src/RealisticFiring.StackEffects/RealisticFiring.StackEffects.csproj" \
-    -c Release -p:DvInstallDir="$dv" -warnaserror -nologo
+    -c Release -p:DvInstallDir="$dv" -p:PublicRelease=true -warnaserror -nologo
 
 if [[ -x "$unity" ]]; then
     "$repo/scripts/build-fx.sh"

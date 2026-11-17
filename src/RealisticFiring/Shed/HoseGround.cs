@@ -76,9 +76,13 @@ namespace RealisticFiring.Shed
             {
                 if (Hoses.Count == 0 || !Hoses.TryGetValue(__instance, out var lying) || lying.Rope == null)
                     return;
+#if PUBLIC_RELEASE
+                LayFinished(lying, dependsOn);
+#else
                 var start = Diagnostics.PerfMeter.Start();
                 try { LayFinished(lying, dependsOn); }
                 finally { Diagnostics.PerfMeter.Stop(Diagnostics.PerfSection.ShedHoses, start); }
+#endif
             }
 
             private static void LayFinished(Lying lying, JobHandle dependsOn)

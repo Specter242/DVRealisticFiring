@@ -1,6 +1,8 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Xml.Serialization;
 using DV.Simulation.Controllers;
 using LocoSim.Definitions;
 using LocoSim.Implementations;
@@ -26,6 +28,7 @@ namespace RealisticStackEffects.AdapterCheck
             CheckFirebox(gameParams);
             CheckExhaust(gameParams);
             CheckContract();
+            CheckSettings();
             Console.WriteLine(failures == 0 ? "All stack effects adapter checks passed" : $"{failures} stack effects adapter checks failed");
             return failures == 0 ? 0 : 1;
         }
@@ -241,6 +244,47 @@ namespace RealisticStackEffects.AdapterCheck
 
             public static object Value(string name, Type type) =>
                 type == typeof(bool) ? (object)true : 1f + Math.Abs(name.GetHashCode() % 1000) / 7f;
+        }
+
+        // The settings as Unity Mod Manager's window draws them (and a settings
+        // list such as the Comms Tablet's reads them): one heading, the most
+        // used first, short labels with tooltips, the developer settings
+        // undrawn; and a Settings.xml saved in the old order loading whole.
+        private static void CheckSettings()
+        {
+            var drawn = typeof(Settings).GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                .Select(f => (Field: f, Draw: f.GetCustomAttributes(typeof(UnityModManagerNet.DrawAttribute), false).OfType<UnityModManagerNet.DrawAttribute>().LastOrDefault(),
+                    Heading: f.GetCustomAttributes(typeof(UnityEngine.HeaderAttribute), false).OfType<UnityEngine.HeaderAttribute>().FirstOrDefault()?.header))
+                .Where(d => d.Draw != null).ToList();
+            var order = new[] { "SmokeQuality", "SmokeSeason", "EngineSteam", "HeatShimmer", "CustomSmokeEffects" };
+            Check(drawn.Select(d => d.Field.Name).SequenceEqual(order) && drawn[0].Heading == "Chimney smoke" && drawn.Skip(1).All(d => d.Heading == null),
+                "the settings show under one heading, Chimney smoke, the most used first, and no developer setting: " + string.Join(", ", drawn.Select(d => d.Field.Name)));
+            // Unity Mod Manager's tooltip box (rich text) is one line per line of text: broken at about 80 characters.
+            Check(drawn.All(d => !string.IsNullOrEmpty(d.Draw.Label) && d.Draw.Label.Length <= 60 && !string.IsNullOrEmpty(d.Draw.Tooltip) && !d.Draw.Tooltip.Contains("<")
+                                 && d.Draw.Tooltip.Split('\n').All(line => line.Length <= 80)),
+                $"every setting has a label of at most 60 characters (longest {drawn.Max(d => d.Draw.Label?.Length ?? 0)}) and a plain-text tooltip in lines of at most 80");
+
+            const string old = "<?xml version=\"1.0\" encoding=\"utf-8\"?><Settings>"
+                + "<CustomSmokeEffects>false</CustomSmokeEffects><HeatShimmer>false</HeatShimmer><EngineSteam>false</EngineSteam>"
+                + "<SmokeQuality>Auto</SmokeQuality><SmokeSeason>Winter</SmokeSeason><LogSetup>false</LogSetup>"
+                + "<StatusLogInterval>5</StatusLogInterval><PlumeTestBed>a=1</PlumeTestBed></Settings>";
+            var serializer = new XmlSerializer(typeof(Settings));
+            bool Kept(Settings s) => !s.CustomSmokeEffects && !s.HeatShimmer && !s.EngineSteam && s.SmokeQuality == Core.SmokeQuality.Auto
+                && s.SmokeSeason == Core.SmokeSeason.Winter && s.StatusLogInterval == 5 && s.PlumeTestBed == "a=1";
+            Settings loaded;
+            using (var reader = new StringReader(old))
+                loaded = (Settings)serializer.Deserialize(reader);
+            string saved;
+            using (var writer = new StringWriter())
+            {
+                serializer.Serialize(writer, loaded);
+                saved = writer.ToString();
+            }
+            using (var reader = new StringReader(saved))
+                Check(Kept(loaded) && Kept((Settings)serializer.Deserialize(reader)),
+                    "a Settings.xml in the old order loads every value, and keeps them saved again");
+            Check(!saved.Contains("LogSetup") && typeof(Settings).GetField("LogSetup") == null,
+                "a Settings.xml with LogSetup loads without it, and it is not saved again");
         }
 
         private static StackReading Read(StockStack stack, SteamExhaust exhaust)

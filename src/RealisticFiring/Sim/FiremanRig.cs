@@ -7,7 +7,9 @@ using LocoSim.Definitions;
 using LocoSim.Implementations;
 using LocoSim.Resources;
 using RealisticFiring.Core;
+#if !PUBLIC_RELEASE
 using RealisticFiring.Diagnostics;
+#endif
 using RealisticFiring.Visuals;
 using UnityEngine;
 
@@ -101,12 +103,14 @@ namespace RealisticFiring.Sim
         // What he did since his last line in the log while the player was
         // not aboard: to find why he stops firing with the player in
         // another loco (whydidimake, Discord, 2026-10-16).
+#if !PUBLIC_RELEASE
         private const float AwayLogEvery = 30f;
         private float awayClock;
         private int awayThrows;
         private float awayCoal;
         private int awayRefused;
         private int awayWanted;
+#endif
 
         private FiremanRig(TrainCar car, SimController controller, Boiler boiler, List<ReciprocatingSteamEngine> engines,
             SteamExhaust exhaust, RealisticFirebox coal, RealisticOilFirebox oil)
@@ -307,9 +311,13 @@ namespace RealisticFiring.Sim
         /// <summary>Runs on the host's sim tick, after the fire's.</summary>
         public void Step(float dt)
         {
+#if PUBLIC_RELEASE
+            StepCore(dt);
+#else
             var start = PerfMeter.Start();
             try { StepCore(dt); }
             finally { PerfMeter.Stop(PerfSection.Fireman, start); }
+#endif
         }
 
         private void StepCore(float dt)
@@ -326,7 +334,9 @@ namespace RealisticFiring.Sim
             Actions = actions;
 
             if (actions.Shovelful > 0f)
+#if !PUBLIC_RELEASE
                 awayWanted++;
+#endif
             if (CoalFireman != null)
             {
                 // The scoop from the tender as he opens the door for a throw.
@@ -365,9 +375,12 @@ namespace RealisticFiring.Sim
             damper.Work(actions.Damper, clock);
             blowdown.Work(actions.Blowdown, clock);
             jets?.Work(actions.OverFireJets, clock);
+#if !PUBLIC_RELEASE
             LogAway(dt, readings);
+#endif
         }
 
+#if !PUBLIC_RELEASE
         // Every half minute with the player not aboard, a line on what he
         // did and what held him back.
         private void LogAway(float dt, FiremanReadings readings)
@@ -397,6 +410,7 @@ namespace RealisticFiring.Sim
             awayThrows = awayRefused = awayWanted = 0;
             awayCoal = 0f;
         }
+#endif
 
         // The stoker's engine throttle, operating lever, and jets.
         private void WorkStoker(FiremanActions actions)
@@ -602,9 +616,11 @@ namespace RealisticFiring.Sim
             };
         }
 
-        // His shovelful, as the player's own (always a real one; the stock
-        // shovel's 36 kg on the S282 at the setting's 0 is gone).
-        private float ShovelfulMass() => Main.Settings.Shovelful;
+        // His shovelful, a full one at the setting's largest but never under
+        // a normal 3 kg (always a real one; the stock shovel's 36 kg on the
+        // S282 at the setting's 0 is gone). The player's mouse wheel picks
+        // only the player's own.
+        private float ShovelfulMass() => Core.ShovelSize.Fireman(Main.Settings.Shovelful);
 
         // Tender coal as it goes on the fire: the pile's mass over the
         // firebox's consumption multiplier, as the game's shovel moves it.
@@ -631,14 +647,18 @@ namespace RealisticFiring.Sim
             var pile = Pile();
             if (pile == null || door.Port != null && door.Yielded(clock) && door.Port.Value < DoorOpenEnough)
             {
+#if !PUBLIC_RELEASE
                 awayRefused++;
+#endif
                 return;
             }
             var taken = pile.TryRemoveCoal(mass * Multiplier) / Multiplier;
             if (taken <= 0f)
                 return;
+#if !PUBLIC_RELEASE
             awayThrows++;
             awayCoal += taken;
+#endif
             Firebox.DeliverShovelful(taken, aim);
             FiremanSounds.Throw(Car, Firebox);
         }

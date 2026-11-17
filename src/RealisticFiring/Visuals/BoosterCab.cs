@@ -29,12 +29,18 @@ namespace RealisticFiring.Visuals
         };
 
         /// <summary>Car-frame seats set on the seating bench this session, by livery; ahead of both tables.</summary>
+#if !PUBLIC_RELEASE
         internal static readonly Dictionary<string, Vector3> DevCarSeats = new Dictionary<string, Vector3>();
+#endif
 
         /// <summary>Where the cluster is pinned in the car's frame for <paramref name="livery"/>, if it is.</summary>
         internal static Vector3? CarSeatFor(string livery) =>
+#if PUBLIC_RELEASE
+            CarSeats.TryGetValue(livery, out var seated) ? seated
+#else
             DevCarSeats.TryGetValue(livery, out var dev) ? dev
             : CarSeats.TryGetValue(livery, out var seated) ? seated
+#endif
             : (Vector3?)null;
         private static readonly Vector3 DefaultPlacement = new Vector3(0f, 115f, 0f);
 
@@ -185,14 +191,13 @@ namespace RealisticFiring.Visuals
                 if (root != null && !booster.Fitted)
                 {
                     Object.DestroyImmediate(root.gameObject);
-                    if (Main.Settings.LogFireboxCreation)
-                        Main.Mod.Logger.Log($"{car.ID}: the booster is no longer fitted; its controls are taken out of the cab");
+                    Main.Mod.Logger.Log($"{car.ID}: the booster is no longer fitted; its controls are taken out of the cab");
                     continue;
                 }
                 if (root != null || !booster.Fitted)
                     continue;
                 var result = Attach(car, interior);
-                if (result != null && Main.Settings.LogFireboxCreation)
+                if (result != null)
                     Main.Mod.Logger.Log(refit ? $"{car.ID}: the booster fitted; {result}" : $"{car.ID}: the cab had lost its booster controls; {result}");
             }
         }
@@ -214,7 +219,7 @@ namespace RealisticFiring.Visuals
                     continue;
                 Object.DestroyImmediate(old.gameObject);
                 var result = Attach(car, interior);
-                if (result != null && Main.Settings.LogFireboxCreation)
+                if (result != null)
                     Main.Mod.Logger.Log($"{car.LogName()}: {result}");
             }
         }

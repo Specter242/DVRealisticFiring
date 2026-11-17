@@ -53,7 +53,7 @@ namespace RealisticFiring.Visuals
                 return;
             }
             var box = FlueSandBox.BuildInTender(engine, tender, anchor, control, center, size);
-            if (box != null && Main.Settings.LogFireboxCreation)
+            if (box != null)
                 Main.Mod?.Logger.Log($"{engine.ID}: flue sand inside the tender's existing sandbox; open its lid to load the shovel");
         }
 

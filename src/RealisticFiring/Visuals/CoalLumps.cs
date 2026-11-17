@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using RealisticFiring.Core;
+#if !PUBLIC_RELEASE
 using RealisticFiring.Diagnostics;
+#endif
 using UnityEngine;
 
 namespace RealisticFiring.Visuals
@@ -260,9 +262,13 @@ namespace RealisticFiring.Visuals
 
         private void LateUpdate()
         {
+#if !PUBLIC_RELEASE
             var start = PerfMeter.Start();
+#endif
             UpdateLumps();
+#if !PUBLIC_RELEASE
             PerfMeter.Stop(PerfSection.CoalLumps, start);
+#endif
         }
 
         private void UpdateLumps()

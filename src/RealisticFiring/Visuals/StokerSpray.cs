@@ -107,7 +107,9 @@ namespace RealisticFiring.Visuals
         private Vector3 bedUp = Vector3.up;
         private Vector3 bedAlong = Vector3.forward;
         private bool culled;
+#if !PUBLIC_RELEASE
         private float nextReport;
+#endif
         private Vector3 plateBox = DefaultPlate;
         private float nozzleAside = NozzleAside;
         private MaterialPropertyBlock lumpGlow;
@@ -360,13 +362,15 @@ namespace RealisticFiring.Visuals
         // What the spray is doing, for the log: the door, the feed, and what is in the air.
         private void Report(float fedRate, StokerFlow flow)
         {
-            if (!Main.Settings.LogFireboxCreation || Time.time < nextReport)
+#if !PUBLIC_RELEASE
+            if (!Main.Settings.LogCoalDeliveries || Time.time < nextReport)
                 return;
             nextReport = Time.time + ReportEvery;
             Main.Mod.Logger.Log($"{firebox.Car?.ID}: stoker spray: door {firebox.DoorOpening:P0}{(culled ? " (shut, not drawn)" : "")}, " +
                                 $"feed {fedRate:F2} kg/s, jets {flow.ManifoldPressure:F1} bar; in the air {lumps.particleCount} lumps, " +
                                 $"{(fines != null ? fines.particleCount.ToString() : "no")} fines, {(steam != null ? steam.particleCount.ToString() : "no")} wisps; " +
                                 LumpsDrawn());
+#endif
         }
 
         // Whether the camera draws the lumps, and where the first one is.
@@ -487,7 +491,11 @@ namespace RealisticFiring.Visuals
         private void FindPlate()
         {
             var car = firebox.Car;
+#if PUBLIC_RELEASE
+            if (car != null && (car.carLivery.id == QjStokerCab.Livery)
+#else
             if (car != null && (car.carLivery.id == QjStokerCab.Livery || FireholeOpening.DevHoles.ContainsKey(car.carLivery.id))
+#endif
                 && FireholeOpening.SeedForBench(car) && FireholeOpening.TryHole(car.carLivery.id, out var fitted))
             {
                 var at = new Vector3(fitted.Middle, fitted.Foot - PlateBelowHole, fitted.Plane);
@@ -521,7 +529,7 @@ namespace RealisticFiring.Visuals
             // A target reaching well into the firebox is not the door's opening.
             if (max.y > DoorReach)
             {
-                if (Main.Settings.LogFireboxCreation && firebox.Car != null)
+                if (firebox.Car != null)
                     Main.Mod.Logger.Log($"{firebox.Car.ID}: stoker plate: the door's shovel target reaches {max.y:P0} along the bed, not the door's opening; the plate stays at its default");
                 return;
             }
@@ -535,7 +543,7 @@ namespace RealisticFiring.Visuals
                 var foot = bed.BoxPoint(car.transform.TransformPoint(new Vector3(0.5f * (hole.Min.x + hole.Max.x), hole.Min.y - PlateBelowHole, hole.Min.z)));
                 plateBox = new Vector3(foot.x, plateBox.y, foot.z);
             }
-            if (Main.Settings.LogFireboxCreation && firebox.Car != null)
+            if (firebox.Car != null)
                 Main.Mod.Logger.Log($"{firebox.Car.ID}: stoker plate under the door at {firebox.Car.transform.InverseTransformPoint(bed.BedPoint(plateBox.x, plateBox.y, plateBox.z)):F2} m " +
                                     $"(across {plateBox.x:F2}, along {plateBox.y:F2}, up {plateBox.z:F2} of the bed's box)");
         }

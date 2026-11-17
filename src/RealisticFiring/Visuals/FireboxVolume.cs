@@ -1,5 +1,7 @@
 using RealisticFiring.Core;
+#if !PUBLIC_RELEASE
 using RealisticFiring.Diagnostics;
+#endif
 using RealisticFiring.Sim;
 using UnityEngine;
 
@@ -519,7 +521,11 @@ namespace RealisticFiring.Visuals
             var camera = PlayerManager.ActiveCamera != null ? PlayerManager.ActiveCamera : Camera.main;
             // A plume capture's camera is put at its view only as it draws:
             // from where it is held, not from where the player stands.
+#if PUBLIC_RELEASE
+            var eye = camera != null ? camera.transform.position : (Vector3?)null;
+#else
             var eye = RealisticStackEffects.PlumeCapture.HeldAt ?? (camera != null ? camera.transform.position : (Vector3?)null);
+#endif
             Distance = eye.HasValue && boxRenderer != null
                 ? Mathf.Sqrt(boxRenderer.bounds.SqrDistance(eye.Value))
                 : 0f;
@@ -673,20 +679,33 @@ namespace RealisticFiring.Visuals
 
         private void LateUpdate()
         {
+#if !PUBLIC_RELEASE
             var start = PerfMeter.Start();
+#endif
             UpdateVolume();
+#if !PUBLIC_RELEASE
             PerfMeter.Stop(PerfSection.FireboxVolume, start);
+#endif
         }
 
         private void UpdateVolume()
         {
+#if PUBLIC_RELEASE
+            var show = Main.Settings != null && Main.Settings.ShowZonedCoalBed && bed != null && bed.Ready
+                       && firebox != null && firebox.Model.FireOn;
+#else
             var show = Main.Settings != null && Main.Settings.ShowZonedCoalBed && bed != null && bed.Ready
                        && firebox != null && firebox.Model.FireOn && !FireboxTestBed.HidingFlames;
+#endif
             // Keep an inexpensive fire behind a shut door's perforations.
             // Its opaque parts stop the rays at the scene depth as usual.
             // (A capture holds the camera where it shoots only while it renders,
             // so its distance here is the player's: captures skip it.)
+#if PUBLIC_RELEASE
+            var near = show && Near();
+#else
             var near = show && (Near() || FireboxCapture.KeepsVisible);
+#endif
             var open = near && DoorOpen();
             var closed = near && !open && ClosedFire > 0.5f;
             var draw = open || closed;
@@ -722,8 +741,10 @@ namespace RealisticFiring.Visuals
             var lean = LeanForced * draft;
             var tile = Mathf.Max(NoiseTile, 0.05f);
             var flow = new Vector3(0f, rise, alongSign * rise * lean) / tile;
+#if !PUBLIC_RELEASE
             if (FireboxTestBed.Enabled && FreezeFlow > 0.5f)
                 dt = 0f;
+#endif
             sheetOffset = Wrap(sheetOffset + flow * dt);
             // The curls ride the flow with the flames and churn across it, the
             // more so the harder the draft; a working fire's flames stand, so
@@ -762,8 +783,10 @@ namespace RealisticFiring.Visuals
                     return;
                 dt = Mathf.Clamp(Time.time - closedUpdated, 0f, ClosedUpdateTime);
                 closedUpdateAt = Time.unscaledTime + ClosedUpdateTime;
+#if !PUBLIC_RELEASE
                 if (FireboxTestBed.Enabled && FreezeFlow > 0.5f)
                     dt = 0f;
+#endif
             }
             else
                 closedUpdateAt = 0f;
@@ -776,11 +799,19 @@ namespace RealisticFiring.Visuals
                 zonesDueAt = Time.time + FlowStep;
             }
             Carry(dt, rise, forcing);
+#if PUBLIC_RELEASE
+            if (constantsVersion != 0 || archFitted != (Arch != null && Arch.Fitted))
+            {
+                SetConstants();
+                constantsVersion = 0;
+            }
+#else
             if (constantsVersion != FireboxTestBed.TuningVersion || archFitted != (Arch != null && Arch.Fitted))
             {
                 SetConstants();
                 constantsVersion = FireboxTestBed.TuningVersion;
             }
+#endif
 
             // What changes with the fire's draft and smoke.
             material.SetFloat(LickMotionId, lickMotion);
@@ -809,7 +840,11 @@ namespace RealisticFiring.Visuals
             material.SetFloat(SmokeClumpsId, SmokeClumps * (1f - 0.4f * choked));
             SetJets();
             FireColors.Publish();
+#if PUBLIC_RELEASE
+            material.SetFloat(DebugId, 0);
+#else
             material.SetFloat(DebugId, FireboxTestBed.Enabled ? FireboxTestBed.VolumeView : 0);
+#endif
         }
 
         internal static float JetSpread = 0.2f;
@@ -887,7 +922,11 @@ namespace RealisticFiring.Visuals
                 material.SetVector(ArchLineId, Arch.Line);
                 material.SetVector(ArchFlameId, new Vector4(Mathf.Clamp(BrickArch.ArchLayer, 0.05f, 0.95f), BrickArch.ArchBack, BrickArch.ArchOver, Arch.LipAlongBed));
                 material.SetVector(ArchBendId, new Vector4(Mathf.Max(1f, BrickArch.ArchBend), BrickArch.ArchDrag, BrickArch.ArchTurn, BrickArch.ArchRoll));
+#if PUBLIC_RELEASE
+                material.SetVector(ArchFlowId, new Vector4(BrickArch.ArchBlur, 0f, Mathf.Clamp(BrickArch.ArchSqueeze, 0.05f, 1f), Mathf.Max(0f, BrickArch.ArchCarry)));
+#else
                 material.SetVector(ArchFlowId, new Vector4(BrickArch.ArchBlur, FireboxTestBed.Enabled ? BrickArch.ArchAlone : 0f, Mathf.Clamp(BrickArch.ArchSqueeze, 0.05f, 1f), Mathf.Max(0f, BrickArch.ArchCarry)));
+#endif
             }
             else
                 material.SetVector(ArchFlameId, Vector4.zero);

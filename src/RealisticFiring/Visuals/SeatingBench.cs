@@ -6,6 +6,7 @@ using RealisticFiring.Shed;
 using RealisticFiring.Sim;
 using UnityEngine;
 
+#if !PUBLIC_RELEASE
 namespace RealisticFiring.Visuals
 {
     /// <summary>
@@ -287,10 +288,30 @@ namespace RealisticFiring.Visuals
                                           seat.PlateMove.x, seat.PlateMove.y, seat.PlateMove.z, seat.PlateSpin, seat.PlateTurn };
                     return true;
                 },
-                Apply = (id, v) => JetsCab.DevSeats[id] = new JetsCab.Seat(new Vector3(v[0], v[1], v[2]), new Vector3(v[3], v[4], v[5]), new Vector3(v[6], v[7], v[8]), v[9], v[10], JetsCab.SeatFor(id).PlateSquare, inCar: true),
+                Apply = (id, v) => JetsCab.DevSeats[id] = new CabValve.Seat(new Vector3(v[0], v[1], v[2]), new Vector3(v[3], v[4], v[5]), new Vector3(v[6], v[7], v[8]), v[9], v[10], JetsCab.SeatFor(id).PlateSquare, inCar: true),
                 Clear = id => JetsCab.DevSeats.Remove(id),
                 Rebuild = car => JetsCab.RebuildLoaded(),
-                Line = (id, v) => $"[\"{id}\"] = new Seat(new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}), new Vector3({Deg(v[3])}, {Deg(v[4])}, {Deg(v[5])}), new Vector3({M(v[6])}, {M(v[7])}, {M(v[8])}), {Deg(v[9])}, {Deg(v[10])}, plateSquare: {(JetsCab.SeatFor(id).PlateSquare ? "true" : "false")}, inCar: true),",
+                Line = (id, v) => $"[\"{id}\"] = new CabValve.Seat(new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}), new Vector3({Deg(v[3])}, {Deg(v[4])}, {Deg(v[5])}), new Vector3({M(v[6])}, {M(v[7])}, {M(v[8])}), {Deg(v[9])}, {Deg(v[10])}, plateSquare: {(JetsCab.SeatFor(id).PlateSquare ? "true" : "false")}, inCar: true),",
+            },
+            new Part
+            {
+                Title = "Drifting valve (its wheel's place in the car's frame)",
+                Table = "DriftingValveCab.Seats",
+                Labels = new[] { "Across, m (+ right)", "Up, m", "Along, m (+ forward, into the backhead)", "Tilt, ° (about across)", "Turn, ° (about up)", "Twist, ° (about along)",
+                                 "DRIFTING plate across, m (the wheel's x)", "Plate up, m (its y)", "Plate out, m (its z)", "Plate spin, ° (in its face)", "Plate turn, ° (about up)" },
+                Spans = new[] { 1.5f, 1f, 1.5f, 180f, 180f, 180f, 0.4f, 0.4f, 0.1f, 180f, 180f },
+                Present = car => InCab(car, DriftingValveCab.RootName),
+                Read = (part, car, id) =>
+                {
+                    var seat = DriftingValveCab.Valve.SeatInCar(car, id);
+                    part.Values = new[] { seat.Move.x, seat.Move.y, seat.Move.z, seat.Turns.x, seat.Turns.y, seat.Turns.z,
+                                          seat.PlateMove.x, seat.PlateMove.y, seat.PlateMove.z, seat.PlateSpin, seat.PlateTurn };
+                    return true;
+                },
+                Apply = (id, v) => DriftingValveCab.Valve.DevSeats[id] = new CabValve.Seat(new Vector3(v[0], v[1], v[2]), new Vector3(v[3], v[4], v[5]), new Vector3(v[6], v[7], v[8]), v[9], v[10], DriftingValveCab.Valve.SeatFor(id).PlateSquare, inCar: true),
+                Clear = id => DriftingValveCab.Valve.DevSeats.Remove(id),
+                Rebuild = car => DriftingValveCab.Valve.RebuildLoaded(),
+                Line = (id, v) => $"[\"{id}\"] = new CabValve.Seat(new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}), new Vector3({Deg(v[3])}, {Deg(v[4])}, {Deg(v[5])}), new Vector3({M(v[6])}, {M(v[7])}, {M(v[8])}), {Deg(v[9])}, {Deg(v[10])}, plateSquare: {(DriftingValveCab.Valve.SeatFor(id).PlateSquare ? "true" : "false")}, inCar: true),",
             },
             new Part
             {
@@ -355,7 +376,7 @@ namespace RealisticFiring.Visuals
             Rebuild = car =>
             {
                 var line = ShedConnections.Replace(car, water);
-                if (line != null && Main.Settings.LogFireboxCreation)
+                if (line != null)
                     Main.Mod.Logger.Log($"{car.LogName()}: {line}");
             },
             Line = (id, v) => $"[\"{id}\"] = (new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}), {Deg(v[3])}, {Deg(v[4])}, {Deg(v[5])}, {M(v[6])}),",
@@ -566,3 +587,4 @@ namespace RealisticFiring.Visuals
         }
     }
 }
+#endif

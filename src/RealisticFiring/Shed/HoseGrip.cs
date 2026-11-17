@@ -42,8 +42,10 @@ namespace RealisticFiring.Shed
             grip.center = new Vector3(0f, 0.5f * reach, 0f);
             grip.enabled = true;
             handler.interactionColliders.Add(grip);
-            if (Main.Settings.LogFireboxCreation)
+#if !PUBLIC_RELEASE
+            if (Main.Settings.LogCoalDeliveries)
                 Main.Mod.Logger.Log($"{car.ID}: {plug.connectionTag} plug in, its grip {reach:F2} m out along the hose (the engine reaches {outermost:F2} m out there)");
+#endif
         }
 
         /// <summary>Takes the grip away from <paramref name="plug"/>, out of its connection.</summary>

@@ -1,6 +1,8 @@
 using HarmonyLib;
 using LocoSim.Implementations;
+#if !PUBLIC_RELEASE
 using RealisticFiring.Diagnostics;
+#endif
 using RealisticFiring.Sim;
 
 namespace RealisticFiring.Patches
@@ -17,9 +19,13 @@ namespace RealisticFiring.Patches
         {
             if (!InjectorRig.TryGet(__instance, out var rig))
                 return true;
+#if !PUBLIC_RELEASE
             var start = PerfMeter.Start();
+#endif
             rig.Simulate(delta);
+#if !PUBLIC_RELEASE
             PerfMeter.Stop(PerfSection.Injector, start);
+#endif
             return false;
         }
     }

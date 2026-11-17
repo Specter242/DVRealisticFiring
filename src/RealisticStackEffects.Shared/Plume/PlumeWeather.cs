@@ -105,12 +105,15 @@ namespace RealisticStackEffects
             var sky = weather != null && weather.manager != null ? weather.manager.todSky : null;
             daylight = sky != null ? Mathf.Clamp01((TwilightBelow - sky.SunZenith) / (TwilightBelow - TwilightAbove)) : 1f;
             directLight = sky != null ? Twilight.DirectLight(sky.SunZenith) : 1f;
+#if !PUBLIC_RELEASE
             if (PlumeTestBed.Air is PlumeAir testAir)
             {
                 air = testAir;
                 source = "the test bed's";
             }
-            else if (weather != null && SeasonsMod.TryRead(out var celsius, out var season))
+            else
+#endif
+            if (weather != null && SeasonsMod.TryRead(out var celsius, out var season))
             {
                 air = PlumeClimate.WithTemperature(celsius, weather.TimeOfDayHours.CurrentValue, weather.RainValue.CurrentValue, 0f);
                 source = season;
@@ -125,6 +128,7 @@ namespace RealisticStackEffects
                 air = PlumeAir.Reference;
                 source = "no weather yet";
             }
+#if !PUBLIC_RELEASE
             if (PlumeTestBed.Wind is Vector3 test)
             {
                 wind = test;
@@ -132,6 +136,7 @@ namespace RealisticStackEffects
                 degrees = PlumeTestBed.WindToward;
                 return;
             }
+#endif
             if (weather == null)
                 return;
             degrees = weather.WindDirection.CurrentValue;

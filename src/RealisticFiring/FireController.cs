@@ -2,7 +2,9 @@ using System.Linq;
 using DV;
 using LocoSim.Implementations;
 using RealisticFiring.Core;
+#if !PUBLIC_RELEASE
 using RealisticFiring.Diagnostics;
+#endif
 using RealisticFiring.Sim;
 using RealisticStackEffects;
 using UnityEngine;
@@ -29,7 +31,9 @@ namespace RealisticFiring
         private readonly FireOverlay overlay = new FireOverlay();
         private readonly FiremanPanel firemanPanel = new FiremanPanel();
         private float lastShakeTime = float.NegativeInfinity;
+#if !PUBLIC_RELEASE
         private float lastStatusTime;
+#endif
         private GUIStyle aimLabel;
         private string notice;
         private float noticeTime = float.NegativeInfinity;
@@ -47,13 +51,23 @@ namespace RealisticFiring
                 Main.Mod?.Logger.Log(text);
         }
 
+        /// <summary>Shows a notice under the crosshair for <paramref name="seconds"/>, unlogged: for a value the player is turning.</summary>
+        internal static void Show(string text, float seconds)
+        {
+            if (instance != null)
+                instance.Notify(text, seconds, log: false);
+        }
+
+#if !PUBLIC_RELEASE
         private void FixedUpdate() => PerfMeter.PhysicsStep();
+#endif
 
         private bool toldFailedPatches;
         private bool toldAddOnProblem;
 
         private void Update()
         {
+#if !PUBLIC_RELEASE
             PerfMeter.Frame();
             var start = PerfMeter.Start();
             if (Main.Settings.DumpUnderEngine)
@@ -71,6 +85,7 @@ namespace RealisticFiring
                     Main.Mod.Logger.LogException("The under-engine dump failed and is off", e);
                 }
             }
+#endif
             // Once in a game: some of the mod's patches failed to apply.
             if (!toldFailedPatches && Main.FailedPatches.Count > 0 && PlayerManager.PlayerTransform != null)
             {
@@ -99,14 +114,20 @@ namespace RealisticFiring
             catch (System.Exception e) { Faults.Report("the feed pump's cab controls", null, e); }
             try { Visuals.BoosterCab.EnsureFitted(); }
             catch (System.Exception e) { Faults.Report("the booster's cab controls", null, e); }
+            try { Visuals.DriftingValveCab.EnsureFitted(); }
+            catch (System.Exception e) { Faults.Report("the drifting valve in the cab", null, e); }
+#if !PUBLIC_RELEASE
             try
             {
                 Diagnostics.ShedSurvey.TryRun();
                 Diagnostics.ShedSurvey.ProbeRoofs();
             }
             catch (System.Exception e) { Faults.Report("the shed survey", null, e); }
+#endif
             try { Visuals.EngineSteam.Update(); }
             catch (System.Exception e) { Faults.Report("the engine's steam", null, e); }
+            try { Visuals.DriftSounds.Scan(); }
+            catch (System.Exception e) { Faults.Report("the drifting fittings' sounds", null, e); }
             try { Shed.ShedStands.Update(); }
             catch (System.Exception e) { Faults.Report("the shed stands", null, e); }
             try { Visuals.OilBurnerCab.EnsureBuilt(); }
@@ -115,7 +136,9 @@ namespace RealisticFiring
             catch (System.Exception e) { Faults.Report("the oil flareback", null, e); }
             try { Visuals.JetBlowback.Update(); }
             catch (System.Exception e) { Faults.Report("the jets' blowback", null, e); }
+#if !PUBLIC_RELEASE
             PerfMeter.Stop(PerfSection.Controller, start);
+#endif
         }
 
         private void HandleKeys()
@@ -129,7 +152,9 @@ namespace RealisticFiring
             if (settings.GiveFiringTablet)
             {
                 settings.GiveFiringTablet = false;
-                Notify(Net.IsClient ? "In multiplayer, buy the firing tablet at a gadget shop, beside the clinometer" : Items.FiringTablet.GiveToPlayer());
+                // Merged into the Comms Tablet, the firing tablet is retired: its pages are an app there.
+                Notify(CommsTabletLink.Merged ? CommsTabletLink.RetiredNotice
+                    : Net.IsClient ? "In multiplayer, buy the firing tablet at a gadget shop, beside the clinometer" : Items.FiringTablet.GiveToPlayer());
             }
             if (settings.GiveWoodCrate)
             {
@@ -157,10 +182,12 @@ namespace RealisticFiring
             }
             if (!HudPolicy.Hidden && settings.ToggleOverlayKey.Down())
                 FireOverlay.Step(settings);
+#if !PUBLIC_RELEASE
             if (settings.PlumeTestBedEnabled && settings.DevPlumeTestBedKey.Down())
                 PlumeTestBed.Toggle();
             if (settings.SeatingBenchEnabled && settings.DevSeatingKey.Down())
                 Visuals.SeatingBench.Toggle();
+#endif
 
             var withFireman = FiremanRig.TryGetTended(PlayerManager.Car, out _);
             if (!HudPolicy.Hidden && settings.FiremanKey.Down())
@@ -180,8 +207,10 @@ namespace RealisticFiring
                 lastShakeTime = Time.time;
                 var ashBefore = firebox.Model.AshMass;
                 firebox.ShakeGrate();
+#if !PUBLIC_RELEASE
                 if (settings.LogCoalDeliveries)
                     Main.Mod.Logger.Log($"{firebox.Car.ID}: grate shaken, ash {ashBefore:F2} -> {firebox.Model.AshMass:F2} kg");
+#endif
             }
 
             if (InjectorRig.TryGetTended(PlayerManager.Car, out var rig))
@@ -346,12 +375,13 @@ namespace RealisticFiring
  internal const string HydrantHint =
             "The shed's water comes by a stand's water hose: plug it into the connection low on the firebox and open the stand's valve";
 
-        private void Notify(string text, float seconds = NoticeTime)
+        private void Notify(string text, float seconds = NoticeTime, bool log = true)
         {
             notice = text;
             noticeTime = Time.time;
             noticeFor = seconds;
-            Main.Mod.Logger.Log(text);
+            if (log)
+                Main.Mod.Logger.Log(text);
         }
 
         private float noticeFor = NoticeTime;
@@ -375,13 +405,16 @@ namespace RealisticFiring
                 FirstStepsTime);
         }
 
+#if !PUBLIC_RELEASE
         private void LateUpdate()
         {
             var interval = Main.Settings.FireStatusLogInterval;
             if (interval <= 0 || Time.time - lastStatusTime < interval)
                 return;
             lastStatusTime = Time.time;
+#if !PUBLIC_RELEASE
             Main.Mod.Logger.Log($"Performance: {PerfMeter.Report()}");
+#endif
             if (!FireboxRegistry.TryGetTended(PlayerManager.Car, out var firebox))
             {
                 if (RealisticOilFirebox.TryGetTended(PlayerManager.Car, out var oil))
@@ -414,6 +447,7 @@ namespace RealisticFiring
                     ? $"; fireman {fireman.Fireman.Mode}: {string.Join("; ", FiremanPanel.Describe(fireman))}, trim {fireman.Fireman.Trim:F2}"
                     : ""));
         }
+#endif
 
         /// <summary>
         /// The blower, for the status log: its cab valve, the shed's blower
@@ -652,13 +686,18 @@ namespace RealisticFiring
 
         private void OnGUI()
         {
+#if !PUBLIC_RELEASE
             var start = PerfMeter.Start();
+#endif
             DrawGui();
+#if !PUBLIC_RELEASE
             PerfMeter.Stop(PerfSection.Gui, start);
+#endif
         }
 
         private void DrawGui()
         {
+#if !PUBLIC_RELEASE
             // A bug hunt's probe names what it hides, top middle (Diagnostics.UnderEngineDump).
             if (Main.Settings.DumpUnderEngine && Main.Settings.ProbeUnderEngine && Diagnostics.UnderEngineDump.Showing != null)
                 GUI.Label(new Rect(Screen.width / 2f - 450f, 40f, 900f, 60f), Diagnostics.UnderEngineDump.Showing,
@@ -666,14 +705,17 @@ namespace RealisticFiring
             // Promotional firebox captures can retain the normal overlay.
             if (PlumeCapture.Running || (Visuals.FireboxCapture.Running && !Visuals.FireboxCapture.ShowOverlay))
                 return;
+#endif
             if (notice != null && Time.time - noticeTime <= noticeFor)
                 DrawLabel(notice, NoticeOffset, new Color(1f, 0.85f, 0.5f));
             if (HudPolicy.Hidden)
                 return;
             if (FiremanRig.TryGetTended(PlayerManager.Car, out var fireman))
                 firemanPanel.Draw(fireman);
+#if !PUBLIC_RELEASE
             PlumeTestBed.Draw();
             Visuals.SeatingBench.Draw();
+#endif
             if (!FireboxRegistry.TryGetTended(PlayerManager.Car, out var firebox))
             {
                 if (Main.Settings.ShowOverlay && RealisticOilFirebox.TryGetTended(PlayerManager.Car, out var oil))

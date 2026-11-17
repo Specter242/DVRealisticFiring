@@ -11,7 +11,8 @@ namespace RealisticFiring.Patches
 {
     /// <summary>
     /// Sizes the shovel as a real shovelful when it loads from the coal of a
-    /// loco with a realistic firebox (the S282's tender or the S060's bunker).
+    /// loco with a realistic firebox (the S282's tender or the S060's bunker):
+    /// the player's own, as the mouse wheel picked it (<see cref="Items.ShovelfulWheel"/>).
     /// Coal piles elsewhere keep the stock size.
     /// </summary>
     [HarmonyPatch(typeof(ShovelNonPhysicalCoal), "ShovelCapacityForPile")]
@@ -21,7 +22,7 @@ namespace RealisticFiring.Patches
 
         private static void Postfix(ShovelNonPhysicalCoal __instance, ICoalPile coalPile, ref float __result)
         {
-            var shovelfulMass = Main.Settings.Shovelful;
+            var shovelfulMass = Main.Settings.Scoop;
             if (!(coalPile is Component pile) || pile == null)
                 return;
             var car = TrainCar.Resolve(pile.gameObject);
@@ -35,6 +36,7 @@ namespace RealisticFiring.Patches
             var stock = __result;
             __result = ShovelSize.PileCapacity(shovelfulMass, __instance.shovelChunksCapacity, multiplier);
 
+#if !PUBLIC_RELEASE
             if (Main.Settings.LogCoalDeliveries && Reported.Add($"{__instance.name}|{car.carLivery.id}|{shovelfulMass}"))
             {
                 Main.Mod.Logger.Log($"Shovel '{__instance.name}' ({__instance.shovelChunksCapacity} chunks of " +
@@ -42,13 +44,14 @@ namespace RealisticFiring.Patches
                                     $"from the pile ({stock / multiplier:F2} kg into the firebox), now {__result:F2} kg " +
                                     $"({__result / multiplier:F2} kg)");
             }
+#endif
         }
     }
 
     /// <summary>
     /// The keyboard and HUD "shovel coal" action moves whole tender chunks into
     /// the firebox with no shovel (12 kg each on the S282). On a realistic
-    /// firebox each chunk becomes one standard shovelful instead, which follows
+    /// firebox each chunk becomes one of the player's shovelfuls instead, which follows
     /// the fire (where it needs coal most) because nothing aims it.
     /// </summary>
     [HarmonyPatch(typeof(CoalPileSimController), nameof(CoalPileSimController.TransferToFirebox))]
@@ -56,7 +59,7 @@ namespace RealisticFiring.Patches
     {
         private static bool Prefix(CoalPileSimController __instance, FireboxSimController fireboxController, byte chunkCount)
         {
-            var shovelfulMass = Main.Settings.Shovelful;
+            var shovelfulMass = Main.Settings.Scoop;
             if (fireboxController == null
                 || !FireboxRegistry.TryGet(TrainCar.Resolve(fireboxController.gameObject), out _))
                 return true;

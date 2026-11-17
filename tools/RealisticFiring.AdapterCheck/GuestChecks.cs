@@ -90,6 +90,12 @@ namespace RealisticFiring.AdapterCheck
                   && whole && gotAction.Car == 7 && gotAction.Zone == 3 && gotAction.Direction == 1 && gotAction.Value == 2.5f && gotAction.Seq == 65535
                   && gotPolicy.Hidden && gotPolicy.Seq == 40000,
                 "a guest's hello is cut to length and to printable characters before the host shows it, and the action and display-rule packets carry their order");
+
+            var fittings = new Multiplayer.FittingsPacket { Arch = true, Booster = true, Snifting = true, ByPass = true, Seq = 41000 };
+            var gotFittings = new Multiplayer.FittingsPacket();
+            check(RoundTrip(fittings.Serialize, gotFittings.Deserialize) && gotFittings.Arch && gotFittings.Booster && gotFittings.Snifting && gotFittings.ByPass
+                  && !gotFittings.DriftingValve && !gotFittings.Jets && !gotFittings.Stoker && !gotFittings.FeedPump && gotFittings.Seq == 41000,
+                "the host's fittings reach a guest with the drifting fittings among them");
         }
 
         private static bool RoundTrip(Action<BinaryWriter> write, Action<BinaryReader> read)

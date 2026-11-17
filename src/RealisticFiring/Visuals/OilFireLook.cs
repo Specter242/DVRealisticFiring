@@ -1,6 +1,8 @@
 using System.Linq;
 using DV.Simulation.Cars;
+#if !PUBLIC_RELEASE
 using RealisticFiring.Diagnostics;
+#endif
 using RealisticFiring.Sim;
 using UnityEngine;
 
@@ -173,9 +175,13 @@ namespace RealisticFiring.Visuals
 
         private void LateUpdate()
         {
+#if !PUBLIC_RELEASE
             var start = PerfMeter.Start();
+#endif
             Step();
+#if !PUBLIC_RELEASE
             PerfMeter.Stop(PerfSection.CoalBed, start);
+#endif
         }
 
         private void Step()

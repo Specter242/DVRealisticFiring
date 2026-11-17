@@ -1,7 +1,11 @@
+#if !PUBLIC_RELEASE
 using HarmonyLib;
 using LocoSim.Implementations;
+#if !PUBLIC_RELEASE
 using RealisticFiring.Diagnostics;
+#endif
 
+// The mod's timing for the status log: development builds only.
 namespace RealisticFiring.Patches
 {
     /// <summary>Includes the stock engine tick and RF's cylinder work, unlike the firebox timer.</summary>
@@ -39,3 +43,4 @@ namespace RealisticFiring.Patches
         private static void Postfix(long __state) => PerfMeter.Stop(PerfSection.Draft, __state);
     }
 }
+#endif

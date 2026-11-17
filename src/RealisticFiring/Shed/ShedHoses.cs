@@ -144,7 +144,7 @@ namespace RealisticFiring.Shed
                         rope.pins[i] = pin;
                     }
                 }
-                if (!pinsLogged && Main.Settings.LogFireboxCreation)
+                if (!pinsLogged)
                 {
                     pinsLogged = true;
                     Main.Mod.Logger.Log($"Shed hose rope: {parameters.numPoints} points over {hoseLength:F0} m, pinned " +

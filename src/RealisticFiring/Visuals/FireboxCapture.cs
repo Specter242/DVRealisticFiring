@@ -11,11 +11,14 @@ using HarmonyLib;
 using LocoSim.Implementations;
 using Newtonsoft.Json;
 using RealisticFiring.Core;
+#if !PUBLIC_RELEASE
 using RealisticFiring.Diagnostics;
+#endif
 using RealisticFiring.Sim;
 using RealisticStackEffects;
 using UnityEngine;
 
+#if !PUBLIC_RELEASE
 namespace RealisticFiring.Visuals
 {
  internal sealed class FireboxCapture : MonoBehaviour
@@ -793,3 +796,4 @@ namespace RealisticFiring.Visuals
         }
     }
 }
+#endif

@@ -28,7 +28,7 @@ namespace RealisticFiring.Patches
         public static void Logged(TrainCar car, string what, Func<string> step) => Run(car, what, () =>
         {
             var line = step();
-            if (line != null && Main.Settings.LogFireboxCreation)
+            if (line != null)
                 Main.Mod?.Logger.Log($"{Describe(car)}: {line}");
         });
 

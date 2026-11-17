@@ -624,8 +624,7 @@ namespace RealisticFiring.Shed
                         lines.Add(line);
                     }
                 }
-                if (Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"Shed stands at turntable '{roundhouse.Turntable}': {string.Join("; ", lines)}");
+                Main.Mod.Logger.Log($"Shed stands at turntable '{roundhouse.Turntable}': {string.Join("; ", lines)}");
             }
             foreach (var shop in Shops)
             {
@@ -642,8 +641,7 @@ namespace RealisticFiring.Shed
                     Keep(stand, kind, built);
                     lines.Add(line);
                 }
-                if (Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"Shed stands at a shop on '{shop.Track}': {string.Join("; ", lines)}");
+                Main.Mod.Logger.Log($"Shed stands at a shop on '{shop.Track}': {string.Join("; ", lines)}");
             }
         }
 

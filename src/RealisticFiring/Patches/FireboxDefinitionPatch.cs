@@ -26,9 +26,8 @@ namespace RealisticFiring.Patches
                 try
                 {
                     __result = new RealisticOilFirebox(__instance, car);
-                    if (Main.Settings.LogFireboxCreation)
-                        Main.Mod.Logger.Log($"Realistic oil firebox '{__instance.ID}' created on {carName} " +
-                                            $"({__instance.maxCoalCapacity} kg over {__instance.burnTime:F0} s{Sized(makersOil)})");
+                    Main.Mod.Logger.Log($"Realistic oil firebox '{__instance.ID}' created on {carName} " +
+                                        $"({__instance.maxCoalCapacity} kg over {__instance.burnTime:F0} s{Sized(makersOil)})");
                     return false;
                 }
                 catch (Exception e)
@@ -63,7 +62,6 @@ namespace RealisticFiring.Patches
                 }
             }
 
-            if (Main.Settings.LogFireboxCreation)
             {
                 Main.Mod.Logger.Log(
                     $"{(replace ? "Realistic" : "Stock")} firebox '{__instance.ID}' created on {carName} " +

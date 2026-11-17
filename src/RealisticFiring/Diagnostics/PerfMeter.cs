@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Linq;
 using UnityEngine;
 
+#if !PUBLIC_RELEASE
 namespace RealisticFiring.Diagnostics
 {
     /// <summary>Parts of the mod timed by <see cref="PerfMeter"/>.</summary>
@@ -132,3 +133,4 @@ namespace RealisticFiring.Diagnostics
         }
     }
 }
+#endif

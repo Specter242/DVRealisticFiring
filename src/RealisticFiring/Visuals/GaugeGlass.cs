@@ -74,9 +74,8 @@ namespace RealisticFiring.Visuals
                 return;
             var span = new Span(glass.Indicator, glass.Reader);
             Spans[car.carLivery.id] = span;
-            if (Main.Settings.LogFireboxCreation)
-                Main.Mod.Logger.Log($"{car.ID}: gauge glass '{glass.Indicator.name}' shows '{port}' from {span.Min:F2} to {span.Max:F2}" +
-                                    (span.Multiplier != 1f || span.Offset != 0f ? $" (× {span.Multiplier:F2} + {span.Offset:F2})" : ""));
+            Main.Mod.Logger.Log($"{car.ID}: gauge glass '{glass.Indicator.name}' shows '{port}' from {span.Min:F2} to {span.Max:F2}" +
+                                (span.Multiplier != 1f || span.Offset != 0f ? $" (× {span.Multiplier:F2} + {span.Offset:F2})" : ""));
         }
     }
 }

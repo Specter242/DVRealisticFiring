@@ -438,7 +438,11 @@ namespace RealisticFiring.Visuals
             mesh.SetTriangles(triangles, 0);
             mesh.RecalculateTangents();
             mesh.RecalculateBounds();
+#if PUBLIC_RELEASE
+            builtVersion = 0;
+#else
             builtVersion = FireboxTestBed.TuningVersion;
+#endif
         }
 
         // How hot a place on the arch runs against its hottest: cooler
@@ -741,7 +745,11 @@ namespace RealisticFiring.Visuals
                 archRenderer.enabled = show;
             if (!show)
                 return;
+#if PUBLIC_RELEASE
+            if (builtVersion != 0)
+#else
             if (builtVersion != FireboxTestBed.TuningVersion)
+#endif
                 Build();
 
             // The bricks follow the fire under them: quickly on the test bed

@@ -1,5 +1,7 @@
 using RealisticFiring.Core;
+#if !PUBLIC_RELEASE
 using RealisticFiring.Diagnostics;
+#endif
 using RealisticStackEffects;
 using RealisticStackEffects.Core;
 using UnityEngine;
@@ -14,9 +16,11 @@ namespace RealisticFiring.Visuals
             StackHost.Mod = Main.Mod;
             StackHost.Settings = new StackSettings();
             StackHost.Assets = new StackAssets();
+#if !PUBLIC_RELEASE
             StackHost.PlumeTimed = start => PerfMeter.Stop(PerfSection.ChimneyPlume, start);
             StackHost.CameraTimed = start => PerfMeter.Stop(PerfSection.PlumeCamera, start);
             StackHost.PhaseTimed = PerfMeter.StopPlumePhase;
+#endif
             StackHost.GuiScale = () => OverlayStyle.Scale;
         }
 
@@ -32,15 +36,20 @@ namespace RealisticFiring.Visuals
             public bool HeatShimmer => Main.Settings.HeatShimmer;
             public bool EngineSteam => Main.Settings.EngineSteam;
             public bool CustomEffects => Main.Session.CustomSmokeEffects;
+#if !PUBLIC_RELEASE
             public int StatusLogInterval => Main.Settings.FireStatusLogInterval;
-            public bool DeveloperTools => Main.Settings.PlumeTestBedEnabled;
+#endif
             public bool HalfResolutionAllowed => true;
+
+#if !PUBLIC_RELEASE
+            public bool DeveloperTools => Main.Settings.PlumeTestBedEnabled;
 
             public string TestBed
             {
                 get => Main.Settings.PlumeTestBed;
                 set => Main.Settings.PlumeTestBed = value;
             }
+#endif
 
             public void Save() => Main.Settings.Save(Main.Mod);
         }

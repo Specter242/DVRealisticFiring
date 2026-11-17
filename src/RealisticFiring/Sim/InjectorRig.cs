@@ -954,9 +954,11 @@ namespace RealisticFiring.Sim
                 return;
             var from = lastPumpState;
             lastPumpState = flow.State;
+#if !PUBLIC_RELEASE
             if (Main.Settings.LogCoalDeliveries)
                 Main.Mod.Logger.Log($"{Car?.ID}: feed pump {from} -> {flow.State} at {BoilerPressure:F1} bar, valve {PumpValve:F2}, " +
                                     $"feed {flow.WaterIn:F2} kg/s at {flow.FeedTemperature:F0} C, steam {flow.SteamUsed:F2} kg/s, heater {flow.HeaterTemperature:F0} C");
+#endif
         }
 
         private void LogStateChange(InjectorCircuit circuit)
@@ -966,6 +968,7 @@ namespace RealisticFiring.Sim
                 return;
             var from = circuit.LastLoggedState;
             circuit.LastLoggedState = flow.State;
+#if !PUBLIC_RELEASE
             if (!Main.Settings.LogCoalDeliveries)
                 return;
             var name = string.IsNullOrEmpty(circuit.Name) ? "injector" : circuit.Name + " injector";
@@ -973,6 +976,7 @@ namespace RealisticFiring.Sim
                                 $"feed {flow.WaterIn:F2} kg/s at {flow.FeedTemperature:F0} C, steam {flow.SteamUsed:F2} kg/s, " +
                                 $"overflow {flow.Overflow:F2} kg/s water, {flow.OverflowSteam:F2} kg/s steam, " +
                                 $"injector {flow.InjectorTemperature:F0} C (takes below {flow.RestartLimit:F0} C)");
+#endif
         }
 
         private static void PruneDestroyedCars()

@@ -82,10 +82,12 @@ namespace RealisticFiring.Shed
         // Seats set this session on the seating bench (Visuals.SeatingBench, a
         // development tool), by livery, as Seated and WaterSeated: they come
         // first and are never saved.
+#if !PUBLIC_RELEASE
         internal static readonly Dictionary<string, (Vector3 At, float Swing, float Down, float Spin, float Out)> DevSeated =
             new Dictionary<string, (Vector3, float, float, float, float)>();
         internal static readonly Dictionary<string, (Vector3 At, float Swing, float Down, float Spin, float Out)> DevWaterSeated =
             new Dictionary<string, (Vector3, float, float, float, float)>();
+#endif
 
  private static readonly HashSet<string> RightSide = new HashSet<string> { "LocoS060" };
 
@@ -297,8 +299,12 @@ namespace RealisticFiring.Shed
             var further = 0f;
             Vector3 at;
             string how;
+#if PUBLIC_RELEASE
+            if ((water ? WaterSeated : Seated).TryGetValue(livery, out var seat))
+#else
             if ((water ? DevWaterSeated : DevSeated).TryGetValue(livery, out var seat)
                 || (water ? WaterSeated : Seated).TryGetValue(livery, out seat))
+#endif
             {
                 at = seat.At;
                 swing = seat.Swing;
@@ -349,7 +355,11 @@ namespace RealisticFiring.Shed
             if (connection == null)
                 return false;
             var livery = car.carLivery != null ? car.carLivery.id : "";
+#if PUBLIC_RELEASE
+            if (!(water ? WaterSeated : Seated).TryGetValue(livery, out seat))
+#else
             if (!(water ? DevWaterSeated : DevSeated).TryGetValue(livery, out seat) && !(water ? WaterSeated : Seated).TryGetValue(livery, out seat))
+#endif
                 seat = (connection.Guessed, 0f, 0f, 0f, 0f);
             return true;
         }
@@ -556,8 +566,7 @@ namespace RealisticFiring.Shed
             // (and logs an error for an ID read then).
             if (car == null || car.logicCar == null)
                 return;
-            if (Main.Settings.LogFireboxCreation)
-                Main.Mod.Logger.Log($"{car?.ID}: {text}");
+            Main.Mod.Logger.Log($"{car?.ID}: {text}");
             var near = PlayerManager.PlayerTransform != null && socket != null
                        && Vector3.Distance(PlayerManager.PlayerTransform.position, socket.transform.position) < SaidWithin;
             if (PlayerManager.Car == car || near)

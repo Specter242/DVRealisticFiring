@@ -26,8 +26,7 @@ namespace RealisticFiring.Patches
                 return;
             foreach (var boiler in graph.executionOrder.OfType<BoilerDefinition>().Where(b => b.spawnPressure > 1f))
             {
-                if (Main.Settings.LogFireboxCreation)
-                    Main.Mod.Logger.Log($"{trainCar.carLivery.id}: spawns cold, at 1 bar instead of its mod's {boiler.spawnPressure:F1}");
+                Main.Mod.Logger.Log($"{trainCar.carLivery.id}: spawns cold, at 1 bar instead of its mod's {boiler.spawnPressure:F1}");
                 boiler.spawnPressure = 1f;
             }
         }

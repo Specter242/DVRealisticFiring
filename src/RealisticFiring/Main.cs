@@ -117,11 +117,14 @@ namespace RealisticFiring
             changed |= Settings.ApplyNewDefaults();
             if (changed)
                 Settings.Save(modEntry);
-            Core.FireTuning.Default.ClinkerTendency = Settings.ClinkerTendency;
+            // The clinker tuning, and the upgrade rules noted so a later change refits.
+            Settings.OnChange();
             Visuals.FiringStackHost.Install();
+#if !PUBLIC_RELEASE
             // The test bed's tuning only on a development setup (its key bound).
             if (Settings.PlumeTestBedEnabled)
                 PlumeTestBed.Restore(Settings.PlumeTestBed);
+#endif
             session = Session.From(Settings);
             ReplacementEnabled = session.RealisticFireboxes;
             RealisticSmokeEnabled = session.RealisticSmoke;
@@ -150,8 +153,11 @@ namespace RealisticFiring
                 Object.DontDestroyOnLoad(host);
                 host.AddComponent<FireController>();
                 host.AddComponent<Items.StartingSupplies>();
+#if !PUBLIC_RELEASE
+                // The developer's captures: development builds only.
                 host.AddComponent<PlumeCapture>();
                 host.AddComponent<Visuals.FireboxCapture>();
+#endif
             });
             Step(modEntry, "multiplayer add-on", () => Net.TryStartAddOn(modEntry));
             Step(modEntry, "Stack Effects link", () => StackEffectsLink.TryStart(modEntry));

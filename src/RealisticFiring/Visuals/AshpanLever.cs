@@ -77,12 +77,18 @@ namespace RealisticFiring.Visuals
         // development tool), by livery, as Placements: they come first and
         // are never saved. And where each livery's pull was last built, for
         // the bench to start from.
+#if !PUBLIC_RELEASE
         internal static readonly Dictionary<string, Vector3> DevPlacements = new Dictionary<string, Vector3>();
+#endif
         private static readonly Dictionary<string, Vector3> BuiltPulls = new Dictionary<string, Vector3>();
 
         /// <summary>Where <paramref name="livery"/>'s pull is seated (the bench's or the table's), or last built; false before one is built.</summary>
         internal static bool TrySeat(string livery, out Vector3 pull) =>
+#if PUBLIC_RELEASE
+            Placements.TryGetValue(livery, out pull) || BuiltPulls.TryGetValue(livery, out pull);
+#else
             DevPlacements.TryGetValue(livery, out pull) || Placements.TryGetValue(livery, out pull) || BuiltPulls.TryGetValue(livery, out pull);
+#endif
 
         private static readonly HashSet<AshpanLever> Levers = new HashSet<AshpanLever>();
 
@@ -152,10 +158,14 @@ namespace RealisticFiring.Visuals
         private void OnLoaded(GameObject root)
         {
             if (root == null || root.transform.Find(RootName) != null
+#if PUBLIC_RELEASE
+                || (!firebox.GrateBox.HasValue && !Placements.ContainsKey(car.carLivery.id)))
+#else
                 || (!firebox.GrateBox.HasValue && !Placements.ContainsKey(car.carLivery.id) && !DevPlacements.ContainsKey(car.carLivery.id)))
+#endif
                 return;
             var result = Build(root.transform);
-            if (result != null && Main.Settings.LogFireboxCreation)
+            if (result != null)
                 Main.Mod.Logger.Log($"{car.ID}: {result}");
         }
 
@@ -184,7 +194,11 @@ namespace RealisticFiring.Visuals
             // On the fireman's side (left, -x), at the back of the grate, under
             // it, unless seated for the livery.
             var frame = car.transform;
+#if PUBLIC_RELEASE
+            var seatedFor = Placements.TryGetValue(car.carLivery.id, out var seated);
+#else
             var seatedFor = DevPlacements.TryGetValue(car.carLivery.id, out var seated) || Placements.TryGetValue(car.carLivery.id, out seated);
+#endif
             float pull, y, z, side;
             bool found;
             if (seatedFor)

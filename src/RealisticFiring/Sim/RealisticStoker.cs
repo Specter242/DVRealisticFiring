@@ -5,7 +5,9 @@ using LocoSim.Definitions;
 using LocoSim.Implementations;
 using Newtonsoft.Json.Linq;
 using RealisticFiring.Core;
+#if !PUBLIC_RELEASE
 using RealisticFiring.Diagnostics;
+#endif
 using UnityEngine;
 
 namespace RealisticFiring.Sim
@@ -220,9 +222,13 @@ namespace RealisticFiring.Sim
             // On a multiplayer client the host simulates; its ports carry the host's values.
             if (Net.IsClient)
                 return;
+#if !PUBLIC_RELEASE
             var start = PerfMeter.Start();
+#endif
             Step(delta);
+#if !PUBLIC_RELEASE
             PerfMeter.Stop(PerfSection.Stoker, start);
+#endif
         }
 
         private void Step(float delta)
@@ -380,7 +386,7 @@ namespace RealisticFiring.Sim
                 }
             }
             Build();
-            if (car != null && Main.Settings.LogFireboxCreation)
+            if (car != null)
             {
                 Main.Mod.Logger.Log(
                     $"{car.ID}: realistic stoker '{id}' feeding {(firebox != null ? "the zoned fire" : "a stock firebox's coal port")}: " +

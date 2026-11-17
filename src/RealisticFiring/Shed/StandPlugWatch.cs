@@ -34,9 +34,13 @@ namespace RealisticFiring.Shed
 
         private void Update()
         {
+#if PUBLIC_RELEASE
+            TimedUpdate();
+#else
             var start = Diagnostics.PerfMeter.Start();
             try { TimedUpdate(); }
             finally { Diagnostics.PerfMeter.Stop(Diagnostics.PerfSection.ShedHoses, start); }
+#endif
         }
 
         private void TimedUpdate()
@@ -122,8 +126,10 @@ namespace RealisticFiring.Shed
 
         private void Say(string what)
         {
-            if (Main.Settings.LogFireboxCreation && plug != null)
+#if !PUBLIC_RELEASE
+            if (Main.Settings.LogCoalDeliveries && plug != null)
                 Main.Mod.Logger.Log($"Shed hose plug: {what}");
+#endif
         }
     }
 }

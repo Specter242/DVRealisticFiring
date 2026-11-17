@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using RealisticFiring.Core;
+#if !PUBLIC_RELEASE
 using RealisticFiring.Diagnostics;
+#endif
 using RealisticFiring.Sim;
 using UnityEngine;
 
@@ -590,9 +592,13 @@ namespace RealisticFiring.Visuals
 
         private void LateUpdate()
         {
+#if !PUBLIC_RELEASE
             var start = PerfMeter.Start();
+#endif
             UpdateBed();
+#if !PUBLIC_RELEASE
             PerfMeter.Stop(PerfSection.CoalBed, start);
+#endif
         }
 
         private void UpdateBed()
@@ -708,8 +714,10 @@ namespace RealisticFiring.Visuals
         {
             get
             {
+#if !PUBLIC_RELEASE
                 if (FireboxCapture.KeepsVisible)
                     return true;
+#endif
                 if (firebox != null && firebox.HasDoorPort && firebox.DoorOpening <= SeenDoor)
                     return false;
                 var camera = PlayerManager.ActiveCamera != null ? PlayerManager.ActiveCamera : Camera.main;

@@ -222,11 +222,13 @@ namespace RealisticStackEffects
         private Vector3 stackVelocity;
         private bool hasLastPosition;
         private int beatCount;
+#if !PUBLIC_RELEASE
         private float statusTime;
-        // The model's tuning and the plume's look, shared by every plume and
-        // set live by the test bed (PlumeTestBed).
-        private static PlumeTuning tuning => PlumeTestBed.Tuning;
-        private static PlumeLook Look => PlumeTestBed.Look;
+#endif
+        // The model's tuning and the plume's look, shared by every plume (set
+        // live by the test bed in a development build).
+        private static PlumeTuning tuning => PlumeCurrent.Tuning;
+        private static PlumeLook Look => PlumeCurrent.Look;
 
         // The share of the plume's particles thrown at the player's smoke quality.
         private static float ParticleShare => SmokeDetail.ParticleShare(StackHost.Quality, PlumeOffscreen.Drawing);
@@ -258,8 +260,10 @@ namespace RealisticStackEffects
         private float wetness;
         private float shimmerNow;
         private float steamFlowNow;
+#if !PUBLIC_RELEASE
         private StackTest testing;
         private float testBeats;
+#endif
 
         // The flue gas and the exhaust's wetness settle over this long, s,
         // so a cloud is not worked out afresh every frame.
@@ -1005,7 +1009,7 @@ namespace RealisticStackEffects
         // The plume's light and fraying on its materials, and the shimmer's bend.
         private void ApplyLook()
         {
-            lookVersion = PlumeTestBed.LookVersion;
+            lookVersion = PlumeCurrent.LookVersion;
             lookDaylight = PlumeWeather.Daylight;
             lookDirectLight = PlumeWeather.DirectLight;
             var direct = Mathf.Lerp(1f, lookDirectLight, Mathf.Clamp01(Look.TwilightSun));
@@ -1234,10 +1238,12 @@ namespace RealisticStackEffects
         {
             if (!Active || smoke == null)
                 return;
-            if (lookVersion != PlumeTestBed.LookVersion || Mathf.Abs(PlumeWeather.Daylight - lookDaylight) > DaylightStep
+            if (lookVersion != PlumeCurrent.LookVersion || Mathf.Abs(PlumeWeather.Daylight - lookDaylight) > DaylightStep
                 || Mathf.Abs(PlumeWeather.DirectLight - lookDirectLight) > DaylightStep)
                 ApplyLook();
+#if !PUBLIC_RELEASE
             testing = PlumeTestBed.StackFor(this);
+#endif
 
             var dt = Time.deltaTime;
             var position = smoke.transform.position;
@@ -1247,12 +1253,17 @@ namespace RealisticStackEffects
             lastPosition = position;
             stackVelocity = carVelocity;
             hasLastPosition = true;
+#if PUBLIC_RELEASE
+            var wispSpeed = carVelocity.magnitude;
+#else
             var wispSpeed = testing != null ? Mathf.Max(0f, testing.Speed / 3.6f) : carVelocity.magnitude;
+#endif
             wispTrainSpeed += (wispSpeed - wispTrainSpeed) * (1f - Mathf.Exp(-dt / 0.5f));
 
             var crossed = beats.Advance(crankRotation.Value);
             var turned = beats.Turned;
             var sinceBeat = beats.SinceBeat;
+#if !PUBLIC_RELEASE
             if (testing != null)
             {
                 // The test's beats, the engine standing.
@@ -1263,16 +1274,25 @@ namespace RealisticStackEffects
                 turned = testTurned / beatsPerTurn;
                 sinceBeat = testBeats;
             }
+#endif
             if (boilerBroken.Value > 0f || dt <= 0f)
                 return;
             roof.Follow(car, Emitter(smoke), smoke, PlumeAloft.Lifetime);
 
             // The air past the stack: the wind, and a test's train speed blowing back.
+#if PUBLIC_RELEASE
+            airVelocity = PlumeWeather.Wind;
+#else
             airVelocity = PlumeWeather.Wind - (testing != null ? car.transform.forward * (testing.Speed / 3.6f) : Vector3.zero);
+#endif
             fireNow = default;
             fire.Read(dt, exhaustSim, ref fireNow);
             shakeCinders = Mathf.Min(shakeCinders + fireNow.ShakenCoal, MaxShakeCinderBacklog);
+#if PUBLIC_RELEASE
+            var inputs = FireInputs();
+#else
             var inputs = testing != null ? TestInputs(testing) : FireInputs();
+#endif
             using (StackHost.TimePhase(PlumePhase.Weather))
                 Weather(ref inputs, dt);
             beatHard = PlumeModel.BeatStrength(tuning, inputs.ExhaustPressure);
@@ -1340,7 +1360,9 @@ namespace RealisticStackEffects
             sinceCarried = Mathf.Min(sinceCarried + dt, LongestPass);
             if (!PassDue())
             {
+#if !PUBLIC_RELEASE
                 LogStatus(inputs);
+#endif
                 return;
             }
             var passed = sinceCarried;
@@ -1369,7 +1391,11 @@ namespace RealisticStackEffects
                     // From the eye: a capture's held view (its camera is put
                     // there only as it draws), else the player's camera.
                     var viewer = PlayerManager.ActiveCamera != null ? PlayerManager.ActiveCamera : Camera.main;
+#if PUBLIC_RELEASE
+                    var eye = viewer != null ? viewer.transform.position : (Vector3?)null;
+#else
                     var eye = PlumeCapture.HeldAt ?? (viewer != null ? viewer.transform.position : (Vector3?)null);
+#endif
                     using (StackHost.TimePhase(PlumePhase.Vents))
                         vents.Step(passed, airVelocity, carVelocity, PlumeWeather.Air, ParticleShare, Look, roof,
                             Look.MatchSteamOrder > 0.5f ? Aloft(smoke) : null, eye, Emitter(smoke));
@@ -1386,8 +1412,10 @@ namespace RealisticStackEffects
                 foreach (var system in embers)
                     Fly(system, passed);
             }
+#if !PUBLIC_RELEASE
 
             LogStatus(inputs);
+#endif
         }
 
         // Whether the particles are carried this frame, and how far apart
@@ -1414,7 +1442,11 @@ namespace RealisticStackEffects
                 }
             }
             var away = camera != null ? Vector3.Distance(camera.transform.position, smoke.transform.position) : 0f;
+#if PUBLIC_RELEASE
+            var every = camera == null ? 1 : PlumeTurns.FramesApart(seen, away);
+#else
             var every = PlumeCapture.Running || testing != null || camera == null ? 1 : PlumeTurns.FramesApart(seen, away);
+#endif
             var cameIntoView = seen && !inView;
             inView = seen || every == 1;
             passEvery = every;
@@ -1465,6 +1497,7 @@ namespace RealisticStackEffects
             };
         }
 
+#if !PUBLIC_RELEASE
         // The test bed's stack in place of the fire and engine.
         private PlumeInputs TestInputs(StackTest test)
         {
@@ -1481,6 +1514,7 @@ namespace RealisticStackEffects
                 HeatShare = test.FireOn ? Mathf.Clamp01(test.Heat) : 0f,
             };
         }
+#endif
 
         // The white the stack's steam makes in the air (SteamCloud): its
         // flue gas, the air through the fire over the steam up the stack, a
@@ -1489,6 +1523,7 @@ namespace RealisticStackEffects
         private void Weather(ref PlumeInputs inputs, float dt)
         {
             float steam, through, wet, blower;
+#if !PUBLIC_RELEASE
             if (testing != null)
             {
                 var engineMax = exhaustSim != null ? exhaustSim.engineMaxFlowReader.Value : 5f;
@@ -1499,6 +1534,7 @@ namespace RealisticStackEffects
                 blower = testing.Beats > 0.1f ? 0f : 1f;
             }
             else
+#endif
             {
                 steam = fireNow.StackSteam;
                 through = fireNow.AirThrough;
@@ -1748,7 +1784,11 @@ namespace RealisticStackEffects
             var toSun = sun != null && sun.isActiveAndEnabled ? -sun.transform.forward : Vector3.zero;
             // Where the plume is seen from, for its silhouette (a capture's held view first).
             var eyeCamera = PlayerManager.ActiveCamera;
+#if PUBLIC_RELEASE
+            var eye = eyeCamera != null ? eyeCamera.transform.position : (Vector3?)null;
+#else
             var eye = PlumeCapture.HeldAt ?? (eyeCamera != null ? eyeCamera.transform.position : (Vector3?)null);
+#endif
             var axis = local ? Vector3.up : space.up;
             var carried = local ? Vector3.zero : stackVelocity;
             var air = local ? space.InverseTransformDirection(past) : wind;
@@ -2160,6 +2200,7 @@ namespace RealisticStackEffects
             return life;
         }
 
+#if !PUBLIC_RELEASE
         private void LogStatus(PlumeInputs inputs)
         {
             var interval = StackHost.Settings.StatusLogInterval;
@@ -2180,6 +2221,7 @@ namespace RealisticStackEffects
                                 $"alive {string.Join(", ", Systems().Where(s => s != null).Select(s => $"{s.name} {s.particleCount}"))}");
             beatCount = 0;
         }
+#endif
 
         // The white steam in a few words: how white the air lets it be, how
         // long it lasts, and what makes it so.

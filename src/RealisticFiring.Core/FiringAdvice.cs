@@ -142,10 +142,13 @@ namespace RealisticFiring.Core
         /// The next step on a coal fire; <paramref name="driftingHookedUp"/>, the
         /// engine drifts with its throttle shut and reverser hooked up;
         /// <paramref name="lighterLightsCoal"/>, the lighter lights laid coal
-        /// as in the stock game (<see cref="LighterLighting"/>).
+        /// as in the stock game (<see cref="LighterLighting"/>);
+        /// <paramref name="sniftingOpen"/>, its snifting valves stand open,
+        /// sparing it most of the drifting wear (<see cref="Drifting.SniftingShare"/>);
+        /// <paramref name="driftingValve"/>, it has a drifting valve in the cab.
         /// </summary>
         public static Advice ForCoal(FireModel fire, float door, float glass, IReadOnlyList<InjectorReading> injectors, bool driftingHookedUp = false,
-            bool lighterLightsCoal = false)
+            bool lighterLightsCoal = false, bool sniftingOpen = false, bool driftingValve = false)
         {
             if (fire == null)
                 throw new ArgumentNullException(nameof(fire));
@@ -182,7 +185,12 @@ namespace RealisticFiring.Core
                     : "The rag is heating the wood: give it a minute. Coal now would smother it.");
             }
             if (driftingHookedUp)
-                return new Advice(AdviceLevel.Watch, "Drifting hooked up with the throttle shut: drop the reverser to full gear, or crack the throttle.");
+            {
+                var spare = driftingValve ? "open the drifting valve, drop the reverser to full gear, or crack the throttle" : "drop the reverser to full gear, or crack the throttle";
+                return new Advice(AdviceLevel.Watch, sniftingOpen
+                    ? $"Drifting hooked up: the snifting valves spare most of it; {spare} to spare the rest."
+                    : $"Drifting hooked up with the throttle shut: {spare}.");
+            }
             if (fire.SmokeDensity >= Smoking && door < CrackedDoor)
                 return new Advice(AdviceLevel.Watch, "She's smoking: crack the fire door to burn it off.");
             var thin = ThinZone(fire.Zones);

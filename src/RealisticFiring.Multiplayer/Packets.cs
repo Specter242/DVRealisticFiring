@@ -62,6 +62,15 @@ namespace RealisticFiring.Multiplayer
         /// <summary>Whether the host's S282s have their booster.</summary>
         public bool Booster;
 
+        /// <summary>Whether the host's S282s and S060s have their snifting valves.</summary>
+        public bool Snifting;
+
+        /// <summary>Whether the host's S282s and S060s have their drifting valve.</summary>
+        public bool DriftingValve;
+
+        /// <summary>Whether the host's S282s and S060s have their by-pass valves.</summary>
+        public bool ByPass;
+
         public void Serialize(BinaryWriter writer)
         {
             writer.Write(Arch);
@@ -70,6 +79,9 @@ namespace RealisticFiring.Multiplayer
             writer.Write(Stoker);
             writer.Write(FeedPump);
             writer.Write(Booster);
+            writer.Write(Snifting);
+            writer.Write(DriftingValve);
+            writer.Write(ByPass);
         }
 
         public void Deserialize(BinaryReader reader)
@@ -80,6 +92,9 @@ namespace RealisticFiring.Multiplayer
             Stoker = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
             FeedPump = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
             Booster = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
+            Snifting = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
+            DriftingValve = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
+            ByPass = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
         }
     }
 
