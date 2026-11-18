@@ -284,6 +284,7 @@ namespace RealisticFiring.AdapterCheck
             CommsTabletChecks.Run(Check);
             TabletSettingsChecks.Run(Check);
             FiremanApiChecks.Run(Check);
+            ApiChecks.Run(Check);
             CheckNewDefaults();
             CheckOilIgnitionBinding();
             CheckFireboxQualitySettings();

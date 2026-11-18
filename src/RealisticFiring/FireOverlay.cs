@@ -161,10 +161,20 @@ namespace RealisticFiring
             {
                 Key = "draft", Label = "DRAFT", Value = ratio / DraftScale, Band0 = ChokedDraft / DraftScale, Band1 = ThinDraft / DraftScale,
                 Text = $"{word} {Mathf.RoundToInt(Mathf.Min(ratio, 9.99f) * 100f)}%",
-                Level = ratio < SmotheredDraft ? AdviceLevel.Act : ratio < ChokedDraft || ratio > ThinDraft ? AdviceLevel.Watch : AdviceLevel.Ok,
+                Level = DraftLevel(ratio),
                 Smoke = smoke,
             };
         }
+
+        /// <summary>The draft dial's mark for a lit fire's air against its want: smothered, choked or thin, or right.</summary>
+        internal static AdviceLevel DraftLevel(float ratio) =>
+            ratio < SmotheredDraft ? AdviceLevel.Act : ratio < ChokedDraft || ratio > ThinDraft ? AdviceLevel.Watch : AdviceLevel.Ok;
+
+        /// <summary>The fire dial's mark: out or low wants watching.</summary>
+        internal static AdviceLevel FireLevel(bool fireOn, float heat) => !fireOn || heat < 0.15f ? AdviceLevel.Watch : AdviceLevel.Ok;
+
+        /// <summary>The boiler dial's mark for its gauge against its working pressure.</summary>
+        internal static AdviceLevel BoilerLevel(float share) => share < 0.6f || share > 1.02f ? AdviceLevel.Watch : AdviceLevel.Ok;
 
         // Clear smoke pale, through grey, to black.
         private static Color CoalSmoke(float density) =>
@@ -179,7 +189,7 @@ namespace RealisticFiring
             : stack >= FiringAdvice.HazeStack ? new Color(0.8f, 0.72f, 0.61f)
             : new Color(0.87f, 0.91f, 0.94f);
 
-        private static AdviceLevel GlassLevel(float x) => x < FiringAdvice.LowGlass ? AdviceLevel.Act : x < 0.4f || x > 0.85f ? AdviceLevel.Watch : AdviceLevel.Ok;
+        internal static AdviceLevel GlassLevel(float x) => x < FiringAdvice.LowGlass ? AdviceLevel.Act : x < 0.4f || x > 0.85f ? AdviceLevel.Watch : AdviceLevel.Ok;
 
         private static string InjectorWord(InjectorFlow flow)
         {
@@ -214,21 +224,31 @@ namespace RealisticFiring
         // good band 85 to 100 %.
         private static void WaterGauges(Card card, InjectorRig rig, BoilerWaterRig water)
         {
-            var glass = rig != null ? Visuals.GaugeGlass.Read(rig)
-                : water != null ? Visuals.GaugeGlass.Read(water.Car, water.WaterLevelPortId, water.GlassLevel) : 0f;
+            var glass = GlassShown(rig, water);
             card.Gauges[2] = new Gauge { Key = "glass", Label = "GLASS", Value = glass, Band0 = 0.4f, Band1 = 0.75f, Text = P0(glass), Level = GlassLevel(glass) };
-            var gauge = (rig != null ? rig.BoilerPressure : water != null ? water.BoilerPressure : 1f) - 1f;
-            var working = Mathf.Max(1f, (rig != null ? rig.WorkingPressure : water != null ? water.SafetyValve : 2f) - 1f);
-            var share = gauge / working;
+            var gauge = GaugePressure(rig, water);
+            var share = gauge / WorkingPressure(rig, water);
             // Heating from cold, the water's temperature until it boils.
             var heating = water != null && water.BelowBoilingNow;
             card.Gauges[3] = new Gauge
             {
                 Key = "boiler", Label = "BOILER", Value = share / 1.1f, Band0 = 0.85f / 1.1f, Band1 = 1f / 1.1f,
                 Text = heating ? $"water {water.WaterTemperature:F0} °C" : $"{gauge:F1} bar",
-                Level = share < 0.6f || share > 1.02f ? AdviceLevel.Watch : AdviceLevel.Ok,
+                Level = BoilerLevel(share),
             };
         }
+
+        /// <summary>The water as the cab's glass shows it, 0 to 1 of the glass: the injectors' reading, else the boiler's.</summary>
+        internal static float GlassShown(InjectorRig rig, BoilerWaterRig water) => rig != null ? Visuals.GaugeGlass.Read(rig)
+            : water != null ? Visuals.GaugeGlass.Read(water.Car, water.WaterLevelPortId, water.GlassLevel) : 0f;
+
+        /// <summary>The boiler's gauge pressure, bar.</summary>
+        internal static float GaugePressure(InjectorRig rig, BoilerWaterRig water) =>
+            (rig != null ? rig.BoilerPressure : water != null ? water.BoilerPressure : 1f) - 1f;
+
+        /// <summary>The boiler's working pressure, where its safety valves lift, gauge bar; at least 1.</summary>
+        internal static float WorkingPressure(InjectorRig rig, BoilerWaterRig water) =>
+            Mathf.Max(1f, (rig != null ? rig.WorkingPressure : water != null ? water.SafetyValve : 2f) - 1f);
 
         internal static Card Read(RealisticFirebox firebox, int page)
         {
@@ -241,17 +261,13 @@ namespace RealisticFiring
             c.Gauges[0] = new Gauge
             {
                 Key = "fire", Label = "FIRE", Value = heat, Band0 = 0.4f, Band1 = 0.9f, Text = fire.FireOn ? $"{FireWord(heat)} {P0(heat)}" : "out",
-                Level = !fire.FireOn || heat < 0.15f ? AdviceLevel.Watch : AdviceLevel.Ok,
+                Level = FireLevel(fire.FireOn, heat),
             };
             c.Gauges[1] = Draft(fire.FireOn, fire.AirRatio, "choked", "thin", CoalSmoke(fire.SmokeDensity));
             BoilerWaterRig.TryGet(car, out var waterRig);
             WaterGauges(c, rig, waterRig);
             var door = firebox.HasDoorPort ? firebox.DoorOpening : 0f;
-            c.Advice = Bursting(waterRig) ?? FiringAdvice.ForCoal(fire, door, rig != null ? Visuals.GaugeGlass.Read(rig) : 1f, Injectors(rig),
-                waterRig != null && waterRig.DriftingWearing, LighterRule.LightsCoal, waterRig != null && waterRig.Drift.SniftingOpen,
-                DriftingFittings.Valve(car));
-            if (c.Advice.Level == AdviceLevel.Ok && firebox.StokerTableLoaded)
-                c.Advice = new Advice(AdviceLevel.Watch, "Rake the back of the fire to clear the stoker table. Ease the feed or raise the jets to keep it clear.");
+            c.Advice = CoalAdvice(firebox, rig, waterRig);
 
             switch (page)
             {
@@ -284,6 +300,21 @@ namespace RealisticFiring
         private static Advice? Bursting(BoilerWaterRig water) =>
             water != null ? FiringAdvice.Bursting(water.BoilerPressure, water.SafetyValve, water.BurstPressure) : null;
 
+        /// <summary>The next step at the foot of a coal fire's pages.</summary>
+        internal static Advice CoalAdvice(RealisticFirebox firebox, InjectorRig rig, BoilerWaterRig waterRig)
+        {
+            var door = firebox.HasDoorPort ? firebox.DoorOpening : 0f;
+            var advice = Bursting(waterRig) ?? FiringAdvice.ForCoal(firebox.Model, door, rig != null ? Visuals.GaugeGlass.Read(rig) : 1f, Injectors(rig),
+                waterRig != null && waterRig.DriftingWearing, LighterRule.LightsCoal, waterRig != null && waterRig.Drift.SniftingOpen,
+                DriftingFittings.Valve(firebox.Car));
+            if (advice.Level == AdviceLevel.Ok && firebox.StokerTableLoaded)
+                advice = new Advice(AdviceLevel.Watch, "Rake the back of the fire to clear the stoker table. Ease the feed or raise the jets to keep it clear.");
+            return advice;
+        }
+
+        /// <summary>The next step at the foot of an oil fire's pages.</summary>
+        internal static Advice OilAdvice(OilReading reading, BoilerWaterRig waterRig) => Bursting(waterRig) ?? FiringAdvice.ForOil(reading);
+
         internal static Card Read(RealisticOilFirebox oil, int page)
         {
             var fire = oil.Model;
@@ -294,7 +325,7 @@ namespace RealisticFiring
             c.Gauges[0] = new Gauge
             {
                 Key = "fire", Label = "FIRE", Value = heat, Band0 = 0.4f, Band1 = 0.9f, Text = fire.FireOn ? $"{FireWord(heat)} {P0(heat)}" : "out",
-                Level = !fire.FireOn || heat < 0.15f ? AdviceLevel.Watch : AdviceLevel.Ok,
+                Level = FireLevel(fire.FireOn, heat),
             };
             var stack = fire.StackSmoke;
             // The oil's air against its best mix, so 100 % is right here too.
@@ -302,7 +333,7 @@ namespace RealisticFiring
             BoilerWaterRig.TryGet(car, out var waterRig);
             WaterGauges(c, rig, waterRig);
             var reading = FireController.ReadOil(oil);
-            c.Advice = Bursting(waterRig) ?? FiringAdvice.ForOil(reading);
+            c.Advice = OilAdvice(reading, waterRig);
 
             switch (page)
             {
@@ -340,11 +371,11 @@ namespace RealisticFiring
         }
 
         // A cover open less than this lets in almost no rain.
-        private const float ShutCover = 0.05f;
+        internal const float ShutCover = 0.05f;
 
         // Coal this wet is damp, and this wet catches slow enough to watch (share of its mass).
-        private const float DampCoal = 0.045f;
-        private const float WetCoal = 0.07f;
+        internal const float DampCoal = 0.045f;
+        internal const float WetCoal = 0.07f;
 
         private static void WaterRows(Card c, InjectorRig rig)
         {

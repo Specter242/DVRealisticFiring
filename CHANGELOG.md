@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.24.2 (2026-11-18)
+
+- For other mods: readings of the fire, boiler, and engine as the overlay
+  shows them, as values another mod can show in its own way
+  (`RealisticFiring.Api`; see the GitHub readme).
+
 ## 1.24.1 (2026-11-17)
 
 - Fixed: the QJ's left stoker jets now turn in steps like the others;

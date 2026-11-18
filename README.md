@@ -1,5 +1,7 @@
 # Realistic Firing for Derail Valley
 
+**1.24.2** (2026-11-18): for other mods, `RealisticFiring.Api` gives the fire overlay's readings of an engine's fire, boiler, and engine as values to show in their own way; see "For other mods" below. Nothing changes in play. The API ran in game on a pre-release build: on a lit coal S282 and a cold oil-fired Santa Fe 2901 every documented reading was there and agreed with the overlay, a DE2 reported none, and nothing threw or was logged. Not run in game: this exact zip, a lit oil fire, an engine in steam or moving, a tender, multiplayer, and VR.
+
 **1.24.1** (2026-11-17): a hotfix: the QJ's left stoker jets (front and back), which only opened or shut, now turn in steps like the others. They sat on the cab's compressor and dynamo switches, two positions each; each jet's wheel now takes the right front jet's 11 steps over 177 degrees and its mouse-wheel rate, and the switches' own copies overhead stay two-position. The adapter checks cover the change. This exact zip then ran in a clone of the game with the QJ (S2102-870 1.0.2): each of its six jet wheels, set to 0.3 through the game's own control, read 0.3 at the wheel and at the jet, the compressor and dynamo switches overhead stayed two-position, and the rest of 1.24.0's checks passed again; 1.24.0 in the same run left both left jets at 0 when set to 0.3. Not run in game: the jets turned by hand, VR, and multiplayer.
 
 **1.24.0** (2026-11-17): the drifting fittings for the S282 and S060 (snifting valves, a drifting valve worked from the cab, and by-pass valves, bought at a career manager's Upgrades screen), with drifting now braking the engine as the cylinders pump, most in mid-gear; the shovelful picked with the mouse wheel while holding the shovel, up to the settings' "Largest shovelful", with the fireman never firing less than 3 kg; Realistic Firing joining the Comms Tablet and AI Engineer, each finding the other by name, so every mod still works alone: with the Comms Tablet installed the firing tablet's pages are its Firing app and the firing tablet is retired there, and AI Engineer's engineer puts the fireman to work through a public hook and puts him back as he was; and the settings that other mods list, the Comms Tablet's Settings app, following the F8 window. The public build leaves out the developer tools (test beds, captures, the seating bench, diagnostics) and the logging switches: it logs what each engine is fitted with as it is set up, and errors. The owner played private builds with the drifting fittings on the S282 and S060, seating the drifting valve in each cab (desktop). The shovel wheel went to the owner in three private builds but was never reported tested in game. The Comms Tablet's self-test ran its code in a clone of the game: the Firing app bound and drew every page, held and mounted, its tabs and the fireman's orders went through the tablet's buttons, and the firing tablet was left out of the kit, the shops, and the settings (73 and 232 checks passed). AI Engineer's own run, on a private build with the hook and both new features, drove an S060 with the fireman on Shunting and two helpers with him on Road (14 of 14). The settings' order, labels, tooltips, and upgrade rules were checked by the adapter checks, and settings files saved by 1.23.0 and by private builds loaded whole. This exact zip then ran in a clone of the game without the Comms Tablet, beside Realistic Stack Effects 1.2.2: the firing tablet was on a shop's shelf and in each starting kit that holds the shovel, the settings gave one, and its four pages drew as 1.23.0's do, reading a lit S282; a shovel's mouse wheel, turned through the game's own scroll event, took the shovelful from 3 to 2 kg, showed it under the crosshair, saved it, and the shovel then loaded 2 kg at the S282's tender, and back up stopped at a full one; the S282 had its snifting valves, drifting valve, and by-pass valves outside a career, with the DRIFTING valve in its cab and its control in the engine; a settings file saved by a private build with a developer key bound loaded with every setting as saved; and the mod logged only its setup lines. Not run in game: the shovel wheel by hand with a real mouse, drifting on the move from this zip, AI Engineer and the Comms Tablet with this exact zip, VR, and live multiplayer.
@@ -68,6 +70,41 @@ The package is written to `dist/RealisticFiring-<version>.zip`. Extract its
 Source code is available under the [MIT license](LICENSE). The S282 injector
 model is by Lilla, supplied through Cruzer and used with permission and credit
 to Lilla. Game textures and locomotive assets are not included.
+
+## For other mods
+
+Two public static classes let another mod use this one without referencing
+it: find them by name and call them by reflection. Only base library types and
+`TrainCar` cross, so either mod works alone.
+
+- **`RealisticFiring.Api`** reads an engine's fire, boiler, and engine as the
+  fire overlay (F6) shows them, as values to show in your own way.
+  `Has(TrainCar)` says whether this mod runs that engine's fire;
+  `Read(TrainCar)` returns a snapshot (null otherwise): nested
+  `Dictionary<string, object>` holding floats, bools, strings, and
+  `List<object>` of more, each number's unit in its name (`heatPct`,
+  `pressureBar`, `waterC`, `feedKgPerS`). Its sections are `fuel`, `fire`,
+  `grate`, `coal`, `stoker`, `burner`, `boiler`, `injectors`, `overflow`,
+  `feedPump`, `engine`, `booster`, `fireman`, and `advice` (the overlay's next
+  step); a section the engine lacks is left out. Every key is listed on `Read`
+  in [`src/RealisticFiring/Api.cs`](src/RealisticFiring/Api.cs). `heatPct`,
+  `draftPct`, and `pressurePct` aren't capped (the game's startup speedup on a
+  cold engine takes `heatPct` well past 100), so clamp them for a bar. Names, units,
+  and meanings stay from version to version; a change to one raises
+  `Api.Version`, and new readings may be added. Call it on the main thread, a
+  few times a second at most.
+- **`RealisticFiring.FiremanApi`** puts the automatic fireman to work:
+  `Has`, `ModeOf`, `CallOf`, `SetMode`, and `SetCall`, with modes and calls
+  named as strings.
+
+```csharp
+var api = UnityModManager.FindMod("RealisticFiring")?.Assembly?.GetType("RealisticFiring.Api");
+var read = api?.GetMethod("Read", new[] { typeof(TrainCar) });
+var readings = read?.Invoke(null, new object[] { loco }) as IDictionary<string, object>;
+// A section the engine lacks is left out, so look it up with TryGetValue.
+if (readings != null && readings.TryGetValue("boiler", out var section) && section is IDictionary<string, object> boiler)
+    Debug.Log($"{boiler["pressureBar"]:F1} bar, glass {boiler["glassPct"]:F0} %");
+```
 
 ## Illustrated firing manual
 
