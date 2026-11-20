@@ -108,6 +108,8 @@ namespace RealisticFiring
                 FirstSteps();
             }
             catch (System.Exception e) { Faults.Report("the mod's keys", null, e); }
+            try { Sim.AutoFireDoorRig.Tick(); }
+            catch (System.Exception e) { Faults.Report("the automatic fire door", null, e); }
             try { Visuals.StokerCab.EnsureBuilt(); }
             catch (System.Exception e) { Faults.Report("the stoker's cab controls", null, e); }
             try { Visuals.FeedPumpCab.EnsureFitted(); }
@@ -147,30 +149,30 @@ namespace RealisticFiring
             if (settings.GiveFiringManual)
             {
                 settings.GiveFiringManual = false;
-                Notify(Net.IsClient ? "Ask the multiplayer host to give you a firing manual" : Items.FiringManual.GiveToPlayer());
+                Notify(EquipmentActions.Run(EquipmentActions.Manual));
             }
             if (settings.GiveFiringTablet)
             {
                 settings.GiveFiringTablet = false;
                 // Merged into the Comms Tablet, the firing tablet is retired: its pages are an app there.
                 Notify(CommsTabletLink.Merged ? CommsTabletLink.RetiredNotice
-                    : Net.IsClient ? "In multiplayer, buy the firing tablet at a gadget shop, beside the clinometer" : Items.FiringTablet.GiveToPlayer());
+                    : Net.ItemsRemote ? "In multiplayer, buy the firing tablet at a gadget shop, beside the clinometer" : Items.FiringTablet.GiveToPlayer());
             }
+            // The equipment, as the Comms Tablet's Settings app gives it too (EquipmentActions).
             if (settings.GiveWoodCrate)
             {
                 settings.GiveWoodCrate = false;
-                Notify(Net.IsClient ? "In multiplayer, only the host can give a firewood crate" : Items.FireStartingItems.GiveToPlayer(Items.StartingFuelKind.WoodCrate));
+                Notify(EquipmentActions.Run(EquipmentActions.WoodCrate));
             }
             if (settings.GiveRagTin)
             {
                 settings.GiveRagTin = false;
-                Notify(Net.IsClient ? "In multiplayer, only the host can give a rag tin" : Items.FireStartingItems.GiveToPlayer(Items.StartingFuelKind.RagBox));
+                Notify(EquipmentActions.Run(EquipmentActions.RagTin));
             }
             if (settings.GiveFireIron)
             {
                 settings.GiveFireIron = false;
-                // In multiplayer only the host makes items; the shops sell the iron.
-                Notify(Net.IsClient ? "In multiplayer, buy the fire iron at a shop, beside the shovel" : Items.FireIron.GiveToPlayer());
+                Notify(EquipmentActions.Run(EquipmentActions.FireIron));
             }
             if (settings.RenewBoilerNow)
             {
@@ -199,6 +201,7 @@ namespace RealisticFiring
             }
             if (!withFireman)
                 firemanPanel.SetOpen(false);
+            FiremanKeys(settings);
 
             if (settings.ShakeGrateKey.Down() && TimeUtil.IsFlowing && !Typing()
                 && FireboxRegistry.TryGetTended(PlayerManager.Car, out var firebox)
@@ -252,6 +255,42 @@ namespace RealisticFiring
 
         // Whether the keyboard is in a text field (a chat box, a name): its
         // letters are not the grate's and the pump's keys then.
+        // The fireman's orders by key (Settings.FiremanOffKey and on), bound by the player: the same orders as the F7
+        // window's plates, sent to the host from a guest, with a notice.
+        private void FiremanKeys(Settings settings)
+        {
+            FiremanMode? mode = Pressed(settings.FiremanOffKey) ? FiremanMode.Off
+                : Pressed(settings.FiremanKeepAliveKey) ? FiremanMode.KeepAlive
+                : Pressed(settings.FiremanShuntingKey) ? FiremanMode.Shunting
+                : Pressed(settings.FiremanRoadKey) ? FiremanMode.Road
+                : (FiremanMode?)null;
+            var next = mode == null && Pressed(settings.FiremanNextKey);
+            FiremanCall? call = Pressed(settings.FiremanHeavyAheadKey) ? FiremanCall.HeavyAhead
+                : Pressed(settings.FiremanEasingOffKey) ? FiremanCall.EasingOff : (FiremanCall?)null;
+            if (mode == null && !next && call == null)
+                return;
+            if (!FiremanRig.TryGetTended(PlayerManager.Car, out var rig))
+            {
+                Notify("No fireman here: board a coal-fired steam loco");
+                return;
+            }
+            if (next)
+                mode = FiremanOrders.Next(FiremanOrders.ModeOf(rig));
+            if (mode is FiremanMode order)
+            {
+                FiremanOrders.Order(rig, order);
+                Notify($"Fireman: {FiremanOrders.Said(order)}");
+            }
+            if (call is FiremanCall said)
+            {
+                FiremanOrders.Call(rig, said);
+                Notify(FiremanOrders.CallActive(rig, said) ? $"Fireman: {FiremanOrders.Said(said)}" : $"Fireman: {FiremanOrders.Said(said)} called off");
+            }
+        }
+
+        // A bound key pressed, not while typing in a text field.
+        private static bool Pressed(UnityModManagerNet.KeyBinding key) => key != null && key.keyCode != KeyCode.None && key.Down() && !Typing();
+
         private static bool Typing()
         {
             if (GUIUtility.keyboardControl != 0)

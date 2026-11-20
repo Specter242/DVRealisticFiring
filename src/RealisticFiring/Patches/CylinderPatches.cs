@@ -138,7 +138,8 @@ namespace RealisticFiring.Patches
             var gauge = Mathf.Max(0f, ___admissionPressure - 1f);
             var leaks = Mathf.Lerp(0f, 0.1f, __instance.cylinderCockControl.Value) * gauge
                         + (__instance.isCylinderCrackedReadOut.Value > 0f ? 0.5f * gauge : 0f);
-            var cycle = cylinders.Model.Cycle(Mathf.Max(1f, ___admissionPressure - leaks));
+            cylinders.Chest = Mathf.Max(1f, ___admissionPressure - leaks);
+            var cycle = cylinders.Model.Cycle(cylinders.Chest);
             cylinders.Cycle = cycle;
             __instance.exhaustPressureReadOut.Value = cycle.ReleasePressure;
         }

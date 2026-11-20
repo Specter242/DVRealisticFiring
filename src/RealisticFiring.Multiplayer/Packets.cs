@@ -71,6 +71,9 @@ namespace RealisticFiring.Multiplayer
         /// <summary>Whether the host's S282s and S060s have their by-pass valves.</summary>
         public bool ByPass;
 
+        /// <summary>Whether the host's coal-fired engines have their automatic fire door.</summary>
+        public bool AutoFireDoor;
+
         public void Serialize(BinaryWriter writer)
         {
             writer.Write(Arch);
@@ -82,6 +85,7 @@ namespace RealisticFiring.Multiplayer
             writer.Write(Snifting);
             writer.Write(DriftingValve);
             writer.Write(ByPass);
+            writer.Write(AutoFireDoor);
         }
 
         public void Deserialize(BinaryReader reader)
@@ -95,6 +99,7 @@ namespace RealisticFiring.Multiplayer
             Snifting = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
             DriftingValve = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
             ByPass = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
+            AutoFireDoor = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
         }
     }
 
@@ -213,6 +218,37 @@ namespace RealisticFiring.Multiplayer
     }
 
     /// <summary>Something the host's fire did, for the players near the loco.</summary>
+    /// <summary>
+    /// An automatic fire door's air (<see cref="Core.AutoFireDoorAir"/>): a
+    /// guest's to the host, and the host's or a guest's from the host to every
+    /// player, who hears it unless it was their own (<see cref="Source"/>).
+    /// <see cref="Seq"/> counts each player's, so a press and its release
+    /// landing the other way round leave no hiss on.
+    /// </summary>
+    public sealed class DoorAirPacket : ISerializablePacket
+    {
+        public ushort Car;
+        public byte Air;
+        public ushort Seq;
+        public byte Source;
+
+        public void Serialize(BinaryWriter writer)
+        {
+            writer.Write(Car);
+            writer.Write(Air);
+            writer.Write(Seq);
+            writer.Write(Source);
+        }
+
+        public void Deserialize(BinaryReader reader)
+        {
+            Car = reader.ReadUInt16();
+            Air = reader.ReadByte();
+            Seq = reader.ReadUInt16();
+            Source = reader.ReadByte();
+        }
+    }
+
     public sealed class FireEventPacket : ISerializablePacket
     {
         public ushort Car;

@@ -25,6 +25,20 @@ namespace RealisticFiring
                 rig.SetMode(mode);
         }
 
+        /// <summary>The order after <paramref name="mode"/>: off, keep it alive, shunting, road, and round again.</summary>
+        internal static FiremanMode Next(FiremanMode mode) =>
+            mode == FiremanMode.Off ? FiremanMode.KeepAlive
+            : mode == FiremanMode.KeepAlive ? FiremanMode.Shunting
+            : mode == FiremanMode.Shunting ? FiremanMode.Road : FiremanMode.Off;
+
+        /// <summary>An order as the notice says it.</summary>
+        internal static string Said(FiremanMode mode) =>
+            mode == FiremanMode.KeepAlive ? "keep it alive" : mode == FiremanMode.Shunting ? "shunting" : mode == FiremanMode.Road ? "road" : "off";
+
+        /// <summary>A call as the notice says it.</summary>
+        internal static string Said(FiremanCall call) =>
+            call == FiremanCall.HeavyAhead ? "heavy work ahead" : call == FiremanCall.EasingOff ? "easing off" : "no call";
+
         internal static bool CallActive(FiremanRig rig, FiremanCall call) => rig.Fireman.Call == call;
 
         internal static void Call(FiremanRig rig, FiremanCall call)

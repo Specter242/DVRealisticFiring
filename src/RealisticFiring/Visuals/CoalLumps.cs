@@ -273,7 +273,7 @@ namespace RealisticFiring.Visuals
 
         private void UpdateLumps()
         {
-            var show = Main.Settings != null && Main.Settings.ShowZonedCoalBed && bed != null && bed.Ready;
+            var show = Main.Settings != null && Main.Settings.ShowZonedCoalBed && bed != null && bed.Ready && bed.FromCab;
             if (lumpRenderer != null && lumpRenderer.enabled != show)
                 lumpRenderer.enabled = show;
             // Unseen (ZonedCoalBed.Seen), the zones' upload waits.

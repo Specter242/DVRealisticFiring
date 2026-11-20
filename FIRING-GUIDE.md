@@ -229,6 +229,7 @@ settings (F8) can fit each always or never instead.
 | --- | --- | --- |
 | Brick arch | S282, S060 | $20,000 |
 | Over-fire jets | S282, S060, once the arch is bought | $15,000 |
+| Automatic fire door | S282, S060 | $10,000 |
 | Snifting valves | S282, S060 | $8,000 |
 | Drifting valve | S282, S060 | $6,000 |
 | By-pass valves | S282, S060 | $12,000 |
@@ -287,6 +288,18 @@ cylinders' braking up to about 20 mph and half of it at 40; with the
 drifting valve open too, all of it at any speed. The engine draws much less
 smokebox gas (a third of the wear hooked up). Opening the throttle closes
 them with a clunk.
+
+**With the automatic fire door** you fire from the shovel alone. Load the
+shovel, turn to the door, and hold jump (Space): its air cylinder fires with
+a burst and swings the door open, and the air hisses while you hold the key.
+Throw, then let go, and it shuts as the hiss stops; let go before the coal
+lands and the shovelful hits the door.
+The door stands open only for the throw, so less cold air reaches the fire
+between shovelfuls. A door you cracked for air goes back to its crack; one
+you left wide open goes shut. It works with the mouse and keyboard,
+within about 4 m of the door; while you hold the shovel there, the key
+doesn't jump. The NYC Hudson, 844, S484-840 and QJ car packs have this door
+as built, with nothing to buy.
 
 **With the stoker** (S282) the fireman shovels only where it runs short.
 It feeds steadily as long as you keep the jets set and the engine
@@ -607,9 +620,13 @@ you look), or aim at the door and use them to lay them on the grate where
 you point. A door only partly open may stop a throw. One or two
 pieces will not keep burning on their own. Put a rag down, use the oil can
 on it, light it with the lighter (open its lid with the mouse wheel, then
-use it to strike), and throw or lay it onto that wood. The rag burns about three minutes; the
+use it to strike), and throw or lay it into the box. The wood and rags burn
+as one fire, so a burning rag lights the wood wherever each lands, but an
+oiled rag that isn't lit does nothing. Coal already on the grate does no
+harm: the wood lights it as it burns. The rag burns about three minutes; the
 wood catches in under a minute and its flames spread over the pile over the
-next minute or two. Coal laid before it catches smothers the start. Once the
+next minute or two. Coal fired on top of the wood before it catches
+smothers the start. Once the
 flames have taken all of the wood, cover it with a small charge of coal and
 let that catch before adding more. A pile burns down to embers in about ten
 minutes, so have the coal on and caught before then. Keep air reaching it. Once the coal

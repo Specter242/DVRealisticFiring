@@ -26,7 +26,7 @@ namespace RealisticFiring.AdapterCheck
     {
         private static readonly string[] Chimney = { "SmokeQuality", "SmokeSeason", "RealisticSmoke", "CustomSmokeEffects", "HeatShimmer", "EngineSteam" };
 
-        private static readonly string[] UpgradeRules = { "BrickArch", "OverFireJets", "SniftingValves", "DriftingValve", "ByPassValves", "S282Stoker", "S282FeedPump", "S282Booster" };
+        private static readonly string[] UpgradeRules = { "BrickArch", "OverFireJets", "AutomaticFireDoor", "SniftingValves", "DriftingValve", "ByPassValves", "S282Stoker", "S282FeedPump", "S282Booster" };
 
         private static readonly string[] OneTime = { "GiveFireIron", "GiveFiringTablet", "GiveFiringManual", "GiveWoodCrate", "GiveRagTin", "RenewBoilerNow" };
 
@@ -40,9 +40,11 @@ namespace RealisticFiring.AdapterCheck
                 "BoilerWaterImpurities", "BoilerWaterQuality", "FusiblePlugs" }),
             ("Engine", new[] { "RealisticCylinders", "UnlistedLocomotives", "RealisticOilBurners", "FitBoosters", "FitFeedPumps" }
                 .Concat(UpgradeRules).Concat(new[] { "StokerJams", "ShowStokerJetValves" }).ToArray()),
-            ("Sound", new[] { "OilBurnerVolume", "FeedPumpVolume", "LowWaterAlarmVolume", "SteamVentVolume" }),
+            ("Sound", new[] { "RealisticChuffs", "OilBurnerVolume", "FeedPumpVolume", "LowWaterAlarmVolume", "SteamVentVolume" }),
             ("On screen", new[] { "ShowOverlay", "ShowFiremanStatus", "HostHidesHud" }),
-            ("Keys", new[] { "OpenSettingsKey", "HandPumpKey", "ShakeGrateKey", "ToggleOverlayKey", "FiremanKey" }),
+            ("Keys", new[] { "OpenSettingsKey", "HandPumpKey", "ShakeGrateKey", "ToggleOverlayKey", "FiremanKey",
+                "FiremanOffKey", "FiremanKeepAliveKey", "FiremanShuntingKey", "FiremanRoadKey", "FiremanNextKey",
+                "FiremanHeavyAheadKey", "FiremanEasingOffKey" }),
         };
 
         private const string HandedOffRule = "#ChimneyHandedOff|True";

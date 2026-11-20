@@ -19,9 +19,10 @@ namespace RealisticFiring.Upgrades
         private const string SniftingKey = "sniftingValves";
         private const string DriftingValveKey = "driftingValve";
         private const string ByPassKey = "byPassValves";
+        private const string AutoFireDoorKey = "automaticFireDoor";
 
         private static SaveGameData readFrom;
-        private static bool archBought, jetsBought, stokerBought, feedPumpBought, boosterBought, sniftingBought, driftingValveBought, byPassBought;
+        private static bool archBought, jetsBought, stokerBought, feedPumpBought, boosterBought, sniftingBought, driftingValveBought, byPassBought, autoFireDoorBought;
 
         /// <summary>The host's word on the arch, in a Multiplayer session where this game is a client; null otherwise.</summary>
         public static bool? FromHost;
@@ -46,6 +47,9 @@ namespace RealisticFiring.Upgrades
 
         /// <summary>The host's word on the by-pass valves, as <see cref="FromHost"/>.</summary>
         public static bool? ByPassFromHost;
+
+        /// <summary>The host's word on the automatic fire door, as <see cref="FromHost"/>.</summary>
+        public static bool? AutoFireDoorFromHost;
 
         /// <summary>One more each time what is fitted may have changed, so fireboxes refit.</summary>
         public static int Version { get; private set; }
@@ -147,6 +151,17 @@ namespace RealisticFiring.Upgrades
                 if (ByPassFromHost.HasValue)
                     return ByPassFromHost.Value;
                 return Allowed(Main.Settings?.ByPassValves ?? UpgradeRule.BuyInCareer, ByPassBought);
+            }
+        }
+
+        /// <summary>Whether the S282s and S060s have their automatic fire door now (the car packs': <see cref="Sim.AutoFireDoorFit"/>).</summary>
+        public static bool AutoFireDoor
+        {
+            get
+            {
+                if (AutoFireDoorFromHost.HasValue)
+                    return AutoFireDoorFromHost.Value;
+                return Allowed(Main.Settings?.AutomaticFireDoor ?? UpgradeRule.BuyInCareer, AutoFireDoorBought);
             }
         }
 
@@ -259,6 +274,16 @@ namespace RealisticFiring.Upgrades
             }
         }
 
+        /// <summary>Whether the player of this save has bought the automatic fire door.</summary>
+        public static bool AutoFireDoorBought
+        {
+            get
+            {
+                Read();
+                return autoFireDoorBought;
+            }
+        }
+
         /// <summary>Buys the arch: every engine has it from now on, and the save keeps it.</summary>
         public static void BuyArch()
         {
@@ -331,6 +356,15 @@ namespace RealisticFiring.Upgrades
             Changed();
         }
 
+        /// <summary>Buys the automatic fire door: every coal-fired engine has one from now on, and the save keeps it.</summary>
+        public static void BuyAutoFireDoor()
+        {
+            Read();
+            autoFireDoorBought = true;
+            Write(SingletonBehaviour<SaveGameManager>.Instance?.data);
+            Changed();
+        }
+
         /// <summary>Marks what is fitted as possibly changed (the override, the host's word).</summary>
         public static void Changed() => Version++;
 
@@ -350,6 +384,7 @@ namespace RealisticFiring.Upgrades
             sniftingBought = record?[SniftingKey]?.Value<bool>() ?? false;
             driftingValveBought = record?[DriftingValveKey]?.Value<bool>() ?? false;
             byPassBought = record?[ByPassKey]?.Value<bool>() ?? false;
+            autoFireDoorBought = record?[AutoFireDoorKey]?.Value<bool>() ?? false;
             Version++;
         }
 
@@ -357,7 +392,7 @@ namespace RealisticFiring.Upgrades
         // doesn't know are kept.
         private static void Write(SaveGameData data)
         {
-            if (data == null || !archBought && !jetsBought && !stokerBought && !feedPumpBought && !boosterBought && !sniftingBought && !driftingValveBought && !byPassBought)
+            if (data == null || !archBought && !jetsBought && !stokerBought && !feedPumpBought && !boosterBought && !sniftingBought && !driftingValveBought && !byPassBought && !autoFireDoorBought)
                 return;
             var record = data.GetJObject(SaveKey) ?? new JObject();
             if (archBought)
@@ -376,6 +411,8 @@ namespace RealisticFiring.Upgrades
                 record[DriftingValveKey] = true;
             if (byPassBought)
                 record[ByPassKey] = true;
+            if (autoFireDoorBought)
+                record[AutoFireDoorKey] = true;
             data.SetJObject(SaveKey, record);
         }
 

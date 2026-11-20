@@ -304,9 +304,11 @@ namespace RealisticFiring
         internal static Advice CoalAdvice(RealisticFirebox firebox, InjectorRig rig, BoilerWaterRig waterRig)
         {
             var door = firebox.HasDoorPort ? firebox.DoorOpening : 0f;
+            // A cold fire wanting wood or rags none of which is at hand: where the nearest supplies are.
+            var supplies = !firebox.Model.FireOn && !LighterRule.LightsCoal ? Items.SupplyPlaces.Hint(firebox.Model.StarterMass > 0f) : null;
             var advice = Bursting(waterRig) ?? FiringAdvice.ForCoal(firebox.Model, door, rig != null ? Visuals.GaugeGlass.Read(rig) : 1f, Injectors(rig),
                 waterRig != null && waterRig.DriftingWearing, LighterRule.LightsCoal, waterRig != null && waterRig.Drift.SniftingOpen,
-                DriftingFittings.Valve(firebox.Car));
+                DriftingFittings.Valve(firebox.Car), supplies);
             if (advice.Level == AdviceLevel.Ok && firebox.StokerTableLoaded)
                 advice = new Advice(AdviceLevel.Watch, "Rake the back of the fire to clear the stoker table. Ease the feed or raise the jets to keep it clear.");
             return advice;

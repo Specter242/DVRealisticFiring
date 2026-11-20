@@ -43,6 +43,76 @@ namespace RealisticFiring.Items
         /// <summary>A body under <paramref name="parent"/>; in the firebox, lit by its fire.</summary>
         internal static Transform Build(Transform parent, StartingFuelKind kind, int variant, bool inFirebox = false)
         {
+            var body = BuildBody(parent, kind, variant, inFirebox);
+            if (FireStartingItems.IsContainer(kind) && !inFirebox)
+                Label(body, kind);
+            return body;
+        }
+
+        private static readonly Color PlateYellow = new Color(0.97f, 0.74f, 0.05f);
+        private static readonly Color StencilBlack = new Color(0.06f, 0.05f, 0.04f);
+        private static Material plate;
+        internal const string LabelName = "[rf label]";
+
+        private static void Label(Transform body, StartingFuelKind kind)
+        {
+            var size = Bounds(kind).size;
+            var word = kind == StartingFuelKind.WoodCrate ? "FIREWOOD" : "RAGS";
+            var width = size.x * 0.78f;
+            var height = Mathf.Min(0.11f, size.y * 0.4f);
+            var font = PlumeAssets.PlateFont;
+            for (var s = -1; s <= 1; s += 2)
+            {
+                var holder = new GameObject(LabelName).transform;
+                holder.SetParent(body, false);
+                holder.localPosition = new Vector3(0f, size.y * 0.08f, s * (size.z / 2f + 0.004f));
+                // A quad and a text mesh face along their -z: turned to face out of the side.
+                holder.localRotation = Quaternion.Euler(0f, s > 0 ? 180f : 0f, 0f);
+                var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                quad.name = "plate";
+                Object.DestroyImmediate(quad.GetComponent<Collider>());
+                quad.transform.SetParent(holder, false);
+                quad.transform.localScale = new Vector3(width, height, 1f);
+                var renderer = quad.GetComponent<Renderer>();
+                renderer.sharedMaterial = PlateMaterial();
+                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                if (font == null) continue;
+                var stencil = new GameObject("stencil");
+                stencil.transform.SetParent(holder, false);
+                stencil.transform.localPosition = new Vector3(0f, 0f, -0.001f);
+                var text = stencil.AddComponent<TextMesh>();
+                text.font = font;
+                text.text = word;
+                text.anchor = TextAnchor.MiddleCenter;
+                text.alignment = TextAlignment.Center;
+                text.fontSize = 96;
+                // A line is characterSize x fontSize / 10 high: the letters about two thirds of the plate.
+                text.characterSize = height * 0.62f / (text.fontSize * 0.1f);
+                text.color = StencilBlack;
+                var shown = stencil.GetComponent<MeshRenderer>();
+                shown.sharedMaterial = font.material;
+                shown.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            }
+        }
+
+        // The shovel's own material, painted: it renders as the game's items do.
+        private static Material PlateMaterial()
+        {
+            if (plate != null) return plate;
+            var source = Resources.Load<GameObject>("shovel")?.transform.Find("model")?.GetComponent<Renderer>()?.sharedMaterial;
+            plate = source != null ? new Material(source) : new Material(Shader.Find("Standard"));
+            plate.name = "RF supply label";
+            plate.color = PlateYellow;
+            plate.mainTexture = Texture2D.whiteTexture;
+            plate.DisableKeyword("_NORMALMAP");
+            plate.DisableKeyword("_METALLICGLOSSMAP");
+            plate.SetFloat("_Metallic", 0f);
+            plate.SetFloat("_Glossiness", 0.25f);
+            return plate;
+        }
+
+        private static Transform BuildBody(Transform parent, StartingFuelKind kind, int variant, bool inFirebox)
+        {
             var prefab = PlumeAssets.StartingFuelPrefab;
             var source = prefab != null ? prefab.transform.Find(Source(kind, variant)) : null;
             if (source == null) return Fallback.Build(parent, kind);

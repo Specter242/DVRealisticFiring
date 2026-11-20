@@ -287,7 +287,7 @@ namespace RealisticFiring.Items
         // (FuelFireboxIntake.Strike). The host decides, as for every entry.
         private void OnCollisionEnter(Collision collision)
         {
-            if (Consumed || Held || Net.IsClient || collision == null) return;
+            if (Consumed || Held || Net.ItemsRemote || collision == null) return;
             FuelFireboxIntake.Strike(this);
         }
 
@@ -308,12 +308,12 @@ namespace RealisticFiring.Items
         public bool Ignite(float strength)
         {
             if (!IgnitionAllowed) return false;
-            if (Net.IsClient) { Request(IgniteAction); return true; }
+            if (Net.ItemsRemote) { Request(IgniteAction); return true; }
             return Rag.Ignite();
         }
         internal void Oil()
         {
-            if (Net.IsClient) { Request(OilAction); return; }
+            if (Net.ItemsRemote) { Request(OilAction); return; }
             if (Kind == StartingFuelKind.Rag) Rag.Soak(RagFuel.OilCapacity);
         }
         internal void ApplyClientTake() => Request(TakeAction);
@@ -371,7 +371,7 @@ namespace RealisticFiring.Items
         private void OnGrabbed(ControlImplBase _)
         {
             var spec = GetComponent<InventoryItemSpec>();
-            if (spec == null || spec.BelongsToPlayer || Net.IsClient) return;
+            if (spec == null || spec.BelongsToPlayer || Net.ItemsRemote) return;
             spec.BelongsToPlayer = true;
             SingletonBehaviour<StorageController>.Instance.AddItemToWorldStorage(item);
         }
@@ -382,14 +382,14 @@ namespace RealisticFiring.Items
         private void Use()
         {
             if (!FireStartingItems.IsContainer(Kind)) return;
-            if (Net.IsClient) { Request(UseAction); return; }
+            if (Net.ItemsRemote) { Request(UseAction); return; }
             TakeOut(null);
         }
 
-        /// <summary>Takes one piece out, at the container's mouth; null when it is empty (host only).</summary>
+        /// <summary>Takes one piece out, at the container's mouth; null when it is empty (not for the host's items on a guest).</summary>
         internal StartingFuelItem TakeOut(Vector3? at)
         {
-            if (!FireStartingItems.IsContainer(Kind) || Net.IsClient) return null;
+            if (!FireStartingItems.IsContainer(Kind) || Net.ItemsRemote) return null;
             if (Count <= 0)
             {
                 FireController.Announce(FireStartingItems.EmptyNotice(Kind));
@@ -407,7 +407,7 @@ namespace RealisticFiring.Items
             if (Consumed) return;
             if (Kind == StartingFuelKind.Rag)
             {
-                if (!Net.IsClient)
+                if (!Net.ItemsRemote)
                 {
                     if (LevelInfo.IsUnderWater(transform.position)) Rag.Extinguish();
                     Rag.Burn(Time.deltaTime);

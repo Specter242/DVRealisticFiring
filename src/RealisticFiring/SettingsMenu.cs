@@ -181,13 +181,16 @@ namespace RealisticFiring
             End();
 
             // A changed rule refits the engines through Settings.OnChange, run below on any change.
-            Begin("FIREBOX UPGRADES", "Fittings the stock S282 and S060 start without in a career.");
+            Begin("FIREBOX UPGRADES", "Fittings the engines start without in a career.");
             s.BrickArch = Choice("Brick arch", s.BrickArch, UpgradeChoices,
                 "Without it the engines burn about 7 to 13 % more coal for the same work, steam about 13 % less at their most, and smoke more after firing. " +
                 "Buy it in a career at a career manager's Upgrades screen; sandbox has it unless set to Never fitted.");
             s.OverFireJets = Choice("Over-fire jets", s.OverFireJets, UpgradeChoices,
                 "Steam jets through the firebox sides, worked by a valve in the cab, that blow air over the fire and burn its smoke. " +
                 "Fitted only with the brick arch. Buy them in a career at a career manager's Upgrades screen after the arch.");
+            s.AutomaticFireDoor = Choice("Automatic fire door", s.AutomaticFireDoor, UpgradeChoices,
+                "With the shovel in hand at the fire door, holding the jump key opens the door with air instead of jumping, and it shuts as soon as you let go. " +
+                "Buy it for the S282 and S060 in a career at a career manager's Upgrades screen. The Hudson, 844, S484-840 and QJ have it as built, unless set to Never fitted.");
             s.SniftingValves = Choice("Snifting valves", s.SniftingValves, UpgradeChoices,
                 "Vacuum relief valves on the steam chests that let air in when drifting with the throttle shut, so the cylinders draw less smokebox gas: " +
                 "drifting hooked up wears the engine a third as much. Buy them in a career at a career manager's Upgrades screen.");
@@ -218,6 +221,12 @@ namespace RealisticFiring
 
         private void Sound(Settings s)
         {
+            Begin("CHUFFS", "How the chimney's beats sound.");
+            s.RealisticChuffs = Toggle("Realistic chuffs", s.RealisticChuffs,
+                "Each beat as loud as the steam it lets go, the soft and hard sounds blending, each engine's own slightly uneven beat, " +
+                "a drifting engine's panting, and echoes off walls, cuttings and tunnels. Off, the game's own chuffs.");
+            End();
+
             Begin("VOLUME", "Adjust individual effects. 1 is normal volume; 0 is silent.");
             s.OilBurnerVolume = Slider("Oil burner", s.OilBurnerVolume, 0f, 2f, 1, "×", "The roar and drumming of the burner.");
             s.FeedPumpVolume = Slider("Feed pump", s.FeedPumpVolume, 0f, 2f, 1, "×", "The locomotive's feed pump.");
@@ -236,6 +245,16 @@ namespace RealisticFiring
             s.ShakeGrateKey = Key("Shake grate", s.ShakeGrateKey);
             s.ToggleOverlayKey = Key("Fire overlay", s.ToggleOverlayKey);
             s.FiremanKey = Key("Fireman's orders", s.FiremanKey);
+            End();
+
+            Begin("FIREMAN'S ORDERS BY KEY", "Unbound until you bind them. Ctrl, Shift, or Alt may go with a key (Alt+1, say). They order the fireman on your engine.");
+            s.FiremanOffKey = Key("Fireman: off", s.FiremanOffKey);
+            s.FiremanKeepAliveKey = Key("Fireman: keep it alive", s.FiremanKeepAliveKey);
+            s.FiremanShuntingKey = Key("Fireman: shunting", s.FiremanShuntingKey);
+            s.FiremanRoadKey = Key("Fireman: road", s.FiremanRoadKey);
+            s.FiremanNextKey = Key("Fireman: next order", s.FiremanNextKey);
+            s.FiremanHeavyAheadKey = Key("Call: heavy work ahead", s.FiremanHeavyAheadKey);
+            s.FiremanEasingOffKey = Key("Call: easing off", s.FiremanEasingOffKey);
             End();
 
             Begin("ON-SCREEN DISPLAYS", "The firing tablet works independently of the optional overlay.");
@@ -261,13 +280,13 @@ namespace RealisticFiring
             }
             else if (Action("Give firing tablet", "Hold it to read the engine, or fit it to a large gadget mount."))
                 s.GiveFiringTablet = true;
-            if (Action("Give firing manual", "An illustrated booklet with a clickable table of contents."))
+            if (Action(EquipmentActions.Labels[EquipmentActions.Manual], EquipmentActions.Help[EquipmentActions.Manual]))
                 s.GiveFiringManual = true;
-            if (Action("Give fire iron", "Through the open door: click to slice, scroll to push or pull, Shift + scroll to move sideways."))
+            if (Action(EquipmentActions.Labels[EquipmentActions.FireIron], EquipmentActions.Help[EquipmentActions.FireIron]))
                 s.GiveFireIron = true;
-            if (Action("Give firewood crate", "A full crate of firewood for lighting a cold fire, when none is at hand."))
+            if (Action(EquipmentActions.Labels[EquipmentActions.WoodCrate], EquipmentActions.Help[EquipmentActions.WoodCrate]))
                 s.GiveWoodCrate = true;
-            if (Action("Give rag tin", "A full tin of rags to oil and light, when none is at hand."))
+            if (Action(EquipmentActions.Labels[EquipmentActions.RagTin], EquipmentActions.Help[EquipmentActions.RagTin]))
                 s.GiveRagTin = true;
             End();
 

@@ -229,12 +229,14 @@ namespace RealisticFiring.AdapterCheck
             CheckBoilerWater();
             CheckServiceGrace();
             CheckSniftingValves();
+            CheckAutoFireDoor();
             CheckGlassTilt();
             CheckFiremanGlassDisplay();
             CheckOverlayBoilerFallback();
             CheckVrShedHoseParts();
             CheckStoker(gameParams, def);
             QjCabChecks.Run(Check);
+            ChuffChecks.Run(Check);
             QjBackendChecks.Run(Check);
             PlumeTimingChecks.Run(Check);
             InjectorAudioChecks.Run(Check);
@@ -864,6 +866,13 @@ namespace RealisticFiring.AdapterCheck
                 CheckStandSync(assembly);
                 CheckHelloWatch();
                 CheckSupplyRequest();
+                // The installed Multiplayer (0.1.16) applies no item changes: each player's crates and tins are their
+                // own (Ace, DV Discord, 2026-11-19: guests saw none). A later one that does is reported, not failed.
+                var shared = Multiplayer.ItemSharing.Shared(out var why);
+                var version = assembly.GetCustomAttributes(typeof(AssemblyInformationalVersionAttribute), false)
+                    .OfType<AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "?";
+                Check(version.StartsWith("0.1.16") ? !shared && why.Contains("empty") : true,
+                    $"Multiplayer {version.Split('+')[0]}: {(shared ? "it shares world items; a guest's crates and tins are the host's" : $"it shares no world items ({why}); each player's crates and tins are their own")}");
                 MultiplayerStokerChecks.Run(assembly, Check);
             }
             catch (Exception e)
@@ -3779,6 +3788,21 @@ namespace RealisticFiring.AdapterCheck
                   && !Sim.DriftingFittings.CanHaveValve("A.T.&S.F. 2901-A") && !Sim.DriftingFittings.CanHaveValve("em_lms_8f_loc_black"),
                 "snifting valves ($8,000), a drifting valve ($6,000), and by-pass valves ($12,000) are sold for every S282 and S060, bought in a career by default; " +
                 "the S282 and S060 carry the drifting valve's control; the 2901, BR95, and QJ their prototypes' by-pass valves, the 8F and 4F their snifting valves, the J-3a, FEF-3, S484-840, JK3, and narrow-gauge engines none");
+        }
+
+        private static void CheckAutoFireDoor()
+        {
+            var screen = Upgrades.UpgradesScreen.AutoFireDoor;
+            Check(new Settings().AutomaticFireDoor == Upgrades.UpgradeRule.BuyInCareer
+                  && screen.Price == 10_000 && screen.Engines == "every S282 and S060",
+                "the automatic fire door ($10,000) is sold for the S282 and S060, bought in a career by default");
+            Check(Sim.AutoFireDoorFit.Prototype.Count == 4
+                  && Sim.AutoFireDoorFit.Prototype.All(Sim.FireboxRegistry.SupportedLiveries.Contains)
+                  && !Sim.AutoFireDoorFit.Prototype.Contains("LocoS282A") && !Sim.AutoFireDoorFit.Prototype.Contains("LocoS060"),
+                "the car packs' engines with an automatic fire door as built are all fired by the mod, and none is a stock engine");
+            Check(HarmonyLib.AccessTools.PropertyGetter(typeof(LocomotionInputNonVr), nameof(LocomotionInputNonVr.JumpRequested)) != null
+                  && ShovelNonPhysicalCoal.REQUIRED_DOOR_OPENED_PERCENTAGE_NON_VR == Core.AutoFireDoor.ShovelOpening,
+                "the jump key can be taken from the game's walking input, and the automatic fire door opens as far as the game's shovel wants");
         }
 
         private static void CheckPatchTargets()

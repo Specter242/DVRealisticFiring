@@ -302,7 +302,7 @@ namespace RealisticFiring.Items
         internal bool Place(StartingFuelItem item, GrateZone zone)
         {
             if (item == null || item.Consumed || !ready) return false;
-            if (Net.IsClient)
+            if (Net.ItemsRemote)
             {
                 // Let go just inside the hole, moving toward the zone aimed
                 // at; the host takes it as released through the door.
@@ -351,7 +351,7 @@ namespace RealisticFiring.Items
         internal static void Track(StartingFuelItem item)
         {
             var now = item.transform.position;
-            if (item.Consumed || Net.IsClient || !item.isActiveAndEnabled)
+            if (item.Consumed || Net.ItemsRemote || !item.isActiveAndEnabled)
             {
                 item.Previous = now; item.HavePrevious = true;
                 return;
@@ -379,7 +379,7 @@ namespace RealisticFiring.Items
 
  internal static void Strike(StartingFuelItem item)
         {
-            if (item == null || item.Consumed || Net.IsClient || !item.isActiveAndEnabled) return;
+            if (item == null || item.Consumed || Net.ItemsRemote || !item.isActiveAndEnabled) return;
             var body = item.Body;
             var centre = body != null ? body.worldCenterOfMass : item.transform.position;
             foreach (var intake in active)
@@ -484,33 +484,72 @@ namespace RealisticFiring.Items
             // for the whole piece before AddWood can accept a partial mass;
             // consuming the world item must not discard the remainder.
             if (!CanTake(item)) return false;
-            if (FireboxRegistry.TryGet(Car, out var coal))
+            var oil = item.Kind == StartingFuelKind.Rag ? item.Rag.Oil : 0f;
+            var lit = item.Kind == StartingFuelKind.Rag && item.Rag.Lit;
+            // A guest's own piece (its Multiplayer shares no items): the host's fire takes it, and this game shows
+            // it as the host's fire comes back.
+            if (Net.IsClient)
+            {
+                var action = item.Kind == StartingFuelKind.Wood ? FireAction.Wood : FireAction.Rag;
+                if (!Net.TrySend(Car, action, (int)zone, lit ? 1 : 0, oil)) return false;
+            }
+            else if (Take(Car, item.Kind, oil, lit, zone) is GrateZone landedIn)
+                Arrived(landedIn, StarterFuel.PieceMass);
+            else if (!(item.Kind == StartingFuelKind.Rag && RealisticOilFirebox.TryGet(Car, out _)))
+                return false;
+            if (item.Kind == StartingFuelKind.Rag)
+                Tell(Car, oil, lit, zone);
+            return true;
+        }
+
+        /// <summary>
+        /// The host's fire takes a piece of wood or a rag (of
+        /// <paramref name="oil"/> kg, burning when <paramref name="lit"/>)
+        /// aimed at <paramref name="zone"/>: from this game's player, or from
+        /// a guest whose Multiplayer shares no items. Returns the zone it
+        /// landed in, or null when the grate had no room or the fire is an
+        /// oil burner's (which takes a burning rag's flame).
+        /// </summary>
+        internal static GrateZone? Take(TrainCar car, StartingFuelKind kind, float oil, bool lit, GrateZone zone)
+        {
+            if (FireboxRegistry.TryGet(car, out var coal))
             {
                 var model = coal.Model;
-                // The aimed zone, or the nearest with room.
-                foreach (var z in ByDistance(zone))
+                if (kind == StartingFuelKind.Wood && model.Parameters.MaxCoalCapacity - model.CoalMass - model.StarterMass < StarterFuel.PieceMass)
+                    return null;
+                foreach (var z in ByDistance(model.StarterZone(zone)))
                 {
-                    if (item.Kind == StartingFuelKind.Wood)
+                    if (kind == StartingFuelKind.Wood)
                     {
                         if (StarterFuel.ZoneCapacity - model.Starters[(int)z].Mass < StarterFuel.PieceMass) continue;
-                        if (model.AddWood(StarterFuel.PieceMass, z) > 0f) { Arrived(z, StarterFuel.PieceMass); return true; }
-                        return false;
+                        return model.AddWood(StarterFuel.PieceMass, z) > 0f ? z : (GrateZone?)null;
                     }
-                    if (model.AddRag(item.Rag.Oil, item.Rag.Lit, z))
-                    {
-                        if (item.Rag.Oil <= 0f) FireController.Announce("A dry rag only burns away; oil it and light it first.");
-                        return true;
-                    }
+                    if (model.AddRag(oil, lit, z))
+                        return z;
                 }
-                return false;
+                return null;
             }
-            if (item.Kind == StartingFuelKind.Rag && RealisticOilFirebox.TryGet(Car, out var oil))
+            if (kind == StartingFuelKind.Rag && lit && RealisticOilFirebox.TryGet(car, out var burner))
+                burner.Model.OfferRag(oil / RagFuel.OilBurnRate);
+            return null;
+        }
+
+        // What the player can't see through the door (Ender Voidwalker, 2026-11-19): an oiled rag needs lighting,
+        // a burning one needs wood, and coal fired on top of the wood smothers it. On a guest, from its copy of the
+        // host's fire.
+        private static void Tell(TrainCar car, float oil, bool lit, GrateZone zone)
+        {
+            if (FireboxRegistry.TryGet(car, out var coal))
             {
-                if (item.Rag.Lit) oil.Model.OfferRag(item.Rag.RemainingSeconds);
-                else FireController.Announce("An unlit rag does nothing for the burner; light it first.");
-                return true;
+                var model = coal.Model;
+                var at = model.StarterZone(zone);
+                if (oil <= 0f) FireController.Announce("A dry rag only burns away; oil it and light it first.");
+                else if (!lit) FireController.Announce("That rag isn't lit, so it does nothing: light the next one before it goes in.");
+                else if (model.StarterWood < StarterFuel.PieceMass * 0.5f) FireController.Announce("The rag has no wood to light yet: lay four or more pieces while it burns.");
+                else if (model.CoalOnWood(at) >= StarterFuel.CoverHalf) FireController.Announce("Coal fired on top of the young wood will smother it: let the wood burn well first.");
             }
-            return false;
+            else if (!lit && RealisticOilFirebox.TryGet(car, out _))
+                FireController.Announce("An unlit rag does nothing for the burner; light it first.");
         }
 
         private static IEnumerable<GrateZone> ByDistance(GrateZone zone) =>

@@ -243,6 +243,9 @@ namespace RealisticFiring.Sim
 
         public bool HasDoorPort => doorPort != null;
 
+        /// <summary>The door's port where it is a control that can be moved from outside the sim; null otherwise.</summary>
+        public Port DoorControlPort => doorPort != null && doorPort.type == PortType.EXTERNAL_IN ? doorPort : null;
+
         public float StartupMultiplier { get; private set; } = 1f;
 
         /// <summary>Coal the last delivery put on the grate, in kg; 0 when none since the fire was laid.</summary>

@@ -608,10 +608,11 @@ namespace RealisticFiring.Visuals
 
             var shown = Main.Settings.ShowZonedCoalBed;
             stockCoal.enabled = !shown;
+            FromCab = FireboxVisibility.FromCab(firebox.Car, PlayerManager.ActiveCamera != null ? PlayerManager.ActiveCamera : Camera.main);
             if (bedRenderer != null)
-                bedRenderer.enabled = shown;
+                bedRenderer.enabled = shown && FromCab;
             if (emberRenderer != null)
-                emberRenderer.enabled = shown;
+                emberRenderer.enabled = shown && FromCab;
             if (!shown)
             {
                 foreach (var tile in tileRenderers)
@@ -666,7 +667,7 @@ namespace RealisticFiring.Visuals
                 var hottest = 0f;
                 for (var i = 0; i < heat.Length; i++)
                     hottest = Mathf.Max(hottest, heat[i]);
-                emberRenderer.enabled = hottest > ColdHeat;
+                emberRenderer.enabled = hottest > ColdHeat && FromCab;
             }
 
             var seen = Seen;
@@ -710,6 +711,9 @@ namespace RealisticFiring.Visuals
         /// Whether the coal can be seen now: its door open (or none) and the
         /// camera near enough, or a firebox capture running.
         /// </summary>
+        /// <summary>Whether the camera stands where the box can be seen into (FireboxVisibility.FromCab), this frame.</summary>
+        public bool FromCab { get; private set; } = true;
+
         public bool Seen
         {
             get

@@ -47,6 +47,20 @@ namespace RealisticFiring.AdapterCheck
                     unbound.Add(name);
             }
             check(unbound.Count == 0, "every member binds to the Comms Tablet's delegate types" + (unbound.Count > 0 ? ": not " + string.Join(", ", unbound) : ""));
+            var settingsType = type.Assembly.GetType(assembly + ".CommsTabletSettings");
+            MethodInfo Member(string name) => settingsType?.GetMethod(name, BindingFlags.Public | BindingFlags.Static);
+            var bound = settingsType != null && settingsType.IsPublic && settingsType.IsAbstract && settingsType.IsSealed
+                        && Delegate.CreateDelegate(typeof(Func<string[]>), Member("Actions"), false) != null
+                        && Delegate.CreateDelegate(typeof(Func<int, string>), Member("Act"), false) != null
+                        && Delegate.CreateDelegate(typeof(Func<string[]>), Member("ActionHelp"), false) != null
+                        && settingsType.GetField("Contract") == null;
+            check(bound, "the Settings app's buttons bind as the Comms Tablet binds them: RealisticFiring.CommsTabletSettings, public and static, Actions and Act a pair, ActionHelp, no contract constant");
+            var actions = CommsTabletSettings.Actions();
+            var help = CommsTabletSettings.ActionHelp();
+            check(actions.SequenceEqual(new[] { "Give fire iron", "Give firewood crate", "Give rag tin", "Give firing manual" })
+                  && help.Length == actions.Length && help.All(h => !string.IsNullOrEmpty(h)) && CommsTabletSettings.Act(-1) == null && CommsTabletSettings.Act(actions.Length) == null,
+                $"the tablet's Settings app gets the four give actions, each with a line of help, and an action out of range does nothing ({string.Join(", ", actions)})");
+            check(type.GetMethod("Actions") == null && type.GetMethod("Act") == null, "the guest app itself has no action members: they are the settings class's");
             var referenced = type.Assembly.GetReferencedAssemblies().Select(a => a.Name).ToList();
             check(!referenced.Contains(CommsTabletLink.HostAssembly), "the mod never references the Comms Tablet's assembly; they meet by reflection only");
 

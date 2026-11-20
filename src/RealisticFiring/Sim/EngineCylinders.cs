@@ -49,6 +49,9 @@ namespace RealisticFiring.Sim
         /// <summary>This tick's indicator diagram at the pressure acting on the pistons.</summary>
         public CylinderCycle Cycle { get; internal set; }
 
+        /// <summary>The pressure acting on the pistons this tick, after the cocks' and a crack's leaks, bar absolute.</summary>
+        public float Chest { get; internal set; }
+
         /// <summary>Steam admitted a stroke this tick, in kg.</summary>
         public float Admitted { get; internal set; }
 

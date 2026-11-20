@@ -1,5 +1,46 @@
 # Changelog
 
+## 1.24.3 (2026-11-20)
+
+- **New upgrade: an automatic fire door** ($10,000), for the S282 and S060,
+  at a career manager's Upgrades screen. The NYC Hudson, 844, S484-840 and
+  QJ car packs have it as built. With the shovel in hand at the door, hold
+  the jump key (Space) instead of jumping: its air cylinder fires with a
+  burst, the door opens, and the air hisses as long as you hold it; let go
+  and the door shuts as the hiss stops. A door cracked for air goes back to
+  its crack. Other players hear it too.
+- **The chuffs sound like the steam behind them.** Each beat is as loud
+  as the steam it lets go: soft hooked up, loud in full gear, and the soft
+  and hard sounds blend instead of switching. Each engine has its own
+  slightly uneven beat, and a drifting engine pants quietly. The beats echo
+  off cuttings, buildings, and trains alongside, ring in tunnels, and lose
+  their crispness far off. **Sound → Realistic chuffs** turns it off.
+- Starting a fire is more forgiving. The wood and rags burn as one fire, so a
+  burning rag lights the wood wherever it lands, and coal already on the grate
+  no longer smothers it; coal fired on top of young wood still does. The wood
+  fire draws the whole grate's air, so a small engine's natural draft is
+  enough. The advice says when a burning rag has no wood or the wood is
+  smothered, and the door warns about a rag that isn't lit.
+- Firewood crates and rag tins carry a bright yellow FIREWOOD or RAGS label,
+  so they stand out from the ground. When a cold fire has no wood or rags at
+  hand, the F6 advice names the nearest supply place, how far, and which way.
+- Keys for each of the fireman's orders (off, keep it alive, shunting, road,
+  next order) and for both calls, under F8 → Controls. None is bound until
+  you bind one, and Ctrl, Shift, or Alt can go with the key.
+- With Comms Tablet 0.1.4, its Settings app has buttons to give the fire
+  iron, firewood crate, rag tin and firing manual.
+- The fire iron shows the fire door's aiming keypad, as the shovel does.
+- Fixed multiplayer guests finding no firewood crates or rag tins, and not
+  being able to light a fire with wood. The Multiplayer mod doesn't share
+  loose items, so each player now has their own crates and tins, and a
+  guest's wood and rags go into the host's fire. The F8 Equipment buttons
+  now work for guests too.
+- Fixed the fireman's card reading 0.0 bar for a multiplayer guest.
+- Fixed the steam from a shed's hose and an injector's overflow drawing as
+  small squares.
+- Fixed the coal bed glowing through the side of the S282's firebox from
+  outside.
+
 ## 1.24.2 (2026-11-18)
 
 - For other mods: readings of the fire, boiler, and engine as the overlay

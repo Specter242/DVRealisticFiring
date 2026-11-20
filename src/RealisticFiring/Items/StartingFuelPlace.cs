@@ -51,7 +51,7 @@ namespace RealisticFiring.Items
             if (intake.TryAim(target, Handle, AimKind, out var firebox, out var aim)) firebox.NoteAim(aim);
             var text = !intake.DoorOpenFor(false) ? "Open the fire door wider to lay it in"
                 : !intake.CanTake(fuel) ? intake.RefusalFor(fuel)
-                : fuel.Kind == StartingFuelKind.Wood ? "Lay the wood on the grate" : fuel.Rag.Lit ? "Lay the burning rag in" : "Put the rag in";
+                : fuel.Kind == StartingFuelKind.Wood ? "Lay the wood on the grate" : fuel.Rag.Lit ? "Lay the burning rag in" : fuel.Rag.Oil > 0f ? "The rag isn't lit: light it first, or it does nothing" : "Put the rag in";
             SingletonBehaviour<InteractionTextControllerNonVr>.Instance?.DisplayText(text);
             return true;
         }

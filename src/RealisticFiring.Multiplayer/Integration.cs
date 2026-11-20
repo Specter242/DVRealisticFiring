@@ -9,6 +9,7 @@ using MPAPI;
 using MPAPI.Interfaces;
 using MPAPI.Types;
 using RealisticFiring.Core;
+using RealisticFiring.Items;
 using RealisticFiring.Sim;
 using UnityEngine;
 using UnityModManagerNet;
@@ -62,6 +63,8 @@ namespace RealisticFiring.Multiplayer
             api.OnTick += OnTick;
             // Last (audit 2026-11-09): with these set the mod's fires follow
             // the host on a guest, so nothing that can fail comes after them.
+            var shared = ItemSharing.Shared(out var why);
+            Net.ItemsSharedCheck = () => shared;
             Net.ClientCheck = IsClient;
             Net.SessionCheck = InSession;
             Net.Sender = Send;
@@ -70,8 +73,11 @@ namespace RealisticFiring.Multiplayer
                 OnServerStarted(MultiplayerAPI.Server);
             if (MultiplayerAPI.Client != null)
                 OnClientStarted(MultiplayerAPI.Client);
-            mod.Logger.Log($"Multiplayer support on (Multiplayer {api.MultiplayerVersion}, its API {MultiplayerAPI.LoadedApiVersion})");
+            mod.Logger.Log($"Multiplayer support on (Multiplayer {api.MultiplayerVersion}, its API {MultiplayerAPI.LoadedApiVersion}); " +
+                           (shared ? "it shares world items, so a guest's wood crates and rag tins are the host's"
+                                   : $"it shares no world items ({why}), so each player's wood crates and rag tins are their own, and a guest's wood and rags go to the host's fire as they go in"));
         }
+
 
         // Apart, so a Multiplayer without the event fails here, inside the
         // caller's try, and not when Start itself is compiled.
@@ -143,6 +149,7 @@ namespace RealisticFiring.Multiplayer
                 server.RegisterSerializablePacket<FireActionPacket>(OnFireAction);
                 StandSync.OnServerStarted(server);
                 StartingFuelSync.Server(server);
+                DoorAirSync.Server(server);
                 snapshotDue = 0u;
                 Leaving.Clear();
                 server.OnPlayerConnected += OnPlayerJoined;
@@ -171,6 +178,7 @@ namespace RealisticFiring.Multiplayer
                 lastFittings = null;
                 snapshotDue = 0u;
                 StartingFuelSync.ServerStopped();
+                DoorAirSync.Stopped();
             }
             catch (Exception e)
             {
@@ -197,6 +205,7 @@ namespace RealisticFiring.Multiplayer
                 client.RegisterSerializablePacket<FittingsPacket>(OnFittings);
                 StandSync.OnClientStarted(client);
                 StartingFuelSync.Client(client);
+                DoorAirSync.Client(client);
                 helloDue = true;
             }
             catch (Exception e)
@@ -209,6 +218,7 @@ namespace RealisticFiring.Multiplayer
         {
             try
             {
+                DoorAirSync.Stopped();
                 helloDue = false;
                 hudHeard = null;
                 hudWaitUntil = null;
@@ -222,6 +232,7 @@ namespace RealisticFiring.Multiplayer
                 Upgrades.Fittings.SniftingFromHost = null;
                 Upgrades.Fittings.DriftingValveFromHost = null;
                 Upgrades.Fittings.ByPassFromHost = null;
+                Upgrades.Fittings.AutoFireDoorFromHost = null;
                 Upgrades.Fittings.Changed();
                 LighterRule.Reset();
                 Shed.ShedNet.Reset();
@@ -262,7 +273,7 @@ namespace RealisticFiring.Multiplayer
         // The host's fittings in the order they were sent.
         private static ushort fittingsSent;
         private static ushort? fittingsHeard;
-        private static (bool Arch, bool Jets, bool Stoker, bool FeedPump, bool Booster, bool Snifting, bool DriftingValve, bool ByPass)? lastFittings;
+        private static (bool Arch, bool Jets, bool Stoker, bool FeedPump, bool Booster, bool Snifting, bool DriftingValve, bool ByPass, bool AutoFireDoor)? lastFittings;
 
         private static void OnFittings(FittingsPacket packet)
         {
@@ -277,6 +288,7 @@ namespace RealisticFiring.Multiplayer
             Upgrades.Fittings.SniftingFromHost = packet.Snifting;
             Upgrades.Fittings.DriftingValveFromHost = packet.DriftingValve;
             Upgrades.Fittings.ByPassFromHost = packet.ByPass;
+            Upgrades.Fittings.AutoFireDoorFromHost = packet.AutoFireDoor;
             Upgrades.Fittings.Changed();
         }
 
@@ -287,12 +299,12 @@ namespace RealisticFiring.Multiplayer
             if (server == null || api == null || !api.IsHost || !InSession())
                 return;
             var now = (Upgrades.Fittings.Arch, Upgrades.Fittings.Jets, Upgrades.Fittings.Stoker, Upgrades.Fittings.FeedPump, Upgrades.Fittings.Booster,
-                Upgrades.Fittings.Snifting, Upgrades.Fittings.DriftingValve, Upgrades.Fittings.ByPass);
+                Upgrades.Fittings.Snifting, Upgrades.Fittings.DriftingValve, Upgrades.Fittings.ByPass, Upgrades.Fittings.AutoFireDoor);
             if (lastFittings == now)
                 return;
             lastFittings = now;
             server.SendSerializablePacketToAll(new FittingsPacket { Arch = now.Item1, Jets = now.Item2, Stoker = now.Item3, FeedPump = now.Item4, Booster = now.Item5, Snifting = now.Item6,
-                DriftingValve = now.Item7, ByPass = now.Item8, Seq = ++fittingsSent }, reliable: true, excludeSelf: true);
+                DriftingValve = now.Item7, ByPass = now.Item8, AutoFireDoor = now.Item9, Seq = ++fittingsSent }, reliable: true, excludeSelf: true);
         }
 
         private static void OnHudPolicy(HudPolicyPacket packet)
@@ -515,7 +527,7 @@ namespace RealisticFiring.Multiplayer
                 StandSync.SendStands(sender);
                 MultiplayerAPI.Server?.SendSerializablePacketToPlayer(SessionRules(), sender);
                 MultiplayerAPI.Server?.SendSerializablePacketToPlayer(new FittingsPacket { Arch = Upgrades.Fittings.Arch, Jets = Upgrades.Fittings.Jets, Stoker = Upgrades.Fittings.Stoker, FeedPump = Upgrades.Fittings.FeedPump, Booster = Upgrades.Fittings.Booster, Snifting = Upgrades.Fittings.Snifting,
-                    DriftingValve = Upgrades.Fittings.DriftingValve, ByPass = Upgrades.Fittings.ByPass, Seq = ++fittingsSent }, sender);
+                    DriftingValve = Upgrades.Fittings.DriftingValve, ByPass = Upgrades.Fittings.ByPass, AutoFireDoor = Upgrades.Fittings.AutoFireDoor, Seq = ++fittingsSent }, sender);
                 return;
             }
             var reason = hello.Version != version
@@ -644,6 +656,13 @@ namespace RealisticFiring.Multiplayer
                     break;
                 case FireAction.Shovelful:
                     firebox?.DeliverShovelful(Mathf.Clamp(packet.Value, 0f, MostCoal), zone);
+                    break;
+                // A guest's own piece of wood or rag, its Multiplayer sharing no items (0.1.16).
+                case FireAction.Wood when zone.HasValue:
+                    FuelFireboxIntake.Take(car, StartingFuelKind.Wood, 0f, false, zone.Value);
+                    break;
+                case FireAction.Rag when zone.HasValue:
+                    FuelFireboxIntake.Take(car, StartingFuelKind.Rag, Mathf.Clamp(packet.Value, 0f, RagFuel.OilCapacity), packet.Direction == 1, zone.Value);
                     break;
                 case FireAction.FiremanMode when FiremanRig.TryGet(car, out var fireman)
                                                  && Enum.IsDefined(typeof(FiremanMode), (int)packet.Value):

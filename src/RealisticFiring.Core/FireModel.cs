@@ -77,7 +77,45 @@ namespace RealisticFiring.Core
 
         public StarterFuel[] Starters { get; } = Enumerable.Range(0, GrateLayout.ZoneCount).Select(_ => new StarterFuel()).ToArray();
         public float StarterMass { get { var mass = 0f; foreach (var s in Starters) mass += s.Mass; return mass; } }
+
+        /// <summary>The unburned wood in the box, kg.</summary>
+        public float StarterWood { get { var mass = 0f; foreach (var s in Starters) mass += s.Wood; return mass; } }
         public bool StarterAlight { get { foreach (var s in Starters) if (s.Alight) return true; return false; } }
+ public GrateZone StarterZone(GrateZone aimed)
+        {
+            var best = -1;
+            var most = NegligibleMass;
+            for (var i = 0; i < Starters.Length; i++)
+            {
+                if (Starters[i].Mass > most)
+                {
+                    most = Starters[i].Mass;
+                    best = i;
+                }
+            }
+            return best >= 0 ? (GrateZone)best : aimed;
+        }
+
+        /// <summary>Fresh coal fired onto a zone's wood after it was laid, kg: what smothers the wood. Coal already under it does not.</summary>
+        public float CoalOnWood(GrateZone zone) => coalOnWood[(int)zone];
+
+        private readonly float[] coalOnWood = new float[GrateLayout.ZoneCount];
+        private readonly float[] freshBefore = new float[GrateLayout.ZoneCount];
+
+        private void BeforeCoal()
+        {
+            for (var i = 0; i < zones.Length; i++)
+                freshBefore[i] = zones[i].Fresh;
+        }
+
+        // Coal that landed on a zone's wood since BeforeCoal lies on top of it.
+        private void AfterCoal()
+        {
+            for (var i = 0; i < zones.Length; i++)
+                if (Starters[i].Wood + Starters[i].Char > NegligibleMass)
+                    coalOnWood[i] += Math.Max(0f, zones[i].Fresh - freshBefore[i]);
+        }
+
         public float AddWood(float mass, GrateZone zone) => Starters[(int)zone].AddWood(mass,
             Math.Max(0f, parameters.MaxCoalCapacity - CoalMass - StarterMass) + Starters[(int)zone].Mass);
         public bool AddRag(float oil, bool lit, GrateZone zone) => Starters[(int)zone].AddRag(oil, lit);
@@ -120,6 +158,33 @@ namespace RealisticFiring.Core
 
         /// <summary>A zone's coal ignition support from its wood fire and its neighbors', 0 to 1, before any startup speedup.</summary>
         public float WoodIgnitionSupport(GrateZone zone) => woodIgnition[(int)zone];
+
+        // The zone holding the most wood, the fire's; -1 with none.
+        private int WoodZone()
+        {
+            var fire = -1;
+            var most = NegligibleMass;
+            for (var i = 0; i < Starters.Length; i++)
+            {
+                var wood = Starters[i].Wood + Starters[i].Char;
+                if (wood > most)
+                {
+                    most = wood;
+                    fire = i;
+                }
+            }
+            return fire;
+        }
+
+        private void GatherRags()
+        {
+            var fire = WoodZone();
+            if (fire < 0)
+                return;
+            for (var i = 0; i < Starters.Length; i++)
+                if (i != fire && Starters[i].Wood + Starters[i].Char <= NegligibleMass)
+                    Starters[i].MoveRagsTo(Starters[fire]);
+        }
 
         /// <summary>A zone's reference bed, in kg: what its ash, clinker, and coal are weighed against.</summary>
         public float ReferenceZoneMass => referenceZoneMass;
@@ -529,6 +594,7 @@ namespace RealisticFiring.Core
             var accepted = Accept(mass);
             if (accepted <= 0f)
                 return 0f;
+            BeforeCoal();
 
             // Each of the four sides takes a quarter of the spill; against a
             // wall it stays in the aimed zone. That way a round that aims at
@@ -538,6 +604,7 @@ namespace RealisticFiring.Core
             zones[(int)target].Fresh += accepted - spillPerSide * neighbors.Count;
             for (var k = 0; k < neighbors.Count; k++)
                 zones[(int)neighbors[k]].Fresh += spillPerSide;
+            AfterCoal();
             Wet(accepted);
             return accepted;
         }
@@ -546,8 +613,10 @@ namespace RealisticFiring.Core
         public float AddCoalEvenly(float mass)
         {
             var accepted = Accept(mass);
+            BeforeCoal();
             foreach (var zone in zones)
                 zone.Fresh += accepted * zoneArea;
+            AfterCoal();
             Wet(accepted);
             return accepted;
         }
@@ -575,6 +644,7 @@ namespace RealisticFiring.Core
             var share = accepted / offered;
             var freshAdded = 0f;
             var caught = 0f;
+            BeforeCoal();
             for (var i = 0; i < zones.Length; i++)
             {
                 var lump = Math.Max(0f, lumps[i]) * share;
@@ -584,6 +654,7 @@ namespace RealisticFiring.Core
                 freshAdded += lump + (FireOn ? 0f : fine);
                 caught += FireOn ? fine : 0f;
             }
+            AfterCoal();
             Wet(freshAdded, moisture);
             // Fines that catch at once dry at once.
             flashWater += caught * RainWater(moisture);
@@ -1003,28 +1074,45 @@ namespace RealisticFiring.Core
             DistributeAir(Math.Max(0f, inputs.AirFlow), Smoothing.Clamp01(inputs.DoorOpening));
             var starterHeat = 0f;
             var starterSmoke = 0f;
+            GatherRags();
+            var flamingAnywhere = 0f;
+            foreach (var starter in Starters)
+                flamingAnywhere = Math.Max(flamingAnywhere, starter.Flaming);
             for (var i = 0; i < zones.Length; i++)
             {
                 var neighbors = GrateLayout.Neighbors((GrateZone)i);
-                var flaming = 0f;
+                var flaming = flamingAnywhere;
                 var burning = 0f;
                 for (var k = 0; k < neighbors.Count; k++)
-                {
-                    flaming = Math.Max(flaming, Starters[(int)neighbors[k]].Flaming);
                     burning += zones[(int)neighbors[k]].Burning;
-                }
+                // Coal fired onto the wood smothers it; coal under it doesn't, and what has caught no longer covers it.
+                coalOnWood[i] = Starters[i].Wood + Starters[i].Char > NegligibleMass ? Math.Min(coalOnWood[i], zones[i].Fresh) : 0f;
                 starterNeighborFlux[i] = NeighborWoodFlux * flaming;
                 var coal = (zones[i].Burning + tuning.NeighborIgnitionWeight * burning / neighbors.Count) / tuning.IgnitionBurningMass;
                 starterCoalFlux[i] = FireOn && zones[i].Burning + burning > NegligibleMass ? CoalFluxOnWood * Smoothing.Clamp01(coal) : 0f;
             }
+            var fireZone = WoodZone();
+            var boxAir = 0f;
+            foreach (var zone in zones)
+                boxAir += zone.AirFlow;
             for (var i = 0; i < zones.Length; i++)
             {
                 var zone = zones[i];
                 var starter = Starters[i];
-                starter.Step(dt, zone.AirFlow * dryAir, zone.Fresh, starterCoalFlux[i], starterNeighborFlux[i],
+                var whole = i == fireZone && boxAir > 0f;
+                starter.Step(dt, (whole ? boxAir : zone.AirFlow) * dryAir, coalOnWood[i], starterCoalFlux[i], starterNeighborFlux[i],
                     inputs.BoilerTemperature, water > 0.5f);
                 // Reserve the actual oxygen consumed before the coal and over-fire stages.
-                zone.AirFlow = Math.Max(0f, zone.AirFlow - starter.AirUsed / Math.Max(0.001f, dryAir));
+                var used = starter.AirUsed / Math.Max(0.001f, dryAir);
+                if (whole)
+                {
+                    var share = Math.Min(1f, used / boxAir);
+                    foreach (var other in zones)
+                        other.AirFlow = Math.Max(0f, other.AirFlow * (1f - share));
+                    boxAir = 0f;
+                }
+                else
+                    zone.AirFlow = Math.Max(0f, zone.AirFlow - used);
                 zone.Ash += starter.AshProduced;
                 starterHeat += starter.Heat;
                 starterSmoke = Math.Max(starterSmoke, starter.Smoke);
@@ -1032,12 +1120,13 @@ namespace RealisticFiring.Core
             // Coal catches from the wood fire's own heat as from the same heat
             // of burning coal (IgnitionBurningMass is full support).
             var reference = tuning.IgnitionBurningMass * FireboxParameters.CoalHeatContent / carbonBurnTime;
+            // The wood fire laid over the bed heats the coal across it, not only the coal beside its own zone.
+            var woodSupport = 0f;
+            foreach (var starter in Starters)
+                woodSupport = Math.Max(woodSupport, starter.CoalSupportHeat);
             for (var i = 0; i < zones.Length; i++)
             {
-                var neighbors = GrateLayout.Neighbors((GrateZone)i);
-                var beside = 0f;
-                for (var k = 0; k < neighbors.Count; k++) beside += Starters[(int)neighbors[k]].CoalSupportHeat;
-                woodHeat[i] = Starters[i].CoalSupportHeat + tuning.NeighborIgnitionWeight * beside / neighbors.Count;
+                woodHeat[i] = Math.Max(Starters[i].CoalSupportHeat, woodSupport);
                 woodIgnition[i] = Smoothing.Clamp01(woodHeat[i] / reference);
             }
             if (StarterAlight) FireOn = true;

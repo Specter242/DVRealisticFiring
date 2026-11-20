@@ -155,7 +155,7 @@ namespace RealisticFiring.Multiplayer
             {
                 try
                 {
-                    if (p.Action != Snapshot || float.IsNaN(p.Oil) || float.IsInfinity(p.Oil)) return;
+                    if (p.Action != Snapshot || !Net.ItemsRemote || float.IsNaN(p.Oil) || float.IsInfinity(p.Oil)) return;
                     if (snapshots.TryGetValue(p.Item, out var prior) && !Shed.ShedNet.Newer(p.Seq, prior)) return;
                     var item = Find(p.Item);
                     if (item == null) return;
@@ -168,7 +168,9 @@ namespace RealisticFiring.Multiplayer
         internal static void Tick(uint tick)
         {
             var api = MultiplayerAPI.Instance;
-            if (!Net.InSession || Net.IsClient || api == null || tick % Math.Max(1u, api.TICK_RATE / 2) != 0) return;
+            // Unshared items (Multiplayer 0.1.16) have no common identity: an ID here is another player's other item.
+            if (!Net.InSession || Net.IsClient || api == null || Net.ItemsSharedCheck == null || !Net.ItemsSharedCheck()
+                || tick % Math.Max(1u, api.TICK_RATE / 2) != 0) return;
             var seq = ++stateSeq;
             foreach (var item in StartingFuelItem.Live)
             {

@@ -198,8 +198,47 @@ namespace RealisticFiring.Core
  public static bool Refills(float dx, float dy, float dz, bool held) =>
             !held && Finite(dx) && Finite(dy) && Finite(dz) && Sq(dx) + Sq(dy) + Sq(dz) < RefillReach * RefillReach;
 
+ public static string Bearing(float dx, float dz, float facingX, float facingZ)
+        {
+            if (!Finite(dx) || !Finite(dz) || !Finite(facingX) || !Finite(facingZ) || Sq(facingX) + Sq(facingZ) < 1e-8f)
+                return "nearby";
+            // Clockwise from the facing, degrees in (-180, 180]: positive is to the right.
+            var turn = (Math.Atan2(dx, dz) - Math.Atan2(facingX, facingZ)) * 180.0 / Math.PI;
+            while (turn > 180.0) turn -= 360.0;
+            while (turn <= -180.0) turn += 360.0;
+            var side = turn > 0.0 ? "right" : "left";
+            var off = Math.Abs(turn);
+            return off <= 30.0 ? "ahead"
+                : off <= 70.0 ? "ahead to the " + side
+                : off <= 110.0 ? "to the " + side
+                : off <= 150.0 ? "behind to the " + side
+                : "behind you";
+        }
+
+        /// <summary>A distance to walk, said plainly: "40 m" (to 10 m) under a kilometre, "1.4 km" past it.</summary>
+        public static string Distance(float metres)
+        {
+            if (!Finite(metres) || metres < 0f)
+                return "a way";
+            if (metres < 995f)
+                return $"{Math.Max(10, (int)Math.Round(metres / 10f) * 10)} m";
+            return (metres / 1000f).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " km";
+        }
+
         private static bool Finite(float v) => !float.IsNaN(v) && !float.IsInfinity(v);
 
         private static float Sq(float v) => v * v;
+    }
+
+ public readonly struct SupplyHint
+    {
+        public SupplyHint(string wanted, string where)
+        {
+            Wanted = wanted;
+            Where = where;
+        }
+
+        public string Wanted { get; }
+        public string Where { get; }
     }
 }

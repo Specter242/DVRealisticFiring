@@ -52,6 +52,63 @@ namespace RealisticFiring.Items
             public Vector3 Point;
         }
 
+        // The F6 supply hint, worked out at most once a second.
+        private const float HintEvery = 1f;
+        private const float AtHandReach = 30f;
+        private static float hintAt = float.NegativeInfinity;
+        private static bool hintWoodLaid;
+        private static SupplyHint? hint;
+
+ internal static SupplyHint? Hint(bool woodLaid)
+        {
+            if (Time.unscaledTime - hintAt < HintEvery && woodLaid == hintWoodLaid)
+                return hint;
+            hintAt = Time.unscaledTime;
+            hintWoodLaid = woodLaid;
+            hint = null;
+            var player = PlayerManager.PlayerTransform;
+            var view = PlayerManager.ActiveCamera != null ? PlayerManager.ActiveCamera.transform : player;
+            if (player == null || view == null)
+                return null;
+            var wood = !woodLaid && !AtHand(StartingFuelKind.WoodCrate, StartingFuelKind.Wood, player.position);
+            var rags = !AtHand(StartingFuelKind.RagBox, StartingFuelKind.Rag, player.position);
+            if (!wood && !rags)
+                return null;
+            StartingSupplySite nearest = null;
+            var best = float.PositiveInfinity;
+            foreach (var site in Sites)
+            {
+                if (site == null) continue;
+                var d = site.transform.position - player.position;
+                var flat = d.x * d.x + d.z * d.z;
+                if (flat < best) { best = flat; nearest = site; }
+            }
+            if (nearest == null)
+                return null;
+            var to = nearest.transform.position - player.position;
+            var facing = view.forward;
+            if (new Vector2(facing.x, facing.z).sqrMagnitude < 0.01f)
+                facing = view.up;
+            var where = $"{nearest.Label}, {SupplyPlan.Distance(Mathf.Sqrt(best))} {SupplyPlan.Bearing(to.x, to.z, facing.x, facing.z)}";
+            hint = new SupplyHint(wood && rags ? "wood and rags" : wood ? "wood" : "rags", where);
+            return hint;
+        }
+
+        // A container of the kind with something in it, or a loose piece, held, carried, or near the player.
+        private static bool AtHand(StartingFuelKind container, StartingFuelKind piece, Vector3 player)
+        {
+            var inventory = DV.Utils.SingletonBehaviour<DV.InventorySystem.Inventory>.Instance;
+            foreach (var item in StartingFuelItem.Live)
+            {
+                if (item == null || item.Consumed || (item.Kind != container && item.Kind != piece)) continue;
+                if (item.Kind == container && item.Count <= 0) continue;
+                if (item.HeldLocally || (inventory != null && inventory.Contains(item.gameObject, includeDropped: false))
+                    || (item.transform.position - player).sqrMagnitude <= AtHandReach * AtHandReach)
+                    return true;
+            }
+            return false;
+        }
+
         /// <summary>The world's site of that name, or null.</summary>
         internal static StartingSupplySite Find(string id) =>
             string.IsNullOrEmpty(id) ? null : Sites.FirstOrDefault(s => s != null && s.Id == id);
@@ -99,6 +156,7 @@ namespace RealisticFiring.Items
                 go.transform.position = a.Point + WorldMover.currentMove;
                 var site = go.AddComponent<StartingSupplySite>();
                 site.Id = a.Name;
+                site.Area = a.Area;
                 site.ShedKey = a.ShedKey;
                 site.Track = a.Track;
                 site.Along = a.Along;
@@ -234,7 +292,10 @@ namespace RealisticFiring.Items
     /// had not been), and asks again while a container set down there is not
     /// full; the host alone fills and stocks. The host's containers there
     /// sleep until the host comes near, and the Multiplayer mod shows them to
-    /// guests.
+    /// guests. The Multiplayer mod's 0.1.16 shares no world items (its item
+    /// packets' handlers are empty), so there each guest's game stocks its
+    /// own, as in single player (<see cref="Net.ItemsRemote"/>; Ace, DV
+    /// Discord, 2026-11-19).
     /// </summary>
     internal sealed class StartingSupplySite : MonoBehaviour
     {
@@ -249,7 +310,20 @@ namespace RealisticFiring.Items
         private float next;
         // When a player first came near while its spot was unfound; -1 before.
         private float nearSince = -1f;
-        internal string Id, ShedKey;
+        internal string Id, ShedKey, Area;
+
+        /// <summary>The place as a player would name it: "the Steel Mill engine shed", "the CMS steam loco track".</summary>
+        internal string Label
+        {
+            get
+            {
+                var station = (StationController.allStations ?? new List<StationController>())
+                    .FirstOrDefault(s => s != null && s.stationInfo != null && s.stationInfo.YardID == Area)?.stationInfo.Name;
+                var where = string.IsNullOrEmpty(station) ? Area : station;
+                return Id != null && Id.StartsWith("spawn ", StringComparison.Ordinal)
+                    ? $"the {where} steam loco track" : $"the {where} engine shed";
+            }
+        }
         internal RailTrack Track;
         internal float Along;
         internal int Side;
@@ -280,7 +354,9 @@ namespace RealisticFiring.Items
                 if (nearSince < 0f) nearSince = Time.time;
                 if (!Settle()) return;
             }
-            if (Net.IsClient)
+            // The host's containers, shown here by the Multiplayer mod: the host stocks them. A guest whose
+            // Multiplayer shares no items (0.1.16) stocks its own, as in single player.
+            if (Net.ItemsRemote)
             {
                 if (!Stands(StartingFuelKind.WoodCrate, WoodAt) || !Stands(StartingFuelKind.RagBox, RagAt)
                     || WantsRefill(StartingFuelKind.WoodCrate) || WantsRefill(StartingFuelKind.RagBox))

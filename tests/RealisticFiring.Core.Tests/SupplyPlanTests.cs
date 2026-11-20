@@ -202,4 +202,47 @@ public class SupplyPlanTests
         Assert.False(SupplyPlan.Refills(float.NaN, 0f, 0f, held: false));
         Assert.False(SupplyPlan.Refills(0f, float.PositiveInfinity, 0f, held: false));
     }
+    [Theory]
+    [InlineData(0f, 10f, "ahead")]
+    [InlineData(10f, 10f, "ahead to the right")]
+    [InlineData(-10f, 10f, "ahead to the left")]
+    [InlineData(10f, 0f, "to the right")]
+    [InlineData(-10f, -0.5f, "to the left")]
+    [InlineData(10f, -10f, "behind to the right")]
+    [InlineData(0f, -10f, "behind you")]
+    [InlineData(-0.5f, -10f, "behind you")]
+    public void TheHintSaysWhichWayFromTheView(float dx, float dz, string said) =>
+        Assert.Equal(said, SupplyPlan.Bearing(dx, dz, 0f, 1f));
+
+    [Fact]
+    public void TheHintTurnsWithTheView()
+    {
+        // Facing east, a place to the north is on the left.
+        Assert.Equal("to the left", SupplyPlan.Bearing(0f, 50f, 1f, 0f));
+        Assert.Equal("nearby", SupplyPlan.Bearing(1f, 1f, 0f, 0f));
+        Assert.Equal("nearby", SupplyPlan.Bearing(float.NaN, 1f, 0f, 1f));
+    }
+
+    [Theory]
+    [InlineData(3f, "10 m")]
+    [InlineData(124f, "120 m")]
+    [InlineData(994f, "990 m")]
+    [InlineData(1440f, "1.4 km")]
+    [InlineData(-1f, "a way")]
+    public void TheHintSaysHowFar(float metres, string said) => Assert.Equal(said, SupplyPlan.Distance(metres));
+
+    [Fact]
+    public void TheColdFiresAdviceNamesTheNearestSuppliesWhenNoneAreAtHand()
+    {
+        var fire = new FireModel(StarterTimingReport.S282);
+        var hint = new SupplyHint("wood and rags", "the Steel Mill engine shed, 120 m behind you");
+        var cold = FiringAdvice.ForCoal(fire, 1f, 1f, new InjectorReading[0], supplies: hint).Text;
+        Assert.Equal("The fire's out: the nearest wood and rags are by the Steel Mill engine shed, 120 m behind you. Lay four or more pieces together through the open door, then a burning oiled rag.", cold);
+        fire.AddWood(4 * StarterFuel.PieceMass, GrateZone.UnderDoor);
+        var laid = FiringAdvice.ForCoal(fire, 1f, 1f, new InjectorReading[0], supplies: new SupplyHint("rags", "the CS engine shed, 40 m ahead")).Text;
+        Assert.StartsWith("Wood is laid: the nearest rags are by the CS engine shed, 40 m ahead.", laid);
+        // With the lighter lighting coal, the supplies aren't needed.
+        Assert.DoesNotContain("nearest", FiringAdvice.ForCoal(new FireModel(StarterTimingReport.S282), 1f, 1f, new InjectorReading[0], lighterLightsCoal: true, supplies: hint).Text);
+        Assert.Contains("take wood and a rag", FiringAdvice.ForCoal(new FireModel(StarterTimingReport.S282), 1f, 1f, new InjectorReading[0]).Text);
+    }
 }

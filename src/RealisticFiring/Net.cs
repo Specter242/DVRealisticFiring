@@ -27,6 +27,10 @@ namespace RealisticFiring
         SteamLine,
         FiremanMode,
         FiremanCall,
+        // A guest's own piece of wood or rag laid or thrown into the box, when the Multiplayer mod shares no items:
+        // the zone aimed at; for a rag, its oil (Value) and whether it burns (Direction 1).
+        Wood,
+        Rag,
     }
 
     /// <summary>Something the host's fire did that players near the loco should see and hear.</summary>
@@ -52,6 +56,12 @@ namespace RealisticFiring
 
         /// <summary>Sends a fire action to the host; set by the add-on.</summary>
         internal static Action<TrainCar, FireAction, int, int, float> Sender;
+
+        /// <summary>
+        /// Passes this game's automatic fire door air to the other players (the
+        /// host to everyone, a guest through the host); set by the add-on in a session.
+        /// </summary>
+        internal static Action<TrainCar, AutoFireDoorAir> DoorAirSender;
 
         /// <summary>Sends a fire event to the players near a loco; set by the add-on, on the host.</summary>
         internal static Action<TrainCar, FireEvent, float> Broadcaster;
@@ -86,6 +96,20 @@ namespace RealisticFiring
 
         /// <summary>True on a multiplayer client, where the host simulates.</summary>
         public static bool IsClient => ClientCheck != null && ClientCheck();
+
+        /// <summary>Whether the Multiplayer mod shares world items between the players' games; set by the add-on.</summary>
+        internal static Func<bool> ItemsSharedCheck;
+
+        /// <summary>
+        /// Whether a crate, tin, piece, or rag here is the host's, shown by
+        /// the Multiplayer mod, so the host acts on it: on a client whose
+        /// Multiplayer shares items. Its 0.1.16 shares none (its item packets'
+        /// handlers are empty; Ace, DV Discord, 2026-11-19: "they straight up
+        /// arent spawning in mp atleast for clients"), so a guest's are its
+        /// own, as in single player, and only what it lays in a fire goes to
+        /// the host (<see cref="FireAction.Wood"/>, <see cref="FireAction.Rag"/>).
+        /// </summary>
+        public static bool ItemsRemote => IsClient && ItemsSharedCheck != null && ItemsSharedCheck();
 
         /// <summary>
         /// On a client, sends <paramref name="action"/> on <paramref name="car"/>

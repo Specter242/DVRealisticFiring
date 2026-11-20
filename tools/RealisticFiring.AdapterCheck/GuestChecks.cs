@@ -76,6 +76,11 @@ namespace RealisticFiring.AdapterCheck
                   && actions.Accept(1, FireAction.Sand, 2f, 6, 100 + (uint)(Multiplayer.GuestActions.LeastInterval * rate) + 1, rate)
                   && actions.Accept(1, FireAction.FiremanMode, 1f, 7, 100, rate) && actions.Accept(1, FireAction.FiremanMode, 0f, 8, 100, rate),
                 "a guest's action with no number for a value is dropped, and the same one comes no faster than a hand works, each guest and action on its own");
+            actions.Clear();
+            check(actions.Accept(1, FireAction.Wood, 0f, 1, 100, rate) && !actions.Accept(1, FireAction.Wood, 0f, 2, 101, rate)
+                  && actions.Accept(1, FireAction.Rag, 0.06f, 3, 101, rate) && !actions.Accept(1, FireAction.Rag, float.NaN, 4, 200, rate)
+                  && actions.Accept(1, FireAction.Wood, 0f, 5, 100 + (uint)(Multiplayer.GuestActions.LeastInterval * rate) + 1, rate),
+                "a guest's own wood and rags go into the host's fire no faster than a hand lays them, and a rag's oil that is no number is dropped");
 
             var hello = new Multiplayer.HelloPacket { Version = "1.2.3\n" + new string('x', 500), Shape = new string('s', 5000) };
             var got = new Multiplayer.HelloPacket();
@@ -91,11 +96,25 @@ namespace RealisticFiring.AdapterCheck
                   && gotPolicy.Hidden && gotPolicy.Seq == 40000,
                 "a guest's hello is cut to length and to printable characters before the host shows it, and the action and display-rule packets carry their order");
 
-            var fittings = new Multiplayer.FittingsPacket { Arch = true, Booster = true, Snifting = true, ByPass = true, Seq = 41000 };
+            var fittings = new Multiplayer.FittingsPacket { Arch = true, Booster = true, Snifting = true, ByPass = true, AutoFireDoor = true, Seq = 41000 };
             var gotFittings = new Multiplayer.FittingsPacket();
-            check(RoundTrip(fittings.Serialize, gotFittings.Deserialize) && gotFittings.Arch && gotFittings.Booster && gotFittings.Snifting && gotFittings.ByPass
+            check(RoundTrip(fittings.Serialize, gotFittings.Deserialize) && gotFittings.Arch && gotFittings.Booster && gotFittings.Snifting && gotFittings.ByPass && gotFittings.AutoFireDoor
                   && !gotFittings.DriftingValve && !gotFittings.Jets && !gotFittings.Stoker && !gotFittings.FeedPump && gotFittings.Seq == 41000,
-                "the host's fittings reach a guest with the drifting fittings among them");
+                "the host's fittings reach a guest with the drifting fittings and the automatic fire door among them");
+
+            var air = new Multiplayer.DoorAirPacket { Car = 300, Air = (byte)AutoFireDoorAir.Exhausted, Seq = 65534, Source = 3 };
+            var gotAir = new Multiplayer.DoorAirPacket();
+            var heard = new System.Collections.Generic.Dictionary<ushort, (byte Source, ushort Seq)>();
+            var carried = RoundTrip(air.Serialize, gotAir.Deserialize) && gotAir.Car == 300 && gotAir.Air == (byte)AutoFireDoorAir.Exhausted && gotAir.Seq == 65534 && gotAir.Source == 3;
+            var own = !Multiplayer.DoorAirSync.Fresh(300, 1, 10, 1, heard);
+            var release = Multiplayer.DoorAirSync.Fresh(300, 3, 11, 1, heard);
+            var lateRelease = !Multiplayer.DoorAirSync.Fresh(300, 3, 10, 1, heard);
+            var nextPress = Multiplayer.DoorAirSync.Fresh(300, 3, 12, 1, heard);
+            var otherPlayer = Multiplayer.DoorAirSync.Fresh(300, 4, 1, 1, heard);
+            var seqWrapped = Multiplayer.DoorAirSync.Fresh(301, 3, 65535, 1, heard) && Multiplayer.DoorAirSync.Fresh(301, 3, 0, 1, heard);
+            check(carried && own && release && lateRelease && nextPress && otherPlayer && seqWrapped
+                  && !Multiplayer.DoorAirSync.Known(0) && Multiplayer.DoorAirSync.Known((byte)AutoFireDoorAir.Admitted) && !Multiplayer.DoorAirSync.Known(9),
+                "a fire door's air reaches the other players whole: their own is dropped, one older than the last from that player is dropped, and no air that is neither in nor out is taken");
         }
 
         private static bool RoundTrip(Action<BinaryWriter> write, Action<BinaryReader> read)

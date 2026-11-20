@@ -203,6 +203,15 @@ namespace RealisticFiring
             "in a career at a career manager's Upgrades screen after the arch.")]
         public Upgrades.UpgradeRule OverFireJets = Upgrades.UpgradeRule.BuyInCareer;
 
+        // The S282's and S060's automatic fire door, the same way. Never
+        // fitted also turns off the one the car packs' engines have as built.
+        [Draw("Automatic fire door", DrawType.ToggleGroup, Tooltip =
+            "With the shovel in hand at the fire door, holding the jump key opens the door\n" +
+            "with air, and it shuts when you let go. Buy it for the S282 and S060 in a\n" +
+            "career at a career manager's Upgrades screen. The Hudson, 844, S484-840 and QJ\n" +
+            "have it as built, unless this is Never fitted.")]
+        public Upgrades.UpgradeRule AutomaticFireDoor = Upgrades.UpgradeRule.BuyInCareer;
+
         // The stock engines' snifting valves on their steam chests, the same
         // way: drifting hooked up wears the engine a third as much.
         [Draw("Snifting valves", DrawType.ToggleGroup, Tooltip =
@@ -261,6 +270,12 @@ namespace RealisticFiring
         public bool ShowStokerJetValves = true;
 
         [Header("Sound")]
+        [Draw("Realistic chuffs", Tooltip =
+            "Each beat as loud as the steam it lets go, the soft and hard sounds\n" +
+            "blending, each engine's own slightly uneven beat, a drifting engine's\n" +
+            "panting, and echoes off walls, cuttings and tunnels. Off, the game's own.")]
+        public bool RealisticChuffs = true;
+
         [Draw("Oil burner volume, ×", DrawType.Slider, Min = 0, Max = 2, Precision = 1, Tooltip = "The roar and drumming of the burner. 1 is normal volume; 0 is silent.")]
         public float OilBurnerVolume = 1f;
 
@@ -310,6 +325,27 @@ namespace RealisticFiring
 
         [Draw("Fireman's orders", Tooltip = "Shows or hides his window. Hold Alt to free the mouse and click it.")]
         public KeyBinding FiremanKey = Bind(KeyCode.F7);
+
+        [Draw("Fireman: off", Tooltip = "Orders the fireman on your engine off. Unbound until you bind it; Ctrl,\nShift, or Alt may go with the key.")]
+        public KeyBinding FiremanOffKey = new KeyBinding();
+
+        [Draw("Fireman: keep it alive", Tooltip = "Orders him to keep a thin fire and the water up, as for standing a while.\nUnbound until you bind it.")]
+        public KeyBinding FiremanKeepAliveKey = new KeyBinding();
+
+        [Draw("Fireman: shunting", Tooltip = "Orders him to fire for stop-start work. Unbound until you bind it.")]
+        public KeyBinding FiremanShuntingKey = new KeyBinding();
+
+        [Draw("Fireman: road", Tooltip = "Orders him to fire for the road, just under the safety valve. Unbound until\nyou bind it.")]
+        public KeyBinding FiremanRoadKey = new KeyBinding();
+
+        [Draw("Fireman: next order", Tooltip = "Steps him to his next order: off, keep it alive, shunting, road, and round\nagain. Unbound until you bind it.")]
+        public KeyBinding FiremanNextKey = new KeyBinding();
+
+        [Draw("Call: heavy work ahead", Tooltip = "Tells him heavy work is coming, or takes the call back. Unbound until you\nbind it.")]
+        public KeyBinding FiremanHeavyAheadKey = new KeyBinding();
+
+        [Draw("Call: easing off", Tooltip = "Tells him you're shutting off or stopping soon, or takes the call back.\nUnbound until you bind it.")]
+        public KeyBinding FiremanEasingOffKey = new KeyBinding();
 
         // One-time actions, not settings: the window's Equipment and Recovery
         // buttons set them, and FireController does each once and clears it.
@@ -523,7 +559,7 @@ namespace RealisticFiring
         // The upgrade rules as OnChange last saw them; null before its first call.
         private string appliedRules;
 
-        private string UpgradeRules => $"{BrickArch} {OverFireJets} {SniftingValves} {DriftingValve} {ByPassValves} {S282Stoker} {S282FeedPump} {S282Booster}";
+        private string UpgradeRules => $"{BrickArch} {OverFireJets} {AutomaticFireDoor} {SniftingValves} {DriftingValve} {ByPassValves} {S282Stoker} {S282FeedPump} {S282Booster}";
 
         // Change() also caches the key for UMM's new-input-system path.
         private static KeyBinding Bind(KeyCode key, bool ctrl = false, bool shift = false, bool alt = false)

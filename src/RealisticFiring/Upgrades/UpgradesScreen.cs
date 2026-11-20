@@ -97,6 +97,23 @@ namespace RealisticFiring.Upgrades
             BoughtLine = "Bought. Every S282 and S060 has its over-fire jets now: open the JETS valve in the cab.",
         };
 
+ public const double AutoFireDoorPrice = 10_000;
+
+        internal static readonly Upgrade AutoFireDoor = new Upgrade
+        {
+            Name = "Automatic fire door",
+            Price = AutoFireDoorPrice,
+            Page = "An air-worked fire door, opened from the floor instead of by hand. With the shovel in hand at the door, hold jump (Space): " +
+                   "air swings it open, and it stays open while you hold the key and shuts as soon as you let go. " +
+                   "A door cracked for air goes back to its crack, and less cold air reaches the fire between shovelfuls. " +
+                   "At the door the key no longer jumps while you hold the shovel. Bought once, it is fitted to every S282 and S060.",
+            Rule = () => Main.Settings?.AutomaticFireDoor ?? UpgradeRule.BuyInCareer,
+            Bought = () => Fittings.AutoFireDoorBought,
+            Fitted = () => Fittings.AutoFireDoor,
+            Buy = Fittings.BuyAutoFireDoor,
+            BoughtLine = "Bought. Every S282 and S060 has its automatic fire door now: with the shovel in hand, hold jump at the door.",
+        };
+
  public const double SniftingPrice = 8_000;
 
         internal static readonly Upgrade Snifting = new Upgrade
@@ -210,7 +227,7 @@ namespace RealisticFiring.Upgrades
             Engines = "every S282",
         };
 
-        private static readonly Upgrade[] All = { Arch, Jets, Snifting, DriftingValve, ByPass, Stoker, FeedPump, Booster };
+        private static readonly Upgrade[] All = { Arch, Jets, AutoFireDoor, Snifting, DriftingValve, ByPass, Stoker, FeedPump, Booster };
 
         private DisplayScreenSwitcher kiosk;
         private CareerManagerMainScreen main;

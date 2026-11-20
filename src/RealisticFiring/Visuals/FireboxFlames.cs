@@ -439,9 +439,9 @@ namespace RealisticFiring.Visuals
                 oldFlames.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
             if (cardRenderer != null)
 #if PUBLIC_RELEASE
-                cardRenderer.enabled = shown && !VolumeDraws;
+                cardRenderer.enabled = shown && !VolumeDraws && bed.FromCab;
 #else
-                cardRenderer.enabled = shown && !VolumeDraws && !FireboxTestBed.HidingFlames;
+                cardRenderer.enabled = shown && !VolumeDraws && bed.FromCab && !FireboxTestBed.HidingFlames;
 #endif
             if (smokeRenderer != null)
 #if PUBLIC_RELEASE

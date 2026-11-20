@@ -220,6 +220,19 @@ namespace RealisticFiring.Visuals
 
         private static bool Lost(Object asset) => !ReferenceEquals(asset, null) && asset == null;
 
+        private static void PlainOverflowSteam(GameObject overflow)
+        {
+            var renderer = overflow != null ? overflow.transform.Find("Steam")?.GetComponent<ParticleSystemRenderer>() : null;
+            var puff = renderer != null ? renderer.sharedMaterial : null;
+            if (puff == null || !puff.HasProperty("_SixWay"))
+                return;
+            var plain = Keep(new Material(puff) { name = puff.name + " (overflow)" });
+            plain.SetFloat("_SixWay", 0f);
+            if (plain.HasProperty("_Wisps"))
+                plain.SetFloat("_Wisps", 0f);
+            renderer.sharedMaterial = plain;
+        }
+
         private static void Load()
         {
             loaded = true;
@@ -245,6 +258,7 @@ namespace RealisticFiring.Visuals
                 }
                 prefab = Keep(bundle.LoadAsset<GameObject>(PrefabName));
                 overflowPrefab = Keep(bundle.LoadAsset<GameObject>(OverflowPrefabName));
+                PlainOverflowSteam(overflowPrefab);
                 fireboxPrefab = Keep(bundle.LoadAsset<GameObject>(FireboxPrefabName));
                 fireIronMaterial = Usable(Keep(bundle.LoadAsset<Material>(FireIronMaterialName)));
                 fireboxWallMaterial = Usable(Keep(bundle.LoadAsset<Material>(FireboxWallMaterialName)));

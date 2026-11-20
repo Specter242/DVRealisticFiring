@@ -133,7 +133,8 @@ namespace RealisticFiring.Core
         // twice the burning area, ignites after its ignition delay.
         private const float SpreadFactor = 2f;
         // Cold coal over the wood: it shades the flames and draws heat.
-        private const float CoverHalf = 2f;
+        /// <summary>Fresh coal on a zone, kg, that halves what reaches its wood: past it the wood is smothered.</summary>
+        public const float CoverHalf = 2f;
         private const float CoverLoss = 10000f;
         // Glowing char burns out over about 15 minutes with air.
         private const float CharTime = 900f;
@@ -206,6 +207,19 @@ namespace RealisticFiring.Core
             // A burning rag lights an oiled rag it lands on.
             RagLit |= lit;
             return true;
+        }
+
+        /// <summary>This zone's rags join <paramref name="other"/>'s pool, burning or not.</summary>
+        public void MoveRagsTo(StarterFuel other)
+        {
+            if (other == null || other == this || RagOil <= 0f && RagCount == 0)
+                return;
+            other.RagOil += RagOil;
+            other.RagCount += RagCount;
+            other.RagLit |= RagLit;
+            RagOil = 0f;
+            RagCount = 0;
+            RagLit = false;
         }
 
         public void Extinguish()

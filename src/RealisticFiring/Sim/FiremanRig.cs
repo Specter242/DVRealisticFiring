@@ -194,6 +194,9 @@ namespace RealisticFiring.Sim
 
         /// <summary>What he read and did on the last tick he worked.</summary>
         public FiremanReadings Readings { get; private set; }
+
+        /// <summary>The boiler's pressure as its gauge port reads it, bar absolute: on a multiplayer guest too, where <see cref="Readings"/> stay the host's to take.</summary>
+        public float BoilerPressure => boiler.pressureReadOut.Value;
         public FiremanActions Actions { get; private set; }
 
         /// <summary>The current water as the cab glass and F6 show it.</summary>

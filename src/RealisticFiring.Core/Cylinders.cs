@@ -102,6 +102,20 @@ namespace RealisticFiring.Core
             return (float)Math.Min(1.0, Math.Max(0.0, open / portWidth));
         }
 
+        /// <summary>
+        /// The exhaust port's opening at a crank angle from this face's
+        /// working dead center, a share of the port's width: shut until
+        /// release, opening as the valve runs back, shut again by
+        /// compression. The exhaust edge opens where the valve's
+        /// displacement passes release's, so the exhaust lap drops out.
+        /// </summary>
+        public float ExhaustOpening(float crankAngle)
+        {
+            var release = Math.Acos(Math.Max(-1.0, Math.Min(1.0, 1.0 - 2.0 * Release)));
+            var open = travel * (Math.Sin(release + phase) - Math.Sin(crankAngle + phase));
+            return (float)Math.Min(1.0, Math.Max(0.0, open / portWidth));
+        }
+
         internal ValveEvents WithPortWindow()
         {
             var span = CutoffAngle - AdmissionAngle;

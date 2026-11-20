@@ -27,7 +27,9 @@
     <Reference Include="0Harmony" HintPath="$(DvModManagerDir)/0Harmony.dll" />
     <Reference Include="UnityModManager" HintPath="$(DvModManagerDir)/UnityModManager.dll" />
     <Reference Include="Assembly-CSharp" HintPath="$(DvManagedDir)/Assembly-CSharp.dll" />
+    <Reference Include="DV.CharacterController" HintPath="$(DvManagedDir)/DV.CharacterController.dll" />
     <Reference Include="DV.Interaction" HintPath="$(DvManagedDir)/DV.Interaction.dll" />
+    <Reference Include="Rewired_Core" HintPath="$(DvManagedDir)/Rewired_Core.dll" />
     <Reference Include="DV.CabControls.Spec" HintPath="$(DvManagedDir)/DV.CabControls.Spec.dll" />
     <Reference Include="DV.Simulation" HintPath="$(DvManagedDir)/DV.Simulation.dll" />
     <Reference Include="DV.ThingTypes" HintPath="$(DvManagedDir)/DV.ThingTypes.dll" />

@@ -92,14 +92,12 @@ namespace RealisticFiring.Items
             }
             var grabber = grab != null ? grab.GetGrabber() : null;
             if (grabber != null && grabber.Cursor != null
-                && FireboxAim.TryAim(grabber.Cursor.GetRay(), target, car, firebox, out var across, out var depth))
+                && FireboxAim.TryAim(grabber.Cursor.GetRay(), target, car, firebox, out var across, out var depth, out var box))
             {
                 aimedFirebox = firebox;
                 aimedZone = DoorAim.ZoneFor(across, depth);
                 aimTime = Time.time;
-                // Highlights the zone on the bed as the shovel's aim does; as a
-                // rake's, so a shovelful thrown next ignores it.
-                firebox.NoteAim(new DoorAimSample(aimedZone, across, depth, DoorAimKind.Rake, Time.time));
+                firebox.NoteAim(new DoorAimSample(aimedZone, across, depth, DoorAimKind.Rake, Time.time, FiringFrame.Of(car), box));
             }
             if (text != null && AimIsLive(firebox))
                 text.DisplayText($"Fire iron at {GrateLayout.Describe(aimedZone)}: click to slice; wheel to push forward or pull back (Shift: sideways)");

@@ -148,7 +148,7 @@ namespace RealisticFiring.Core
         /// <paramref name="driftingValve"/>, it has a drifting valve in the cab.
         /// </summary>
         public static Advice ForCoal(FireModel fire, float door, float glass, IReadOnlyList<InjectorReading> injectors, bool driftingHookedUp = false,
-            bool lighterLightsCoal = false, bool sniftingOpen = false, bool driftingValve = false)
+            bool lighterLightsCoal = false, bool sniftingOpen = false, bool driftingValve = false, SupplyHint? supplies = null)
         {
             if (fire == null)
                 throw new ArgumentNullException(nameof(fire));
@@ -162,6 +162,11 @@ namespace RealisticFiring.Core
                     : fire.StarterMass > 0f
                         ? "Wood is laid: lay some coal over it and light it with the lighter at the open door, or light the wood with a burning oiled rag."
                         : "The fire's out: shovel in some coal and light it with the lighter at the open fire door.");
+            // With none at hand, where the nearest supplies are (supplies, the F6 supply hint).
+            if (!fire.FireOn && supplies is SupplyHint hint)
+                return new Advice(AdviceLevel.Watch, fire.StarterMass > 0f
+                    ? $"Wood is laid: the nearest {hint.Wanted} are by {hint.Where}. Oil a rag, light it with the lighter, and throw it onto the wood."
+                    : $"The fire's out: the nearest {hint.Wanted} are by {hint.Where}. Lay four or more pieces together through the open door, then a burning oiled rag.");
             if (!fire.FireOn)
                 return new Advice(AdviceLevel.Watch, fire.StarterMass > 0f
                     ? "Wood is laid: oil a rag, light it with the lighter, and throw it onto the wood. Four or more pieces together keep each other burning."
@@ -179,10 +184,11 @@ namespace RealisticFiring.Core
                     established |= fire.WoodIgnitionSupport((GrateZone)z) > 0.3f
                                    || s.Flaming > 0.8f && s.MassFlux >= StarterFuel.CriticalMassFlux && !s.RagLit;
                 }
-                return new Advice(AdviceLevel.Watch, established
-                    ? "The wood is burning well: add a little coal over it and let that catch."
-                    : flaming ? "The wood has caught: let the flames take all of it before adding coal. Keep air reaching the fire."
-                    : "The rag is heating the wood: give it a minute. Coal now would smother it.");
+                if (established)
+                    return new Advice(AdviceLevel.Watch, "The wood is burning well: add a little coal over it and let that catch.");
+                if (flaming)
+                    return new Advice(AdviceLevel.Watch, "The wood has caught: let the flames take all of it before adding coal. Keep air reaching the fire.");
+                return RagAdvice(fire);
             }
             if (driftingHookedUp)
             {
@@ -207,12 +213,24 @@ namespace RealisticFiring.Core
             return new Advice(AdviceLevel.Ok, "Steady fire. Keep firing light and often.");
         }
 
-        /// <summary>
-        /// A boiler so damaged it would burst under its safety valve, at
-        /// <paramref name="burst"/> absolute bar: a warning before any other
-        /// advice, urgent within <see cref="AutoFiremanBase.BurstMargin"/> of
-        /// it; else null.
-        /// </summary>
+        private static Advice RagAdvice(FireModel fire)
+        {
+            var wood = false;
+            var smothered = false;
+            for (var z = 0; z < GrateLayout.ZoneCount; z++)
+            {
+                if (fire.Starters[z].Wood < StarterFuel.PieceMass * 0.5f)
+                    continue;
+                wood = true;
+                smothered |= fire.Starters[z].RagLit && fire.CoalOnWood((GrateZone)z) >= StarterFuel.CoverHalf;
+            }
+            if (!wood)
+                return new Advice(AdviceLevel.Act, "The rag has no wood to light: lay four or more pieces of wood while it burns.");
+            if (smothered)
+                return new Advice(AdviceLevel.Act, "Coal fired on top of the young wood smothers it: dump the fire and lay the wood again, with coal only once it burns well.");
+            return new Advice(AdviceLevel.Watch, "The rag is heating the wood: give it a minute. Coal on top now would smother it.");
+        }
+
         public static Advice? Bursting(float pressure, float safetyValve, float burst)
         {
             if (!(burst < safetyValve))

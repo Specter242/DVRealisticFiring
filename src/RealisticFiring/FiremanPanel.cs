@@ -146,7 +146,11 @@ namespace RealisticFiring
                 c.Notes.Add(new Note { Level = AdviceLevel.Watch, Text = $"{FiremanRig.Rivals} is running too: two firemen will fight; use one." });
 
             c.Plate = Modes.First(m => m.Mode == mode).Plate;
-            c.Line = $"{Gauge(r.Pressure):F1} of {Gauge(man.PressureTarget):F1} bar · glass {P0(rig.GlassShown)}" +
+            // A guest's fireman never reads the boiler (the host's does): its card takes the gauge and leaves the
+            // target out, which stayed 0 (Ace, DV Discord, 2026-11-19: "0.0 of 0.0 bar").
+            c.Line = (Net.IsClient
+                         ? $"{Gauge(rig.BoilerPressure):F1} bar · glass {P0(rig.GlassShown)}"
+                         : $"{Gauge(r.Pressure):F1} of {Gauge(man.PressureTarget):F1} bar · glass {P0(rig.GlassShown)}") +
                      (man.Call == FiremanCall.HeavyAhead ? " · building for heavy work" : man.Call == FiremanCall.EasingOff ? " · easing off" : "");
             c.Warnings.AddRange(warnings.Select(w => new Note { Level = w.Level, Text = w.Text }));
             return c;

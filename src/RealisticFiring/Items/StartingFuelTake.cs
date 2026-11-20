@@ -27,7 +27,7 @@ namespace RealisticFiring.Items
             if (container == null || !FireStartingItems.IsContainer(container.Kind) || container.Held || container.Count <= 0) return;
             // Not the crate: a piece of what is in it.
             __result = null;
-            if (Net.IsClient)
+            if (Net.ItemsRemote)
             {
                 container.ApplyClientTake();
                 return;

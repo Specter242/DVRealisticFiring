@@ -8,8 +8,8 @@ namespace RealisticFiring.Multiplayer
     /// Multiplayer mod delivers reliably but not in order. So: a value that
     /// is no number is dropped; a hand pump's On and Off are taken in the
     /// order they were sent (a quick tap landing Off first left the host
-    /// pumping); and the fire iron, the shovel, the grate, and the sand are
-    /// taken no faster than a hand works them. Kept apart from the
+    /// pumping); and the fire iron, the shovel, the grate, the sand, and a
+    /// guest's own wood and rags are taken no faster than a hand works them. Kept apart from the
     /// Multiplayer mod's types, so the checks run it without a session.
     /// </summary>
     internal sealed class GuestActions
@@ -45,6 +45,8 @@ namespace RealisticFiring.Multiplayer
                 case FireAction.Push:
                 case FireAction.Shovelful:
                 case FireAction.Sand:
+                case FireAction.Wood:
+                case FireAction.Rag:
                     var key = player << 8 | (byte)action;
                     var least = (uint)(LeastInterval * (ticksPerSecond > 0u ? ticksPerSecond : 1u));
                     if (lastAt.TryGetValue(key, out var last) && tick - last < least)
