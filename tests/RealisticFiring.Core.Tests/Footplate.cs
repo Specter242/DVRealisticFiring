@@ -56,11 +56,12 @@ internal sealed class Footplate
         PassiveAir = engine.PassiveAir;
         BlowerSteam = engine.BlowerSteam;
         SafetyValve = engine.SafetyValve;
+        FullWork = engine.FullWorkSteam;
         if (stokerFeed > 0f)
-            Stoker = new Stoker(new StokerSpec(S282, stokerFeed) { MeanCoalBetweenJams = 0f }, S282, new Random(1));
+            Stoker = new Stoker(new StokerSpec(engine.Firebox, stokerFeed) { MeanCoalBetweenJams = 0f }, engine.Firebox, new Random(1));
         if (pumpFeed > 0f)
             Pump = new FeedPump(new FeedPumpSpec(FeedHeaterType.Open, pumpFeed));
-        Injector = new Injector(new InjectorSpec(injectorDelivery, 15f));
+        Injector = new Injector(new InjectorSpec(injectorDelivery, Math.Max(15f, SafetyValve)));
         Fire = FireTestKit.BurningFire(engine.Firebox, coal, FireTestKit.CleanCoal);
         if (engine.Character != null)
             Fire.Character = engine.Character;
@@ -106,6 +107,9 @@ internal sealed class Footplate
 
     /// <summary>The steam the engine takes at full work, in kg/s (the S282's throttle).</summary>
     public const float FullWorkSteam = 6f;
+
+    /// <summary>This engine's steam at full work, in kg/s (<see cref="FullWorkSteam"/> for the S282-like one).</summary>
+    public float FullWork { get; }
 
     // The engineer's side.
     public float EngineSteam;
@@ -197,14 +201,14 @@ internal sealed class Footplate
         Throttle = Throttle ?? (EngineSteam > 0.05f ? 0.6f : 0f),
         Cutoff = StartComing || !Standing && EngineSteam > 0.05f ? 0.6f : 0f,
         RoadKnown = SteamAhead.HasValue,
-        WorkSoon = (SteamAhead ?? 0f) / FullWorkSteam,
+        WorkSoon = (SteamAhead ?? 0f) / FullWork,
         Glass = GlassShown + GlassBob * MathF.Sin(2f * MathF.PI * 1.3f * Time),
         GlassTilt = Tilt,
         GlassTiltHigh = TiltHigh,
         GlassTiltLow = TiltLow,
-        Work = WorkHeardBias * EngineSteam / FullWorkSteam,
+        Work = WorkHeardBias * EngineSteam / FullWork,
         WorkAhead = WorkAhead,
-        FullWorkSteam = FullWorkSteam,
+        FullWorkSteam = FullWork,
         GlassMass = GlassMass,
         InjectorLeast = Injector.Spec.LeastShare(Pressure),
         TenderWater = TenderWater,
@@ -334,7 +338,7 @@ internal sealed class Footplate
                 TenderWater = TenderWater,
                 TenderWaterTemperature = 15f,
                 ExhaustFlow = EngineSteam,
-                FullExhaustFlow = FullWorkSteam,
+                FullExhaustFlow = FullWork,
                 ChestPressure = EngineSteam > 0.05f ? 0.8f * Pressure : 1f,
             }, Water);
             TenderWater = Math.Max(0f, TenderWater - PumpFlow.TenderDraw * Dt);
@@ -389,8 +393,51 @@ internal sealed record FootplateEngine(FireboxParameters Firebox, float BlowerSt
     /// <summary>Whether <see cref="HeatPerBar"/> is the figure at 13 bar, rising toward low pressure as water's boiling point does.</summary>
     public bool SaturationCurve { get; init; }
 
+    /// <summary>The engine's steam at full work, kg/s.</summary>
+    public float FullWorkSteam { get; init; } = Footplate.FullWorkSteam;
+
     /// <summary>The test footplate's S282-like engine.</summary>
     public static FootplateEngine S282Like => new(Footplate.S282, 0.5f, 0.5f, 1.6e8f, 15f);
+
+ public static FootplateEngine Fef3 => new(new FireboxParameters(200f, 140f, 0.5f, 10f, 5f, 15f), 0.85f, 0.9f, 4e8f, 21.7f)
+    {
+        Character = new GrateCharacter { BackRowDraft = 1.08f, FrontRowDraft = 0.92f, OverFireMixing = 1.25f, ClinkerFactor = 0.7f, AshFactor = 0.6f },
+        GrateArea = 9.29f,
+        FullWorkSteam = 10f,
+    };
+
+    /// <summary>The FEF-3's stoker at full speed, firebox kg/s.</summary>
+    public const float Fef3Stoker = 3.33f;
+
+    /// <summary>LittleNiko36's S484-840 as the mod fits it: a 240 kg, 168 s firebox, an MB stoker of 2.0 kg/s (8 tender kg/s over 4), the FEF-3's draft and valve.</summary>
+    public static FootplateEngine S484840 => new(new FireboxParameters(240f, 168f, 0.5f, 10f, 5f, 15f), 0.85f, 0.9f, 4e8f, 21.7f)
+    {
+        Character = new GrateCharacter { BackRowDraft = 1.08f, FrontRowDraft = 0.92f, OverFireMixing = 1.25f },
+        GrateArea = 9.29f,
+        FullWorkSteam = 10f,
+    };
+
+    public const float S484840Stoker = 2f;
+
+    /// <summary>The NYC Hudson as the mod fits it: a 180 kg, 124 s firebox, a Standard HT of 2.5 kg/s (10 tender kg/s over 4), its blower and draft (0.8, 0.75), its 280 psi valve.</summary>
+    public static FootplateEngine Hudson => new(new FireboxParameters(180f, 124f, 0.5f, 10f, 5f, 15f), 0.8f, 0.75f, 3.5e8f, 20.3f)
+    {
+        Character = new GrateCharacter { ClinkerFactor = 1.1f, AshFactor = 1.1f },
+        GrateArea = 7.7f,
+        FullWorkSteam = 10f,
+    };
+
+    public const float HudsonStoker = 2.5f;
+
+    /// <summary>The QJ as the mod fits it: a 160 kg, 146 s firebox, its C-3 of 2.5 kg/s (10 tender kg/s over 4), its blower and draft (0.6, 0.66), the maker's 17.3 bar valve.</summary>
+    public static FootplateEngine Qj => new(new FireboxParameters(160f, 146f, 0.5f, 10f, 5f, 15f), 0.6f, 0.66f, 3e8f, 17.3f)
+    {
+        Character = new GrateCharacter { ClinkerFactor = 1.2f, AshFactor = 1.5f },
+        GrateArea = 6.8f,
+        FullWorkSteam = 8f,
+    };
+
+    public const float QjStoker = 2.5f;
 
     /// <summary>
     /// Lilla and Cruzer's JK3: its stock 70 kg, 200 s firebox (start-up

@@ -296,6 +296,7 @@ namespace RealisticFiring.AdapterCheck
             CabooseStoveChecks.Run(Check);
             ChecklistChecks.Run(Check);
             BoilerAndSuperheaterCareChecks.Run(Check);
+            GuestReadoutChecks.Run(gameParams, Check);
             CheckNewDefaults();
             CheckOilIgnitionBinding();
             CheckFireboxQualitySettings();
@@ -2615,21 +2616,38 @@ namespace RealisticFiring.AdapterCheck
 
             Run(booster, 1f);
             Check(Math.Abs(torque.Value - main.Value) < 1f, $"cut out, the booster passes the main engine's torque through ({torque.Value:F0} N·m)");
+            // The Engine page's row (F6 and the tablet) as each state comes (audit 2026-11-21: an idling booster read "up").
+            var rows = new List<string> { FireOverlay.BoosterRow(booster).Value };
 
             idle.Value = 1f;
             Run(booster, 180f);
+            rows.Add(FireOverlay.BoosterRow(booster).Value);
+            var idlingState = booster.Flow.State;
             idle.Value = 0f;
             Run(booster, 20f);
             latch.Value = 1f;
-            Run(booster, 25f);
+            Run(booster, 1f);
+            rows.Add(FireOverlay.BoosterRow(booster).Value);
+            var cocksState = booster.Flow.State;
+            Run(booster, 24f);
+            rows.Add(FireOverlay.BoosterRow(booster).Value);
+            var working = FireOverlay.BoosterRow(booster);
             var added = (torque.Value - main.Value) / 4.44822f;
             Check(booster.Model.State == BoosterState.Working && added > 11900f && added < 12300f,
                 $"idled, then latched in at a stand with the reverser forward, it adds {added:F0} lb on a 1 m wheel after its cocks close");
 
             reverser.Value = 0.5f;
             Run(booster, 0.5f);
+            rows.Add(FireOverlay.BoosterRow(booster).Value);
             Check(latch.Value == 0f && booster.Model.State == BoosterState.CutOut && Math.Abs(torque.Value - main.Value) < 1f,
                 "hooking the reverser back drops the cab's latch and cuts it out");
+            Check(idlingState == BoosterState.Idling && cocksState == BoosterState.CocksOpen
+                  && rows[0] == "down, cut out · warm 0%"
+                  && System.Text.RegularExpressions.Regex.IsMatch(rows[1], @"^down, idling · warm \d+%$")
+                  && System.Text.RegularExpressions.Regex.IsMatch(rows[2], @"^up, cocks open · [\d,]+ lb · priming$|^up, cocks open · [\d,]+ lb$")
+                  && System.Text.RegularExpressions.Regex.IsMatch(rows[3], @"^up, working · 1[12],\d{3} lb$") && working.Level == null
+                  && rows[4].StartsWith("down, cut out · warm ") && rows.All(r => r.Length <= 36),
+                "the Engine page's booster row says what it does: " + string.Join(" | ", rows));
         }
 
         // The replacement for CCL's stoker, against CCL's own, on the S464-730's

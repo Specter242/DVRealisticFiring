@@ -880,6 +880,164 @@ namespace RealisticFiring.Core.Tests;
         Assert.Empty(engine.Throws);
     }
 
+    /// <summary>
+    /// An FEF-3's box and stoker (200 kg, 140 s; 3.33 kg/s) with the fireman at work: the gauge held at his pressure,
+    /// the draft the work's exhaust makes (the FEF-3's natural draft and 3.5 kg of air a kg of exhaust), his
+    /// shovelfuls thrown, the stoker's coal fed. The bed alone answers to him.
+    /// </summary>
+    private sealed class StokedFef
+    {
+        public static readonly FireboxParameters Box = new FireboxParameters(200f, 140f, 0.5f, 10f, 5f, 15f);
+        public const float FullFeed = 3.33f;
+        public readonly FireModel Fire = FireTestKit.BurningFire(Box, 120f, FireTestKit.CleanCoal);
+        public readonly AutoFireman Man = new AutoFireman { Mode = FiremanMode.Road };
+        private readonly Stoker stoker = new Stoker(new StokerSpec(Box, FullFeed) { MeanCoalBetweenJams = 0f, PackingJams = false }, Box, new Random(1));
+        private readonly ShovelDelivery shovel = new ShovelDelivery(Box);
+        public FiremanReadings Readings;
+        public FiremanActions Last;
+
+        public StokedFef(float work, float workSoon = 0f) => Readings = new FiremanReadings
+        {
+            Pressure = AutoFireman.PressureFor(FiremanMode.Road, 21.7f), SafetyValve = 21.7f, Glass = .55f, GlassMass = 4000f,
+            Work = work, FullWorkSteam = 10f, Throttle = .6f, Cutoff = .3f, RoadKnown = workSoon > 0f, WorkSoon = workSoon,
+            HasStoker = true, StokerFullFeed = FullFeed, StokerRunningForward = true, TenderWater = 20000f, TenderCoal = 10000f,
+            ShovelMass = 6f, InjectorLeast = .3f, InjectorFullFeed = 10f, InjectorStartPressure = 3.5f, Solids = 500f,
+        };
+
+        public void Run(float seconds, Action? each = null)
+        {
+            var air = 0.9f + 3.5f * Readings.Work * Readings.FullWorkSteam;
+            for (var t = 0f; t < seconds - 1e-4f; t += FireTestKit.Dt)
+            {
+                Last = Man.Step(FireTestKit.Dt, Fire, Readings);
+                if (Last.Shovelful > 0f)
+                    shovel.Deliver(Fire, Last.Shovelful, Last.Aim);
+                var controls = new StokerControls
+                {
+                    Direction = Last.StokerDirection, Throttle = Last.StokerThrottle, MasterJet = Last.MasterJet,
+                    LeftBack = Last.BackJets, RightBack = Last.BackJets, LeftFront = Last.FrontJets, RightFront = Last.FrontJets, Fines = Last.FinesJet,
+                };
+                stoker.Step(FireTestKit.Dt, new StokerInputs { Controls = controls, BoilerPressure = Readings.Pressure, TenderCoal = 10000f, AirFlow = air }, Fire);
+                Fire.Step(FireTestKit.Dt, new FireInputs
+                {
+                    AirFlow = air, DoorOpening = Last.Door, StartupMultiplier = 1f, BoilerTemperature = 215f, Speed = 15f, BoilerPressure = Readings.Pressure,
+                });
+                each?.Invoke();
+            }
+        }
+    }
+
+    [Fact]
+    public void ABedOverHisMarkThatBurnsLessThanHePlansHasTheStokerShutAndComesBackDown()
+    {
+        // A Nexus report on 1.25.0: "on the fef the fireman won't shut off the stoker. he'll trim it down to 35% but
+        // not fully off which leads to a constant building fire." The road ahead asks for 90 % work while the engine
+        // works at 35 %: he plans the fire for the climb (his mark the box's most) while the draft burns it for a third.
+        // Fed for the planned burn, the bed sat the shortfall times his 40 s catch-up over his mark and the stoker never
+        // shut. He now feeds what the bed burns, and none 15 % over his mark.
+        var fef = new StokedFef(work: .35f, workSoon: .9f);
+        fef.Run(120f);
+        var mark = fef.Man.CoalTarget;
+        Assert.True(fef.Man.Stoking, "stoking at work");
+        Assert.Equal(AutoFireman.MaxFire * StokedFef.Box.MaxCoalCapacity, mark, 1);
+        fef.Fire.Restore(fireOn: true, coalMass: 1.15f * mark);
+        var least = 1f;
+        fef.Run(30f, () => least = Math.Min(least, fef.Last.StokerThrottle));
+        var shutWhileOver = least;
+        float lowest = float.MaxValue, highest = 0f;
+        fef.Run(570f, () =>
+        {
+            if (fef.Man.CoalTarget > 0f && fef.Fire.CoalMass > 0f)
+            {
+                lowest = Math.Min(lowest, fef.Fire.CoalMass / fef.Man.CoalTarget);
+                highest = Math.Max(highest, fef.Fire.CoalMass / fef.Man.CoalTarget);
+            }
+        });
+        var settled = fef.Fire.CoalMass / fef.Man.CoalTarget;
+        output.WriteLine($"mark {mark:F0} kg; bed put at {1.15f * mark:F0} kg: least stoker throttle in 30 s {shutWhileOver:F2}; " +
+                         $"after 10 min the bed {fef.Fire.CoalMass:F0} kg ({settled:F2} of the mark), {lowest:F2} to {highest:F2} after the first 30 s; " +
+                         $"throttle {fef.Last.StokerThrottle:F2}, the fire burning {fef.Fire.ConsumptionRate:F2} kg/s");
+        Assert.Equal(0f, shutWhileOver);
+        Assert.InRange(settled, .95f, 1.05f);
+        Assert.True(fef.Man.Stoking && fef.Last.StokerThrottle > .1f, "stoking again at the mark");
+    }
+
+    [Fact]
+    public void WorkingSteadilyHardTheStokerHoldsTheBedAtHisMark()
+    {
+        // At 60 % work on the level, his mark is the burn the work needs over the box's burn time; the stoker feeds
+        // what burns and holds the bed there, from under it or over it.
+        foreach (var start in new[] { 60f, 190f })
+        {
+            var fef = new StokedFef(work: .6f);
+            fef.Fire.Restore(fireOn: true, coalMass: start);
+            fef.Run(300f);
+            float lowest = float.MaxValue, highest = 0f, throttle = 0f;
+            var ticks = 0;
+            fef.Run(300f, () =>
+            {
+                var share = fef.Fire.CoalMass / fef.Man.CoalTarget;
+                lowest = Math.Min(lowest, share);
+                highest = Math.Max(highest, share);
+                throttle += fef.Last.StokerThrottle;
+                ticks++;
+            });
+            throttle /= ticks;
+            output.WriteLine($"from {start:F0} kg: mark {fef.Man.CoalTarget:F0} kg, the bed {lowest:F2} to {highest:F2} of it over the last 5 min, " +
+                             $"stoker throttle {throttle:F2} on average, the fire burning {fef.Fire.ConsumptionRate:F2} kg/s");
+            Assert.True(fef.Man.Stoking);
+            Assert.InRange(lowest, .95f, 1.05f);
+            Assert.InRange(highest, .95f, 1.05f);
+            Assert.InRange(throttle * StokedFef.FullFeed, .8f * fef.Fire.ConsumptionRate, 1.2f * fef.Fire.ConsumptionRate);
+        }
+    }
+
+    [Theory]
+    [InlineData("FEF-3")]
+    [InlineData("S484-840")]
+    [InlineData("Hudson")]
+    [InlineData("QJ")]
+    [InlineData("S282")]
+    public void OnAHardPullEachStokerKeepsPaceWithHisMark(string name)
+    {
+        // Light running, then 60 % work without warning, on each stoked engine as the mod fits it: the stoker brings
+        // the bed up to his mark within a minute and holds it there, the pressure no more than a bar and a half short.
+        var (engine, feed) = name switch
+        {
+            "FEF-3" => (FootplateEngine.Fef3, FootplateEngine.Fef3Stoker),
+            "S484-840" => (FootplateEngine.S484840, FootplateEngine.S484840Stoker),
+            "Hudson" => (FootplateEngine.Hudson, FootplateEngine.HudsonStoker),
+            "QJ" => (FootplateEngine.Qj, FootplateEngine.QjStoker),
+            _ => (FootplateEngine.S282Like, 1.56f),
+        };
+        var target = AutoFireman.PressureFor(FiremanMode.Road, engine.SafetyValve);
+        var footplate = new Footplate(coal: 60f, pressure: target, injectorDelivery: name == "S282" ? 4f : 10.5f, stokerFeed: feed, engine: engine);
+        footplate.EngineSteam = .3f * footplate.FullWork;
+        footplate.Run(600f);
+        footplate.EngineSteam = .6f * footplate.FullWork;
+        var start = footplate.Time;
+        float low = float.MaxValue, least = float.MaxValue, sum = 0f;
+        int ticks = 0, stoking = 0;
+        footplate.Run(900f, e =>
+        {
+            low = Math.Min(low, e.Pressure);
+            if (e.Time - start < 60f)
+                return;
+            var share = e.Fire.CoalMass / e.Fireman.CoalTarget;
+            least = Math.Min(least, share);
+            sum += share;
+            ticks++;
+            if (e.Fireman.Stoking)
+                stoking++;
+        });
+        output.WriteLine($"{name}: pressure low {low:F2} bar against {target:F2}; after the first minute the bed {least:F2} of his mark at least, " +
+                         $"{sum / ticks:F2} on average, the stoker feeding {100f * stoking / ticks:F0} % of the time");
+        Assert.True(stoking > .9f * ticks, $"stoking {stoking} of {ticks} ticks");
+        Assert.True(low >= target - 1.5f, $"pressure fell to {low:F2}");
+        Assert.True(least >= .7f, $"the bed fell to {least:F2} of his mark");
+        Assert.InRange(sum / ticks, .95f, 1.05f);
+    }
+
     [Fact]
     public void TheCoalRateGivesTheHeatOnTheBoilersCurve()
     {

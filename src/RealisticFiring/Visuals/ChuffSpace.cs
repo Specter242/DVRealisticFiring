@@ -1,3 +1,4 @@
+#if !PUBLIC_RELEASE
 using System.Collections.Generic;
 using DV.ModularAudioCar;
 using RealisticStackEffects;
@@ -376,3 +377,4 @@ namespace RealisticFiring.Visuals
         }
     }
 }
+#endif

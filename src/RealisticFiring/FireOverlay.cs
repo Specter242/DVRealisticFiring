@@ -525,8 +525,24 @@ namespace RealisticFiring
                 ? StokerRow(firebox, stoker)
                 : new Row { Label = "Stoker", Value = "none fitted" });
             c.Rows.Add(RealisticBooster.TryGet(car, out var booster) && booster.Fitted
-                ? new Row { Label = "Booster", Value = $"{(booster.Flow.State != BoosterState.CutOut ? "up" : "down")} · warm {P0(booster.Model.Warmth)}" }
+                ? BoosterRow(booster)
                 : new Row { Label = "Booster", Value = "none fitted" });
+        }
+
+        /// <summary>
+        /// The booster's latch and what it is doing: cut out, idling, its
+        /// cocks open, or working, with its pull in gear (audit 2026-11-21:
+        /// an idling booster, its latch down, read "up").
+        /// </summary>
+        internal static Row BoosterRow(RealisticBooster booster)
+        {
+            var flow = booster.Flow;
+            return new Row
+            {
+                Label = "Booster",
+                Value = BoosterReadout.Row(flow, booster.Latched, booster.Model.Warmth),
+                Level = BoosterReadout.Urgent(flow) ? AdviceLevel.Act : BoosterReadout.Watch(flow) ? AdviceLevel.Watch : (AdviceLevel?)null,
+            };
         }
 
         private static Row StokerRow(RealisticFirebox firebox, StokerFlow flow)

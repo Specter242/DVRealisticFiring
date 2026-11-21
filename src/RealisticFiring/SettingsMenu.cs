@@ -258,12 +258,14 @@ namespace RealisticFiring
 
         private void Sound(Settings s)
         {
+#if !PUBLIC_RELEASE
             Begin("CHUFFS", "How the chimney's beats sound.");
             s.RealisticChuffs = Toggle("Realistic chuffs", s.RealisticChuffs,
                 "Each beat as loud as the steam it lets go, the soft and hard sounds blending, each engine's own slightly uneven beat, " +
                 "a drifting engine's panting, and echoes off walls, cuttings and tunnels. Off, the game's own chuffs.");
             s.ChuffVolume = Slider("Chuff volume", s.ChuffVolume, 0f, 200f, 0, "%", "How loud the realistic chuffs are. 100 is normal; 0 is silent.");
             End();
+#endif
 
             Begin("VOLUME", "Adjust individual effects. 1 is normal volume; 0 is silent.");
             s.OilBurnerVolume = Slider("Oil burner", s.OilBurnerVolume, 0f, 2f, 1, "×", "The roar and drumming of the burner.");

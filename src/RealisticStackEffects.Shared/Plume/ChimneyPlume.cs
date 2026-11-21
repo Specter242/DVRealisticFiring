@@ -519,8 +519,16 @@ namespace RealisticStackEffects
                 sinceBeat = testBeats;
             }
 #endif
-            if (boilerBroken.Value > 0f || dt <= 0f)
+            if (dt <= 0f)
                 return;
+            // A burst boiler sends nothing more up the stack, as the stock
+            // reader stops its systems emitting; what is already in the air
+            // is carried on as a dead engine's is, drifting off, thinning
+            // and retiring, the cinders falling, and the engine's other
+            // steam blowing as the game's own drivers have it. Returning
+            // here left it all hanging where it stood for minutes (DV
+            // Discord, 2026-11-21: after the 282's boiler exploded).
+            var broken = boilerBroken.Value > 0f;
             roof.Follow(car, Emitter(smoke), smoke, PlumeAloft.Lifetime);
 
             // The air past the stack: the wind, and a test's train speed blowing back.
@@ -541,66 +549,12 @@ namespace RealisticStackEffects
                 Weather(ref inputs, dt);
             beatHard = PlumeModel.BeatStrength(tuning, inputs.ExhaustPressure);
 
-            using (StackHost.TimePhase(PlumePhase.Emission))
+            if (broken)
+                StopEmitting();
+            else
             {
-                // A beat with no steam behind it (drifting, regulator shut) makes no puff.
-
-                // Those already releasing go on by the frame, whatever the
-                // regulator does now; a beat crossed this frame has gone on
-                // only since the crank passed it.
-                for (var i = 0; i < pendingBeatCount; i++)
-                    ExhaustBlast.Step(ref pendingBeats[i].Release, dt, turned);
-                // One exhaust: the beats' puffs and what leaves between them
-                // take the mixture of the two (PlumeModel.AsOne), by the
-                // crank's pace now, not by the beats counted, which come a
-                // frame at a time.
-                var beating = inputs.ExhaustPressure > PlumeModel.MinBeatPressure;
-                var puffNow = PlumeModel.ForBeat(tuning, inputs);
-                var haze = PlumeModel.Between(tuning, inputs);
-                exitSpeed = beating ? Mathf.Max(puffNow.Speed, haze.Speed) : haze.Speed;
-                var beatsShare = Look.OneExhaust > 0.5f
-                    ? PlumeModel.AsOne(ref puffNow, ref haze, beating ? Mathf.Abs(turned) * beatsPerTurn / dt : 0f)
-                    : 0f;
-                if (beating)
-                {
-                    var beatSeconds = turned > 1e-6f ? dt / (turned * beatsPerTurn) : 0f;
-                    var count = Mathf.Min(crossed, MaxBeatsPerFrame);
-                    for (var i = 0; i < count; i++)
-                    {
-                        var since = Mathf.Min(dt, (sinceBeat + (count - 1 - i)) * beatSeconds);
-                        BeginBeat(puffNow, inputs.ExhaustPressure, since, since / dt * turned, carVelocity);
-                    }
-                }
-                ReleaseBeats(carVelocity);
-
-                stokerCinders = Mathf.Min(stokerCinders + fireNow.Fines, MaxStokerCinderBacklog);
-
-                // The blower's stream is steam; a clean fire's haze, its own
-                // water; with the engine working, the beats' own steam.
-                var hazeCloud = beatsShare > 0f ? steamCloud
-                    : PlumeModel.SteamThroughStack(inputs.TotalFlowNormalized) > 0.3f ? streamCloud : waterCloud;
-                hazeDue += haze.Rate * ParticleShare * dt;
-                for (; hazeDue >= 1f; hazeDue -= 1f)
-                    Emit(smoke, haze.Speed, 1.2f * tuning.PuffSize, ToColor(haze.Color), carVelocity, HazeSpread, 0.85f, 1.15f,
-                        plume: Aloft(smoke), smokeShare: haze.SmokeShare, smokeColor: ToColor(haze.SmokeColor), cloud: hazeCloud);
-
-                // The hot gas's shimmer, plainest over a clean fire.
-                shimmerNow = PlumeModel.Shimmer(tuning, inputs);
-                if (heat != null && HeatShimmerOn)
-                {
-                    heatDue = shimmerNow > MinShimmer ? Mathf.Min(heatDue + Look.ShimmerRate * dt, MaxBeatsPerFrame) : 0f;
-                    var shimmerColor = new Color(1f, 1f, 1f, shimmerNow);
-                    var shimmerSize = Look.ShimmerSize * 2f * boreRadius / VisibleShare;
-                    for (; heatDue >= 1f; heatDue -= 1f)
-                        Emit(heat, Mathf.Max(haze.Speed, ShimmerSpeed), shimmerSize, shimmerColor, carVelocity, HazeSpread, 0.8f, 1.2f);
-                }
-
-                var vent = fireNow.PlugSteam;
-                plugSteamDue = vent > 0f ? Mathf.Min(plugSteamDue + PlugSteamPerKg * vent * ParticleShare * dt, MaxBeatsPerFrame * 4f) : 0f;
-                for (; plugSteamDue >= 1f; plugSteamDue -= 1f)
-                    Emit(smoke, PlugSteamSpeed, 1.2f * tuning.PuffSize, PlugSteamColor, carVelocity, HazeSpread, 0.7f, 1.3f,
-                        plume: Aloft(smoke), smokeShare: 0f, smokeColor: PlugSteamColor, cloud: plugCloud);
-
+                using (StackHost.TimePhase(PlumePhase.Emission))
+                    Blow(inputs, dt, crossed, turned, sinceBeat, carVelocity);
             }
             sinceCarried = Mathf.Min(sinceCarried + dt, LongestPass);
             if (!PassDue())
@@ -662,6 +616,83 @@ namespace RealisticStackEffects
 
             LogStatus(inputs);
 #endif
+        }
+
+        // This frame's exhaust up the stack: the beats' puffs, the haze
+        // between them, the hot gas's shimmer, and a melted plug's steam.
+        private void Blow(PlumeInputs inputs, float dt, int crossed, float turned, float sinceBeat, Vector3 carVelocity)
+        {
+            // A beat with no steam behind it (drifting, regulator shut) makes no puff.
+
+            // Those already releasing go on by the frame, whatever the
+            // regulator does now; a beat crossed this frame has gone on
+            // only since the crank passed it.
+            for (var i = 0; i < pendingBeatCount; i++)
+                ExhaustBlast.Step(ref pendingBeats[i].Release, dt, turned);
+            // One exhaust: the beats' puffs and what leaves between them
+            // take the mixture of the two (PlumeModel.AsOne), by the
+            // crank's pace now, not by the beats counted, which come a
+            // frame at a time.
+            var beating = inputs.ExhaustPressure > PlumeModel.MinBeatPressure;
+            var puffNow = PlumeModel.ForBeat(tuning, inputs);
+            var haze = PlumeModel.Between(tuning, inputs);
+            exitSpeed = beating ? Mathf.Max(puffNow.Speed, haze.Speed) : haze.Speed;
+            var beatsShare = Look.OneExhaust > 0.5f
+                ? PlumeModel.AsOne(ref puffNow, ref haze, beating ? Mathf.Abs(turned) * beatsPerTurn / dt : 0f)
+                : 0f;
+            if (beating)
+            {
+                var beatSeconds = turned > 1e-6f ? dt / (turned * beatsPerTurn) : 0f;
+                var count = Mathf.Min(crossed, MaxBeatsPerFrame);
+                for (var i = 0; i < count; i++)
+                {
+                    var since = Mathf.Min(dt, (sinceBeat + (count - 1 - i)) * beatSeconds);
+                    BeginBeat(puffNow, inputs.ExhaustPressure, since, since / dt * turned, carVelocity);
+                }
+            }
+            ReleaseBeats(carVelocity);
+
+            stokerCinders = Mathf.Min(stokerCinders + fireNow.Fines, MaxStokerCinderBacklog);
+
+            // The blower's stream is steam; a clean fire's haze, its own
+            // water; with the engine working, the beats' own steam.
+            var hazeCloud = beatsShare > 0f ? steamCloud
+                : PlumeModel.SteamThroughStack(inputs.TotalFlowNormalized) > 0.3f ? streamCloud : waterCloud;
+            hazeDue += haze.Rate * ParticleShare * dt;
+            for (; hazeDue >= 1f; hazeDue -= 1f)
+                Emit(smoke, haze.Speed, 1.2f * tuning.PuffSize, ToColor(haze.Color), carVelocity, HazeSpread, 0.85f, 1.15f,
+                    plume: Aloft(smoke), smokeShare: haze.SmokeShare, smokeColor: ToColor(haze.SmokeColor), cloud: hazeCloud);
+
+            // The hot gas's shimmer, plainest over a clean fire.
+            shimmerNow = PlumeModel.Shimmer(tuning, inputs);
+            if (heat != null && HeatShimmerOn)
+            {
+                heatDue = shimmerNow > MinShimmer ? Mathf.Min(heatDue + Look.ShimmerRate * dt, MaxBeatsPerFrame) : 0f;
+                var shimmerColor = new Color(1f, 1f, 1f, shimmerNow);
+                var shimmerSize = Look.ShimmerSize * 2f * boreRadius / VisibleShare;
+                for (; heatDue >= 1f; heatDue -= 1f)
+                    Emit(heat, Mathf.Max(haze.Speed, ShimmerSpeed), shimmerSize, shimmerColor, carVelocity, HazeSpread, 0.8f, 1.2f);
+            }
+
+            var vent = fireNow.PlugSteam;
+            plugSteamDue = vent > 0f ? Mathf.Min(plugSteamDue + PlugSteamPerKg * vent * ParticleShare * dt, MaxBeatsPerFrame * 4f) : 0f;
+            for (; plugSteamDue >= 1f; plugSteamDue -= 1f)
+                Emit(smoke, PlugSteamSpeed, 1.2f * tuning.PuffSize, PlugSteamColor, carVelocity, HazeSpread, 0.7f, 1.3f,
+                    plume: Aloft(smoke), smokeShare: 0f, smokeColor: PlugSteamColor, cloud: plugCloud);
+        }
+
+        // A burst boiler's stack: nothing more leaves it, nor waits to.
+        // The beats letting their steam out, the haze, shimmer and plug
+        // steam due, and the cinders held for the next beats are dropped,
+        // so a boiler renewed starts clean; what is in the air is left to
+        // the motion pass.
+        private void StopEmitting()
+        {
+            pendingBeatCount = 0;
+            hazeDue = heatDue = plugSteamDue = 0f;
+            stokerCinders = shakeCinders = 0f;
+            exitSpeed = 0f;
+            shimmerNow = 0f;
         }
 
         // Whether the particles are carried this frame, and how far apart

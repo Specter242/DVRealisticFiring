@@ -285,7 +285,8 @@ namespace RealisticFiring.Sim
         /// <summary>What blows through a melted plug into the firebox, in kg/s.</summary>
         public float PlugVent { get; internal set; }
 
-        public float BoilerPressure => Vessel(boiler)?.pressure ?? 1f;
+        /// <summary>The boiler's pressure, absolute bar: on a multiplayer guest, the host's (<see cref="BoilerReadout"/>).</summary>
+        public float BoilerPressure => BoilerReadout.Pressure(boiler);
 
         /// <summary>Where the safety valve lifts, absolute bar.</summary>
         public float SafetyValve => SafetyValveFit.Lift(boiler);
@@ -676,18 +677,13 @@ namespace RealisticFiring.Sim
             return true;
         }
 
-        /// <summary>The boiler's water, °C.</summary>
-        public float WaterTemperature => Vessel(boiler)?.waterTemp ?? AmbientWater;
+        /// <summary>The boiler's water, °C: on a multiplayer guest, the host's (<see cref="BoilerReadout"/>).</summary>
+        public float WaterTemperature => BoilerReadout.WaterTemperature(boiler, AmbientWater);
 
-        /// <summary>Whether the water is below boiling at the atmosphere's pressure, the gauge at nothing.</summary>
-        public bool BelowBoilingNow
-        {
-            get
-            {
-                var vessel = Vessel(boiler);
-                return vessel != null && vessel.mass > 0f && vessel.pressure <= AtmosphericPressure && vessel.waterTemp < BelowBoiling;
-            }
-        }
+        /// <summary>Whether the water is below boiling at the atmosphere's pressure, the gauge at nothing: on a multiplayer guest, by the host's boiler.</summary>
+        public bool BelowBoilingNow =>
+            BoilerReadout.Mass(boiler) > 0f && BoilerReadout.Pressure(boiler) <= AtmosphericPressure
+                                            && BoilerReadout.WaterTemperature(boiler, AmbientWater) < BelowBoiling;
 
         // The game's cold boiler, at the atmosphere's pressure, is boiling:
         // its water is put at the air's temperature.

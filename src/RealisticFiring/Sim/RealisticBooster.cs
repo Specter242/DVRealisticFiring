@@ -124,6 +124,9 @@ namespace RealisticFiring.Sim
         /// <summary>What it did on the last tick.</summary>
         public BoosterFlow Flow { get; internal set; }
 
+        /// <summary>Whether the cab's latch is up (the host's, on a multiplayer client).</summary>
+        public bool Latched => latch.Value > 0.5f;
+
         /// <summary>Clashes since the loco was loaded.</summary>
         public int Clashes { get; internal set; }
 

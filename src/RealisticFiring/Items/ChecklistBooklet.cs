@@ -40,7 +40,9 @@ namespace RealisticFiring.Items
                 if (item == null)
                     return null;
                 item.AddComponent<ChecklistBookletDescription>();
-                Main.Mod?.Logger.Log($"Firing checklists built from the portrait VehicleCatalog, with {ChecklistBookletContents.PageCount} pages");
+                // Sold in the shops: the catalog it is made from is not, so it has no restocker of its own.
+                var restocker = ShopStock.Keep(item) ? "a shop restocker added" : "the catalog's shop restocker";
+                Main.Mod?.Logger.Log($"Firing checklists built from the portrait VehicleCatalog, with {ChecklistBookletContents.PageCount} pages and {restocker}");
                 return item;
             }
             catch (Exception error)

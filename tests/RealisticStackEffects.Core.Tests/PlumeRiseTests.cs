@@ -392,4 +392,27 @@ namespace RealisticStackEffects.Core.Tests;
         Assert.True(float.IsFinite(additiveOverflow));
         Assert.Equal(float.MaxValue, additiveOverflow);
     }
+
+    [Fact]
+    public void SmokeLeftWithoutLiftInStillAirStillThinsAndRetiresLongBeforeItsLifetime()
+    {
+        // A burst boiler's plume (DV Discord, 2026-11-21): the stack sends
+        // nothing more up and lifts nothing (no flux), the air is still,
+        // and the plume's motion pass carries on what is aloft. It must
+        // still widen, thin, and give up its particles within a minute, not
+        // hang there for the particles' four-minute life (PlumeAloft.Lifetime).
+        const float height = 8f;
+        Assert.Equal(0f, PlumeRise.RiseSpeed(0f, height, 0f));
+        var spread = 0f;
+        var survivalAtMinute = 1f;
+        var dilutionAtMinute = 1f;
+        for (var age = 0f; age < 60f; age += 0.5f)
+        {
+            spread = PlumeRise.SpreadOn(spread, 0.5f, airSpeed: 0f);
+            survivalAtMinute = PlumeRise.SurvivalAt(PlumeRise.PlumeWidth(height, spread));
+            dilutionAtMinute = PlumeRise.Dilution(height, spread);
+        }
+        Assert.True(survivalAtMinute < 0.1f, $"a tenth or more of the plume still kept after a minute ({survivalAtMinute:F2})");
+        Assert.True(dilutionAtMinute < 0.15f, $"the plume hardly thinner after a minute ({dilutionAtMinute:F2})");
+    }
 }

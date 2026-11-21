@@ -104,7 +104,9 @@ namespace RealisticFiring.Items
             item.AddComponent<FiringTabletScreen>();
             item.AddComponent<FiringTabletDescription>();
             item.AddComponent<FiringTabletHold>();
-            Main.Mod?.Logger.Log("Firing tablet built from the stock Clinometer item; uses stock gadget placement and saves");
+            // Sold in the shops: the clinometer's own restocker counts it, or one is added.
+            var restocker = ShopStock.Keep(item) ? "a shop restocker added" : "the clinometer's shop restocker";
+            Main.Mod?.Logger.Log($"Firing tablet built from the stock Clinometer item, with {restocker}; uses stock gadget placement and saves");
             return item;
         }
 

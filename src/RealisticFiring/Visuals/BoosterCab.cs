@@ -280,7 +280,7 @@ namespace RealisticFiring.Visuals
             return control;
         }
 
-        /// <summary>The booster's state in a few words, for the latch and the overlay.</summary>
+        /// <summary>The booster's state in a few words, for the latch's hover (the Engine page's row is <see cref="BoosterReadout"/>).</summary>
         internal static string Describe(BoosterFlow flow, bool latched)
         {
             switch (flow.State)

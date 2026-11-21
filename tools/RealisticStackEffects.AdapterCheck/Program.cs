@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Emit;
 using System.Xml.Serialization;
 using DV.Simulation.Controllers;
 using DV.WeatherSystem;
@@ -34,6 +35,7 @@ namespace RealisticStackEffects.AdapterCheck
             CheckExhaust(gameParams);
             CheckContract();
             CheckMultiStackVents();
+            CheckBurstBoiler();
             CheckMatchSortingExclusions();
             CheckSettings();
             Console.WriteLine(failures == 0 ? "All stack effects adapter checks passed" : $"{failures} stack effects adapter checks failed");
@@ -1115,6 +1117,40 @@ namespace RealisticStackEffects.AdapterCheck
         // that have not initialized or registered yet) and inactive sibling FX
         // children (such as disabled heat shimmer) without touching stock engine
         // steam renderers like DynamoSteam or CylCockSteam.
+        // A burst boiler (DV Discord, 2026-11-21: after an S282 exploded, the
+        // plume's smoke and the engine's steam hung still in the air): the
+        // plume stops emitting, as the stock reader does, and carries on what
+        // is already in the air. Read from UpdatePlume's code, as Unity's
+        // particles cannot run here: the broken port's reading leads to
+        // StopEmitting, never to a return, and the motion pass follows it.
+        private static void CheckBurstBoiler()
+        {
+            var plumeType = typeof(ChimneyPlume);
+            var code = HarmonyLib.PatchProcessor.GetOriginalInstructions(HarmonyLib.AccessTools.Method(plumeType, "UpdatePlume"));
+            var broken = HarmonyLib.AccessTools.Field(plumeType, "boilerBroken");
+            int Call(string name, int from = 0) => code.FindIndex(from, i => i.operand is MethodInfo m && m.Name == name);
+            var read = code.FindIndex(i => i.opcode == OpCodes.Ldfld && Equals(i.operand, broken));
+            var stop = Call("StopEmitting");
+            var blow = Call("Blow");
+            // A return, or a branch to one, between the port's reading and StopEmitting.
+            var returns = code.Where(i => i.opcode == OpCodes.Ret).SelectMany(i => i.labels).ToList();
+            var returned = read >= 0 && stop > read && code.Skip(read).Take(stop - read)
+                .Any(i => i.opcode == OpCodes.Ret || i.operand is Label label && returns.Contains(label));
+            Check(read >= 0 && stop > read && blow > read && !returned,
+                "on a burst boiler the plume stops emitting and goes on (its broken port leads to StopEmitting, not a return)");
+            var carried = stop >= 0 && Call("Drift", stop) > stop && Call(nameof(SteamVents.Step), stop) > stop && Call("Fly", stop) > stop;
+            var emitsItself = code.Any(i => i.operand is MethodInfo m && (m.Name == "BeginBeat" || m.Name == "ReleaseBeats" || m.Name == "Emit"));
+            var blowCode = HarmonyLib.PatchProcessor.GetOriginalInstructions(HarmonyLib.AccessTools.Method(plumeType, "Blow"));
+            var blows = blowCode.Any(i => i.operand is MethodInfo m && m.Name == "BeginBeat")
+                        && blowCode.Any(i => i.operand is MethodInfo m && m.Name == "ReleaseBeats");
+            Check(carried && !emitsItself && blows,
+                "after StopEmitting the smoke drifts, the vents' steam steps and the cinders fly, and only Blow emits");
+            var stopCode = HarmonyLib.PatchProcessor.GetOriginalInstructions(HarmonyLib.AccessTools.Method(plumeType, "StopEmitting"));
+            var cleared = new[] { "pendingBeatCount", "hazeDue", "plugSteamDue", "stokerCinders", "shakeCinders" }
+                .All(name => stopCode.Any(i => i.opcode == OpCodes.Stfld && Equals(i.operand, HarmonyLib.AccessTools.Field(plumeType, name))));
+            Check(cleared, "a burst boiler drops the beats still letting out steam and the haze and cinders waiting, so a renewed boiler starts clean");
+        }
+
         private static void CheckMatchSortingExclusions()
         {
             var plumeType = typeof(ChimneyPlume);

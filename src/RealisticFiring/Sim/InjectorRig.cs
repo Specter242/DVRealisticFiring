@@ -96,7 +96,8 @@ namespace RealisticFiring.Sim
             }
         }
 
-        public float BoilerPressure => Vessel(boiler)?.pressure ?? 1f;
+        /// <summary>The boiler's pressure, absolute bar: on a multiplayer guest, the host's (<see cref="BoilerReadout"/>).</summary>
+        public float BoilerPressure => BoilerReadout.Pressure(boiler);
 
         /// <summary>Where the safety valves lift, absolute bar: the boiler's working pressure.</summary>
         public float WorkingPressure => SafetyValveOpeningPressure(boiler);

@@ -1,3 +1,4 @@
+#if !PUBLIC_RELEASE
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -288,3 +289,4 @@ namespace RealisticFiring.Visuals
         }
     }
 }
+#endif

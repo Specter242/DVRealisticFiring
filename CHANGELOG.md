@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.25.1 (2026-11-21)
+
+- Fixed the fireman not working the stoker on stoker engines or the firing
+  valve on oil engines.
+- The chuffs are the game's own again while the realistic chuffs are
+  finished.
+- Bug fixes.
+
 ## 1.25.0 (2026-11-21)
 
 - **New: a working caboose stove.** Lay firewood and an oiled rag, light the

@@ -7,7 +7,9 @@ namespace RealisticFiring.Core
         /// <summary>Coal added to the plan per bar under the target, as a share of the firebox's capacity; twice that taken off per bar over it.</summary>
         public const float PressureGain = 0.1f;
 
-        // He learns from the gauge only with the fire within this share of his mark.
+        // He learns from the gauge only with the fire within this share of his
+        // mark; the stoker feeds all the burn he plans from this far short of
+        // it, and nothing from this far over.
         private const float AtMark = 0.15f;
 
         /// <summary>Lit, the fire is never thinner than this share of the capacity, nor thicker than the most.</summary>
@@ -128,13 +130,15 @@ namespace RealisticFiring.Core
         // Clinker in any zone over this share of its reference bed needs a clean.
         internal const float CleanClinkerShare = 0.25f;
 
-        // The stoker: he brings the fire to his mark over about this long, in
+        // The stoker: he feeds what he sees the bed burn, read over about
+        // BurnWatch s, and brings the fire to his mark over about StokerCatchUp
         // s; reverses a jam at this throttle; and sets the jets about the
         // working setting (master 1.4 bar, front, back, and fines part open),
         // the front and fines turned down as the work rises (the draft carries
         // the coal forward), and both ends steered toward where the bed runs
         // short. Shut, the master is left cracked so the table keeps cool.
         private const float StokerCatchUp = 40f;
+        private const float BurnWatch = 10f;
         private const float JamThrottle = 0.5f;
         private const float WorkingMaster = 0.35f;
         private const float WorkingFront = 0.6f;
@@ -175,6 +179,8 @@ namespace RealisticFiring.Core
         private float workClock;
         private float sinceShake;
         private float stokerHeavyTime, stokerReverseLeft, stokerReverseCooldown;
+        // How fast he sees the bed burn away, kg/s.
+        private float seenBurn;
         private bool blackStack, smokeCracked, smokeVented, checkingLight, pressureHigh;
         private readonly HeldSetting doorRest = new HeldSetting(SettingStep, SettingNotice, SettingDwell);
         private readonly HeldSetting damper = new HeldSetting(SettingStep, SettingNotice, SettingDwell);
@@ -199,7 +205,7 @@ namespace RealisticFiring.Core
             if (Mode == FiremanMode.Off || !(dt > 0f) || (fire.StarterMass > 0f && fire.BurningMass < 0.5f))
             {
                 roundLeft = 0;
-                stokerHeavyTime = stokerReverseLeft = stokerReverseCooldown = 0f;
+                stokerHeavyTime = stokerReverseLeft = stokerReverseCooldown = seenBurn = 0f;
                 blackStack = smokeCracked = smokeVented = checkingLight = pressureHigh = false;
                 doorRest.Reset();
                 damper.Reset();
@@ -284,6 +290,8 @@ namespace RealisticFiring.Core
             var mayFire = !WaitingOnSmoke && (!lifting || coal < least) && !warmingTooFast && !protectSuperheater;
             Stoking = r.HasStoker && (j.Working || boost >= BoostStokes && !coldBoiler) && fire.FireOn && !outOfWater
                       && Mode != FiremanMode.KeepAlive && mayFire;
+            // He watches the bed burn away (the startup boost's quicker burning with it).
+            seenBurn += (Math.Max(0f, fire.ConsumptionRate) - seenBurn) * Math.Min(1f, dt / BurnWatch);
             if (r.HasStoker)
                 Stoker(dt, fire, r, boost * rate, coal, ref actions);
 
@@ -387,7 +395,7 @@ namespace RealisticFiring.Core
             actions.FinesJet = WorkingFines;
         }
 
-        private void Stoker(float dt, FireModel fire, FiremanReadings r, float rate, float coal, ref FiremanActions actions)
+        private void Stoker(float dt, FireModel fire, FiremanReadings r, float planned, float coal, ref FiremanActions actions)
         {
             var clearTable = r.StokerTableLoaded && r.TenderWater > 0f && fire.FireOn;
             stokerReverseCooldown = Math.Max(0f, stokerReverseCooldown - dt);
@@ -424,8 +432,21 @@ namespace RealisticFiring.Core
                 }
                 return;
             }
+            // At his mark he feeds what he sees the bed burn, and brings the
+            // bed to the mark over StokerCatchUp. Short of it he feeds up to
+            // the burn he plans, for the work coming, all of it from AtMark
+            // short; over it he feeds less than the bed burns, none from AtMark
+            // over, and lets it burn down. Fed for the planned burn whatever
+            // the bed, a fire that burned less than he planned (the draft
+            // short of the plan, or the plan run past the fire's most) sat the
+            // shortfall times StokerCatchUp over his mark: the FEF-3's box
+            // filled to the brim at a third's work after a hard pull, the
+            // stoker never shut (a Nexus report, 1.25.0: "he'll trim it down
+            // to 35% but not fully off which leads to a constant building fire").
             var full = Math.Max(0.01f, r.StokerFullFeed);
-            actions.StokerThrottle = Clamp(rate / full + (CoalTarget - coal) / (full * StokerCatchUp), 0f, 1f);
+            var off = (coal - CoalTarget) / Math.Max(0.1f, AtMark * CoalTarget);
+            var feed = off >= 0f ? seenBurn * Math.Max(0f, 1f - off) : seenBurn + Math.Max(0f, planned - seenBurn) * Math.Min(1f, -off);
+            actions.StokerThrottle = Clamp(feed / full + (CoalTarget - coal) / (full * StokerCatchUp), 0f, 1f);
 
             // Where the bed runs short, front or back, he opens those jets and eases the others.
             var (front, back) = RowShortfalls(fire, CoalTarget);

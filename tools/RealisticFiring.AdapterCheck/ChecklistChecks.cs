@@ -27,6 +27,7 @@ namespace RealisticFiring.AdapterCheck
             CheckPrintedBooklet(check);
             CheckBookletStartingKit(check);
             CheckCardMigration(check);
+            CheckShopStock(check);
 
             // Tablet 5th page (Check) save/load & button layout.
             check(FiringTabletGadget.Pages == 5 && FiringTabletGadget.ChecklistPage == 4
@@ -180,6 +181,40 @@ namespace RealisticFiring.AdapterCheck
         {
             __result = new Dictionary<string, int>();
             return false;
+        }
+
+        // Whether the method's own code calls a method matching the test.
+        private static bool Calls(System.Reflection.MethodBase method, Func<System.Reflection.MethodBase, bool> target) =>
+            method != null && PatchProcessor.GetOriginalInstructions(method).Any(i => i.operand is System.Reflection.MethodBase m && target(m));
+
+        /// <summary>
+        /// Each item the mod sells carries a <see cref="DV.Shops.ShopRestocker"/>, which the game's purchase
+        /// marks and its load counts (job 3175: the checklists were bought without one, logging
+        /// "Missing ShopRestocker component" and never counted): the booklets made from the
+        /// unsold vehicle catalog get one, the tablet keeps the clinometer's or gets one, and the fire
+        /// iron keeps the shovel's.
+        /// </summary>
+        private static void CheckShopStock(Action<bool, string> check)
+        {
+            var keep = AccessTools.DeclaredMethod(typeof(ShopStock), nameof(ShopStock.Keep));
+            check(Calls(keep, m => m.Name == "AddComponent" && m.IsGenericMethod && m.GetGenericArguments()[0] == typeof(DV.Shops.ShopRestocker))
+                  && Calls(keep, m => m.Name == "GetComponent" && m.IsGenericMethod && m.GetGenericArguments()[0] == typeof(DV.Shops.ShopRestocker)),
+                "ShopStock.Keep adds a shop restocker to a template that has none");
+            bool Keeps(Type type, string method) => Calls(AccessTools.DeclaredMethod(type, method), m => m == keep);
+            check(Keeps(typeof(ChecklistBooklet), "Build") && Keeps(typeof(FiringTablet), "BuildTemplate"),
+                "the firing checklists and the firing tablet, both sold in the shops, are built with a shop restocker");
+            check(!Keeps(typeof(FiringManual), "Build") && !Calls(AccessTools.DeclaredMethod(typeof(PaperBooklet), nameof(PaperBooklet.Clone)), m => m == keep),
+                "the firing manual, never sold, is left without one, as the catalog it is made from");
+            var stripped = (string[])AccessTools.Field(typeof(FireIron), "ShovelComponents").GetValue(null);
+            check(stripped.Length > 0 && !stripped.Contains(nameof(DV.Shops.ShopRestocker)),
+                "the fire iron keeps the shovel's shop restocker: " + string.Join(", ", stripped) + " are taken off");
+            check(typeof(DV.Shops.ShopRestocker).GetCustomAttributes(typeof(RequireComponent), true).Cast<RequireComponent>()
+                      .Any(r => r.m_Type0 == typeof(ItemSaveData))
+                  && PatchProcessor.GetOriginalInstructions(AccessTools.EnumeratorMoveNext(
+                          AccessTools.DeclaredMethod(typeof(DV.Shops.GlobalShopController), "InstantiatePurchasedItems")))
+                      .Any(i => i.operand is System.Reflection.FieldInfo f && f.DeclaringType == typeof(DV.Shops.ShopRestocker) && f.Name == "restockOnItemDestroyed")
+                  && AccessTools.DeclaredMethod(typeof(DV.Shops.GlobalShopController), nameof(DV.Shops.GlobalShopController.UpdateItemStocksOnGameLoad)) != null,
+                "the game's purchase still marks a bought item through its ShopRestocker, saved with the item's ItemSaveData and counted on load");
         }
 
         /// <summary>A save holding the retired checklist card loads it as the booklet, wherever it was.</summary>

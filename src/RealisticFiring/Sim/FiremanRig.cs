@@ -341,8 +341,13 @@ namespace RealisticFiring.Sim
             Readings = readings;
             Actions = actions;
 
-            if (actions.Shovelful > 0f)
 #if !PUBLIC_RELEASE
+            // The whole statement inside the directive: with only its body
+            // inside, a public build made the coal fireman's work below that
+            // statement's body, done only on a tick he threw a shovelful
+            // (1.24.0 to 1.25.0: the stoker and its jets left where they were,
+            // the oil fireman's valves never worked).
+            if (actions.Shovelful > 0f)
                 awayWanted++;
 #endif
             if (CoalFireman != null)

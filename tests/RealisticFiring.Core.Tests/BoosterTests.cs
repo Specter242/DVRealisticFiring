@@ -220,4 +220,57 @@ public class BoosterTests
         Assert.InRange(lbPerHour, 8000f, 14000f);
         Assert.Equal(flow.CrankRpm / 60f * 4f, flow.BeatRate, 3);
     }
+
+    // The Engine page's row (F6 and the tablet): an idling booster, its latch
+    // down, read "up" before (audit 2026-11-21).
+    [Fact]
+    public void TheEnginePageSaysWhatTheBoosterIsDoing()
+    {
+        var booster = NewBooster();
+
+        var cold = Run(booster, In(latch: false), 1f);
+        Assert.Equal("down, cut out · warm 0%", BoosterReadout.Row(cold, false, booster.Warmth));
+
+        var idling = Run(booster, In(latch: false, idling: true), 180f);
+        Assert.Equal(BoosterState.Idling, idling.State);
+        Assert.Matches(@"^down, idling · warm \d+%$", BoosterReadout.Row(idling, false, booster.Warmth));
+        Assert.DoesNotContain("up", BoosterReadout.Row(idling, false, booster.Warmth));
+
+        Run(booster, In(latch: false), 20f);
+        var cocks = Run(booster, In(), 5f);
+        Assert.Equal(BoosterState.CocksOpen, cocks.State);
+        Assert.Matches(@"^up, cocks open · [\d,]+ lb$", BoosterReadout.Row(cocks, true, booster.Warmth));
+
+        var working = Run(booster, In(), 20f);
+        Assert.Equal(BoosterState.Working, working.State);
+        var pounds = (working.Force / BoosterReadout.NewtonsPerPound).ToString("#,0", System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Equal($"up, working · {pounds} lb", BoosterReadout.Row(working, true, booster.Warmth));
+        Assert.False(BoosterReadout.Urgent(working) || BoosterReadout.Watch(working));
+
+        var fast = Run(booster, In(speed: 40f * Mph), 1f);
+        Assert.True(fast.Overspeed);
+        Assert.EndsWith(" · OVERSPEED", BoosterReadout.Row(fast, true, booster.Warmth));
+        Assert.True(BoosterReadout.Urgent(fast));
+
+        var cutOut = booster.Step(Dt, In(cutoff: 0.5f, speed: 4f), SteamVolume);
+        Assert.StartsWith("down, cut out · warm ", BoosterReadout.Row(cutOut, false, booster.Warmth));
+    }
+
+    [Fact]
+    public void TheBoosterRowStaysShortEnoughForTheRow()
+    {
+        // Its most pull (the C-2 starts at 12,100 lb; 1,000 to 2,500 with its cocks open), with the longest
+        // warning each state can have: its cocks shut long before it could run fast enough to overspeed.
+        float Lb(float pounds) => pounds * BoosterReadout.NewtonsPerPound;
+        var longest = new[]
+        {
+            BoosterReadout.Row(new BoosterFlow { State = BoosterState.CocksOpen, Force = Lb(2500f), Priming = true, Slipping = true }, true, 1f),
+            BoosterReadout.Row(new BoosterFlow { State = BoosterState.Working, Force = Lb(12100f), Overspeed = true }, true, 1f),
+            BoosterReadout.Row(new BoosterFlow { State = BoosterState.Working, Force = Lb(12100f), Slipping = true }, true, 1f),
+            BoosterReadout.Row(new BoosterFlow { State = BoosterState.CutOut }, true, 1f),
+            BoosterReadout.Row(new BoosterFlow { State = BoosterState.Idling }, false, 1f),
+        };
+        // F6's value fits some 40 characters beside the label; the tablet's shrinks its type past about 34.
+        Assert.All(longest, text => Assert.InRange(text.Length, 1, 36));
+    }
 }

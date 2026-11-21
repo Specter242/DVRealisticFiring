@@ -315,6 +315,7 @@ namespace RealisticFiring
         public Upgrades.UpgradeRule S282Booster = Upgrades.UpgradeRule.BuyInCareer;
 
         [Header("Sound")]
+#if !PUBLIC_RELEASE
         [Draw("Realistic chuffs", Tooltip =
             "Each beat as loud as the steam it lets go, the soft and hard sounds\n" +
             "blending, each engine's own slightly uneven beat, a drifting engine's\n" +
@@ -324,6 +325,7 @@ namespace RealisticFiring
         [Draw("Chuff volume, %", DrawType.Slider, Min = 0, Max = 200, Precision = 0, Tooltip =
             "How loud the realistic chuffs are. 100 is normal; 0 is silent.")]
         public float ChuffVolume = 100f;
+#endif
 
         [Draw("Oil burner volume, ×", DrawType.Slider, Min = 0, Max = 2, Precision = 1, Tooltip = "The roar and drumming of the burner. 1 is normal volume; 0 is silent.")]
         public float OilBurnerVolume = 1f;
