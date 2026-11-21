@@ -11,35 +11,24 @@ namespace RealisticFiring
         private const float UsualHeight = 0.456f;
         private const float UsualFootAbove = 0.09f;
 
-        // Each cab's hole: its middle across, its foot, width, height, and its
-        // plane's place along the car, m, in the firing frame (FiringFrame:
-        // the car's, turned half about on an engine fired from the front).
-        private static readonly Dictionary<string, (float Middle, float Foot, float Width, float Height, float Plane)> Holes =
-            new Dictionary<string, (float, float, float, float, float)>
+        // Firehole geometry per livery lives in Sim.LocomotiveProfiles (in the
+        // firing frame: the car's, turned half about on an engine fired from
+        // the front).
+        private static bool TryProfileHole(string livery, out (float Middle, float Foot, float Width, float Height, float Plane) hole)
+        {
+            if (Sim.LocomotiveProfiles.TryGet(livery, out var profile) && profile.Firehole is Sim.FireholeSeat seat)
             {
-                ["LocoS282A"] = (0.010f, 1.720f, 0.450f, 0.456f, 0.054f),
-                ["LocoS060"] = (0.009f, 1.752f, 0.450f, 0.456f, -2.002f),
-                ["Jk3A"] = (0.000f, 1.448f, 0.450f, 0.365f, -2.351f),
-                ["FEF-3"] = (0.000f, 2.332f, 0.585f, 0.365f, -8.305f),
-                ["S484-840A"] = (0.000f, 2.422f, 0.585f, 0.365f, -8.274f),
-                ["S464-730"] = (0.000f, 2.344f, 0.630f, 0.365f, 0.109f),
-                // The 8F: fitted on the black livery; the grey is the same cab.
-                ["em_lms_8f_loc_black"] = (0.000f, 2.018f, 0.540f, 0.410f, -4.379f),
-                ["em_lms_8f_loc_grey"] = (0.000f, 2.018f, 0.540f, 0.410f, -4.379f),
-                ["S2102-870"] = (0.000f, 2.407f, 0.650f, 0.350f, -0.358f),
-                ["S2102-720"] = (0.000f, 2.312f, 0.763f, 0.517f, -3.550f),
-                ["em_fowler_4f_4027"] = (0.000f, 1.946f, 0.423f, 0.432f, -2.773f),
-                ["em_fowler_4f_44422"] = (0.000f, 1.946f, 0.423f, 0.432f, -2.773f),
-                ["S260N-580A"] = (-0.006f, 1.307f, 0.335f, 0.355f, -0.449f),
-                ["S040N-270"] = (-0.002f, 0.788f, 0.260f, 0.235f, -1.316f),
-                ["S0440NG-890"] = (0.004f, 1.404f, 0.450f, 0.428f, -1.144f),
-                ["S440NCF-400A"] = (0.001f, 1.183f, 0.450f, 0.324f, -1.408f),
-            };
+                hole = seat.AsTuple();
+                return true;
+            }
+            hole = default;
+            return false;
+        }
 
         // Holes set this session on the seating bench (Visuals.SeatingBench, a
-        // development tool), by livery, as Holes: they come first and are
-        // never saved. And the hole last worked out for a cab not fitted,
-        // kept only while the bench is open, for it to start from.
+        // development tool), by livery: they come first and are never saved.
+        // And the hole last worked out for a cab not fitted, kept only while
+        // the bench is open, for it to start from.
 #if !PUBLIC_RELEASE
         internal static readonly Dictionary<string, (float Middle, float Foot, float Width, float Height, float Plane)> DevHoles =
             new Dictionary<string, (float, float, float, float, float)>();
@@ -50,23 +39,23 @@ namespace RealisticFiring
             new Dictionary<string, (float, float, float, float, float)>();
 
         /// <summary>
-        /// <paramref name="livery"/>'s hole: the bench's, the table's, or the
+        /// <paramref name="livery"/>'s hole: the bench's, the profile's, or the
         /// one last worked out while aiming with the bench open; false before
         /// one is known.
         /// </summary>
         internal static bool TryHole(string livery, out (float Middle, float Foot, float Width, float Height, float Plane) hole) =>
 #if PUBLIC_RELEASE
-            Holes.TryGetValue(livery, out hole) || NativeHoles.TryGetValue(livery, out hole);
+            TryProfileHole(livery, out hole) || Sim.MakerFitRegistry.TryGetFirehole(livery, out hole) || NativeHoles.TryGetValue(livery, out hole);
 #else
-            DevHoles.TryGetValue(livery, out hole) || Holes.TryGetValue(livery, out hole) || NativeHoles.TryGetValue(livery, out hole) || LastUnfitted.TryGetValue(livery, out hole);
+            DevHoles.TryGetValue(livery, out hole) || TryProfileHole(livery, out hole) || Sim.MakerFitRegistry.TryGetFirehole(livery, out hole) || NativeHoles.TryGetValue(livery, out hole) || LastUnfitted.TryGetValue(livery, out hole);
 #endif
 
-        // The bench's hole, then the table's.
+        // The bench's hole, then the profile's.
         private static bool TryFitted(string livery, out (float Middle, float Foot, float Width, float Height, float Plane) hole) =>
 #if PUBLIC_RELEASE
-            Holes.TryGetValue(livery, out hole) || NativeHoles.TryGetValue(livery, out hole);
+            TryProfileHole(livery, out hole) || Sim.MakerFitRegistry.TryGetFirehole(livery, out hole) || NativeHoles.TryGetValue(livery, out hole);
 #else
-            DevHoles.Count > 0 && DevHoles.TryGetValue(livery, out hole) || Holes.TryGetValue(livery, out hole) || NativeHoles.TryGetValue(livery, out hole);
+            DevHoles.Count > 0 && DevHoles.TryGetValue(livery, out hole) || TryProfileHole(livery, out hole) || Sim.MakerFitRegistry.TryGetFirehole(livery, out hole) || NativeHoles.TryGetValue(livery, out hole);
 #endif
 
         // The QJ's shovel target reaches into the box. Its two closed door

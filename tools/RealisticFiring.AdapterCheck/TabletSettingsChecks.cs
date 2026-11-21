@@ -16,7 +16,7 @@ namespace RealisticFiring.AdapterCheck
     /// (the Comms Tablet's Settings app; Unity Mod Manager's window is
     /// <see cref="SettingsMenu"/>): the window's tabs as headings, in its
     /// order, with short labels and tooltips; no one-time actions, developer
-    /// settings, or saved state; the chimney's six left out while Realistic
+    /// settings, or saved state; the chimney's eight left out while Realistic
     /// Stack Effects draws the chimneys; the upgrade rules refitting the
     /// engines through OnChange; and a Settings.xml saved in the old order
     /// loading whole. With the Comms Tablet's assembly named, its own reader
@@ -24,25 +24,25 @@ namespace RealisticFiring.AdapterCheck
     /// </summary>
     internal static class TabletSettingsChecks
     {
-        private static readonly string[] Chimney = { "SmokeQuality", "SmokeSeason", "RealisticSmoke", "CustomSmokeEffects", "HeatShimmer", "EngineSteam" };
+        private static readonly string[] Chimney = { "SmokeQuality", "SmokeSeason", "SteamVisibility", "WindStrength", "HeatShimmer", "RealisticSmoke", "CustomSmokeEffects", "EngineSteam" };
 
         private static readonly string[] UpgradeRules = { "BrickArch", "OverFireJets", "AutomaticFireDoor", "SniftingValves", "DriftingValve", "ByPassValves", "S282Stoker", "S282FeedPump", "S282Booster" };
 
-        private static readonly string[] OneTime = { "GiveFireIron", "GiveFiringTablet", "GiveFiringManual", "GiveWoodCrate", "GiveRagTin", "RenewBoilerNow" };
+        private static readonly string[] OneTime = { "GiveFireIron", "GiveFiringTablet", "GiveFiringManual", "GiveFiringChecklists", "GiveWoodCrate", "GiveRagTin", "ShowAddedControls", "RenewBoilerNow" };
 
         // The window's tabs (its Controls split into On screen and Keys) and their rows, in order.
         private static readonly (string Heading, string[] Fields)[] Layout =
         {
             ("Display", new[] { "ShowZonedCoalBed", "FireboxQuality", "AshpanGlow" }.Concat(Chimney).ToArray()),
-            ("Firing", new[] { "ReplaceStockFireboxes", "LighterLightsCoal", "ShovelfulMass", "RainWetsCoal", "ClinkerTendency",
-                "AimShovelThroughDoor", "Aim", "ShowAimLabel", "ShowAimKeypad", "GrateLeverSensitivity" }),
+            ("Firing", new[] { "ReplaceStockFireboxes", "LighterLightsCoal", "ShovelfulMass", "StartupShovelBoost", "RainWetsCoal", "ClinkerTendency",
+                "AimShovelThroughDoor", "Aim", "ShowAimLabel", "ShowAimKeypad", "GrateLeverSensitivity", "CabooseStove" }),
             ("Boiler", new[] { "RealisticInjectors", "InjectorTechniqueAndHeat", "SeparateInjectorSteamValve",
-                "BoilerWaterImpurities", "BoilerWaterQuality", "FusiblePlugs" }),
-            ("Engine", new[] { "RealisticCylinders", "UnlistedLocomotives", "RealisticOilBurners", "FitBoosters", "FitFeedPumps" }
-                .Concat(UpgradeRules).Concat(new[] { "StokerJams", "ShowStokerJetValves" }).ToArray()),
-            ("Sound", new[] { "RealisticChuffs", "OilBurnerVolume", "FeedPumpVolume", "LowWaterAlarmVolume", "SteamVentVolume" }),
+                "BoilerWaterImpurities", "BoilerWaterQuality", "FusiblePlugs", "BoilerThermalShock", "SuperheaterCare" }),
+            ("Engine", new[] { "RealisticCylinders", "UnlistedLocomotives", "RealisticOilBurners", "FitBoosters", "FitFeedPumps", "StokerJams", "ShowStokerJetValves" }),
+            ("Upgrades", new[] { "UpgradeScope" }.Concat(UpgradeRules).ToArray()),
+            ("Sound", new[] { "RealisticChuffs", "ChuffVolume", "OilBurnerVolume", "FeedPumpVolume", "LowWaterAlarmVolume", "SteamVentVolume" }),
             ("On screen", new[] { "ShowOverlay", "ShowFiremanStatus", "HostHidesHud" }),
-            ("Keys", new[] { "OpenSettingsKey", "HandPumpKey", "ShakeGrateKey", "ToggleOverlayKey", "FiremanKey",
+            ("Keys", new[] { "OpenSettingsKey", "HandPumpKey", "ShakeGrateKey", "ToggleOverlayKey", "FiremanKey", "ShowControlsKey",
                 "FiremanOffKey", "FiremanKeepAliveKey", "FiremanShuntingKey", "FiremanRoadKey", "FiremanNextKey",
                 "FiremanHeavyAheadKey", "FiremanEasingOffKey" }),
         };
@@ -57,7 +57,7 @@ namespace RealisticFiring.AdapterCheck
             + "<ShovelfulMass>4.5</ShovelfulMass><Aim>Grate</Aim>"
             + "<OpenSettingsKey><keyCode>F9</keyCode><modifiers>0</modifiers></OpenSettingsKey>"
             + "<GrateLeverSensitivity>0.5</GrateLeverSensitivity>"
-            + "<GiveFireIron>true</GiveFireIron><GiveFiringTablet>true</GiveFiringTablet><GiveFiringManual>true</GiveFiringManual>"
+            + "<GiveFireIron>true</GiveFireIron><GiveFiringTablet>true</GiveFiringTablet><GiveFiringManual>true</GiveFiringManual><GiveFiringChecklists>true</GiveFiringChecklists><ShowAddedControls>true</ShowAddedControls>"
             + "<GiveWoodCrate>true</GiveWoodCrate><GiveRagTin>true</GiveRagTin>"
             + "<ShowOverlay>false</ShowOverlay><HostHidesHud>true</HostHidesHud><OverlayPage>2</OverlayPage>"
             + "<ShowZonedCoalBed>false</ShowZonedCoalBed><StokerJams>false</StokerJams>"
@@ -82,9 +82,14 @@ namespace RealisticFiring.AdapterCheck
                 + (tooLong.Count > 0 ? ": not " + string.Join(", ", tooLong.Select(d => d.Field.Name)) : ""));
             check(Chimney.All(name => drawn.Any(d => d.Field.Name == name && d.Draw.InvisibleOn == HandedOffRule))
                   && drawn.Where(d => !Chimney.Contains(d.Field.Name)).All(d => d.Draw.VisibleOn == null && d.Draw.InvisibleOn == null),
-                "the chimney's six, and only they, hide while Realistic Stack Effects draws the chimneys");
-            check(UpgradeRules.All(name => drawn.Any(d => d.Field.Name == name && d.Draw.Type == DrawType.ToggleGroup)),
-                "the five upgrade rules are on it, as choices");
+                "the chimney's eight, and only they, hide while Realistic Stack Effects draws the chimneys");
+            var heatDraw = drawn.Single(d => d.Field.Name == "HeatShimmer").Draw;
+            check(heatDraw.Label == "Heat shimmer", $"Heat shimmer applies live without a restart label ('{heatDraw.Label}')");
+            check(UpgradeRules.All(name => drawn.Any(d => d.Field.Name == name && d.Draw.Type == DrawType.ToggleGroup))
+                  && drawn.Any(d => d.Field.Name == "UpgradeScope" && d.Draw.Type == DrawType.ToggleGroup),
+                "the upgrade scope and nine upgrade rules are on it, as choices");
+            check(SettingsMenu.Pages.SequenceEqual(new[] { "DISPLAY", "FIRING", "BOILER", "ENGINE", "UPGRADES", "SOUND", "CONTROLS" }),
+                "the settings window separates career upgrades into their own UPGRADES tab");
             check(OneTime.All(name => typeof(Settings).GetField(name)?.GetCustomAttributes(typeof(XmlIgnoreAttribute), false).Length == 1),
                 "the window's one-time give and renew switches are never saved");
 
@@ -119,6 +124,10 @@ namespace RealisticFiring.AdapterCheck
                 settings.OnChange();
                 var quiet = RealisticFiring.Upgrades.Fittings.Version == version;
                 var refits = new List<int>();
+                settings.UpgradeScope = Core.UpgradeScope.PerLocomotive;
+                settings.OnChange();
+                settings.OnChange();
+                refits.Add(RealisticFiring.Upgrades.Fittings.Version - version);
                 foreach (var name in UpgradeRules)
                 {
                     var field = typeof(Settings).GetField(name);
@@ -127,8 +136,8 @@ namespace RealisticFiring.AdapterCheck
                     settings.OnChange();
                     refits.Add(RealisticFiring.Upgrades.Fittings.Version - version);
                 }
-                check(quiet && refits.SequenceEqual(Enumerable.Range(1, UpgradeRules.Length)),
-                    $"OnChange refits the engines once for each changed upgrade rule and not for other settings ({string.Join(", ", refits)})");
+                check(quiet && refits.SequenceEqual(Enumerable.Range(1, UpgradeRules.Length + 1)),
+                    $"OnChange refits the engines once for UpgradeScope and each changed upgrade rule and not for other settings ({string.Join(", ", refits)})");
                 var loaded = new Settings { BrickArch = RealisticFiring.Upgrades.UpgradeRule.NeverFitted };
                 version = RealisticFiring.Upgrades.Fittings.Version;
                 loaded.OnChange();
@@ -147,15 +156,16 @@ namespace RealisticFiring.AdapterCheck
             bool Kept(Settings s) => !s.ReplaceStockFireboxes && !s.RealisticInjectors && s.BoilerWaterQuality == Core.FeedWaterQuality.Bad
                 && s.ClinkerTendency == 2.5f && s.SteamVentVolume == 0.5f && s.SmokeQuality.ToString() == "Low"
                 && s.FireboxQuality == Core.FireboxQuality.Medium && s.SmokeSeason.ToString() == "Winter"
+                && s.SteamVisibility == 1f && s.WindStrength == 1f
                 && s.ShovelfulMass == 4.5f && s.Aim == ShovelAim.Grate && s.OpenSettingsKey.keyCode == KeyCode.F9
                 && s.GrateLeverSensitivity == 0.5f && !s.ShowOverlay && s.HostHidesHud && s.OverlayPage == 2 && !s.ShowZonedCoalBed
                 && !s.StokerJams && s.BrickArch == RealisticFiring.Upgrades.UpgradeRule.NeverFitted
                 && s.OverFireJets == RealisticFiring.Upgrades.UpgradeRule.AlwaysFitted
                 && s.S282Stoker == RealisticFiring.Upgrades.UpgradeRule.BuyInCareer
-                && s.S282Booster == RealisticFiring.Upgrades.UpgradeRule.NeverFitted && s.LogCoalDeliveries
+                && s.S282Booster == RealisticFiring.Upgrades.UpgradeRule.NeverFitted && s.UpgradeScope == Core.UpgradeScope.FleetWide && s.LogCoalDeliveries
                 && s.KeysVersion == 1 && s.DefaultsVersion == 3;
-            check(Kept(old) && !old.GiveFireIron && !old.GiveFiringTablet && !old.GiveFiringManual && !old.GiveWoodCrate && !old.GiveRagTin && !old.RenewBoilerNow,
-                "a Settings.xml in 1.23.0's order loads every value; the give and renew switches it kept on are not read");
+            check(Kept(old) && !old.GiveFireIron && !old.GiveFiringTablet && !old.GiveFiringManual && !old.GiveFiringChecklists && !old.GiveWoodCrate && !old.GiveRagTin && !old.ShowAddedControls && !old.RenewBoilerNow,
+                "a Settings.xml in 1.23.0's order loads every value; the give, spotlight, and renew switches it kept on are not read");
             string saved;
             using (var writer = new StringWriter())
             {
@@ -167,6 +177,20 @@ namespace RealisticFiring.AdapterCheck
                 again = (Settings)serializer.Deserialize(reader);
             check(Kept(again) && OneTime.All(name => !saved.Contains("<" + name)) && !saved.Contains("ChimneyHandedOff") && !saved.Contains("appliedRules"),
                 "saved again and loaded, it keeps every value, and writes no one-time switch or hand-off");
+            old.SteamVisibility = 1.7f;
+            old.WindStrength = 0.3f;
+            string customPlume;
+            using (var writer = new StringWriter())
+            {
+                serializer.Serialize(writer, old);
+                customPlume = writer.ToString();
+            }
+            using (var reader = new StringReader(customPlume))
+            {
+                var roundTripped = (Settings)serializer.Deserialize(reader);
+                check(Math.Abs(roundTripped.SteamVisibility - 1.7f) < 1e-5f && Math.Abs(roundTripped.WindStrength - 0.3f) < 1e-5f,
+                    $"non-default SteamVisibility ({roundTripped.SteamVisibility:F1}) and WindStrength ({roundTripped.WindStrength:F1}) round-trip cleanly");
+            }
         }
 
         /// <summary>The Comms Tablet's own reader (its ModSettingsLink.Walk), from its assembly: the rows it shows, with and without the hand-off.</summary>
@@ -206,9 +230,9 @@ namespace RealisticFiring.AdapterCheck
             check(alone.Select(r => r.Kind == "Heading" ? r.Label : r.Field).SequenceEqual(expected),
                 $"the Comms Tablet reads the window's tabs and rows, in order ({Count(alone)})");
             check(beside.Select(r => r.Kind == "Heading" ? r.Label : r.Field).SequenceEqual(expected.Where(e => !Chimney.Contains(e))),
-                $"with Realistic Stack Effects drawing the chimneys, it leaves out the chimney's six ({Count(beside)})");
+                $"with Realistic Stack Effects drawing the chimneys, it leaves out the chimney's eight ({Count(beside)})");
             check(alone.Where(r => UpgradeRules.Contains(r.Field)).All(r => r.Kind == "Choice") && alone.Count(r => UpgradeRules.Contains(r.Field)) == UpgradeRules.Length,
-                "and offers the five upgrade rules as choices");
+                "and offers the nine upgrade rules as choices");
         }
 
         private static IEnumerable<(string Heading, FieldInfo Field, DrawAttribute Draw)> Drawn()

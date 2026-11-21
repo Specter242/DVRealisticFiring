@@ -57,9 +57,9 @@ namespace RealisticFiring.AdapterCheck
             check(bound, "the Settings app's buttons bind as the Comms Tablet binds them: RealisticFiring.CommsTabletSettings, public and static, Actions and Act a pair, ActionHelp, no contract constant");
             var actions = CommsTabletSettings.Actions();
             var help = CommsTabletSettings.ActionHelp();
-            check(actions.SequenceEqual(new[] { "Give fire iron", "Give firewood crate", "Give rag tin", "Give firing manual" })
+            check(actions.SequenceEqual(new[] { "Give fire iron", "Give firewood crate", "Give rag tin", "Give firing manual", "Give firing checklists" })
                   && help.Length == actions.Length && help.All(h => !string.IsNullOrEmpty(h)) && CommsTabletSettings.Act(-1) == null && CommsTabletSettings.Act(actions.Length) == null,
-                $"the tablet's Settings app gets the four give actions, each with a line of help, and an action out of range does nothing ({string.Join(", ", actions)})");
+                $"the tablet's Settings app gets the five give actions, each with a line of help, and an action out of range does nothing ({string.Join(", ", actions)})");
             check(type.GetMethod("Actions") == null && type.GetMethod("Act") == null, "the guest app itself has no action members: they are the settings class's");
             var referenced = type.Assembly.GetReferencedAssemblies().Select(a => a.Name).ToList();
             check(!referenced.Contains(CommsTabletLink.HostAssembly), "the mod never references the Comms Tablet's assembly; they meet by reflection only");
@@ -70,7 +70,7 @@ namespace RealisticFiring.AdapterCheck
             check(areas.All(a => a.xMin >= screen.xMin && a.yMin >= screen.yMin && a.xMax <= screen.xMax && a.yMax <= screen.yMax)
                   && areas.SelectMany((a, i) => areas.Skip(i + 1), (a, b) => !a.Overlaps(b)).All(apart => apart)
                   && Items.FiringTabletPanel.Buttons == Items.FiringTabletGadget.Pages + 6,
-                "doubled for the Comms Tablet's screen, the four page tabs and six orders fit inside it and none overlap");
+                "doubled for the Comms Tablet's screen, the five page tabs and six orders fit inside it and none overlap");
 
             // The link: false with no Comms Tablet; with one, whatever it answers for this id.
             check(!CommsTabletLink.Merged, "without the Comms Tablet the firing tablet is not retired");

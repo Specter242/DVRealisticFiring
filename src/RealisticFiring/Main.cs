@@ -163,6 +163,7 @@ namespace RealisticFiring
             Step(modEntry, "Stack Effects link", () => StackEffectsLink.TryStart(modEntry));
             Step(modEntry, "stereo keyword", StereoKeyword.Install);
             Step(modEntry, "note of other firemen", Sim.FiremanRig.NoteRivals);
+            Step(modEntry, "maker fits", () => Sim.MakerFitRegistry.LoadFromModDirectory(modEntry.Path, modEntry.Logger.Log, modEntry.Logger.Warning));
             modEntry.Logger.Log(ReplacementEnabled
                 ? $"Realistic fireboxes enabled for {string.Join(", ", FireboxRegistry.SupportedLiveries)}"
                 : "Realistic fireboxes disabled; every loco keeps the stock firebox");

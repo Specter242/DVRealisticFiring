@@ -131,7 +131,10 @@ namespace RealisticFiring.Visuals
             if (!(opening > 0f))
                 return $"{label}: shut";
             if (index >= TryCockRig.TryCocks)
-                return $"{label}: open {opening * 100f:F0} %, blowing the glass through to its drain";
+            {
+                var sluggish = rig.Water != null && rig.Water.GlassChoke.IsSluggish ? " (sluggish)" : "";
+                return $"{label}: open {opening * 100f:F0} %, blowing the glass through to its drain{sluggish}";
+            }
             var flow = rig.Flow(index);
             string what;
             if (!flow.Flowing)

@@ -83,6 +83,7 @@ namespace RealisticFiring.Sim
         private readonly FiremanHand blower;
         private readonly FiremanHand damper;
         private readonly FiremanHand blowdown;
+        private readonly FiremanHand glassBlow;
         private readonly FiremanHand jets;
         private FiremanHand firingValve;
         private readonly FiremanHand atomizer;
@@ -141,10 +142,14 @@ namespace RealisticFiring.Sim
             // The valve port is there with the pump built, bought or not (an upgrade's), so his hand is ready once it is.
             pump = rig != null && rig.PumpValvePort != null ? new FiremanHand("feed pump", Control(rig.PumpValvePort), ValvePace) : null;
             blowdown = new FiremanHand("blowdown", Control(boiler.blowdownControl), LeverPace);
+            glassBlow = TryCockRig.TryGet(car, out var tryCocks)
+                ? new FiremanHand("glass cock", Control(tryCocks.PortOf(TryCockRig.GlassBottom)), LeverPace)
+                : null;
             blower = new FiremanHand("blower", exhaust != null ? Control(exhaust.blowerControl) : null, ValvePace);
             damper = new FiremanHand("damper", exhaust != null ? Control(exhaust.damperControl) : null, LeverPace);
             // The over-fire jets' globe valve, where the engine can have them.
-            jets = coal != null && flow.TryGetPort(RealisticFirebox.JetsControl.PortId, out var jetsPort, canBeNullOrEmpty: true)
+            jets = coal != null && coal.Character.Jets != null
+                   && flow.TryGetPort(RealisticFirebox.JetsControl.PortId, out var jetsPort, canBeNullOrEmpty: true)
                 ? new FiremanHand("over-fire jets", Control(jetsPort), ValvePace)
                 : null;
             if (OilFireman != null)
@@ -218,7 +223,7 @@ namespace RealisticFiring.Sim
         }
 
         private IEnumerable<FiremanHand> AllHands =>
-            new[] { door, injector, injectorSteam, pump, blower, damper, blowdown, firingValve, atomizer, heater, stokerThrottle, stokerLever }
+            new[] { door, injector, injectorSteam, pump, blower, damper, blowdown, glassBlow, firingValve, atomizer, heater, stokerThrottle, stokerLever }
                 .Concat(stokerJets ?? new FiremanHand[0])
                 .Where(h => h != null);
 
@@ -377,6 +382,7 @@ namespace RealisticFiring.Sim
             blower.Work(actions.Blower, clock);
             damper.Work(actions.Damper, clock);
             blowdown.Work(actions.Blowdown, clock);
+            glassBlow?.Work(actions.GlassBlowCock, clock);
             jets?.Work(actions.OverFireJets, clock);
 #if !PUBLIC_RELEASE
             LogAway(dt, readings);
@@ -481,6 +487,13 @@ namespace RealisticFiring.Sim
             var injectorState = jet != null ? jet.State
                 : injector.Port != null && injector.Port.Value > InjectorSpec.OpenThreshold ? InjectorState.Working : InjectorState.Off;
             var stokerModel = stoker != null && stoker.ThrottlePort != null ? stoker.Model : null;
+            var thermalShockEnabled = water != null ? water.ThermalShockActive : (Main.Settings == null || Main.Settings.BoilerThermalShock);
+            var hasSuperheater = EngineSuperheater.TryGet(Car, out var sh);
+            var superheaterCareEnabled = hasSuperheater ? sh.SuperheaterCareActive : (Main.Settings == null || Main.Settings.SuperheaterCare);
+            var hasGlassCocks = water != null && water.HasGlassCocks;
+            var trueGlass = hasGlassCocks && water.HasTrueSurface
+                ? (water.TrueSurfaceLevel - crown) / (outlet - crown)
+                : (level - crown) / (outlet - crown);
             return new FiremanReadings
             {
                 Pressure = pressure,
@@ -526,7 +539,21 @@ namespace RealisticFiring.Sim
                 StokerFullFeed = stokerModel != null ? stokerModel.Spec.MaxFeedRate : 0f,
                 Sand = OilFirebox != null ? SandAvailable() : 0f,
                 Solids = water != null ? water.Water.Concentration : 0f,
+                FoamingSolids = water != null && Main.Settings.BoilerWaterImpurities ? water.Water.FoamingConcentration : 0f,
+                HasGlassCocks = hasGlassCocks,
+                GlassChoke = hasGlassCocks ? water.GlassChoke.Choke : 0f,
+                GlassBlowing = hasGlassCocks && water.GlassChoke.Blowing,
+                TimeSinceGlassBlow = hasGlassCocks ? water.GlassChoke.TimeSinceBlowThrough : 0f,
+                HasTryCockGlass = hasGlassCocks && water.HasTrueSurface,
+                TryCockGlass = trueGlass,
                 ShovelMass = ShovelfulMass(),
+                BoilerTemperature = water != null ? water.WaterTemperature : 0f,
+                ThermalShockEnabled = thermalShockEnabled,
+                WarmingTooFast = thermalShockEnabled && water != null && water.ThermalShock.WarmingTooFast,
+                SuperheaterCareEnabled = superheaterCareEnabled,
+                SuperheaterHot = superheaterCareEnabled && hasSuperheater && !sh.Model.Spec.Saturated
+                    && (sh.Model.Overheating || sh.Model.ApproachingOverheat
+                        || throttle < Drifting.CrackedThrottle && sh.Model.WantsDamperCheck),
             };
         }
 

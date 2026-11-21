@@ -19,32 +19,6 @@ namespace RealisticFiring.Sim
             LowWaterAlarm,
         }
 
-        private static readonly Dictionary<string, Guard> Guards = new Dictionary<string, Guard>
-        {
-            ["LocoS282A"] = Guard.FusiblePlug,
-            ["LocoS060"] = Guard.FusiblePlug,
-            ["S464-730"] = Guard.LowWaterAlarm,
-            ["S484-840A"] = Guard.FusiblePlug,
-            ["FEF-3"] = Guard.FusiblePlug,
-            // British practice: lead plugs in the firebox crown.
-            ["em_lms_8f_loc_black"] = Guard.FusiblePlug,
-            ["em_lms_8f_loc_grey"] = Guard.FusiblePlug,
-            ["em_fowler_4f_44422"] = Guard.FusiblePlug,
-            ["em_fowler_4f_4027"] = Guard.FusiblePlug,
-            // China Railways QJ: fusible plugs in the crown sheet (three, by an
-            // ex-crewman; the LV it came from had two).
-            ["S2102-870"] = Guard.FusiblePlug,
-            // Prussian T 20: none named in the 1924 descriptions; German rules
-            // had one or more fusible plugs in the crown sheet.
-            ["S2102-720"] = Guard.FusiblePlug,
-            // BorING's narrow-gauge engines: the plug many American roads fitted
-            // (none found for their prototypes).
-            ["S260N-580A"] = Guard.FusiblePlug,
-            ["S040N-270"] = Guard.FusiblePlug,
-            ["S0440NG-890"] = Guard.FusiblePlug,
-            ["S440NCF-400A"] = Guard.FusiblePlug,
-        };
-
         /// <summary>What players near the loco are told when its plug melts.</summary>
         public const string PlugMeltedNotice = "The fusible plug has melted: steam is blowing into the firebox and has put the fire out. " +
                                                "Have the engine repaired at a service station, or wash out the boiler with a shed stand's water hose (boiler cold), to renew it.";
@@ -65,6 +39,12 @@ namespace RealisticFiring.Sim
         private const string ScaleKey = "rfScale";
         private const string SootKey = "rfSoot";
         private const string FoulingWearKey = "rfFoulingWear";
+        private const string ThermalShockWearKey = "rfThermalShockWear";
+        private const string ThermalShockEngineWearKey = "rfThermalShockEngineWear";
+        private const string SuperheaterEngineWearKey = "rfSuperheaterEngineWear";
+        private const string GlassChokeKey = "rfGlassChoke";
+        private const string GlassColumnKey = "rfGlassColumn";
+        private const string GlassBlowAgeKey = "rfGlassBlowAge";
 
         // The heating surface for each m³ of boiler (inferred: the USRA light
         // Mikado's some 280 m² in a boiler of the S282's 17 m³).
@@ -116,6 +96,8 @@ namespace RealisticFiring.Sim
             AccessTools.FieldRefAccess<Boiler, float>("minimumExplosionPressure");
         private static readonly AccessTools.FieldRef<SimComponent, SimGameParams> GameParams =
             AccessTools.FieldRefAccess<SimComponent, SimGameParams>("gameParams");
+        private static readonly AccessTools.FieldRef<DamageController, GameParams> DamageGameParams =
+            AccessTools.FieldRefAccess<DamageController, GameParams>("gameParams");
 
         private static readonly Dictionary<Boiler, BoilerWaterRig> ByBoiler = new Dictionary<Boiler, BoilerWaterRig>();
         private static readonly Dictionary<TrainCar, BoilerWaterRig> ByCar = new Dictionary<TrainCar, BoilerWaterRig>();
@@ -131,6 +113,7 @@ namespace RealisticFiring.Sim
         private float fed;
         private float blown;
         private float pendingVent;
+        private float pendingTubeLeak;
         private float pendingCockWater;
         private float pendingCockSteam;
         private bool wasOn;
@@ -138,10 +121,17 @@ namespace RealisticFiring.Sim
         private float bodyHealth = float.NaN;
         private float engineHealth = float.NaN;
         private int ticks;
-        // The engine's health charged now for the fouling, and the drifting
-        // wear not yet charged.
+        // The engine's health charged now for fouling, thermal shock, and
+        // superheater wear, and the drifting wear not yet charged.
         private float foulingWear;
+        private float thermalShockWear;
+        private float superheaterWear;
         private float driftWear;
+        private bool? mirroredThermalShockActive;
+        private bool hasMirroredImpurities;
+        private bool mirroredImpuritiesOn;
+        private float mirroredFoam;
+        private float mirroredFoamingPpm;
 
         private BoilerWaterRig(TrainCar car, Boiler boiler, ReciprocatingSteamEngine engine, Guard guard)
         {
@@ -156,6 +146,7 @@ namespace RealisticFiring.Sim
                 Alarm = new LowWaterAlarm();
             knownVessel = vessel;
             TrueLevel = boiler.waterLevelReadOut.Value;
+            TrueSurfaceLevel = TrueLevel;
             wasOn = Main.Settings.BoilerWaterImpurities;
             var carried = SpawnWaterMass != null ? (float)SpawnWaterMass.GetValue(boiler) : vessel != null ? vessel.mass : 0f;
             Steel = new BoilerMetal(carried, vessel != null ? vessel.waterTemp : AmbientWater);
@@ -169,6 +160,38 @@ namespace RealisticFiring.Sim
 
         /// <summary>Soot in the tubes and scale on the water side.</summary>
         public BoilerFouling Fouling { get; } = new BoilerFouling();
+
+        /// <summary>Thermal stress and tube/stay leak wear from forcing a cold boiler too fast.</summary>
+        public BoilerThermalShock ThermalShock { get; } = new BoilerThermalShock();
+
+        /// <summary>Water/steam currently weeping from strained tubes/stays, in kg/s.</summary>
+        public float TubeLeakRate { get; internal set; }
+
+        /// <summary>
+        /// Whether boiler thermal-shock care is active for this boiler: the
+        /// host's mirrored setting on a multiplayer guest, otherwise local settings.
+        /// </summary>
+        public bool ThermalShockActive =>
+            mirroredThermalShockActive ?? (Main.Settings == null || Main.Settings.BoilerThermalShock);
+
+        /// <summary>Share of fire heat lost through strained tubes/stays (0 when thermal shock care is off).</summary>
+        public float ThermalShockEfficiencyLoss =>
+            ThermalShockActive ? ThermalShock.EfficiencyLoss : 0f;
+
+        /// <summary>Applies host-authoritative thermal-shock state on a multiplayer guest.</summary>
+        internal void MirrorThermalShock(float wear, float stress, bool warmingTooFast, float tubeLeakRate, bool active)
+        {
+            mirroredThermalShockActive = active;
+            ThermalShock.Mirror(wear, stress, warmingTooFast);
+            ThermalShock.SetEnabled(active);
+            TubeLeakRate = active ? Mathf.Max(0f, tubeLeakRate) : 0f;
+        }
+
+        /// <summary>Lower-passage choking and blow-through drawdown on the cab gauge glass.</summary>
+        public GaugeGlassChoke GlassChoke { get; } = new GaugeGlassChoke();
+
+        /// <summary>Whether this locomotive has glass blow-through cocks and try cocks.</summary>
+        public bool HasGlassCocks => TryCocks != null;
 
         /// <summary>The boiler's heating surface, m².</summary>
         public float HeatingSurface => TotalVolume(boiler) / 1000f * HeatingSurfacePerVolume;
@@ -200,8 +223,38 @@ namespace RealisticFiring.Sim
         /// <summary>The water level over the crown sheet as it is, tilt included, 0 to 1.</summary>
         public float TrueLevel { get; private set; }
 
-        /// <summary>The level the glass shows, foam included.</summary>
+        /// <summary>Whether <see cref="TrueSurfaceLevel"/> has been computed on the host or mirrored to a guest.</summary>
+        public bool HasTrueSurface { get; private set; }
+
+        /// <summary>True boiler water surface at the backhead (true level + swell + foam), unaffected by glass choking.</summary>
+        public float TrueSurfaceLevel { get; private set; }
+
+        /// <summary>The level the glass column stands at, foam, swell, and choking included (without transient blow-through drawdown).</summary>
         public float GlassLevel => boiler.waterLevelReadOut.Value;
+
+        /// <summary>Whether boiler water impurities are active on this boiler (the host's setting on a multiplayer guest).</summary>
+        public bool ImpuritiesActive =>
+            hasMirroredImpurities ? mirroredImpuritiesOn
+            : Main.Settings != null && Main.Settings.BoilerWaterImpurities;
+
+        /// <summary>Current boiler water foam (0 to 1), on host or mirrored on a multiplayer guest; 0 when impurities are off.</summary>
+        public float FoamNow => !ImpuritiesActive ? 0f : hasMirroredImpurities ? mirroredFoam : Water.Foam;
+
+        /// <summary>Current foaming concentration (ppm), on host or mirrored on a multiplayer guest; 0 when impurities are off.</summary>
+        public float FoamingConcentrationNow => !ImpuritiesActive ? 0f : hasMirroredImpurities ? mirroredFoamingPpm : Water.FoamingConcentration;
+
+        /// <summary>Applies the host's mirrored boiler impurities state, surface, foam, and gauge glass choke state on a multiplayer guest.</summary>
+        internal void MirrorGlass(bool impuritiesActive, bool hasSurface, float trueSurface, float foam, float foamingPpm, float choke, float column, float blowAge, bool blowing)
+        {
+            hasMirroredImpurities = true;
+            mirroredImpuritiesOn = impuritiesActive;
+            HasTrueSurface = hasSurface;
+            if (hasSurface)
+                TrueSurfaceLevel = trueSurface;
+            mirroredFoam = impuritiesActive ? foam : 0f;
+            mirroredFoamingPpm = impuritiesActive ? foamingPpm : 0f;
+            GlassChoke.Mirror(impuritiesActive ? choke : 0f, column, impuritiesActive ? blowAge : 0f, blowing);
+        }
 
         /// <summary>The boiler readout used by the cab's calibrated gauge glass.</summary>
         public string WaterLevelPortId => boiler.waterLevelReadOut.id;
@@ -258,6 +311,11 @@ namespace RealisticFiring.Sim
             }
         }
 
+        internal static Guard GuardFor(string livery) =>
+            LocomotiveProfiles.TryGet(livery, out var profile) ? profile.LowWaterGuard
+            : MakerFitRegistry.TryGetLowWaterGuard(livery, out var maker) ? maker
+            : Guard.None;
+
         /// <summary>
         /// Sets up the water of each boiler on <paramref name="car"/>. Returns a
         /// line for the log, or null when the car has no boiler.
@@ -269,7 +327,7 @@ namespace RealisticFiring.Sim
                 return null;
             var engine = flow.OrderedSimComps.OfType<ReciprocatingSteamEngine>().FirstOrDefault();
             var livery = car != null && car.carLivery != null ? car.carLivery.id : null;
-            var guard = livery != null && Guards.TryGetValue(livery, out var fitted) ? fitted : Guard.None;
+            var guard = GuardFor(livery);
             // A plug needs a firebox it can drown, and the injector rig whose
             // water hose washes the boiler out to renew it.
             if (guard == Guard.FusiblePlug && (!Main.Session.FusiblePlugs || !FireboxRegistry.TryGet(car, out _) || !InjectorRig.TryGet(car, out _)))
@@ -328,6 +386,7 @@ namespace RealisticFiring.Sim
             knownVessel = vessel;
             Water.Washout(vessel != null ? vessel.mass : 0f);
             Fouling.Washout();
+            GlassChoke.Reset();
             Plug?.Renew(vessel != null ? vessel.waterTemp : 20f);
             PlugVent = 0f;
             SetDrowning(0f);
@@ -369,19 +428,63 @@ namespace RealisticFiring.Sim
                 Washout();
                 ChillIfCold();
                 Settle(vessel);
+                if (!Net.IsClient)
+                    ThermalShock.ResetTransient();
             }
             if (vessel != null && vessel.mass > 0f)
             {
                 vessel.AddEnergy(Steel.Exchange(delta, vessel.waterTemp, vessel.mass * BoilerMetal.WaterHeat));
-                // What soot and scale keep from the water goes up the stack.
-                var lost = FoulingLoss;
+                // What soot, scale, and thermal-shock tube leaks keep from the water goes up the stack.
+                var lost = Mathf.Min(1f, FoulingLoss + ThermalShockEfficiencyLoss);
                 if (lost > 0f && delta > 0f)
                     vessel.AddEnergy(-Mathf.Max(0f, boiler.heat.Value) * delta * lost);
+                StepThermalShock(delta, vessel);
             }
             else if (vessel != null)
+            {
                 CoolEmpty(delta);
+                if (!Net.IsClient)
+                {
+                    ThermalShock.ResetTransient();
+                    TubeLeakRate = 0f;
+                }
+            }
             ChargeWear(delta);
             massAtTick = vessel != null ? vessel.mass : 0f;
+        }
+
+        private float StartupBoost() =>
+            Car != null && FireboxRegistry.TryGet(Car, out var coal) ? coal.StartupMultiplier
+            : Car != null && RealisticOilFirebox.TryGet(Car, out var oil) ? oil.StartupBoost
+            : 1f;
+
+        private void StepThermalShock(float delta, WaterPressureVessel vessel)
+        {
+            if (Net.IsClient || !(delta > 0f))
+                return;
+            var enabled = Main.Settings == null || Main.Settings.BoilerThermalShock;
+            var directSteaming = InjectorRig.TryGet(boiler, out var injectors) && (injectors.Steaming || injectors.SteamedLastStep > 0f);
+            var working = engine != null
+                && engine.throttleControl.Value >= Drifting.CrackedThrottle
+                && (engine.intakeFlowReadOut.Value > 0.05f * Mathf.Max(0.5f, engine.maxFlowReadOut.Value)
+                    || engine.exhaustFlowReadOut.Value > 0.05f * Mathf.Max(0.5f, engine.maxFlowReadOut.Value)
+                    || Car != null && Mathf.Abs(Car.GetForwardSpeed()) > 0.5f);
+            ThermalShock.Step(delta, new BoilerThermalShockInputs
+            {
+                BoilerTemperature = vessel.waterTemp,
+                StartupMultiplier = StartupBoost(),
+                Working = working,
+                DirectSteaming = directSteaming,
+                Enabled = enabled,
+            });
+            TubeLeakRate = enabled ? ThermalShock.LeakRate(vessel.pressure) : 0f;
+            if (!(TubeLeakRate > 0f))
+                return;
+            pendingTubeLeak += TubeLeakRate * delta;
+            if (pendingTubeLeak < RealisticStoker.SteamLot)
+                return;
+            vessel.RemoveWater(Mathf.Min(pendingTubeLeak, vessel.mass));
+            pendingTubeLeak = 0f;
         }
 
         // A drained boiler has no water to carry the stock exterior heat
@@ -401,29 +504,73 @@ namespace RealisticFiring.Sim
                 rig.CoolEmpty(seconds);
         }
 
-        // The engine's wear: the fouling's share as it stands, charged or given
-        // back, and drifting hooked up. The host's sim charges it.
+        // DV's damage-sensitivity difficulty modifier (1 on Standard, 0 with damage off).
+        private float DamageSensitivity()
+        {
+            var gp = damage != null ? DamageGameParams(damage) : null;
+            return gp != null ? Mathf.Max(0f, gp.DamageSensitivityModifier) : 1f;
+        }
+
+        // Charges or refunds a tracked share of mechanicalPT health, recording
+        // only the hit points actually removed by ApplyDamage (when clamped at
+        // 0 or ignored), so disabling care or calling Renew can never refund
+        // more HP than was actually removed or repair unrelated engine wear.
+        private static void ApplyTrackedWear(TrainDamage train, float target, ref float tracked)
+        {
+            if (!(train.fullHitPoints > 0f))
+                return;
+            var change = Mathf.Max(0f, target) - tracked;
+            if (change >= LeastWear)
+            {
+                var before = train.CurrentHitPoints;
+                if (!(before > 0f))
+                    return;
+                train.ApplyDamage(train.fullHitPoints * change);
+                var actualRemoved = Mathf.Max(0f, before - train.CurrentHitPoints);
+                tracked += actualRemoved / train.fullHitPoints;
+            }
+            else if (change <= -LeastWear)
+            {
+                var refund = Mathf.Min(tracked, -change);
+                if (refund >= LeastWear)
+                {
+                    train.RepairDamage(train.fullHitPoints * refund);
+                    tracked = Mathf.Max(0f, tracked - refund);
+                }
+            }
+        }
+
+        // The engine's wear: the fouling's, thermal shock's, and superheater's
+        // shares as they stand, scaled by DV's damage sensitivity and charged
+        // or given back, plus drifting hooked up. The host's sim charges it.
         private void ChargeWear(float delta)
         {
+            if (Net.IsClient)
+                return;
             if (engine != null && Car != null && delta > 0f)
                 driftWear += Drifting.Wear(engine.throttleControl.Value, engine.reverserControl.Value, Car.GetForwardSpeed(), Drift) * delta;
             var train = damage != null ? damage.mechanicalPT : null;
-            if (train == null || Net.IsClient)
+            if (train == null)
                 return;
             // A paid engine standing with its fire in: its soot wear waits
             // (Patches.ServiceGrace), charged once the grace ends.
             if (Patches.ServiceGrace.Holds(Car))
                 return;
-            var change = WearPerLoss * FoulingLoss - foulingWear;
-            if (change >= LeastWear)
-                train.ApplyDamage(train.fullHitPoints * change);
-            else if (change <= -LeastWear)
-                train.RepairDamage(train.fullHitPoints * -change);
-            if (Mathf.Abs(change) >= LeastWear)
-                foulingWear += change;
+            var sensitivity = DamageSensitivity();
+            ApplyTrackedWear(train, Mathf.Min(1f, WearPerLoss * FoulingLoss * sensitivity), ref foulingWear);
+            var shockEnabled = Main.Settings == null || Main.Settings.BoilerThermalShock;
+            var shockTarget = shockEnabled ? Mathf.Min(1f, BoilerThermalShock.EngineWearWeight * ThermalShock.Wear * sensitivity) : 0f;
+            ApplyTrackedWear(train, shockTarget, ref thermalShockWear);
+            var superheaterEnabled = Main.Settings == null || Main.Settings.SuperheaterCare;
+            var superheaterTarget = superheaterEnabled && engine != null && EngineSuperheater.TryGet(engine, out var superheater)
+                ? Mathf.Min(1f, Superheater.EngineWearWeight * superheater.Model.Wear * sensitivity)
+                : 0f;
+            ApplyTrackedWear(train, superheaterTarget, ref superheaterWear);
             if (driftWear >= LeastWear)
             {
-                train.ApplyDamage(train.fullHitPoints * driftWear);
+                var driftCharge = driftWear * sensitivity;
+                if (driftCharge > 0f)
+                    train.ApplyDamage(train.fullHitPoints * driftCharge);
                 driftWear = 0f;
             }
             // Its own charges are not a repair.
@@ -457,16 +604,33 @@ namespace RealisticFiring.Sim
             var repaired = ticks >= RepairWatchFrom
                            && (body > bodyHealth + RepairRise && body > RepairedHealth
                                || engine > engineHealth + RepairRise && engine > RepairedHealth);
-            // A repair of the engine is the shed's work on the boiler too: the
-            // tubes cleaned and the scale chipped out, for the share of the
-            // engine's wear repaired.
-            if (ticks >= RepairWatchFrom && engine > engineHealth + RepairRise && FoulingLoss > 0f)
+            // A repair of the engine is the shed's work on the boiler and
+            // superheater too: tubes cleaned/re-expanded, scale chipped out,
+            // and cooked superheater elements renewed for the share repaired.
+            if (ticks >= RepairWatchFrom && engine > engineHealth + RepairRise)
             {
                 var share = Mathf.Clamp01((engine - engineHealth) / Mathf.Max(1e-4f, 1f - engineHealth));
-                Fouling.Clean(share);
-                foulingWear *= 1f - share;
-                if (share > 0.99f)
-                    Log("engine repaired: tubes cleaned and the boiler descaled");
+                var repairedBoiler = false;
+                if (FoulingLoss > 0f)
+                {
+                    Fouling.Clean(share);
+                    foulingWear *= 1f - share;
+                    repairedBoiler = true;
+                }
+                if (ThermalShock.Wear > 0f || thermalShockWear > 0f)
+                {
+                    ThermalShock.Repair(share);
+                    thermalShockWear *= 1f - share;
+                    repairedBoiler = true;
+                }
+                if (this.engine != null && EngineSuperheater.TryGet(this.engine, out var superheater) && (superheater.Model.Wear > 0f || superheaterWear > 0f))
+                {
+                    superheater.Model.Repair(share);
+                    superheaterWear *= 1f - share;
+                    repairedBoiler = true;
+                }
+                if (repairedBoiler && share > 0.99f)
+                    Log("engine repaired: boiler tubes, scale, and superheater elements restored");
             }
             ticks++;
             bodyHealth = body;
@@ -487,6 +651,27 @@ namespace RealisticFiring.Sim
             var vessel = new WaterPressureVessel(TotalVolume(boiler), (float)SpawnPressure.GetValue(boiler), (float)SpawnWaterMass.GetValue(boiler));
             Vessel(boiler) = vessel;
             CrownSheetTemperature(boiler) = vessel.waterTemp;
+            ThermalShock.Repair(1f);
+            ThermalShock.ResetTransient();
+            pendingTubeLeak = 0f;
+            TubeLeakRate = 0f;
+            if (engine != null && EngineSuperheater.TryGet(engine, out var superheater))
+                superheater.Model.Repair(1f);
+            // Credit back any tracked boiler/superheater engine-wear charge so a
+            // body-only repair or recovery renew never leaves orphaned damage on
+            // mechanicalPT (after a full engine repair NoteHealth already zeroed both).
+            if (damage == null && Car != null)
+                damage = Car.GetComponent<DamageController>();
+            var train = damage != null ? damage.mechanicalPT : null;
+            if (train != null && !Net.IsClient)
+            {
+                var refund = Mathf.Max(0f, thermalShockWear) + Mathf.Max(0f, superheaterWear);
+                if (refund >= LeastWear)
+                    train.RepairDamage(train.fullHitPoints * refund);
+                thermalShockWear = 0f;
+                superheaterWear = 0f;
+                engineHealth = train.HealthPercentage;
+            }
             Log($"{why}: the boiler renewed" + (Plug != null ? " with a new fusible plug" : ""));
             return true;
         }
@@ -588,29 +773,65 @@ namespace RealisticFiring.Sim
                 wasOn = on;
                 if (on && vessel != null)
                     Water.Washout(vessel.mass);
+                if (!on)
+                    GlassChoke.Clear();
             }
+            float surface;
             if (!on || vessel == null || !(delta > 0f))
             {
                 fed = blown = 0f;
-                boiler.waterLevelReadOut.Value = TrueLevel + Swell.Rise;
-                return;
+                surface = TrueLevel + Swell.Rise;
             }
-
-            Water.Quality = Main.Settings.BoilerWaterQuality;
-            var maxFlow = engine != null ? engine.maxFlowReadOut.Value : 0f;
-            var raw = vessel.waterVolume / Mathf.Max(1f, TotalVolume(boiler)) - coldDrop;
-            Water.Step(delta, new BoilerWaterInputs
+            else
             {
-                WaterMass = vessel.mass,
-                Fed = fed,
-                BlownDown = blown,
-                Work = maxFlow > 0f ? Mathf.Clamp01(boiler.steamConsumption.Value / maxFlow) : 0f,
-                Fullness = Mathf.InverseLerp(CrownSheetLevel(boiler), boiler.steamOutletNormalizedWaterLevel, raw + Swell.Rise),
-            });
-            fed = blown = 0f;
+                Water.Quality = Main.Settings.BoilerWaterQuality;
+                var maxFlow = engine != null ? engine.maxFlowReadOut.Value : 0f;
+                var raw = vessel.waterVolume / Mathf.Max(1f, TotalVolume(boiler)) - coldDrop;
+                Water.Step(delta, new BoilerWaterInputs
+                {
+                    WaterMass = vessel.mass,
+                    Fed = fed,
+                    BlownDown = blown,
+                    Work = maxFlow > 0f ? Mathf.Clamp01(boiler.steamConsumption.Value / maxFlow) : 0f,
+                    Fullness = Mathf.InverseLerp(CrownSheetLevel(boiler), boiler.steamOutletNormalizedWaterLevel, raw + Swell.Rise),
+                });
+                fed = blown = 0f;
 
-            boiler.outletSteamQualityReadOut.Value *= 1f - Water.Carryover;
-            boiler.waterLevelReadOut.Value = TrueLevel + Water.GlassRise + Swell.Rise;
+                boiler.outletSteamQualityReadOut.Value *= 1f - Water.Carryover;
+                surface = TrueLevel + Water.GlassRise + Swell.Rise;
+            }
+            hasMirroredImpurities = false;
+            TrueSurfaceLevel = surface;
+            HasTrueSurface = true;
+
+            if (TryCocks != null && delta > 0f)
+            {
+                var waterMass = vessel != null ? Mathf.Max(1f, vessel.mass) : 1f;
+                var maxFlow = engine != null ? engine.maxFlowReadOut.Value : 0f;
+                GlassChoke.Step(delta, new GaugeGlassChokeInputs
+                {
+                    SurfaceLevel = surface,
+                    GlassBottom = TryCocks.Levels[TryCockRig.GlassBottom],
+                    GlassTop = TryCocks.Levels[TryCockRig.GlassTop],
+                    ImpuritiesEnabled = on && vessel != null,
+                    FoamingConcentration = on ? Water.FoamingConcentration : 0f,
+                    SuspendedSludgePpm = on ? Water.SuspendedSludge / waterMass * 1e6f : 0f,
+                    Foam = on ? Water.Foam : 0f,
+                    Work = maxFlow > 0f ? Mathf.Clamp01(boiler.steamConsumption.Value / maxFlow) : 0f,
+                    Pressure = vessel != null ? vessel.pressure : 1f,
+                    Boiling = vessel != null && vessel.mass > 0f && !BelowBoilingNow,
+                    BottomCock = TryCocks.Opening(TryCockRig.GlassBottom),
+                    TopCock = TryCocks.Opening(TryCockRig.GlassTop),
+                });
+                // Write the standing glass column (with choking lag/sticking) to the
+                // stock port without leaking transient blow-through drawdown; GlassBlow
+                // draws the momentary drawdown and rebound visually on the cab glass.
+                boiler.waterLevelReadOut.Value = GlassChoke.ColumnLevel;
+            }
+            else
+            {
+                boiler.waterLevelReadOut.Value = TryCocks != null && GlassChoke.HasLevel ? GlassChoke.ColumnLevel : surface;
+            }
         }
 
         // Soot from a coal fire's smoke and the gas through the tubes; scale
@@ -739,6 +960,20 @@ namespace RealisticFiring.Sim
                 data.SetFloat(SootKey, Fouling.SootLoss);
                 data.SetFloat(FoulingWearKey, foulingWear);
             }
+            if (ThermalShock.Wear > 0f || thermalShockWear != 0f)
+            {
+                data.SetFloat(ThermalShockWearKey, ThermalShock.Wear);
+                data.SetFloat(ThermalShockEngineWearKey, thermalShockWear);
+            }
+            if (superheaterWear != 0f)
+                data.SetFloat(SuperheaterEngineWearKey, superheaterWear);
+            if (GlassChoke.Choke > 0f || GlassChoke.TimeSinceBlowThrough > 0f)
+            {
+                data.SetFloat(GlassChokeKey, GlassChoke.Choke);
+                if (GlassChoke.HasLevel)
+                    data.SetFloat(GlassColumnKey, GlassChoke.ColumnLevel);
+                data.SetFloat(GlassBlowAgeKey, GlassChoke.TimeSinceBlowThrough);
+            }
         }
 
         /// <summary>After the stock boiler has loaded its save.</summary>
@@ -762,7 +997,18 @@ namespace RealisticFiring.Sim
             Settle(vessel);
             // The engine's saved health already holds the fouling's wear.
             Fouling.Restore(data.GetFloat(ScaleKey) ?? 0f, data.GetFloat(SootKey) ?? 0f);
-            foulingWear = data.GetFloat(FoulingWearKey) ?? 0f;
+            foulingWear = Mathf.Clamp01(data.GetFloat(FoulingWearKey) ?? 0f);
+            ThermalShock.Restore(data.GetFloat(ThermalShockWearKey) ?? 0f);
+            ThermalShock.SetEnabled(ThermalShockActive);
+            thermalShockWear = Mathf.Clamp01(data.GetFloat(ThermalShockEngineWearKey) ?? 0f);
+            superheaterWear = Mathf.Clamp01(data.GetFloat(SuperheaterEngineWearKey) ?? 0f);
+            pendingTubeLeak = 0f;
+            TubeLeakRate = 0f;
+            var choke = data.GetFloat(GlassChokeKey);
+            if (choke.HasValue)
+                GlassChoke.Restore(choke.Value, data.GetFloat(GlassColumnKey) ?? float.NaN, data.GetFloat(GlassBlowAgeKey) ?? 0f);
+            else
+                GlassChoke.Reset();
         }
 
         /// <summary>Called on every stock boiler save load: applies ours now, or once the rig is made.</summary>
@@ -782,10 +1028,12 @@ namespace RealisticFiring.Sim
         private void Log(string text) => Main.Mod?.Logger.Log($"{Car.LogName()}: {text}");
 
         /// <summary>Gives <paramref name="boiler"/> a rig directly, for checks outside the game.</summary>
-        internal static BoilerWaterRig Create(Boiler boiler, ReciprocatingSteamEngine engine, Guard guard)
+        internal static BoilerWaterRig Create(Boiler boiler, ReciprocatingSteamEngine engine, Guard guard, TrainCar car = null)
         {
-            var rig = new BoilerWaterRig(null, boiler, engine, guard);
+            var rig = new BoilerWaterRig(car, boiler, engine, guard);
             ByBoiler[boiler] = rig;
+            if (car != null)
+                ByCar[car] = rig;
             rig.ChillIfCold();
             return rig;
         }

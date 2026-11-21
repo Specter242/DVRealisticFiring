@@ -12,13 +12,12 @@ namespace RealisticFiring.Visuals
 {
  internal static class TenderWaterValves
     {
-        // Each tender's two handles in its model, and the drop from SHUT to
-        // OPEN, in m (its plate's pins, 2.328 and 2.199 m up).
-        private static readonly Dictionary<string, (string[] Handles, float Travel)> Fits = new Dictionary<string, (string[], float)>
-        {
-            ["em_lms_stanier_tender_1_black"] = (new[] { "Trimmer Left", "Trimmer Right" }, 0.13f),
-            ["em_lms_stanier_tender_1_grey"] = (new[] { "Trimmer Left", "Trimmer Right" }, 0.13f),
-        };
+        // Per-tender water valve handles and travel live in LocomotiveProfiles.
+        internal static readonly IReadOnlyCollection<string> FittedLiveries = new HashSet<string>(
+            LocomotiveProfiles.Tenders.Where(t => t.WaterValveHandles != null).SelectMany(t => t.Liveries));
+
+        internal static bool HasFit(string livery) =>
+            LocomotiveProfiles.TryGetTender(livery, out var tender) && tender.WaterValveHandles != null;
 
         // The slide to copy: the engine's damper puller.
         private const string SourceLivery = "em_lms_8f_loc_black";
@@ -33,11 +32,12 @@ namespace RealisticFiring.Visuals
         /// <summary>As the tender's sim starts: its handles follow their valves. Returns a line for the log, or null.</summary>
         public static string Attach(TrainCar car, SimulationFlow flow)
         {
-            if (car == null || flow == null || car.carLivery == null || !InjectorValves.HasTenderValves(car.carLivery.id)
-                || !Fits.TryGetValue(car.carLivery.id, out var fit))
+            if (car == null || flow == null || car.carLivery == null || LeftStock.IsExcluded(car)
+                || !InjectorValves.HasTenderValves(car.carLivery.id)
+                || !LocomotiveProfiles.TryGetTender(car.carLivery.id, out var tender) || tender.WaterValveHandles == null)
                 return null;
             var handles = car.GetComponentsInChildren<MeshFilter>(true)
-                .Where(f => fit.Handles.Contains(f.name) && f.sharedMesh != null)
+                .Where(f => tender.WaterValveHandles.Contains(f.name) && f.sharedMesh != null)
                 .ToList();
             if (handles.Count != 2)
                 return $"tender water valves: {handles.Count} handles found, not 2";
@@ -49,7 +49,7 @@ namespace RealisticFiring.Visuals
                 if (!flow.TryGetPort(valve.PortId, out var port))
                     return $"tender water valves: no port '{valve.PortId}'";
                 var follower = handle.GetComponent<TenderValveHandle>() ?? handle.gameObject.AddComponent<TenderValveHandle>();
-                follower.Follow(car, valve, port, fit.Travel);
+                follower.Follow(car, valve, port, tender.WaterValveTravel);
                 notes.Add($"'{valve.Id}' is '{handle.name}'");
             }
             return "tender water valves: " + string.Join(", ", notes);
@@ -58,7 +58,7 @@ namespace RealisticFiring.Visuals
         /// <summary>As the tender's interactables load: a slide on each handle. Returns a line for the log, or null.</summary>
         public static string AttachControls(TrainCar car, Transform interactables)
         {
-            if (car == null || interactables == null || interactables.Find(RootName) != null)
+            if (car == null || interactables == null || LeftStock.IsExcluded(car) || interactables.Find(RootName) != null)
                 return null;
             var handles = car.GetComponentsInChildren<TenderValveHandle>(true).Where(h => h.Port != null).ToList();
             if (handles.Count == 0)

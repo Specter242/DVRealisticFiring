@@ -13,9 +13,9 @@ namespace RealisticFiring.Sim
         // to older readers (tag 255, length 65535), so they drop this packet
         // before interpreting any changed struct fields.
         internal const int HeaderSize = 11;
-        private static readonly ulong LayoutHash = HashLayout("sections-v7-starters" + StarterFuel.StateLength + ";" + Codec<StokerFlow>.Layout
+        private static readonly ulong LayoutHash = HashLayout("sections-v12-fittings-glasschoke-impurities-care-flags-slice-caboose" + StarterFuel.StateLength + ";" + Codec<StokerFlow>.Layout
             + Codec<InjectorFlow>.Layout + Codec<FeedPumpFlow>.Layout + Codec<BoosterFlow>.Layout + Codec<OilFireState>.Layout
-            + Codec<SteamPathSnapshot>.Layout);
+            + Codec<SteamPathSnapshot>.Layout + Codec<CabooseStoveSnapshot>.Layout);
         internal static string LayoutSignature => LayoutHash.ToString("x16");
 
         private static ulong HashLayout(string layout)
@@ -33,6 +33,9 @@ namespace RealisticFiring.Sim
         private const byte InjectorCircuits = 6;
         private const byte Throttle = 7;
         private const byte Fireman = 8;
+        private const byte Fittings = 9;
+        private const byte Superheater = 10;
+        private const byte CabooseStove = 11;
 
         /// <summary>
         /// Every car with something of the mod's to mirror: each part that
@@ -46,11 +49,19 @@ namespace RealisticFiring.Sim
                 .Concat(RealisticBooster.All.Select(b => b.Car))
                 .Concat(RealisticOilFirebox.All.Select(o => o.Car))
                 .Concat(EngineSteamPath.AllCars())
+                .Concat(CabooseStoveRig.All.Where(s => s.ShouldMirror).Select(s => s.Car))
                 .Where(car => car != null)
                 .Distinct();
 
         /// <summary>On the host: the car's state for clients; null with nothing to send.</summary>
-        public static byte[] Capture(TrainCar car)
+        public static byte[] Capture(TrainCar car) => Capture(car, out _);
+
+        /// <summary>
+        /// On the host: the car's state for clients; null with nothing to send.
+        /// Sets <paramref name="reliable"/> when the snapshot carries a final
+        /// cold/closed caboose stove transition that must be delivered reliably.
+        /// </summary>
+        public static byte[] Capture(TrainCar car, out bool reliable)
         {
             FireboxRegistry.TryGet(car, out var firebox);
             InjectorRig.TryGet(car, out var rig);
@@ -58,7 +69,31 @@ namespace RealisticFiring.Sim
             RealisticBooster.TryGet(car, out var booster);
             RealisticOilFirebox.TryGet(car, out var oil);
             EngineSteamPath.TryGet(car, out var throttle);
-            return Capture(firebox, rig, water, booster, oil, throttle, FiremanRig.TryGet(car, out var fireman) ? fireman.Fireman : null);
+            EngineSuperheater.TryGet(car, out var superheater);
+            CabooseStoveRig.TryGet(car, out var stove);
+            UpgradeMask? carFittings = car != null && car.carLivery != null && UpgradeKeys.IsEligibleLivery(car.carLivery.id)
+                ? Upgrades.Fittings.EffectiveMask(car)
+                : (UpgradeMask?)null;
+            return Capture(firebox, rig, water, booster, oil, throttle,
+                FiremanRig.TryGet(car, out var fireman) ? fireman.Fireman : null,
+                stove, out reliable, superheater, carFittings, (ushort)Upgrades.Fittings.Version);
+        }
+
+        internal static byte[] Capture(RealisticFirebox firebox, InjectorRig rig, BoilerWaterRig water, RealisticBooster booster, RealisticOilFirebox oil,
+            EngineSteamPath throttle, AutoFiremanBase fireman, CabooseStoveRig stove, out bool reliable,
+            EngineSuperheater superheater = null, UpgradeMask? carFittings = null, ushort fittingsVersion = 0)
+        {
+            var mirrorStove = stove != null && stove.ShouldMirror;
+            reliable = mirrorStove && stove.NeedsReliableMirror;
+            var data = Capture(firebox, rig, water, booster, oil, throttle, fireman, superheater, carFittings, fittingsVersion,
+                stove: mirrorStove ? stove.Model : null,
+                fallbackDoorOpen: mirrorStove && stove.FallbackDoorOpen,
+                includeColdStove: mirrorStove);
+            if (mirrorStove && data != null)
+                stove.MarkMirrorSent();
+            if (data == null)
+                reliable = false;
+            return data;
         }
 
         /// <summary>On a client: shows the host's state of <paramref name="car"/>.</summary>
@@ -72,12 +107,25 @@ namespace RealisticFiring.Sim
             RealisticBooster.TryGet(car, out var booster);
             RealisticOilFirebox.TryGet(car, out var oil);
             EngineSteamPath.TryGet(car, out var throttle);
-            Apply(data, firebox, rig, water, booster, oil, car.ID, throttle, FiremanRig.TryGet(car, out var fireman) ? fireman.Fireman : null);
+            EngineSuperheater.TryGet(car, out var superheater);
+            CabooseStoveRig.TryGet(car, out var stove);
+            Apply(data, firebox, rig, water, booster, oil, car.ID, throttle,
+                FiremanRig.TryGet(car, out var fireman) ? fireman.Fireman : null,
+                superheater,
+                onFittings: (mask, version) =>
+                {
+                    if (Upgrades.Fittings.HostPerLocomotive == true)
+                        Upgrades.Fittings.SetCarFromHost(car, mask, version);
+                },
+                stove: stove != null ? stove.Model : null,
+                setFallbackDoor: stove != null ? (Action<bool>)(open => stove.FallbackDoorOpen = open) : null);
         }
 
         /// <summary>The state of these parts (any may be null); null with nothing to send.</summary>
         internal static byte[] Capture(RealisticFirebox firebox, InjectorRig rig, BoilerWaterRig water, RealisticBooster booster, RealisticOilFirebox oil,
-            EngineSteamPath throttle = null, AutoFiremanBase fireman = null)
+            EngineSteamPath throttle = null, AutoFiremanBase fireman = null, EngineSuperheater superheater = null,
+            UpgradeMask? carFittings = null, ushort fittingsVersion = 0,
+            CabooseStoveModel stove = null, bool fallbackDoorOpen = false, bool includeColdStove = false)
         {
             using (var stream = new MemoryStream())
             using (var writer = new BinaryWriter(stream))
@@ -97,6 +145,7 @@ namespace RealisticFiring.Sim
                         w.Write(firebox.StokerEngineSpeed);
                         foreach (var value in model.SaveStarters()) w.Write(value);
                         foreach (var starter in model.Starters) { w.Write(starter.Heat); w.Write(starter.Smoke); }
+                        w.Write(firebox.SlicedRecently);
                     });
                 if (rig != null)
                 {
@@ -132,6 +181,21 @@ namespace RealisticFiring.Sim
                         w.Write(water.PlugVent);
                         w.Write(water.Plug != null && water.Plug.Melted);
                         w.Write(water.Alarm != null && water.Alarm.Sounding);
+                        w.Write(water.ImpuritiesActive);
+                        w.Write(water.HasTrueSurface);
+                        w.Write(water.TrueSurfaceLevel);
+                        w.Write(water.FoamNow);
+                        w.Write(water.FoamingConcentrationNow);
+                        w.Write(water.GlassChoke.Choke);
+                        w.Write(water.GlassChoke.HasLevel);
+                        w.Write(water.GlassChoke.HasLevel ? water.GlassChoke.ColumnLevel : 0f);
+                        w.Write(water.GlassChoke.TimeSinceBlowThrough);
+                        w.Write(water.GlassChoke.Blowing);
+                        w.Write(water.ThermalShockActive);
+                        w.Write(water.ThermalShock.Wear);
+                        w.Write(water.ThermalShock.Stress);
+                        w.Write(water.ThermalShock.WarmingTooFast);
+                        w.Write(water.TubeLeakRate);
                     });
                 if (booster != null)
                     Section(writer, Booster, w =>
@@ -157,6 +221,30 @@ namespace RealisticFiring.Sim
                         w.Write((byte)fireman.Mode);
                         w.Write((byte)fireman.Call);
                     });
+                if (carFittings.HasValue)
+                    Section(writer, Fittings, w =>
+                    {
+                        w.Write((ushort)carFittings.Value);
+                        w.Write(fittingsVersion);
+                    });
+                if (superheater != null && !superheater.Model.Spec.Saturated)
+                    Section(writer, Superheater, w =>
+                    {
+                        var model = superheater.Model;
+                        w.Write(superheater.SuperheaterCareActive);
+                        w.Write(model.Elements);
+                        w.Write(model.Superheat);
+                        w.Write(model.ElementTemperature);
+                        w.Write(model.Wear);
+                        w.Write(model.Overheating);
+                        w.Write(model.ApproachingOverheat);
+                    });
+                if (stove != null && (includeColdStove || stove.HasActiveState || stove.DoorOpening > 0.01f || fallbackDoorOpen))
+                    Section(writer, CabooseStove, w =>
+                    {
+                        Codec<CabooseStoveSnapshot>.Write(w, stove.Snapshot());
+                        w.Write(fallbackDoorOpen);
+                    });
                 writer.Flush();
                 // Keep the sentinel length impossible for an old section reader.
                 if (stream.Length >= ushort.MaxValue) throw new InvalidDataException("mirror packet too large");
@@ -166,7 +254,9 @@ namespace RealisticFiring.Sim
 
         /// <summary>Shows captured state on these parts (any may be null).</summary>
         internal static void Apply(byte[] data, RealisticFirebox firebox, InjectorRig rig, BoilerWaterRig water, RealisticBooster booster,
-            RealisticOilFirebox oil, string carName = null, EngineSteamPath throttle = null, AutoFiremanBase fireman = null)
+            RealisticOilFirebox oil, string carName = null, EngineSteamPath throttle = null, AutoFiremanBase fireman = null,
+            EngineSuperheater superheater = null, Action<UpgradeMask, ushort> onFittings = null,
+            CabooseStoveModel stove = null, Action<bool> setFallbackDoor = null)
         {
             if (data == null || data.Length < HeaderSize || data[0] != 255 || data[1] != 255 || data[2] != 255)
                 return;
@@ -194,7 +284,7 @@ namespace RealisticFiring.Sim
                 try
                 {
                     using (var reader = new BinaryReader(new MemoryStream(data, at, length, writable: false)))
-                        ApplySection(tag, reader, firebox, rig, water, booster, oil, throttle, fireman);
+                        ApplySection(tag, reader, firebox, rig, water, booster, oil, throttle, fireman, superheater, onFittings, stove, setFallbackDoor);
                 }
                 catch (Exception e) when (e is EndOfStreamException || e is IOException || e is InvalidDataException || e is FormatException)
                 {
@@ -209,10 +299,19 @@ namespace RealisticFiring.Sim
         private static readonly HashSet<string> Unread = new HashSet<string>();
 
         private static void ApplySection(byte tag, BinaryReader r, RealisticFirebox firebox, InjectorRig rig, BoilerWaterRig water,
-            RealisticBooster booster, RealisticOilFirebox oil, EngineSteamPath throttle, AutoFiremanBase fireman)
+            RealisticBooster booster, RealisticOilFirebox oil, EngineSteamPath throttle, AutoFiremanBase fireman,
+            EngineSuperheater superheater, Action<UpgradeMask, ushort> onFittings,
+            CabooseStoveModel stove, Action<bool> setFallbackDoor)
         {
             switch (tag)
             {
+                case Fittings when onFittings != null:
+                {
+                    var mask = (UpgradeMask)r.ReadUInt16();
+                    var version = r.ReadUInt16();
+                    onFittings(mask, version);
+                    break;
+                }
                 case Fireman when fireman != null:
                 {
                     var mode = r.ReadByte();
@@ -238,9 +337,11 @@ namespace RealisticFiring.Sim
                     for (var i = 0; i < starters.Length; i++) starters[i] = Finite(r);
                     var starterOutputs = new float[GrateLayout.ZoneCount * 2];
                     for (var i = 0; i < starterOutputs.Length; i++) starterOutputs[i] = Finite(r);
+                    var slicedRecently = r.ReadBoolean();
                     firebox.Model.RestoreStarters(starters);
                     for (var i = 0; i < GrateLayout.ZoneCount; i++) firebox.Model.Starters[i].MirrorOutput(starterOutputs[i * 2], starterOutputs[i * 2 + 1]);
                     firebox.Model.MirrorZones(fireOn, zones);
+                    firebox.MirrorSlicedRecently(slicedRecently);
                     firebox.Model.RestoreAshpan(ashpan);
                     firebox.LastStoker = stoker;
                     firebox.StokerEngineSpeed = speed;
@@ -290,10 +391,39 @@ namespace RealisticFiring.Sim
                     var vent = Finite(r);
                     var melted = r.ReadBoolean();
                     var sounding = r.ReadBoolean();
+                    var impuritiesActive = r.ReadBoolean();
+                    var hasSurface = r.ReadBoolean();
+                    var trueSurface = Finite(r);
+                    var foam = Math.Max(0f, Math.Min(1f, Finite(r)));
+                    var foamingPpm = Math.Max(0f, Finite(r));
+                    var choke = Math.Max(0f, Math.Min(1f, Finite(r)));
+                    var hasColumn = r.ReadBoolean();
+                    var column = Finite(r);
+                    var blowAge = Math.Max(0f, Finite(r));
+                    var blowing = r.ReadBoolean();
+                    var shockActive = r.ReadBoolean();
+                    var shockWear = Finite(r);
+                    var shockStress = Finite(r);
+                    var warmingTooFast = r.ReadBoolean();
+                    var tubeLeakRate = Finite(r);
                     water.PlugVent = vent;
                     if (water.Plug != null && water.Plug.Melted != melted)
                         water.Plug.Restore(melted, water.Plug.CoreTemperature);
                     water.Alarm?.Mirror(sounding);
+                    water.MirrorGlass(impuritiesActive, hasSurface, trueSurface, foam, foamingPpm, choke, hasColumn ? column : float.NaN, blowAge, blowing);
+                    water.MirrorThermalShock(shockWear, shockStress, warmingTooFast, tubeLeakRate, shockActive);
+                    break;
+                }
+                case Superheater when superheater != null:
+                {
+                    var careActive = r.ReadBoolean();
+                    var elements = Finite(r);
+                    var superheat = Finite(r);
+                    var elementTemp = Finite(r);
+                    var wear = Finite(r);
+                    var overheating = r.ReadBoolean();
+                    var approaching = r.ReadBoolean();
+                    superheater.Mirror(elements, superheat, elementTemp, wear, overheating, approaching, careActive);
                     break;
                 }
                 case Booster when booster != null:
@@ -318,6 +448,14 @@ namespace RealisticFiring.Sim
                     var smoke = Finite(r);
                     oil.Model.Mirror(state);
                     oil.MirrorFlarebackSmoke(smoke);
+                    break;
+                }
+                case CabooseStove when stove != null:
+                {
+                    var state = Codec<CabooseStoveSnapshot>.Read(r);
+                    var fallbackOpen = r.ReadBoolean();
+                    stove.Mirror(state);
+                    setFallbackDoor?.Invoke(fallbackOpen);
                     break;
                 }
             }

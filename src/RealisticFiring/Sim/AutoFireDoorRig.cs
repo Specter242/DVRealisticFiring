@@ -5,7 +5,9 @@ using DV;
 using DV.CabControls;
 using DV.Interaction;
 using DV.Interaction.Inputs;
+using DV.InventorySystem;
 using DV.Utils;
+using DV.VRTK_Extensions;
 using HarmonyLib;
 using LocoSim.Implementations;
 using RealisticFiring.Core;
@@ -17,42 +19,25 @@ using GameInput = DV.Interaction.Inputs.InputManager;
 
 namespace RealisticFiring.Sim
 {
-    /// <summary>Which engines have the automatic fire door.</summary>
+    /// <summary>Which engines have the automatic fire door. Per-locomotive modes live in <see cref="LocomotiveProfiles"/>.</summary>
     internal static class AutoFireDoorFit
     {
- private static readonly HashSet<string> Upgraded = new HashSet<string> { "LocoS282A", "LocoS060" };
-
- internal static readonly IReadOnlyCollection<string> Prototype = new HashSet<string>
-        {
-            // NYC J-3a: "Franklin", one forum member's recollection of the J-1s
-            // and J-3s (The Home Machinist, 2009); likely, as RME lists such
-            // doors on big American engines of its day, though its article on
-            // the class (May 1938) doesn't name the door.
-            "S464-730",
-            // UP FEF class: "a Franklin firedoor" on the FEF-1 (RME Feb. 1938
-            // p.47), and "Fire door, Butterfly" from Franklin on the road's
-            // 4-6-6-4s (RME Jan. 1937); the FEF-3 taken to follow them. No.
-            // 844 went to oil in 1945; the mod fires it as built, on coal.
-            "FEF-3",
-            // LittleNiko36's "Black Arrow", an FEF-3 too.
-            "S484-840A",
-            // China Railways QJ: a retired Chinese engine crewman's account of
-            // big five-driver engines gives a floor pedal, an air cylinder above
-            // two doors that part sideways, and the doors falling shut on
-            // letting go (Zhihu); inferred, as the account names no class.
-            "S2102-870",
-        };
+        /// <summary>The car packs' engines whose prototypes had a power-worked door.</summary>
+        internal static readonly IReadOnlyCollection<string> Prototype = new HashSet<string>(
+            LocomotiveProfiles.All.Where(p => p.AutoFireDoor == AutoFireDoorMode.Prototype).SelectMany(p => p.Liveries));
 
         /// <summary>Whether <paramref name="car"/> has its automatic fire door now.</summary>
         public static bool Has(TrainCar car)
         {
             var livery = car != null && car.carLivery != null ? car.carLivery.id : null;
-            if (livery == null)
-                return false;
-            if (Upgraded.Contains(livery))
-                return Fittings.AutoFireDoor;
-            // Never fitted hands the jump key back on these too.
-            return Prototype.Contains(livery) && Main.Settings?.AutomaticFireDoor != UpgradeRule.NeverFitted;
+            if (LocomotiveProfiles.TryGet(livery, out var profile))
+            {
+                if (profile.AutoFireDoor == AutoFireDoorMode.Upgradable)
+                    return Fittings.HasAutoFireDoor(car);
+                // Never fitted hands the jump key back on these too.
+                return profile.AutoFireDoor == AutoFireDoorMode.Prototype && Main.Settings?.AutomaticFireDoor != UpgradeRule.NeverFitted;
+            }
+            return MakerFitRegistry.HasAutoFireDoor(livery) && Main.Settings?.AutomaticFireDoor != UpgradeRule.NeverFitted;
         }
     }
 
@@ -63,7 +48,12 @@ namespace RealisticFiring.Sim
         private const float ReachUp = 2f;
 
         private static readonly AutoFireDoor Cycle = new AutoFireDoor();
+        private static readonly VrFireDoorPedal VrPedal = new VrFireDoorPedal();
         private static RealisticFirebox worked;
+        private static bool vrDoorHeld;
+
+        /// <summary>Whether the VR shovel-hand trigger is currently holding an automatic fire door open.</summary>
+        internal static bool IsVrDoorHeld => vrDoorHeld;
 
         // The phase whose air has been heard.
         private static AutoFireDoorPhase heard;
@@ -76,11 +66,13 @@ namespace RealisticFiring.Sim
         // The cab last searched, so one without a door target is searched once.
         private static Transform searchedInterior;
 
-        /// <summary>Whether the jump action works a fire door now, rather than jumping.</summary>
+        /// <summary>Whether the desktop jump action works a fire door now, rather than jumping.</summary>
         internal static bool ClaimsJump
         {
             get
             {
+                if (VRManager.IsVREnabled())
+                    return false;
                 // Asked from inside the game's walking code: a failure here
                 // must not stop the player walking.
                 try
@@ -95,9 +87,14 @@ namespace RealisticFiring.Sim
             }
         }
 
-        /// <summary>Reads the jump action and moves the door, once a frame.</summary>
+        /// <summary>Reads the pedal input (desktop jump or VR shovel trigger) and moves the door, once a frame.</summary>
         internal static void Tick()
         {
+            if (VRManager.IsVREnabled())
+            {
+                TickVr();
+                return;
+            }
             if (!Cycle.Working && !ShovelInHand.Any)
                 return;
             var input = GameInput.NewPlayer;
@@ -118,6 +115,53 @@ namespace RealisticFiring.Sim
                 return;
             }
             var held = input.GetButton(jump) && ClaimsJump && CanWork(out var still) && ReferenceEquals(still, worked);
+            if (Cycle.Step(port.Value, held, now) is float set && set != port.Value)
+                port.ExternalValueUpdate(set);
+            Hear();
+        }
+
+        private static void TickVr()
+        {
+            var mayAct = MayAct;
+            if (!Cycle.Working && !ShovelInHand.Any)
+            {
+                vrDoorHeld = false;
+                if (!mayAct)
+                    VrPedal.SuppressUntilRelease();
+                else
+                    VrPedal.Reset();
+                return;
+            }
+            var now = Time.time;
+            VrFireDoorSignal signal;
+            if (!mayAct)
+            {
+                VrPedal.SuppressUntilRelease();
+                signal = default;
+            }
+            else
+            {
+                ShovelInHand.ReadVrTrigger(out var triggerDown, out var useModified, out var stickDeflected);
+                signal = VrPedal.Step(triggerDown, useModified, stickDeflected, InventoryViewVR.IsPointingAtUI, now);
+            }
+            if (signal.Pressed && CanWork(out var reached))
+                Press(reached, now);
+            Hear();
+            if (!Cycle.Working)
+            {
+                vrDoorHeld = false;
+                return;
+            }
+            var port = worked?.Car != null ? worked.DoorControlPort : null;
+            if (port == null)
+            {
+                Stop();
+                worked = null;
+                vrDoorHeld = false;
+                return;
+            }
+            var held = signal.Held && mayAct && CanWork(out var still) && ReferenceEquals(still, worked);
+            vrDoorHeld = held;
             if (Cycle.Step(port.Value, held, now) is float set && set != port.Value)
                 port.ExternalValueUpdate(set);
             Hear();
@@ -155,6 +199,8 @@ namespace RealisticFiring.Sim
         }
 
         // The game is taking the player's movement: not paused, and walking allowed.
+        // In VR Teleport Locomotion, PlayerTransform is PlayAreaTransform (which has
+        // no LocomotionInputWrapper), so only check walking.inputEnabled when present.
         private static bool MayAct
         {
             get
@@ -163,9 +209,11 @@ namespace RealisticFiring.Sim
                 if (player == null)
                     return false;
                 var app = SingletonBehaviour<AppUtil>.Instance;
-                if (app != null && app.IsTimePaused)
+                if (app != null && (app.IsTimePaused || app.IsPauseMenuOpen))
                     return false;
-                var walking = player.GetComponent<LocomotionInputWrapper>();
+                var walking = player.GetComponentInChildren<LocomotionInputWrapper>();
+                if (VRManager.IsVREnabled())
+                    return walking == null || walking.inputEnabled;
                 return walking != null && walking.inputEnabled;
             }
         }
@@ -223,12 +271,16 @@ namespace RealisticFiring.Sim
         internal static string KeyName => GameInput.Actions.Jump.LocalizeInput();
     }
 
-    /// <summary>Tells the rig when one of the player's shovels is in hand.</summary>
+    /// <summary>Tells the rig when one of the player's shovels is in hand (desktop or VR).</summary>
     internal sealed class ShovelInHand : MonoBehaviour
     {
+        // Matches TouchpadInputInterpreter's 0.4 deadzone (0.4² = 0.16).
+        private const float StickDeadzoneSq = 0.16f;
+
         private static readonly List<ShovelInHand> Shovels = new List<ShovelInHand>();
 
         private ItemBase item;
+        private VRTK_InteractableObject_DV interactable;
 
         /// <summary>Whether the player is holding a shovel.</summary>
         internal static bool Any
@@ -242,20 +294,65 @@ namespace RealisticFiring.Sim
             }
         }
 
-        private void Awake() => item = GetComponent<ItemBase>();
+        /// <summary>
+        /// Reads VR trigger and stick state across every hand currently grabbing
+        /// a held shovel (supporting both one-handed and two-handed holds).
+        /// </summary>
+        internal static void ReadVrTrigger(out bool triggerDown, out bool useModified, out bool stickDeflected)
+        {
+            triggerDown = false;
+            useModified = false;
+            stickDeflected = false;
+            foreach (var shovel in Shovels)
+            {
+                if (shovel.item == null || !shovel.item.IsGrabbed())
+                    continue;
+                if (shovel.interactable == null)
+                    shovel.interactable = shovel.GetComponent<VRTK_InteractableObject_DV>();
+                if (shovel.interactable == null)
+                    continue;
+                InspectHand(shovel.interactable.GetGrabbingObject(), ref triggerDown, ref useModified, ref stickDeflected);
+                var secondary = shovel.interactable.GetSecondaryGrabbingObject();
+                if (secondary != null && secondary != shovel.interactable.GetGrabbingObject())
+                    InspectHand(secondary, ref triggerDown, ref useModified, ref stickDeflected);
+            }
+        }
+
+        private static void InspectHand(GameObject hand, ref bool triggerDown, ref bool useModified, ref bool stickDeflected)
+        {
+            if (hand == null)
+                return;
+            var use = hand.GetComponent<VRTK_InteractUse_DV>();
+            if (use == null)
+                return;
+            if (use.UseModified)
+                useModified = true;
+            if (!use.UsePressed)
+                return;
+            triggerDown = true;
+            var touchpad = use.GetComponent<TouchpadInputInterpreter>();
+            if (touchpad != null && touchpad.AxisValue.sqrMagnitude > StickDeadzoneSq)
+                stickDeflected = true;
+        }
+
+        private void Awake()
+        {
+            item = GetComponent<ItemBase>();
+            interactable = GetComponent<VRTK_InteractableObject_DV>();
+        }
 
         private void OnEnable() => Shovels.Add(this);
 
         private void OnDisable() => Shovels.Remove(this);
     }
 
-    /// <summary>Each shovel reports being held, with the mouse and the realistic fireboxes on.</summary>
+    /// <summary>Each shovel reports being held (desktop and VR) when the realistic fireboxes are on.</summary>
     [HarmonyPatch(typeof(ShovelNonPhysicalCoal), "Start")]
     internal static class ShovelInHandPatch
     {
         private static void Postfix(ShovelNonPhysicalCoal __instance)
         {
-            if (!Main.ReplacementEnabled || VRManager.IsVREnabled() || __instance == null
+            if (!Main.ReplacementEnabled || __instance == null
                 || __instance.GetComponent<ItemBase>() == null || __instance.GetComponent<ShovelInHand>() != null)
                 return;
             __instance.gameObject.AddComponent<ShovelInHand>();

@@ -15,6 +15,34 @@ namespace RealisticFiring.Core.Tests;
     private const float Climb = 4f;
 
     [Fact]
+    public void RaisingSteamBeforeTheBlowerHasAnyHeKeepsAThinBrightFire()
+    {
+        var box = new FireboxParameters(150f, 120f, 0.5f);
+        float Target(float pressure, float speedup = 25f)
+        {
+            var fire = new FireModel(box);
+            fire.Restore(fireOn: true, coalMass: 10f);
+            var man = new AutoFireman { Mode = FiremanMode.Road };
+            var r = new FiremanReadings
+            {
+                Pressure = pressure, SafetyValve = 14.5f, Standing = true, Throttle = 0f, Cutoff = 0f,
+                Glass = 0.6f, GlassMass = 4000f, FullWorkSteam = 6f, TenderWater = 20000f, TenderCoal = 10000f,
+                InjectorLeast = 0.5f, InjectorFullFeed = 4f, InjectorStartPressure = 3.5f, Solids = 500f, ShovelMass = 3f, StartupMultiplier = speedup,
+            };
+            for (var i = 0; i < 20; i++)
+                man.Step(0.05f, fire, r);
+            return man.CoalTarget;
+        }
+        var thin = AutoFireman.ColdDraftFire * box.MaxCoalCapacity;
+        var cold = Target(1.5f);
+        var warm = Target(8f);
+        output.WriteLine($"standing at 1.5 bar he aims at {cold:F1} kg, at 8 bar {warm:F1} kg (thin {thin:F1})");
+        Assert.InRange(cold, 0.1f, thin + 0.01f);
+        Assert.True(warm > thin + 1f, $"at 8 bar {warm:F1} kg");
+        Assert.True(Target(1.5f, speedup: 1f) > thin + 1f, "without the speedup, his usual standing fire");
+    }
+
+    [Fact]
     public void OnTheRoadHeHoldsThePressureAndTheWater()
     {
         var engine = new Footplate();

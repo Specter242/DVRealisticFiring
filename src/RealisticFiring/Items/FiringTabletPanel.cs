@@ -13,30 +13,40 @@ namespace RealisticFiring.Items
     {
         /// <summary>The panel's size in the firing tablet's canvas units, before <c>scale</c>.</summary>
         internal const int Width = 540, Height = 462;
-        internal const int Pages = FiringTabletGadget.Pages, FiremanPage = FiringTabletGadget.FiremanPage;
+        internal const int Pages = FiringTabletGadget.Pages;
+        internal const int FiremanPage = FiringTabletGadget.FiremanPage;
+        internal const int ChecklistPage = FiringTabletGadget.ChecklistPage;
         /// <summary>The fireman's four modes, then the engineer's two calls.</summary>
         internal const int Orders = 6;
-        /// <summary>The panel's buttons: a tab for each page (0 to 3), then the orders (4 to 9).</summary>
+        /// <summary>The checklist page's four action buttons: Prev, Auto, Next, and Cab Controls spotlight.</summary>
+        internal const int ChecklistActions = 4;
+        /// <summary>The panel's buttons: a tab for each page (0 to 4), then up to 6 page action buttons (5 to 10).</summary>
         internal const int Buttons = Pages + Orders;
         /// <summary>Both tablets' canvases count 100 reference pixels a unit; the panels' sprites follow it.</summary>
         internal const float ReferencePixelsPerUnit = 100f;
         private const int MaxRows = 10;
+        private const int MaxSteps = 7;
         private static readonly string[] OrderNames = { "OFF", "KEEP IT ALIVE", "SHUNTING", "ROAD", "HEAVY WORK AHEAD", "EASING OFF" };
+        private static readonly string[] ChecklistActionNames = { "◀ PREV", "AUTO", "NEXT ▶", "CAB" };
 
         private readonly RectTransform root;
         private readonly float scale;
         private readonly string dialKey, title;
+        private readonly bool vr;
         private Text loco, advice, waiting;
         private readonly Image[] tabs = new Image[Pages], zones = new Image[9], zoneBorders = new Image[9];
         private readonly RawImage[] dials = new RawImage[4], smoke = new RawImage[4];
         private readonly Text[] tabNames = new Text[Pages], gaugeNames = new Text[4], gaugeValues = new Text[4], coal = new Text[9];
         private readonly Image[] orderPlates = new Image[Orders];
         private readonly Text[] orderNames = new Text[Orders];
+        private readonly Image[] checklistPlates = new Image[ChecklistActions];
+        private readonly Text[] checklistPlateNames = new Text[ChecklistActions];
+        private Text checklistHeading;
         private Text ordersHeading, callsHeading, firemanInfo;
-        private readonly RawImage[] gaugeMarks = new RawImage[4], stepChecks = new RawImage[5];
+        private readonly RawImage[] gaugeMarks = new RawImage[4], stepChecks = new RawImage[MaxSteps];
         private readonly Text[] labels = new Text[MaxRows], values = new Text[MaxRows];
-        private readonly Text[] stepTitles = new Text[5], stepHow = new Text[5];
-        private readonly Text[] stepNumbers = new Text[5];
+        private readonly Text[] stepTitles = new Text[MaxSteps], stepHow = new Text[MaxSteps];
+        private readonly Text[] stepNumbers = new Text[MaxSteps];
         private Text front, door;
         private RawImage nextBar;
         private RealisticFirebox shownCoal;
@@ -45,6 +55,11 @@ namespace RealisticFiring.Items
         private readonly Dictionary<Texture2D, Sprite> panelSprites = new Dictionary<Texture2D, Sprite>();
         private readonly bool[] buttonOn = new bool[Buttons];
 
+        private bool onChecklistPage;
+        private ChecklistId? manualChecklist;
+        private ChecklistId lastChecklistId;
+        private ChecklistSnapshot lastSnapshot;
+
         /// <summary>
         /// Builds the panel's graphics under <paramref name="root"/>, on its
         /// layer, at <paramref name="scale"/> canvas units to a firing tablet
@@ -52,14 +67,18 @@ namespace RealisticFiring.Items
         /// shared cache; <paramref name="title"/> stands at the top right when
         /// no engine is read.
         /// </summary>
-        internal FiringTabletPanel(RectTransform root, float scale, string dialKey, string title)
+        internal FiringTabletPanel(RectTransform root, float scale, string dialKey, string title, bool vr = false)
         {
             this.root = root;
             this.scale = scale;
             this.dialKey = dialKey;
             this.title = title;
+            this.vr = vr;
             Build();
         }
+
+        /// <summary>Whether the OnGUI cab spotlight button is available on this tablet (desktop only).</summary>
+        internal bool ShowSpotlightButton => !vr && CabControlSpotlight.Supported;
 
         private void Build()
         {
@@ -69,10 +88,10 @@ namespace RealisticFiring.Items
             {
                 var rect = ButtonArea(i);
                 tabs[i] = Panel("Page plate", rect, OverlayArt.PlateOff, Color.white);
-                tabNames[i] = Words("Page", rect, 15, TextAnchor.MiddleCenter, OverlayArt.Cream);
+                tabNames[i] = Words("Page", rect, 14, TextAnchor.MiddleCenter, OverlayArt.Cream);
                 buttonOn[i] = true;
             }
-            loco = Words("Locomotive", new Rect(382, 12, 142, 26), 16, TextAnchor.MiddleRight, OverlayArt.Soft);
+            loco = Words("Locomotive", new Rect(400, 12, 124, 26), 15, TextAnchor.MiddleRight, OverlayArt.Soft);
             ordersHeading = Words("Orders heading", new Rect(16, 44, 508, 22), 16, TextAnchor.MiddleLeft, OverlayArt.Soft);
             ordersHeading.text = "Fireman's orders";
             callsHeading = Words("Calls heading", new Rect(16, 114, 508, 22), 16, TextAnchor.MiddleLeft, OverlayArt.Soft);
@@ -83,6 +102,14 @@ namespace RealisticFiring.Items
                 var area = OrderArea(i);
                 orderPlates[i] = Panel("Order plate", area, OverlayArt.PlateOff, Color.white);
                 orderNames[i] = Words("Order", area, 17, TextAnchor.MiddleCenter, OverlayArt.Cream);
+            }
+            checklistHeading = Words("Checklist heading", new Rect(78, 46, 252, 30), 17, TextAnchor.MiddleCenter, OverlayArt.Cream);
+            for (var i = 0; i < ChecklistActions; i++)
+            {
+                var area = ChecklistButtonArea(i);
+                checklistPlates[i] = Panel("Checklist button", area, OverlayArt.PlateOff, Color.white);
+                checklistPlateNames[i] = Words("Checklist button label", area, 13, TextAnchor.MiddleCenter, OverlayArt.Cream);
+                checklistPlateNames[i].text = ChecklistActionNames[i];
             }
             for (var i = 0; i < 4; i++)
             {
@@ -112,7 +139,7 @@ namespace RealisticFiring.Items
                 labels[i] = Words("Row label", new Rect(), 16, TextAnchor.MiddleLeft, OverlayArt.Soft);
                 values[i] = Words("Row value", new Rect(), 19, TextAnchor.MiddleRight, OverlayArt.Cream);
             }
-            for (var i = 0; i < 5; i++)
+            for (var i = 0; i < MaxSteps; i++)
             {
                 stepTitles[i] = Words("Lighting step", new Rect(), 17, TextAnchor.MiddleLeft, OverlayArt.Cream);
                 stepHow[i] = Words("Lighting instruction", new Rect(), 14, TextAnchor.MiddleLeft, OverlayArt.Soft);
@@ -129,8 +156,8 @@ namespace RealisticFiring.Items
 
         // ---- Buttons -----------------------------------------------------------
 
-        /// <summary>Where button <paramref name="slot"/> lies in the firing tablet's canvas units: a page tab, then the orders.</summary>
-        internal static Rect ButtonArea(int slot) => slot < Pages ? new Rect(16 + slot * 90, 12, 84, 26) : OrderArea(slot - Pages);
+        /// <summary>Where button <paramref name="slot"/> lies in the firing tablet's canvas units: a page tab, then the Fireman orders.</summary>
+        internal static Rect ButtonArea(int slot) => slot < Pages ? new Rect(16 + slot * 76, 12, 72, 26) : OrderArea(slot - Pages);
 
         internal static Rect OrderArea(int order)
         {
@@ -141,22 +168,62 @@ namespace RealisticFiring.Items
             return new Rect(order == 4 ? 16 : 274, 138, 250, 40);
         }
 
+        /// <summary>Where checklist action <paramref name="action"/> lies on the Check page (0 Prev, 1 Auto, 2 Next, 3 Cab controls).</summary>
+        internal static Rect ChecklistButtonArea(int action)
+        {
+            if (action == 0) return new Rect(16, 46, 56, 30);
+            if (action == 1) return new Rect(336, 46, 62, 30);
+            if (action == 2) return new Rect(404, 46, 56, 30);
+            return new Rect(466, 46, 58, 30);
+        }
+
         /// <summary>
         /// Puts each of the panel's buttons over its rectangle (in the root's
-        /// units: <see cref="ButtonArea"/> times the scale), or takes it away:
-        /// the tabs always, the orders only on the Fireman page with a fireman.
+        /// units: <see cref="ButtonArea"/> or <see cref="ChecklistButtonArea"/>
+        /// times the scale), or takes it away.
         /// </summary>
         internal void PlaceButtons(Action<int, Rect, bool> place)
         {
             for (var i = 0; i < Buttons; i++)
-                place(i, Scaled(ButtonArea(i)), buttonOn[i]);
+            {
+                var area = i < Pages ? ButtonArea(i)
+                    : onChecklistPage && i - Pages < ChecklistActions ? ChecklistButtonArea(i - Pages)
+                    : OrderArea(i - Pages);
+                place(i, Scaled(area), buttonOn[i]);
+            }
         }
 
-        /// <summary>Takes the orders' buttons away before the next reading, when another page is chosen.</summary>
+        /// <summary>Takes the page action buttons away before the next reading, when another page is chosen.</summary>
         internal void HideOrders()
         {
             for (var i = Pages; i < Buttons; i++)
                 buttonOn[i] = false;
+        }
+
+        /// <summary>Handles an action button pressed on the Check page (0 Prev, 1 Auto, 2 Next, 3 Cab controls spotlight).</summary>
+        internal void HandleChecklistAction(TrainCar car, int action)
+        {
+            switch (action)
+            {
+                case 0:
+                    manualChecklist = FiringChecklists.StepSelection(lastSnapshot, lastChecklistId, -1);
+                    break;
+                case 1:
+                    manualChecklist = null;
+                    break;
+                case 2:
+                    manualChecklist = FiringChecklists.StepSelection(lastSnapshot, lastChecklistId, 1);
+                    break;
+                case 3:
+                {
+                    if (!ShowSpotlightButton)
+                        break;
+                    var notice = CabControlSpotlight.Toggle(car);
+                    if (!string.IsNullOrEmpty(notice))
+                        FireController.Announce(notice);
+                    break;
+                }
+            }
         }
 
         /// <summary>
@@ -188,8 +255,21 @@ namespace RealisticFiring.Items
         {
             FireOverlay.Card card = null;
             FiremanRig fireman = null;
+            Checklist checklist = null;
             shownCoal = null;
-            if (page == FiremanPage)
+            if (page == ChecklistPage)
+            {
+                if (ChecklistReader.TryRead(car, manualChecklist, out var snapshot, out checklist))
+                {
+                    lastSnapshot = snapshot;
+                    lastChecklistId = checklist.Id;
+                    if (FireboxRegistry.TryGetTended(car, out var coal))
+                        card = FireOverlay.Read(coal, 0);
+                    else if (RealisticOilFirebox.TryGetTended(car, out var oil))
+                        card = FireOverlay.Read(oil, 0);
+                }
+            }
+            else if (page == FiremanPage)
             {
                 if (FiremanRig.TryGetTended(car, out fireman))
                     card = FiremanPanel.ReadTablet(fireman);
@@ -201,14 +281,17 @@ namespace RealisticFiring.Items
             }
             else if (RealisticOilFirebox.TryGetTended(car, out var oil))
                 card = FireOverlay.Read(oil, page);
-            Show(card, page, fireman, mounted);
+            Show(card, page, fireman, checklist, mounted);
             UpdateAim();
         }
 
-        private void Show(FireOverlay.Card card, int page, FiremanRig fireman, bool mounted)
+        private void Show(FireOverlay.Card card, int page, FiremanRig fireman, Checklist checklist, bool mounted)
         {
             var hasData = card != null;
             var orders = page == FiremanPage;
+            var checkView = page == ChecklistPage;
+            onChecklistPage = checkView;
+
             waiting.gameObject.SetActive(!hasData);
             waiting.text = mounted
                 ? "No supported steam engine\nThis car has no firing readings."
@@ -218,8 +301,11 @@ namespace RealisticFiring.Items
             {
                 tabs[i].sprite = PanelSprite(i == page ? OverlayArt.PlateOn : OverlayArt.PlateOff);
                 tabNames[i].color = i == page ? OverlayArt.Cream : OverlayArt.Dim;
-                tabNames[i].text = i == 0 ? (hasData && card.Oil ? "BURNER" : "FIRE") : i == 1 ? "WATER" : i == 2 ? "ENGINE" : "FIREMAN";
+                tabNames[i].text = i == 0 ? (hasData && card.Oil ? "BURNER" : "FIRE")
+                    : i == 1 ? "WATER" : i == 2 ? "ENGINE" : i == 3 ? "FIREMAN" : "CHECK";
             }
+
+            // Fireman orders UI
             ordersHeading.gameObject.SetActive(orders && hasData);
             callsHeading.gameObject.SetActive(orders && hasData);
             firemanInfo.gameObject.SetActive(orders && hasData && card.Rows.Count == 0);
@@ -230,7 +316,8 @@ namespace RealisticFiring.Items
                 var show = orders && fireman != null;
                 orderPlates[i].gameObject.SetActive(show);
                 orderNames[i].gameObject.SetActive(show);
-                buttonOn[Pages + i] = show;
+                if (!checkView)
+                    buttonOn[Pages + i] = show;
                 if (!show) continue;
                 var active = i < 4 ? FiremanOrders.ModeOf(fireman) == (FiremanMode)i
                     : FiremanOrders.CallActive(fireman, i == 4 ? FiremanCall.HeavyAhead : FiremanCall.EasingOff);
@@ -238,14 +325,41 @@ namespace RealisticFiring.Items
                 orderNames[i].color = active ? OverlayArt.Cream : OverlayArt.Dim;
                 orderNames[i].text = OrderNames[i] + (active && i >= 4 ? $" · {fireman.Fireman.CallLeft:F0} s" : "");
             }
+
+            // Checklist UI header & buttons
+            var showChecklist = checkView && hasData && checklist != null;
+            checklistHeading.gameObject.SetActive(showChecklist);
+            if (showChecklist)
+                checklistHeading.text = $"{checklist.Name} · {checklist.CompletedCount}/{checklist.Steps.Count}";
+            var showCabButton = ShowSpotlightButton;
+            for (var i = 0; i < ChecklistActions; i++)
+            {
+                var showAction = showChecklist && (i != 3 || showCabButton);
+                checklistPlates[i].gameObject.SetActive(showAction);
+                checklistPlateNames[i].gameObject.SetActive(showAction);
+                if (checkView)
+                    buttonOn[Pages + i] = showAction;
+                if (!showAction) continue;
+                var highlighted = (i == 1 && checklist.AutoSelected) || (i == 3 && CabControlSpotlight.Active);
+                checklistPlates[i].sprite = PanelSprite(highlighted ? OverlayArt.PlateOn : OverlayArt.PlateOff);
+                checklistPlateNames[i].color = highlighted ? OverlayArt.Cream : OverlayArt.Dim;
+            }
+            if (checkView)
+            {
+                for (var i = ChecklistActions; i < Orders; i++)
+                    buttonOn[Pages + i] = false;
+            }
+
+            // Dials
+            var showDials = hasData && !orders && !checkView;
             for (var i = 0; i < 4; i++)
             {
-                dials[i].gameObject.SetActive(hasData && !orders);
-                gaugeNames[i].gameObject.SetActive(hasData && !orders);
-                gaugeValues[i].gameObject.SetActive(hasData && !orders);
-                gaugeMarks[i].gameObject.SetActive(hasData && !orders);
-                smoke[i].gameObject.SetActive(hasData && !orders && card.Gauges[i].Smoke.HasValue);
-                if (!hasData || orders)
+                dials[i].gameObject.SetActive(showDials);
+                gaugeNames[i].gameObject.SetActive(showDials);
+                gaugeValues[i].gameObject.SetActive(showDials);
+                gaugeMarks[i].gameObject.SetActive(showDials);
+                smoke[i].gameObject.SetActive(showDials && card.Gauges[i].Smoke.HasValue);
+                if (!showDials)
                     continue;
                 var gauge = card.Gauges[i];
                 dials[i].texture = OverlayArt.Dial(dialKey + i, gauge.Value, gauge.Band0, gauge.Band1, gauge.Level);
@@ -255,7 +369,9 @@ namespace RealisticFiring.Items
                 gaugeMarks[i].color = OverlayArt.LevelColor(gauge.Level);
                 smoke[i].color = gauge.Smoke ?? Color.clear;
             }
-            var grate = hasData && card.ZoneCoal != null;
+
+            // Grate map
+            var grate = hasData && !checkView && card.ZoneCoal != null;
             thin = grate ? card.Thin : -1;
             front.gameObject.SetActive(grate);
             door.gameObject.SetActive(grate);
@@ -272,7 +388,9 @@ namespace RealisticFiring.Items
                 coal[i].color = card.ZoneGlow[i] > 0.72f ? OverlayArt.Ink : OverlayArt.Cream;
                 clinker[i].rectTransform.sizeDelta = new Vector2(54f * Mathf.Clamp(card.ZoneClinker[i], 0.15f, 1f), 4f) * scale;
             }
-            var rows = hasData ? card.Rows.Count : 0;
+
+            // Rows
+            var rows = hasData && !checkView ? card.Rows.Count : 0;
             var rowHeight = Mathf.Min(32f, (orders ? 184f : 196f) / Mathf.Max(1, rows));
             var rowsTop = orders ? 194f : 180f;
             var left = grate ? 238f : 16f;
@@ -290,32 +408,69 @@ namespace RealisticFiring.Items
                 values[i].text = row.Value;
                 values[i].color = row.Level.HasValue ? OverlayArt.LevelColor(row.Level.Value) : OverlayArt.Cream;
             }
-            var y = 182f;
-            for (var i = 0; i < 5; i++)
+
+            // Steps: either full live checklist on CHECK page, or oil lighting steps on unlit BURNER page
+            if (showChecklist)
             {
-                var exists = hasData && card.Steps != null && i < card.Steps.Count;
-                stepTitles[i].gameObject.SetActive(exists);
-                stepHow[i].gameObject.SetActive(exists && card.Steps[i].Current);
-                stepChecks[i].gameObject.SetActive(exists && card.Steps[i].Done);
-                stepNumbers[i].gameObject.SetActive(exists && !card.Steps[i].Done);
-                if (!exists)
-                    continue;
-                var step = card.Steps[i];
-                Place(stepTitles[i].rectTransform, new Rect(48, y, 476, 26));
-                Place(stepChecks[i].rectTransform, new Rect(20, y + 6, 14, 14));
-                Place(stepNumbers[i].rectTransform, new Rect(16, y, 22, 26));
-                stepNumbers[i].text = (i + 1).ToString();
-                stepNumbers[i].color = step.Current ? OverlayArt.Caution : OverlayArt.Soft;
-                stepTitles[i].text = step.Title;
-                stepTitles[i].color = step.Current ? OverlayArt.Caution : step.Done ? OverlayArt.Dim : OverlayArt.Soft;
-                y += 27f;
-                if (step.Current)
+                var y = 86f;
+                var count = Math.Min(MaxSteps, checklist.Steps.Count);
+                var rowStep = count > 6 ? 33f : 38f;
+                for (var i = 0; i < MaxSteps; i++)
                 {
-                    Place(stepHow[i].rectTransform, new Rect(48, y - 4, 476, 20));
-                    stepHow[i].text = step.How;
-                    y += 18f;
+                    var exists = i < count;
+                    stepTitles[i].gameObject.SetActive(exists);
+                    stepHow[i].gameObject.SetActive(exists && checklist.Steps[i].Current);
+                    stepChecks[i].gameObject.SetActive(exists && checklist.Steps[i].Done);
+                    stepNumbers[i].gameObject.SetActive(exists && !checklist.Steps[i].Done);
+                    if (!exists)
+                        continue;
+                    var step = checklist.Steps[i];
+                    Place(stepTitles[i].rectTransform, new Rect(48, y, 476, 26));
+                    Place(stepChecks[i].rectTransform, new Rect(20, y + 6, 14, 14));
+                    Place(stepNumbers[i].rectTransform, new Rect(16, y, 22, 26));
+                    stepNumbers[i].text = (i + 1).ToString();
+                    stepNumbers[i].color = step.Current ? OverlayArt.Caution : OverlayArt.Soft;
+                    stepTitles[i].text = step.Title;
+                    stepTitles[i].color = step.Current ? OverlayArt.Caution : step.Done ? OverlayArt.Dim : OverlayArt.Soft;
+                    y += rowStep;
+                    if (step.Current)
+                    {
+                        Place(stepHow[i].rectTransform, new Rect(48, y - rowStep + 24f, 476, 24));
+                        stepHow[i].text = step.How;
+                        y += 20f;
+                    }
                 }
             }
+            else
+            {
+                var y = 182f;
+                for (var i = 0; i < MaxSteps; i++)
+                {
+                    var exists = hasData && !checkView && card.Steps != null && i < card.Steps.Count;
+                    stepTitles[i].gameObject.SetActive(exists);
+                    stepHow[i].gameObject.SetActive(exists && card.Steps[i].Current);
+                    stepChecks[i].gameObject.SetActive(exists && card.Steps[i].Done);
+                    stepNumbers[i].gameObject.SetActive(exists && !card.Steps[i].Done);
+                    if (!exists)
+                        continue;
+                    var step = card.Steps[i];
+                    Place(stepTitles[i].rectTransform, new Rect(48, y, 476, 26));
+                    Place(stepChecks[i].rectTransform, new Rect(20, y + 6, 14, 14));
+                    Place(stepNumbers[i].rectTransform, new Rect(16, y, 22, 26));
+                    stepNumbers[i].text = (i + 1).ToString();
+                    stepNumbers[i].color = step.Current ? OverlayArt.Caution : OverlayArt.Soft;
+                    stepTitles[i].text = step.Title;
+                    stepTitles[i].color = step.Current ? OverlayArt.Caution : step.Done ? OverlayArt.Dim : OverlayArt.Soft;
+                    y += 27f;
+                    if (step.Current)
+                    {
+                        Place(stepHow[i].rectTransform, new Rect(48, y - 4, 476, 20));
+                        stepHow[i].text = step.How;
+                        y += 18f;
+                    }
+                }
+            }
+
             advice.text = hasData ? card.Advice.Text : "F6 remains available as a screen overlay.";
             nextBar.color = hasData ? OverlayArt.LevelColor(card.Advice.Level) : OverlayArt.Soft;
         }
@@ -394,11 +549,6 @@ namespace RealisticFiring.Items
         {
             if (panelSprites.TryGetValue(texture, out var sprite) && sprite != null)
                 return sprite;
-            // Match F6's five-pixel slicing, keeping corner size and border
-            // width fixed. RawImage stretched these assets across the whole button
-            // or cell, enlarging their antialiased edges into a soft band. At a
-            // larger scale the sprite counts fewer pixels a unit, so its
-            // borders keep their size on the screen.
             sprite = Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height),
                 new Vector2(0.5f, 0.5f), ReferencePixelsPerUnit / scale, 0, SpriteMeshType.FullRect,
                 new Vector4(5f, 5f, 5f, 5f), false);
@@ -418,7 +568,7 @@ namespace RealisticFiring.Items
             text.color = color;
             text.supportRichText = false;
             text.resizeTextForBestFit = true;
-            text.resizeTextMinSize = Mathf.RoundToInt(12 * scale);
+            text.resizeTextMinSize = Mathf.RoundToInt(11 * scale);
             text.resizeTextMaxSize = shown;
             text.horizontalOverflow = HorizontalWrapMode.Wrap;
             text.verticalOverflow = VerticalWrapMode.Truncate;

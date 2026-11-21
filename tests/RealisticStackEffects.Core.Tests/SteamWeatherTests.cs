@@ -229,6 +229,80 @@ namespace RealisticStackEffects.Core.Tests;
         Assert.True(PlumeClimate.Air(SmokeSeason.Winter, 14f, 0f, 0f).Temperature < 5f);
     }
 
+    [Fact]
+    public void FogFromDensityLeavesClearAirUnchangedAndSaturatesDenseFog()
+    {
+        // Clear, bright-cloudy, above-fog, and non-foggy overcast presets sit at 0.15-0.30.
+        foreach (var clear in new[] { -1f, 0f, 0.15f, 0.18f, 0.20f, 0.24f, 0.27f, PlumeClimate.ClearFogDensity })
+            Assert.Equal(0f, PlumeClimate.FogFromDensity(clear));
+
+        // Valley fog rises smoothly from light (0.40) through moderate (0.56) to storm/dense (0.84-1.00).
+        var light = PlumeClimate.FogFromDensity(0.40f);
+        var moderate = PlumeClimate.FogFromDensity(0.56f);
+        var mid = PlumeClimate.FogFromDensity(0.60f);
+        var heavy = PlumeClimate.FogFromDensity(0.84f);
+        Assert.True(light > 0f && light < moderate && moderate < heavy && heavy < 1f,
+            $"{light:F2} < {moderate:F2} < {heavy:F2}");
+        Assert.Equal(0.5f, mid, 3);
+
+        foreach (var dense in new[] { PlumeClimate.FullFogDensity, 1f, 1.5f })
+            Assert.Equal(1f, PlumeClimate.FogFromDensity(dense));
+
+        // Non-finite readings fail safe to 0 rather than leaking NaN or saturating clear air.
+        foreach (var bad in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity })
+            Assert.Equal(0f, PlumeClimate.FogFromDensity(bad));
+    }
+
+    [Fact]
+    public void FogSaturatesNonRainyAirInBothSeasonAndDvSeasonsPaths()
+    {
+        var clearSummer = PlumeClimate.Air(SmokeSeason.Summer, 15f, 0f, PlumeClimate.FogFromDensity(0.18f));
+        var moderateSummer = PlumeClimate.Air(SmokeSeason.Summer, 15f, 0f, PlumeClimate.FogFromDensity(0.56f));
+        var denseSummer = PlumeClimate.Air(SmokeSeason.Summer, 15f, 0f, PlumeClimate.FogFromDensity(1f));
+        Assert.Equal(PlumeClimate.Air(SmokeSeason.Summer, 15f, 0f, 0f).Humidity, clearSummer.Humidity, 4);
+        Assert.Equal(clearSummer.Temperature, moderateSummer.Temperature, 4);
+        Assert.Equal(clearSummer.Temperature, denseSummer.Temperature, 4);
+        Assert.True(moderateSummer.Humidity > clearSummer.Humidity + 0.2f, $"{clearSummer} -> {moderateSummer}");
+        Assert.Equal(1f, denseSummer.Humidity, 4);
+        Assert.Equal(0f, denseSummer.SaturationDeficit, 4);
+        Assert.True(Lasting(SteamCloud.For(denseSummer, SteamCloud.ReferenceFlueGas), 9f) > 60f);
+
+        var clearSeasons = PlumeClimate.WithTemperature(20f, 15f, 0f, PlumeClimate.FogFromDensity(0.18f));
+        var moderateSeasons = PlumeClimate.WithTemperature(20f, 15f, 0f, PlumeClimate.FogFromDensity(0.56f));
+        var denseSeasons = PlumeClimate.WithTemperature(20f, 15f, 0f, PlumeClimate.FogFromDensity(1f));
+        Assert.Equal(20f, moderateSeasons.Temperature);
+        Assert.Equal(20f, denseSeasons.Temperature);
+        Assert.True(moderateSeasons.Humidity > clearSeasons.Humidity + 0.2f, $"{clearSeasons} -> {moderateSeasons}");
+        Assert.Equal(1f, denseSeasons.Humidity, 4);
+    }
+
+    [Fact]
+    public void FogAndRainClampAndRejectNonFiniteInputs()
+    {
+        var baseAir = PlumeClimate.Air(SmokeSeason.Summer, 15f, 0f, 0f);
+        var baseSeasons = PlumeClimate.WithTemperature(20f, 15f, 0f, 0f);
+
+        foreach (var nonFinite in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity })
+        {
+            var airBadFog = PlumeClimate.Air(SmokeSeason.Summer, 15f, 0f, nonFinite);
+            var seasonsBadFog = PlumeClimate.WithTemperature(20f, 15f, 0f, nonFinite);
+            var airBadRain = PlumeClimate.Air(SmokeSeason.Summer, 15f, nonFinite, 0f);
+            var seasonsBadRain = PlumeClimate.WithTemperature(20f, 15f, nonFinite, 0f);
+
+            Assert.Equal(baseAir.Humidity, airBadFog.Humidity, 4);
+            Assert.Equal(baseSeasons.Humidity, seasonsBadFog.Humidity, 4);
+            Assert.Equal(baseAir.Humidity, airBadRain.Humidity, 4);
+            Assert.Equal(baseAir.Temperature, airBadRain.Temperature, 4);
+            Assert.Equal(baseSeasons.Humidity, seasonsBadRain.Humidity, 4);
+            Assert.Equal(0f, new PlumeAir(15f, nonFinite).Humidity);
+        }
+
+        Assert.Equal(baseAir.Humidity, PlumeClimate.Air(SmokeSeason.Summer, 15f, 0f, -0.5f).Humidity, 4);
+        Assert.Equal(1f, PlumeClimate.Air(SmokeSeason.Summer, 15f, 0f, 2.5f).Humidity, 4);
+        Assert.Equal(baseSeasons.Humidity, PlumeClimate.WithTemperature(20f, 15f, 0f, -0.5f).Humidity, 4);
+        Assert.Equal(1f, PlumeClimate.WithTemperature(20f, 15f, 0f, 2.5f).Humidity, 4);
+    }
+
     private static PlumeInputs Working(float pressure, float whiteness, float smoke = 0f) => new PlumeInputs
     {
         ExhaustPressure = pressure,

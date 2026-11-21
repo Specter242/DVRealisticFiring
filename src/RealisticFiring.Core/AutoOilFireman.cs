@@ -67,7 +67,10 @@ namespace RealisticFiring.Core
         // clear the box with the fire out, near shut at the safety valve.
         private const float StandingBlower = 0.15f;
         private const float RaisingBlower = 0.6f;
+        private const float WarmUpBlower = 0.25f;
         private const float ClearingBlower = 0.5f;
+        private const float WarmUpValve = 0.28f;
+        private const float SlowWarmUpValve = 0.12f;
 
         /// <summary>
         /// He sands the flues when they have sooted this far (steaming falls
@@ -147,8 +150,15 @@ namespace RealisticFiring.Core
             // The atomizer first: no more oil than its steam atomizes, and none
             // where that is under the least he keeps lit.
             var atomized = AtomizedShare * fire.AtomizableOil / Math.Max(1e-3f, fire.MaxFeed);
+            var coldBoiler = r.ThermalShockEnabled && !j.Working && r.Work < WorkingShare && r.BoilerTemperature > 0f && r.BoilerTemperature < BoilerThermalShock.WarmTemperature;
+            var warmingTooFast = r.ThermalShockEnabled && r.WarmingTooFast && !j.Working;
+            var protectSuperheater = r.SuperheaterCareEnabled && r.SuperheaterHot && !j.Working && r.Throttle < Drifting.CrackedThrottle;
+            var maxValve = protectSuperheater ? LeastFire
+                : warmingTooFast ? Math.Max(LeastFire, SlowWarmUpValve)
+                : coldBoiler ? Math.Max(LeastFire, WarmUpValve)
+                : 1f;
             Valve = alight && r.TenderWater > 0f && r.TenderCoal > 0f && atomized >= LeastFire
-                ? Clamp(Math.Min(Math.Min(want / Math.Max(1e-3f, fire.MaxFeed), oilCap), atomized), LeastFire, 1f)
+                ? Clamp(Math.Min(Math.Min(Math.Min(want / Math.Max(1e-3f, fire.MaxFeed), oilCap), atomized), maxValve), LeastFire, 1f)
                 : 0f;
             actions.FiringValve = Valve;
 
@@ -186,11 +196,24 @@ namespace RealisticFiring.Core
                 }
                 else
                 {
-                    // Standing or drifting, the blower makes the draft.
-                    blower = Clamp(blower + toward * AirStep * dt, 0f, 1f);
-                    if (r.Standing && r.Pressure < PressureTarget - 1f)
-                        blower = Math.Max(blower, RaisingBlower);
-                    damper = Clamp(damper + toward * AirStep * dt, LeastDamper, 1f);
+                    var coldBoiler = r.ThermalShockEnabled && r.BoilerTemperature > 0f && r.BoilerTemperature < BoilerThermalShock.WarmTemperature;
+                    var warmingTooFast = r.ThermalShockEnabled && r.WarmingTooFast;
+                    var protectSuperheater = r.SuperheaterCareEnabled && r.SuperheaterHot && r.Throttle < Drifting.CrackedThrottle;
+                    if (protectSuperheater)
+                    {
+                        blower = 0f;
+                        damper = LeastDamper;
+                    }
+                    else
+                    {
+                        // Standing or drifting, the blower makes the draft.
+                        blower = Clamp(blower + toward * AirStep * dt, 0f, 1f);
+                        if (r.Standing && r.Pressure < PressureTarget - 1f)
+                            blower = Math.Max(blower, coldBoiler ? WarmUpBlower : RaisingBlower);
+                        if (warmingTooFast)
+                            blower = Math.Min(blower, StandingBlower);
+                        damper = Clamp(damper + toward * AirStep * dt, LeastDamper, 1f);
+                    }
                 }
             }
             actions.Damper = damper;

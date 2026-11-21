@@ -18,17 +18,10 @@ namespace RealisticFiring.Visuals
         private const string SourceLatchControl = "C_Sand";
         private static readonly string[] LatchNotches = { "Down", "Up" };
 
-        private static readonly Dictionary<string, Vector3> Placements = new Dictionary<string, Vector3>
-        {
-            ["S464-730"] = new Vector3(-26f, 15f, 0f),
-        };
+        // Per-locomotive booster wall placements and car-frame seats live in
+        // LocomotiveProfiles (Cab.BoosterPlacement and Cab.BoosterCarSeat).
 
-        private static readonly Dictionary<string, Vector3> CarSeats = new Dictionary<string, Vector3>
-        {
-            ["LocoS282A"] = new Vector3(1.45f, 1.60f, -0.24f),
-        };
-
-        /// <summary>Car-frame seats set on the seating bench this session, by livery; ahead of both tables.</summary>
+        /// <summary>Car-frame seats set on the seating bench this session, by livery; ahead of profiles.</summary>
 #if !PUBLIC_RELEASE
         internal static readonly Dictionary<string, Vector3> DevCarSeats = new Dictionary<string, Vector3>();
 #endif
@@ -36,17 +29,19 @@ namespace RealisticFiring.Visuals
         /// <summary>Where the cluster is pinned in the car's frame for <paramref name="livery"/>, if it is.</summary>
         internal static Vector3? CarSeatFor(string livery) =>
 #if PUBLIC_RELEASE
-            CarSeats.TryGetValue(livery, out var seated) ? seated
+            LocomotiveProfiles.For(livery)?.Cab.BoosterCarSeat
+            ?? (MakerFitRegistry.TryGetBoosterCarSeat(livery, out var maker) ? maker : (Vector3?)null);
 #else
             DevCarSeats.TryGetValue(livery, out var dev) ? dev
-            : CarSeats.TryGetValue(livery, out var seated) ? seated
+            : LocomotiveProfiles.For(livery)?.Cab.BoosterCarSeat
+            ?? (MakerFitRegistry.TryGetBoosterCarSeat(livery, out var maker) ? maker : (Vector3?)null);
 #endif
-            : (Vector3?)null;
         private static readonly Vector3 DefaultPlacement = new Vector3(0f, 115f, 0f);
 
         // Where the controls go by the reverser for a livery not pinned in the car's frame.
-        private static Vector3 PlacementFor(string livery) =>
-            Placements.TryGetValue(livery, out var seated) ? seated : DefaultPlacement;
+        internal static Vector3 PlacementFor(string livery) =>
+            LocomotiveProfiles.For(livery)?.Cab.BoosterPlacement
+            ?? (MakerFitRegistry.TryGetBoosterReverserOffset(livery, out var maker) ? maker : DefaultPlacement);
 
         /// <summary>The cluster's root in a cab, for the seating bench.</summary>
         internal const string Root = RootName;
@@ -65,7 +60,8 @@ namespace RealisticFiring.Visuals
         // The S282's sander lever is 2 cm thick, its pivot on its mounting
         // face (its −x side) and its body toward +x. A quarter turn about the
         // vertical puts that face on the wall and the lever flush along it.
-        private static readonly Quaternion LatchOnWall = Quaternion.Euler(0f, 90f, 0f);
+        // Written out so the adapter check can initialize BoosterCab without Unity's native Euler icall.
+        private static readonly Quaternion LatchOnWall = new Quaternion(0f, 0.70710678f, 0f, 0.70710678f);
         private static readonly Vector3 IdleAt = new Vector3(0.07f, -0.04f, -0.012f);
         private const float LabelDrop = 0.06f;
         private const float BodyFront = -0.004f;
@@ -78,7 +74,7 @@ namespace RealisticFiring.Visuals
             if (car == null || interior == null || interior.Find(RootName) != null
                 || !RealisticBooster.TryGet(car, out var booster))
                 return null;
-            Interiors[car] = interior;
+            TrackInterior(car, interior);
             // The S282's booster not yet bought: no controls, until it is (EnsureFitted).
             if (!booster.Fitted)
                 return "the booster is not fitted (an upgrade at a career manager): no controls in the cab";
@@ -164,8 +160,34 @@ namespace RealisticFiring.Visuals
         }
 
         private static readonly Dictionary<TrainCar, Transform> Interiors = new Dictionary<TrainCar, Transform>();
+        private static readonly Dictionary<TrainCar, string> CheckedGuids = new Dictionary<TrainCar, string>();
         private static float nextCheck;
         private static int fittedVersion = -1;
+
+        internal static void TrackInterior(TrainCar car, Transform interior)
+        {
+            Interiors[car] = interior;
+            CheckedGuids[car] = Upgrades.Fittings.CarGuidOf(car);
+        }
+
+        internal static void Untrack(TrainCar car)
+        {
+            Interiors.Remove(car);
+            CheckedGuids.Remove(car);
+        }
+
+        internal static bool AnyGuidChanged()
+        {
+            foreach (var car in Interiors.Keys)
+            {
+                if (car == null || car.loadedInterior == null)
+                    return true;
+                CheckedGuids.TryGetValue(car, out var prev);
+                if (!System.String.Equals(prev, Upgrades.Fittings.CarGuidOf(car), System.StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
+        }
 
         /// <summary>
         /// Builds an upgrade's booster controls in a loaded cab once it is
@@ -174,19 +196,20 @@ namespace RealisticFiring.Visuals
         /// </summary>
         public static void EnsureFitted()
         {
-            if (Time.unscaledTime < nextCheck)
+            var refit = fittedVersion != Upgrades.Fittings.Version || AnyGuidChanged();
+            if (!refit && Time.unscaledTime < nextCheck)
                 return;
             nextCheck = Time.unscaledTime + 1f;
-            var refit = fittedVersion != Upgrades.Fittings.Version;
             fittedVersion = Upgrades.Fittings.Version;
             foreach (var car in Interiors.Keys.ToList())
             {
                 var interior = car != null && car.loadedInterior != null ? car.loadedInterior.transform : null;
                 if (car == null || interior == null || interior != Interiors[car] || !RealisticBooster.TryGet(car, out var booster))
                 {
-                    Interiors.Remove(car);
+                    Untrack(car);
                     continue;
                 }
+                CheckedGuids[car] = Upgrades.Fittings.CarGuidOf(car);
                 var root = interior.Find(RootName);
                 if (root != null && !booster.Fitted)
                 {
@@ -211,7 +234,7 @@ namespace RealisticFiring.Visuals
                 var interior = pair.Value;
                 if (car == null || interior == null || car.loadedInterior == null || car.loadedInterior.transform != interior)
                 {
-                    Interiors.Remove(car);
+                    Untrack(car);
                     continue;
                 }
                 var old = interior.Find(RootName);

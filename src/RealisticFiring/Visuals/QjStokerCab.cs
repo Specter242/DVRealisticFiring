@@ -65,19 +65,13 @@ namespace RealisticFiring.Visuals
         private static readonly Dictionary<string, Seat> Seats = new Dictionary<string, Seat>();
 #if !PUBLIC_RELEASE
         internal static readonly Dictionary<string, Seat> DevSeats = new Dictionary<string, Seat>();
-#endif
-        private static readonly Dictionary<string, Vector3> StokerSeats = new Dictionary<string, Vector3>
-        {
-            [Livery] = new Vector3(0.12f, 0.17f, 0.06f),
-        };
-#if !PUBLIC_RELEASE
         internal static readonly Dictionary<string, Vector3> DevStokerSeats = new Dictionary<string, Vector3>();
 #endif
 #if PUBLIC_RELEASE
-        internal static Vector3 StokerSeatFor(string id) => StokerSeats.TryGetValue(id, out var seat) ? seat : new Vector3(-0.27f, -0.28f, 0f);
+        internal static Vector3 StokerSeatFor(string id) => Sim.LocomotiveProfiles.For(id)?.Cab.QjStokerSeat ?? new Vector3(-0.27f, -0.28f, 0f);
 #else
         internal static Vector3 StokerSeatFor(string id) => DevStokerSeats.TryGetValue(id, out var dev) ? dev
-            : StokerSeats.TryGetValue(id, out var seat) ? seat : new Vector3(-0.27f, -0.28f, 0f);
+            : Sim.LocomotiveProfiles.For(id)?.Cab.QjStokerSeat ?? new Vector3(-0.27f, -0.28f, 0f);
 #endif
 #if PUBLIC_RELEASE
         internal static Seat SeatFor(string id) => Seats.TryGetValue(id, out var seat) ? seat : StartingSeat;

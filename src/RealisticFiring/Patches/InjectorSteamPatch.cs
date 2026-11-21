@@ -25,7 +25,7 @@ namespace RealisticFiring.Patches
         {
             var graph = __instance.connectionsDefinition;
             var livery = trainCar != null && trainCar.carLivery != null ? trainCar.carLivery.id : null;
-            if (!Main.RealisticInjectorsEnabled || graph == null || graph.executionOrder == null)
+            if (!Main.RealisticInjectorsEnabled || LeftStock.IsExcluded(trainCar) || graph == null || graph.executionOrder == null)
                 return;
             if (InjectorValves.HasTenderValves(livery))
             {

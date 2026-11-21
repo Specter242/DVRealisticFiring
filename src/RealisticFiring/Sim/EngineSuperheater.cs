@@ -1,9 +1,10 @@
-using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using DV.JObjectExtstensions;
 using DV.Simulation.Cars;
 using LocoSim.Definitions;
 using LocoSim.Implementations;
+using Newtonsoft.Json.Linq;
 using RealisticFiring.Core;
 using UnityEngine;
 
@@ -13,63 +14,26 @@ namespace RealisticFiring.Sim
     {
         // Heat a kg of steam takes from the feed, J: about 2.5 MJ at working pressure.
         private const float EvaporationHeat = 2.5e6f;
-
-        private static readonly Dictionary<string, SuperheaterSpec> Fits = new Dictionary<string, SuperheaterSpec>
-        {
-            // USRA light Mikado: Type A, 882 sq ft on 3,783 (RME Aug 1918).
-            ["LocoS282A"] = Superheat("Type A", 136f, 0.72f),
-            // The JK3's 1897–1912 shunters were saturated.
-            ["Jk3A"] = SuperheaterSpec.None,
-            // NYC J-3a: Type E, 1,745 sq ft on 4,187 (RME May 1938).
-            ["S464-730"] = Superheat("Type E", 175f, 0.82f),
-            // UP FEF-3: a large Type A, 1,400 sq ft on 4,224 (UP diagram book).
-            ["FEF-3"] = Superheat("Type A", 158f, 0.75f),
-            ["S484-840A"] = Superheat("Type A", 158f, 0.75f),
-            // AT&SF 2900: 220 Type E flues, 2,366 sq ft on 5,312 (Locobase).
-            ["A.T.&S.F. 2901-A"] = Superheat("Type E", 180f, 0.82f),
-            // LMS 8F: 21 elements, 215 sq ft on 1,650 (domed boilers; lner.info,
-            // Haresnape 1970): a small Type A. Jubilees' 14 elements rarely gave
-            // past 500-510 °F at 225 psi (Rowledge & Reed 1981, p.30); 100 °C
-            // at the full rate is inferred.
-            ["em_lms_8f_loc_black"] = Superheat("Type A", 100f, 0.72f),
-            ["em_lms_8f_loc_grey"] = Superheat("Type A", 100f, 0.72f),
-            // LMS Fowler 4F: a Schmidt (the Midland 3835 class's, Wikipedia),
-            // 246 to 252 sq ft on 1,158 (Wikipedia): by its surface over the
-            // evaporative, between the 8F's 100 °C on 215/1,650 and the
-            // S282's 136 on 882/3,783, about 130 °C at the full rate (inferred).
-            ["em_fowler_4f_44422"] = Superheat("Schmidt", 130f, 0.72f),
-            ["em_fowler_4f_4027"] = Superheat("Schmidt", 130f, 0.72f),
-            // China Railways QJ: Schmidt Type A, 69 elements, 144.1 m² on
-            // 255.3; steam "close to 400 °C" at its design rate (the works
-            // book), about 195 °C over saturation at 15 kgf/cm².
-            ["S2102-870"] = Superheat("Type A", 195f, 0.75f),
-            // Prussian T 20: 34 flues, 62.5 m² on 198.8; the superheater's
-            // steam about 300 to 350 °C on the EZA's 1923 runs (Nordmann,
-            // Organ 1924), about 150 °C over saturation at 14 at. A Schmidt,
-            // as the Prussian engines' (inferred).
-            ["S2102-720"] = Superheat("Schmidt", 150f, 0.72f),
-            // BorING's narrow-gauge engines: their prototypes were saturated
-            // (the SAR X class of 1880, Porter's saddle tanks, the 1900
-            // Heisler, NPC No. 21 and the FS 670 of 1900).
-            ["S260N-580A"] = SuperheaterSpec.None,
-            ["S040N-270"] = SuperheaterSpec.None,
-            ["S0440NG-890"] = SuperheaterSpec.None,
-            ["S440NCF-400A"] = SuperheaterSpec.None,
-        };
-
-        private static readonly HashSet<string> Exempt = new HashSet<string> { "LocoS060" };
+        private const string WearSaveKey = "rfSuperheaterWear";
 
         // Any other steam engine: a Type A, the commonest.
         private static readonly SuperheaterSpec Default = Superheat("Type A", 136f, 0.72f);
 
         private static readonly ConditionalWeakTable<ReciprocatingSteamEngine, EngineSuperheater> Engines =
             new ConditionalWeakTable<ReciprocatingSteamEngine, EngineSuperheater>();
+        private static readonly ConditionalWeakTable<TrainCar, EngineSuperheater> ByCar =
+            new ConditionalWeakTable<TrainCar, EngineSuperheater>();
+        private static readonly ConditionalWeakTable<ReciprocatingSteamEngine, JObject> PendingSaves =
+            new ConditionalWeakTable<ReciprocatingSteamEngine, JObject>();
 
+        private readonly TrainCar car;
         private readonly Port heat;
         private readonly float fullHeat;
+        private bool? mirroredCareActive;
 
-        private EngineSuperheater(SuperheaterSpec spec, Port heat, float fullHeat)
+        private EngineSuperheater(TrainCar car, SuperheaterSpec spec, Port heat, float fullHeat)
         {
+            this.car = car;
             Model = new Superheater(spec);
             this.heat = heat;
             this.fullHeat = fullHeat;
@@ -77,11 +41,37 @@ namespace RealisticFiring.Sim
 
         public Superheater Model { get; }
 
+        /// <summary>True on a multiplayer guest once host-authoritative superheater state has been mirrored.</summary>
+        internal bool Mirrored { get; set; }
+
+        /// <summary>
+        /// Whether superheater element care is active for this engine: the
+        /// host's mirrored setting on a multiplayer guest, otherwise local settings.
+        /// </summary>
+        public bool SuperheaterCareActive =>
+            mirroredCareActive ?? (Main.Settings == null || Main.Settings.SuperheaterCare);
+
+        /// <summary>Applies host-authoritative superheater state on a multiplayer guest.</summary>
+        internal void Mirror(float elements, float superheat, float elementTemperature, float wear, bool overheating, bool approaching, bool careActive)
+        {
+            mirroredCareActive = careActive;
+            Model.Mirror(elements, superheat, elementTemperature, wear, overheating, approaching);
+            Model.SetCareEnabled(careActive);
+            Mirrored = true;
+        }
+
         // Standing with a bright fire and the throttle shut, the elements went
         // "above red heat" (Santa Fe, 1921). They take minutes to come up; their
         // steel's heat over the steam's at the full rate is about 75 s.
         private static SuperheaterSpec Superheat(string kind, float full, float halfShare) =>
             new SuperheaterSpec { Kind = kind, FullSuperheat = full, HalfSuperheat = full * halfShare, StandingSuperheat = 400f, TimeConstant = 75f };
+
+        internal static bool IsExempt(string livery) =>
+            LocomotiveProfiles.For(livery)?.SuperheaterExempt == true || MakerFitRegistry.IsSuperheaterExempt(livery);
+
+        internal static SuperheaterSpec SpecFor(string livery) =>
+            LocomotiveProfiles.For(livery)?.Superheater
+            ?? (MakerFitRegistry.TryGetSuperheater(livery, out var maker) ? maker : Default);
 
         /// <summary>Fits <paramref name="car"/>'s engine with its superheater. Returns a line for the log, or null.</summary>
         public static string Attach(TrainCar car, SimController controller)
@@ -97,18 +87,36 @@ namespace RealisticFiring.Sim
             if (heat == null)
                 return null;
             var livery = car != null && car.carLivery != null ? car.carLivery.id : null;
-            if (livery != null && Exempt.Contains(livery))
+            if (IsExempt(livery))
             {
                 EngineCylinders.Of(engine).Model.WallCondensation = false;
                 return "steam as it was: no superheater, no wet walls";
             }
-            var spec = livery != null && Fits.TryGetValue(livery, out var fit) ? fit : Default;
+            var spec = SpecFor(livery);
             var fullHeat = firebox.maxCoalCapacity / firebox.burnTime * FireboxParameters.CoalHeatContent * firebox.efficiencyAtMaxCombustion;
-            Engines.Remove(engine);
-            Engines.Add(engine, new EngineSuperheater(spec, heat, fullHeat));
+            Attach(car, engine, spec, heat, fullHeat);
             return spec.Saturated
                 ? "saturated: no superheater"
                 : $"{spec.Kind} superheater: {spec.FullSuperheat:F0} °C at the full rate of {fullHeat / 1e6f:F1} MW, {spec.HalfSuperheat:F0} °C at half";
+        }
+
+        /// <summary>Attaches a superheater directly to <paramref name="engine"/> (also used by offline adapter checks).</summary>
+        internal static EngineSuperheater Attach(TrainCar car, ReciprocatingSteamEngine engine, SuperheaterSpec spec, Port heat, float fullHeat)
+        {
+            var superheater = new EngineSuperheater(car, spec, heat, fullHeat);
+            Engines.Remove(engine);
+            Engines.Add(engine, superheater);
+            if (car != null)
+            {
+                ByCar.Remove(car);
+                ByCar.Add(car, superheater);
+            }
+            if (PendingSaves.TryGetValue(engine, out var saved))
+            {
+                PendingSaves.Remove(engine);
+                superheater.LoadData(saved);
+            }
+            return superheater;
         }
 
         public static bool TryGet(ReciprocatingSteamEngine engine, out EngineSuperheater superheater)
@@ -117,14 +125,85 @@ namespace RealisticFiring.Sim
             return engine != null && Engines.TryGetValue(engine, out superheater);
         }
 
-        /// <summary>A tick: the fire's heat and the steam into the steam chest, each against the boiler's full rate.</summary>
+        public static bool TryGet(TrainCar car, out EngineSuperheater superheater)
+        {
+            superheater = null;
+            return car != null && ByCar.TryGetValue(car, out superheater);
+        }
+
+        /// <summary>A tick: the fire's heat, steam flow, throttle, and drifting valve protection.</summary>
         public void Step(ReciprocatingSteamEngine engine, float delta)
         {
+            if (Net.IsClient && Mirrored)
+                return;
+            var careEnabled = !Net.IsClient && (Main.Settings == null || Main.Settings.SuperheaterCare);
             var fire = fullHeat > 0f ? Mathf.Max(0f, heat.Value) / fullHeat : 0f;
+            var startup = careEnabled ? StartupBoost() : 1f;
             var rate = EngineSteamPath.TryGet(engine, out var path) && path.Active ? path.HeaterRate : engine.intakeFlowReadOut.Value;
             var steam = fullHeat > 0f ? Mathf.Max(0f, rate) * EvaporationHeat / fullHeat : 0f;
             var quality = engine.intakeQuality.IsConnected ? engine.intakeQuality.Value : 1f;
-            Model.Step(fire, steam, quality, delta);
+            var intakePressure = engine.intakePressure.IsConnected ? Mathf.Max(1f, engine.intakePressure.Value) : 1f;
+            var satTemp = BoilerWaterRig.TryGet(car, out var water) && water.BelowBoilingNow
+                ? water.WaterTemperature
+                : SteamCylinders.SaturationTemperature(intakePressure);
+            var throttle = engine.throttleControl.IsConnected ? engine.throttleControl.Value : 0f;
+            var driftingValve = car != null ? EngineDrift.ValveOpening(car, engine) : 0f;
+            Model.Step(delta, new SuperheaterCareInputs
+            {
+                Fire = fire,
+                Flow = steam,
+                Quality = quality,
+                SaturationTemperature = satTemp,
+                Throttle = throttle,
+                DriftingValve = driftingValve,
+                StartupMultiplier = startup,
+                CareEnabled = careEnabled,
+            });
+        }
+
+        private float StartupBoost()
+        {
+            var boost = car != null && FireboxRegistry.TryGet(car, out var coal) ? coal.StartupMultiplier
+                : car != null && RealisticOilFirebox.TryGet(car, out var oil) ? oil.StartupBoost
+                : 1f;
+            return boost > 1f ? boost : 1f;
+        }
+
+        internal static void Save(ReciprocatingSteamEngine engine, JObject data)
+        {
+            if (engine == null || data == null)
+                return;
+            if (TryGet(engine, out var superheater) && superheater.Model.Wear > 0f)
+                data.SetFloat(WearSaveKey, superheater.Model.Wear);
+            else if (PendingSaves.TryGetValue(engine, out var pending))
+            {
+                var wear = pending.GetFloat(WearSaveKey);
+                if (wear.HasValue && wear.Value > 0f)
+                    data.SetFloat(WearSaveKey, wear.Value);
+            }
+        }
+
+        internal static void Load(ReciprocatingSteamEngine engine, JObject data)
+        {
+            if (engine == null)
+                return;
+            PendingSaves.Remove(engine);
+            if (data == null)
+            {
+                if (TryGet(engine, out var clear))
+                    clear.Model.Restore(0f);
+                return;
+            }
+            if (TryGet(engine, out var superheater))
+                superheater.LoadData(data);
+            else
+                PendingSaves.Add(engine, data);
+        }
+
+        private void LoadData(JObject data)
+        {
+            Model.Restore(data.GetFloat(WearSaveKey) ?? 0f);
+            Model.SetCareEnabled(SuperheaterCareActive);
         }
 
         /// <summary>The steam's temperature at <paramref name="pressure"/> absolute bar, in °C.</summary>

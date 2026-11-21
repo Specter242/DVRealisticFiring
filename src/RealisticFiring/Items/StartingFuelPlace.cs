@@ -35,32 +35,61 @@ namespace RealisticFiring.Items
         private bool Firebox(ItemUseTarget target, out FuelFireboxIntake intake) =>
             FuelFireboxIntake.ForTarget(target, out intake);
 
+        private bool Stove(ItemUseTarget target, out Visuals.CabooseStoveTarget stove) =>
+            Visuals.CabooseStoveTarget.ForTarget(target, out stove);
+
         private DoorAimKind AimKind => fuel.Kind == StartingFuelKind.Rag ? DoorAimKind.LayRag : DoorAimKind.LayWood;
 
         // The game's grab handler, once it has made the item's.
         private GrabHandlerItem Handle => handle != null ? handle : handle = GetComponent<GrabHandlerItem>();
 
-        public bool IsHoverCompatible(ItemUseTarget target) => fuel != null && Firebox(target, out _);
+        public bool IsHoverCompatible(ItemUseTarget target) =>
+            fuel != null && (Firebox(target, out _) || Stove(target, out _));
 
-        public bool IsUseCompatible(ItemUseTarget target) =>
-            fuel != null && !fuel.Consumed && Firebox(target, out var intake) && intake.DoorOpenFor(VRManager.IsVREnabled()) && intake.CanTake(fuel);
+        public bool IsUseCompatible(ItemUseTarget target)
+        {
+            if (fuel == null || fuel.Consumed) return false;
+            if (Firebox(target, out var intake))
+                return intake.DoorOpenFor(VRManager.IsVREnabled()) && intake.CanTake(fuel);
+            if (Stove(target, out var stove))
+                return stove.DoorOpen && stove.CanTake(fuel);
+            return false;
+        }
 
         public bool HandleHover(ItemUseTarget target)
         {
-            if (fuel == null || !Firebox(target, out var intake)) return false;
-            if (intake.TryAim(target, Handle, AimKind, out var firebox, out var aim)) firebox.NoteAim(aim);
-            var text = !intake.DoorOpenFor(false) ? "Open the fire door wider to lay it in"
-                : !intake.CanTake(fuel) ? intake.RefusalFor(fuel)
-                : fuel.Kind == StartingFuelKind.Wood ? "Lay the wood on the grate" : fuel.Rag.Lit ? "Lay the burning rag in" : fuel.Rag.Oil > 0f ? "The rag isn't lit: light it first, or it does nothing" : "Put the rag in";
-            SingletonBehaviour<InteractionTextControllerNonVr>.Instance?.DisplayText(text);
-            return true;
+            if (fuel == null) return false;
+            if (Firebox(target, out var intake))
+            {
+                if (intake.TryAim(target, Handle, AimKind, out var firebox, out var aim)) firebox.NoteAim(aim);
+                var text = !intake.DoorOpenFor(false) ? "Open the fire door wider to lay it in"
+                    : !intake.CanTake(fuel) ? intake.RefusalFor(fuel)
+                    : fuel.Kind == StartingFuelKind.Wood ? "Lay the wood on the grate" : fuel.Rag.Lit ? "Lay the burning rag in" : fuel.Rag.Oil > 0f ? "The rag isn't lit: light it first, or it does nothing" : "Put the rag in";
+                SingletonBehaviour<InteractionTextControllerNonVr>.Instance?.DisplayText(text);
+                return true;
+            }
+            if (Stove(target, out var stove))
+            {
+                var text = !stove.DoorOpen ? "Open a stove door to lay it in"
+                    : !stove.CanTake(fuel) ? stove.RefusalFor(fuel)
+                    : fuel.Kind == StartingFuelKind.Wood ? "Lay the firewood in the stove" : fuel.Rag.Lit ? "Lay the burning rag in the stove" : fuel.Rag.Oil > 0f ? "Lay the oiled rag in the stove (light it with your lighter)" : "Put the rag in the stove";
+                SingletonBehaviour<InteractionTextControllerNonVr>.Instance?.DisplayText(text);
+                return true;
+            }
+            return false;
         }
 
         public bool HandleUse(ItemUseTarget target)
         {
-            if (!IsUseCompatible(target) || !Firebox(target, out var intake)) return false;
-            var zone = intake.AimedZone(target, Handle, AimKind);
-            return intake.Place(fuel, zone);
+            if (!IsUseCompatible(target)) return false;
+            if (Firebox(target, out var intake))
+            {
+                var zone = intake.AimedZone(target, Handle, AimKind);
+                return intake.Place(fuel, zone);
+            }
+            if (Stove(target, out var stove))
+                return stove.Place(fuel);
+            return false;
         }
 
         public (Vector3 pos, Quaternion rot) TargetPoint(ItemUseTarget target)

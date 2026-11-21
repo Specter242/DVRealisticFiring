@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using HarmonyLib;
@@ -9,49 +8,6 @@ namespace RealisticFiring.Sim
 {
  internal static class SafetyValveFit
     {
-        // Lift, absolute bar (DV's boiler pressure; gauge psi / 14.5 + 1), and
-        // capacity, kg/s: 1.25 times the steam at the lift of the most heat
-        // the mod's fire gives standing, door shut, blower wide open, its box
-        // kept 30 to 100 % full (the 2901: its burner at any setting), rounded
-        // up to half a kg/s; on the engines whose boilers are sized to their
-        // prototypes' (BoilerFit, 2026-10-20), of that fire, and on the
-        // boiler's efficiency curve (FireboxParameters.EfficiencyAt). Lifts within the
-        // ICC's 6 psi of the prototype's pressure are the maker's: the S282
-        // 203 psi (the USRA light Mikado 200), the S060 210 (the S100's), the
-        // Hudson 280 (the J-3a's 275 as built), the 2901 297 (300).
-        private static readonly Dictionary<string, (float Lift, float Capacity)> Fits = new Dictionary<string, (float, float)>
-        {
-            ["LocoS282A"] = (15.0f, 6f),
-            ["LocoS060"] = (15.5f, 3.5f),
-            ["Jk3A"] = (15.0f, 2.5f),
-            ["S464-730"] = (20.3f, 9.5f),
-            ["FEF-3"] = (21.7f, 10.5f),
-            ["S484-840A"] = (21.7f, 10.5f),
-            ["A.T.&S.F. 2901-A"] = (21.5f, 8f),
-            // The 8F's 225 psi, which its maker set as 15.5 bar, gauge.
-            ["em_lms_8f_loc_black"] = (16.5f, 4f),
-            ["em_lms_8f_loc_grey"] = (16.5f, 4f),
-            // The 4F's 175 psi (Wikipedia) is 13.1 bar absolute; its maker's
-            // 13.3 (178 psi), within 6 psi, is kept. Ross pops from No. 4027
-            // (Brassmasters, 2004); their size not found. Sized for its
-            // standing fire, about 3.5 MW on its as-built boiler (BoilerFit),
-            // where the maker's 5 kg/s reseats 19 psi under its lift.
-            ["em_fowler_4f_44422"] = (13.3f, 2.5f),
-            ["em_fowler_4f_4027"] = (13.3f, 2.5f),
-            ["S2102-870"] = (17.3f, 7.5f),
-            // The T 20's 14 at gauge (kgf/cm²) is 14.7 bar absolute; its
-            // maker's 15.0, within 6 psi, is kept. Sized for its standing fire, 8.4 MW on its
-            // prototype's boiler, where the maker's 15 kg/s popped.
-            ["S2102-720"] = (15.0f, 5.5f),
-            ["S260N-580A"] = (12.0f, 1.0f),
-            ["S040N-270"] = (10.0f, 0.5f),
-            ["S0440NG-890"] = (13.5f, 1.0f),
-            // The cab-forward at its maker's 11.5 bar (152 psi; NPC No. 21
-            // worked at 140, the FS 670 at 15 kg/cm²), sized for its standing
-            // fire, about 1.4 MW on his grate of 0.77 m².
-            ["S440NCF-400A"] = (11.5f, 1.0f),
-        };
-
         /// <summary>
         /// How far under its lift a valve reseats, bar: 3 psi, the blow-back
         /// the 1912 Master Mechanics' standard rated valves at (1915
@@ -69,13 +25,22 @@ namespace RealisticFiring.Sim
             AccessTools.FieldRefAccess<SimComponent, SimGameParams>("gameParams");
 
         /// <summary>A livery's fitted lift, absolute bar, and capacity, kg/s, if it has a fit.</summary>
-        internal static bool TryGetFit(string livery, out (float Lift, float Capacity) fit) => Fits.TryGetValue(livery, out fit);
+        internal static bool TryGetFit(string livery, out (float Lift, float Capacity) fit)
+        {
+            fit = default;
+            if (LocomotiveProfiles.TryGet(livery, out var profile) && profile.SafetyValve is SafetyValveSpec spec)
+            {
+                fit = (spec.Lift, spec.Capacity);
+                return true;
+            }
+            return MakerFitRegistry.TryGetSafetyValveFit(livery, out fit);
+        }
 
         /// <summary>Fits a fired engine's safety valves. Returns a line for the log, or null.</summary>
         public static string Attach(TrainCar car, SimulationFlow flow)
         {
             var livery = car != null && car.carLivery != null ? car.carLivery.id : null;
-            if (flow == null || livery == null || !Fits.TryGetValue(livery, out var fit))
+            if (flow == null || !TryGetFit(livery, out var fit))
                 return null;
             var boiler = flow.OrderedSimComps.OfType<Boiler>().FirstOrDefault();
             if (boiler == null)

@@ -121,7 +121,11 @@ namespace RealisticFiring.Multiplayer
                 $"feed pumps {session.FitFeedPumps}",
                 $"oil burners {session.RealisticOilBurners}",
                 $"unlisted engines {session.UnlistedEngines}",
+                $"maker fits {MakerFitRegistry.SessionFingerprint()}",
                 $"realistic cylinders {settings.RealisticCylinders}",
+                $"caboose stove {settings.CabooseStove}",
+                // The accelerated startup's bigger shovelfuls: each player scoops their own, so all must agree.
+                $"startup shovelfuls {settings.StartupShovelBoost}",
                 // The largest only: each player's mouse wheel picks their own below it.
                 $"shovelful {settings.Shovelful.ToString("F1", CultureInfo.InvariantCulture)} kg",
             });
@@ -136,11 +140,13 @@ namespace RealisticFiring.Multiplayer
             {
                 lastHudPolicy = null;
                 lastFittings = null;
+                lastFittingsVersion = -1;
                 HudPolicy.Reset();
                 LighterRule.Reset();
                 Items.FireIron.RegisterAsGameItem();
                 Items.FiringTablet.RegisterAsGameItem();
                 Items.FiringManual.RegisterAsGameItem();
+                Items.ChecklistBooklet.RegisterAsGameItem();
                 Items.FireStartingItems.Register();
                 PumpingBy.Clear();
                 Guests.Clear();
@@ -176,6 +182,7 @@ namespace RealisticFiring.Multiplayer
                 PumpingBy.Clear();
                 lastHudPolicy = null;
                 lastFittings = null;
+                lastFittingsVersion = -1;
                 snapshotDue = 0u;
                 StartingFuelSync.ServerStopped();
                 DoorAirSync.Stopped();
@@ -197,6 +204,7 @@ namespace RealisticFiring.Multiplayer
                 Items.FireIron.RegisterAsGameItem();
                 Items.FiringTablet.RegisterAsGameItem();
                 Items.FiringManual.RegisterAsGameItem();
+                Items.ChecklistBooklet.RegisterAsGameItem();
                 Items.FireStartingItems.Register();
                 client.RegisterSerializablePacket<NoticePacket>(notice => FireController.Announce(notice.Text));
                 client.RegisterSerializablePacket<SnapshotPacket>(OnSnapshot);
@@ -224,16 +232,7 @@ namespace RealisticFiring.Multiplayer
                 hudWaitUntil = null;
                 HudPolicy.Reset();
                 fittingsHeard = null;
-                Upgrades.Fittings.FromHost = null;
-                Upgrades.Fittings.JetsFromHost = null;
-                Upgrades.Fittings.StokerFromHost = null;
-                Upgrades.Fittings.FeedPumpFromHost = null;
-                Upgrades.Fittings.BoosterFromHost = null;
-                Upgrades.Fittings.SniftingFromHost = null;
-                Upgrades.Fittings.DriftingValveFromHost = null;
-                Upgrades.Fittings.ByPassFromHost = null;
-                Upgrades.Fittings.AutoFireDoorFromHost = null;
-                Upgrades.Fittings.Changed();
+                Upgrades.Fittings.ClearHostOverrides();
                 LighterRule.Reset();
                 Shed.ShedNet.Reset();
             }
@@ -273,22 +272,78 @@ namespace RealisticFiring.Multiplayer
         // The host's fittings in the order they were sent.
         private static ushort fittingsSent;
         private static ushort? fittingsHeard;
-        private static (bool Arch, bool Jets, bool Stoker, bool FeedPump, bool Booster, bool Snifting, bool DriftingValve, bool ByPass, bool AutoFireDoor)? lastFittings;
+        private static int lastFittingsVersion = -1;
+        private static (bool PerLoco, bool Arch, bool Jets, bool Stoker, bool FeedPump, bool Booster, bool Snifting, bool DriftingValve, bool ByPass, bool AutoFireDoor)? lastFittings;
+
+        private static FittingsPacket BuildFittingsPacket()
+        {
+            var perLoco = Upgrades.Fittings.IsPerLocomotive;
+            var carFittings = new (ushort, ushort)[0];
+            var api = MultiplayerAPI.Instance;
+            if (perLoco && api != null)
+            {
+                var list = new List<(ushort, ushort)>();
+                foreach (var car in ClientMirror.Cars())
+                {
+                    if (car != null && car.carLivery != null && UpgradeKeys.IsEligibleLivery(car.carLivery.id)
+                        && api.TryGetNetId(car, out ushort netId))
+                    {
+                        list.Add((netId, (ushort)Upgrades.Fittings.EffectiveMask(car)));
+                    }
+                }
+                carFittings = list.ToArray();
+            }
+            return new FittingsPacket
+            {
+                Arch = Upgrades.Fittings.Arch,
+                Jets = Upgrades.Fittings.Jets,
+                Stoker = Upgrades.Fittings.Stoker,
+                FeedPump = Upgrades.Fittings.FeedPump,
+                Booster = Upgrades.Fittings.Booster,
+                Snifting = Upgrades.Fittings.Snifting,
+                DriftingValve = Upgrades.Fittings.DriftingValve,
+                ByPass = Upgrades.Fittings.ByPass,
+                AutoFireDoor = Upgrades.Fittings.AutoFireDoor,
+                PerLocomotive = perLoco,
+                HostVersion = (ushort)Upgrades.Fittings.Version,
+                CarFittings = carFittings,
+                Seq = ++fittingsSent,
+            };
+        }
 
         private static void OnFittings(FittingsPacket packet)
         {
             if (fittingsHeard.HasValue && !Shed.ShedNet.Newer(packet.Seq, fittingsHeard.Value))
                 return;
             fittingsHeard = packet.Seq;
-            Upgrades.Fittings.FromHost = packet.Arch;
-            Upgrades.Fittings.JetsFromHost = packet.Jets;
-            Upgrades.Fittings.StokerFromHost = packet.Stoker;
-            Upgrades.Fittings.FeedPumpFromHost = packet.FeedPump;
-            Upgrades.Fittings.BoosterFromHost = packet.Booster;
-            Upgrades.Fittings.SniftingFromHost = packet.Snifting;
-            Upgrades.Fittings.DriftingValveFromHost = packet.DriftingValve;
-            Upgrades.Fittings.ByPassFromHost = packet.ByPass;
-            Upgrades.Fittings.AutoFireDoorFromHost = packet.AutoFireDoor;
+            Upgrades.Fittings.SetHostOverride(Upgrades.UpgradeId.BrickArch, packet.Arch);
+            Upgrades.Fittings.SetHostOverride(Upgrades.UpgradeId.OverFireJets, packet.Jets);
+            Upgrades.Fittings.SetHostOverride(Upgrades.UpgradeId.S282Stoker, packet.Stoker);
+            Upgrades.Fittings.SetHostOverride(Upgrades.UpgradeId.S282FeedPump, packet.FeedPump);
+            Upgrades.Fittings.SetHostOverride(Upgrades.UpgradeId.S282Booster, packet.Booster);
+            Upgrades.Fittings.SetHostOverride(Upgrades.UpgradeId.SniftingValves, packet.Snifting);
+            Upgrades.Fittings.SetHostOverride(Upgrades.UpgradeId.DriftingValve, packet.DriftingValve);
+            Upgrades.Fittings.SetHostOverride(Upgrades.UpgradeId.ByPassValves, packet.ByPass);
+            Upgrades.Fittings.SetHostOverride(Upgrades.UpgradeId.AutomaticFireDoor, packet.AutoFireDoor);
+            Upgrades.Fittings.HostPerLocomotive = packet.PerLocomotive;
+            if (packet.PerLocomotive)
+            {
+                var resolved = new List<(TrainCar, UpgradeMask)>();
+                var api = MultiplayerAPI.Instance;
+                if (api != null && packet.CarFittings != null)
+                {
+                    foreach (var (netId, mask) in packet.CarFittings)
+                    {
+                        if (api.TryGetObjectFromNetId(netId, out TrainCar car) && car != null)
+                            resolved.Add((car, (UpgradeMask)mask));
+                    }
+                }
+                Upgrades.Fittings.ApplyHostPerCar(resolved, packet.HostVersion, replaceAll: true);
+            }
+            else
+            {
+                Upgrades.Fittings.ClearHostPerCar();
+            }
             Upgrades.Fittings.Changed();
         }
 
@@ -298,13 +353,15 @@ namespace RealisticFiring.Multiplayer
             var api = MultiplayerAPI.Instance;
             if (server == null || api == null || !api.IsHost || !InSession())
                 return;
-            var now = (Upgrades.Fittings.Arch, Upgrades.Fittings.Jets, Upgrades.Fittings.Stoker, Upgrades.Fittings.FeedPump, Upgrades.Fittings.Booster,
-                Upgrades.Fittings.Snifting, Upgrades.Fittings.DriftingValve, Upgrades.Fittings.ByPass, Upgrades.Fittings.AutoFireDoor);
-            if (lastFittings == now)
+            var version = Upgrades.Fittings.Version;
+            var now = (Upgrades.Fittings.IsPerLocomotive, Upgrades.Fittings.Arch, Upgrades.Fittings.Jets, Upgrades.Fittings.Stoker,
+                Upgrades.Fittings.FeedPump, Upgrades.Fittings.Booster, Upgrades.Fittings.Snifting, Upgrades.Fittings.DriftingValve,
+                Upgrades.Fittings.ByPass, Upgrades.Fittings.AutoFireDoor);
+            if (lastFittings == now && lastFittingsVersion == version)
                 return;
             lastFittings = now;
-            server.SendSerializablePacketToAll(new FittingsPacket { Arch = now.Item1, Jets = now.Item2, Stoker = now.Item3, FeedPump = now.Item4, Booster = now.Item5, Snifting = now.Item6,
-                DriftingValve = now.Item7, ByPass = now.Item8, AutoFireDoor = now.Item9, Seq = ++fittingsSent }, reliable: true, excludeSelf: true);
+            lastFittingsVersion = version;
+            server.SendSerializablePacketToAll(BuildFittingsPacket(), reliable: true, excludeSelf: true);
         }
 
         private static void OnHudPolicy(HudPolicyPacket packet)
@@ -446,9 +503,9 @@ namespace RealisticFiring.Multiplayer
             {
                 if (server.AnyPlayerSqrMag(car.gameObject) > SnapshotReach * SnapshotReach || !api.TryGetNetId(car, out ushort netId))
                     continue;
-                var data = ClientMirror.Capture(car);
+                var data = ClientMirror.Capture(car, out var reliable);
                 if (data != null)
-                    server.SendSerializablePacketToAll(new SnapshotPacket { Car = netId, Data = data }, reliable: false, excludeSelf: true);
+                    server.SendSerializablePacketToAll(new SnapshotPacket { Car = netId, Data = data }, reliable: reliable, excludeSelf: true);
             }
         }
 
@@ -526,8 +583,7 @@ namespace RealisticFiring.Multiplayer
                 mod.Logger.Log($"{sender.DisplayName} joined with Realistic Firing {hello.Version}, settings matching");
                 StandSync.SendStands(sender);
                 MultiplayerAPI.Server?.SendSerializablePacketToPlayer(SessionRules(), sender);
-                MultiplayerAPI.Server?.SendSerializablePacketToPlayer(new FittingsPacket { Arch = Upgrades.Fittings.Arch, Jets = Upgrades.Fittings.Jets, Stoker = Upgrades.Fittings.Stoker, FeedPump = Upgrades.Fittings.FeedPump, Booster = Upgrades.Fittings.Booster, Snifting = Upgrades.Fittings.Snifting,
-                    DriftingValve = Upgrades.Fittings.DriftingValve, ByPass = Upgrades.Fittings.ByPass, AutoFireDoor = Upgrades.Fittings.AutoFireDoor, Seq = ++fittingsSent }, sender);
+                MultiplayerAPI.Server?.SendSerializablePacketToPlayer(BuildFittingsPacket(), sender);
                 return;
             }
             var reason = hello.Version != version
@@ -663,6 +719,22 @@ namespace RealisticFiring.Multiplayer
                     break;
                 case FireAction.Rag when zone.HasValue:
                     FuelFireboxIntake.Take(car, StartingFuelKind.Rag, Mathf.Clamp(packet.Value, 0f, RagFuel.OilCapacity), packet.Direction == 1, zone.Value);
+                    break;
+                case FireAction.StoveWood:
+                    if (CabooseStoveRig.TryGet(car, out var stoveWood))
+                        stoveWood.TakeFuel(StartingFuelKind.Wood, 0f, false);
+                    break;
+                case FireAction.StoveRag:
+                    if (CabooseStoveRig.TryGet(car, out var stoveRag))
+                        stoveRag.TakeFuel(StartingFuelKind.Rag, Mathf.Clamp(packet.Value, 0f, RagFuel.OilCapacity), packet.Direction == 1);
+                    break;
+                case FireAction.StoveIgnite:
+                    if (CabooseStoveRig.TryGet(car, out var stoveIgnite))
+                        stoveIgnite.TryIgniteFromHost();
+                    break;
+                case FireAction.StoveDoorToggle:
+                    if (CabooseStoveRig.TryGet(car, out var stoveDoor) && stoveDoor.ToggleFallbackDoorFromHost())
+                        Tell(sender, stoveDoor.FallbackDoorOpen ? "Caboose stove door opened" : "Caboose stove door shut");
                     break;
                 case FireAction.FiremanMode when FiremanRig.TryGet(car, out var fireman)
                                                  && Enum.IsDefined(typeof(FiremanMode), (int)packet.Value):

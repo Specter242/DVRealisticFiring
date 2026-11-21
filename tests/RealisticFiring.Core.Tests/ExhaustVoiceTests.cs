@@ -118,7 +118,8 @@ public class ExhaustVoiceTests
             return change / level;
         }
 
-        Assert.True(Edge(1f) < Edge(0f) / 4.0);
+        Assert.True(Edge(1f) < Edge(0f) / 1.5, $"{Edge(1f):F3} against {Edge(0f):F3}");
+        Assert.True(Edge(1f) > Edge(0f) / 6.0, $"{Edge(1f):F3} against {Edge(0f):F3}");
     }
 
     [Fact]
@@ -137,6 +138,21 @@ public class ExhaustVoiceTests
 
         Assert.Equal(Render(null), Render(1.0));
         Assert.NotEqual(Render(null), Render(0.4));
+    }
+
+    [Fact]
+    public void A_crank_spinning_up_loses_its_lift_at_once()
+    {
+        // A slip: a crawl's lift, then the crank at 4 turns a second; within 0.2 s no lift is left (job 3080: eased
+        // over 0.3 s, 0.6 s into a slip it was still 2.5).
+        var voice = Voice();
+        var time = 0.0;
+        Run(voice, 0.4f, 2.0, ref time);
+        Assert.True(voice.Lift > 5.0, $"lift at a crawl {voice.Lift:0.00}");
+        Run(voice, 4f, 0.1, ref time);
+        Assert.InRange(voice.Lift, 1.0, 1.15);
+        Run(voice, 4f, 0.1, ref time);
+        Assert.InRange(voice.Lift, 1.0, 1.01);
     }
 
     [Fact]

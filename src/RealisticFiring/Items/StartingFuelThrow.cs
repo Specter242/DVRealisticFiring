@@ -36,8 +36,9 @@ namespace RealisticFiring.Items
             var view = camera.transform;
             var target = Physics.Raycast(view.position, view.forward, out var hit, ThrowArc.Reach, Environment(), QueryTriggerInteraction.Ignore)
                 ? hit.point : view.position + view.forward * ThrowArc.Reach;
-            // Through an open doorway, at the fire just inside it.
+            // Through an open doorway (locomotive firebox or caboose stove), at the fire just inside it.
             target = FuelFireboxIntake.AimThrough(view.position, target);
+            target = Visuals.CabooseStoveTarget.AimThrough(view.position, target);
             var from = body.position;
             var launch = ThrowArc.Launch(Point(from), Point(target), Physics.gravity.y);
             // From the ground under the thrower: a moving engine's footplate carries the throw.

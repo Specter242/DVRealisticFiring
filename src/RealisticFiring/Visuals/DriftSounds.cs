@@ -30,14 +30,8 @@ namespace RealisticFiring.Visuals
         // Two double-acting cylinders: four strokes, four breaths, a turn of the wheels.
         private const float StrokesPerTurn = 4f;
 
-        // Where the steam chests are on each engine, m behind the front
-        // coupler and above the rail (inferred from the stock models); any
-        // other engine takes the last.
-        private static readonly Dictionary<string, Vector2> Chests = new Dictionary<string, Vector2>
-        {
-            ["LocoS282A"] = new Vector2(2.8f, 1.7f),
-            ["LocoS060"] = new Vector2(1.5f, 1.4f),
-        };
+        // Steam chest positions per livery live in LocomotiveProfiles (Cab.DriftSoundChest);
+        // any other engine takes this default.
         private static readonly Vector2 AnyChest = new Vector2(2.8f, 1.7f);
 
         private const float ScanEvery = 2f;
@@ -86,8 +80,7 @@ namespace RealisticFiring.Visuals
             var engine = EngineDrift.EngineOf(car);
             if (engine == null)
                 return null;
-            if (!Chests.TryGetValue(car.carLivery.id, out var chest))
-                chest = AnyChest;
+            var chest = LocomotiveProfiles.For(car.carLivery.id)?.Cab.DriftSoundChest ?? AnyChest;
             var go = new GameObject("[RealisticFiring drifting fittings]");
             go.transform.SetParent(car.transform, false);
             var front = car.frontCoupler != null ? car.transform.InverseTransformPoint(car.frontCoupler.transform.position).z : 0f;

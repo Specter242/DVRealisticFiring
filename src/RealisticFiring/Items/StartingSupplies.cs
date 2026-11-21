@@ -15,10 +15,14 @@ namespace RealisticFiring.Items
     /// </summary>
     internal sealed class StartingSupplies : MonoBehaviour
     {
+        /// <summary>Whether firewood and rag supply places should run and stock.</summary>
+        internal static bool SuppliesEnabled =>
+            Main.ReplacementEnabled || (Main.Settings != null && Main.Settings.CabooseStove);
+
         private float nextScan;
         private void Update()
         {
-            if (Time.time < nextScan || PlayerManager.PlayerTransform == null || !Main.ReplacementEnabled) return;
+            if (Time.time < nextScan || PlayerManager.PlayerTransform == null || !SuppliesEnabled) return;
             nextScan = Time.time + 5f;
             FireStartingItems.Register();
             foreach (var fire in FireboxRegistry.All) Attach(fire.Car);
@@ -345,7 +349,7 @@ namespace RealisticFiring.Items
         }
         private void Update()
         {
-            if (Time.time < next || !Main.ReplacementEnabled) return;
+            if (Time.time < next || !StartingSupplies.SuppliesEnabled) return;
             next = Time.time + (settled ? 30f : 5f);
             var player = PlayerManager.PlayerTransform;
             if (player == null || (player.position - transform.position).sqrMagnitude > StockingRange * StockingRange) return;
@@ -409,7 +413,7 @@ namespace RealisticFiring.Items
         /// </summary>
         internal static string StockFor(string id, Vector3 spot, Quaternion turn, Vector3 guest)
         {
-            if (Net.IsClient || !Main.ReplacementEnabled) return "not hosting with realistic fireboxes";
+            if (Net.IsClient || !StartingSupplies.SuppliesEnabled) return "not hosting with realistic fireboxes or caboose stove";
             var site = SupplyPlaces.Find(id);
             if (site == null) return "no such place";
             var from = guest - WorldMover.currentMove;

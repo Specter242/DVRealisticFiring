@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -11,57 +10,6 @@ namespace RealisticFiring.Sim
 {
  internal static class BlowerFit
     {
-        private static readonly Dictionary<string, (float MaxBlower, float Natural, AirPump Pump, int Pumps, float MainReservoir)> Fits =
-            new Dictionary<string, (float, float, AirPump, int, float)>
-        {
-            ["LocoS282A"] = (0.5f, 0.6f, AirPump.NineAndHalf, 1, 0f),
-            ["LocoS060"] = (0.4f, 0.3f, AirPump.NineAndHalf, 1, 0f),
-            ["Jk3A"] = (0.2f, 0.15f, AirPump.NineAndHalf, 1, 0f),
-            ["S464-730"] = (0.8f, 0.75f, AirPump.CrossCompound, 2, 0f),
-            ["FEF-3"] = (0.85f, 0.9f, AirPump.CrossCompound, 2, FefMainReservoir),
-            ["S484-840A"] = (0.85f, 0.9f, AirPump.CrossCompound, 2, FefMainReservoir),
-            ["A.T.&S.F. 2901-A"] = (0.85f, 1.0f, AirPump.CrossCompound, 2, 0f),
-            // LMS 8F: a 28.65 sq ft grate; its blower between the S060's and
-            // the S282's (inferred), natural draft by grate area. Its pump
-            // stands in for the vacuum ejector, whose exhaust also goes up
-            // the chimney.
-            ["em_lms_8f_loc_black"] = (0.4f, 0.26f, AirPump.NineAndHalf, 1, 0f),
-            ["em_lms_8f_loc_grey"] = (0.4f, 0.26f, AirPump.NineAndHalf, 1, 0f),
-            // LMS Fowler 4F: a 21.1 sq ft grate (loco-info.com); its blower
-            // the S060's and the 8F's, its grate between theirs (inferred),
-            // natural draft by grate area. Vacuum braked (Wikipedia): its
-            // pump stands in for the ejector, as the 8F's does.
-            ["em_fowler_4f_44422"] = (0.4f, 0.19f, AirPump.NineAndHalf, 1, 0f),
-            ["em_fowler_4f_4027"] = (0.4f, 0.19f, AirPump.NineAndHalf, 1, 0f),
-            // China Railways QJ: a 6.8 m² (73.2 sq ft) grate; its blower
-            // between the S282's and the Hudson's by grate area, natural draft
-            // by grate area (both inferred). One steam cross-compound pump low
-            // on the right of the smokebox, its exhaust into the blast pipe
-            // from No. 6243 (the LV's МТЗ pump, 3,100 L/min, close to the
-            // 8½-in.'s); the maker's 1,000 L reservoir, the LV's two 500 L.
-            ["S2102-870"] = (0.6f, 0.66f, AirPump.CrossCompound, 1, 0f),
-            // Prussian T 20: a 4.36 m² (46.9 sq ft) grate; its blower between
-            // the 8F's and the S282's by grate area, natural draft by grate
-            // area (both inferred). "Two two-stage air pumps" front right on
-            // the smokebox, for the rack lines' air (Hanomag-Lehrblatt 081,
-            // 1924); their capacity not found, each taken as a 9½-in.
-            // (inferred); the maker's reservoir.
-            ["S2102-720"] = (0.45f, 0.42f, AirPump.NineAndHalf, 2, 0f),
-            // BorING's narrow-gauge engines: their maker's grates, 0.44, 0.30
-            // and 0.77 m²; their blowers by grate area from the JK3's, natural
-            // draft by grate area (all inferred). The maker gave each an air
-            // pump and train brakes; one 9½-in. stands for it, as on the
-            // engines above, into the maker's reservoir. Their prototypes had hand
-            // brakes or none (the X class in 1890, Porter's standard engine).
-            ["S260N-580A"] = (0.06f, 0.04f, AirPump.NineAndHalf, 1, 0f),
-            ["S040N-270"] = (0.04f, 0.03f, AirPump.NineAndHalf, 1, 0f),
-            ["S0440NG-890"] = (0.11f, 0.07f, AirPump.NineAndHalf, 1, 0f),
-            ["S440NCF-400A"] = (0.11f, 0.07f, AirPump.NineAndHalf, 1, 0f),
-        };
-
-        // The FEF-1's 91,000 cu in, L.
-        private const float FefMainReservoir = 1491f;
-
         private static readonly AccessTools.FieldRef<Boiler, float> SafetyValveOpeningPressure =
             AccessTools.FieldRefAccess<Boiler, float>("safetyValveOpeningPressure");
 
@@ -80,11 +28,27 @@ namespace RealisticFiring.Sim
         private static readonly ConditionalWeakTable<SteamExhaust, Fitted> ByExhaust = new ConditionalWeakTable<SteamExhaust, Fitted>();
         private static readonly ConditionalWeakTable<SteamCompressor, FittedPump> ByPump = new ConditionalWeakTable<SteamCompressor, FittedPump>();
 
+        private static bool TryGetFit(string livery, out BlowerSpec fit)
+        {
+            if (LocomotiveProfiles.TryGet(livery, out var profile) && profile.Blower is BlowerSpec builtIn)
+            {
+                fit = builtIn;
+                return true;
+            }
+            if (MakerFitRegistry.TryGetBlowerFit(livery, out var maker))
+            {
+                fit = new BlowerSpec(maker.MaxBlower, maker.Natural, maker.Pump, maker.Pumps, maker.MainReservoir);
+                return true;
+            }
+            fit = default;
+            return false;
+        }
+
         /// <summary>A livery's fitted blower, kg/s of steam wide open at working pressure, and natural draft, kg/s of air, if it has a fit.</summary>
         internal static bool TryGetDraft(string livery, out (float MaxBlower, float Natural) draft)
         {
             draft = default;
-            if (livery == null || !Fits.TryGetValue(livery, out var fit))
+            if (!TryGetFit(livery, out var fit))
                 return false;
             draft = (fit.MaxBlower, fit.Natural);
             return true;
@@ -94,7 +58,7 @@ namespace RealisticFiring.Sim
         public static string Attach(TrainCar car, SimulationFlow flow)
         {
             var livery = car != null && car.carLivery != null ? car.carLivery.id : null;
-            if (flow == null || livery == null || !Fits.TryGetValue(livery, out var fit))
+            if (flow == null || !TryGetFit(livery, out var fit))
                 return null;
             var exhaust = flow.OrderedSimComps.OfType<SteamExhaust>().FirstOrDefault();
             var boiler = flow.OrderedSimComps.OfType<Boiler>().FirstOrDefault();

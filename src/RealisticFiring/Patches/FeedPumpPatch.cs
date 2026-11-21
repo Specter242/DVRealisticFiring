@@ -20,7 +20,7 @@ namespace RealisticFiring.Patches
         private static void Add(SimController __instance, TrainCar trainCar)
         {
             var graph = __instance.connectionsDefinition;
-            if (!Main.RealisticInjectorsEnabled || trainCar == null || graph == null || graph.executionOrder == null)
+            if (!Main.RealisticInjectorsEnabled || trainCar == null || trainCar.carLivery == null || LeftStock.IsExcluded(trainCar) || graph == null || graph.executionOrder == null)
                 return;
             if (!FeedwaterFit.TryGet(trainCar.carLivery.id, out _) || graph.executionOrder.Any(d => d != null && d.ID == FeedwaterFit.Valve.Id))
                 return;

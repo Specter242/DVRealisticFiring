@@ -118,7 +118,7 @@ namespace RealisticFiring.Sim
 
         /// <summary>
         /// Whether the stoker is on the engine now: always, but for the stock
-        /// S282's, an upgrade bought at a career manager (<see cref="Upgrades.Fittings.Stoker"/>).
+        /// S282's, an upgrade bought at a career manager (<see cref="Upgrades.Fittings.HasStoker"/>).
         /// Unfitted, it is built but idle, so buying it fits it at once.
         /// </summary>
         internal bool Fitted
@@ -127,16 +127,19 @@ namespace RealisticFiring.Sim
             {
                 if (!upgrade)
                     return true;
-                if (fittedVersion != Upgrades.Fittings.Version)
+                var guid = Upgrades.Fittings.CarGuidOf(car);
+                if (fittedVersion != Upgrades.Fittings.Version || fittedGuid != guid)
                 {
                     fittedVersion = Upgrades.Fittings.Version;
-                    fitted = Upgrades.Fittings.Stoker;
+                    fittedGuid = guid;
+                    fitted = Upgrades.Fittings.HasStoker(car);
                 }
                 return fitted;
             }
         }
 
         private int fittedVersion = -1;
+        private string fittedGuid;
         private bool fitted;
 
         /// <summary>The stoker model, once the first tick has found the firebox; null while it isn't fitted.</summary>

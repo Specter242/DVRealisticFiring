@@ -22,6 +22,15 @@ namespace RealisticFiring.Core
         /// </summary>
         public const float IdleFire = 0.2f;
 
+ public const float ColdDraftFire = 0.08f;
+        public const float ColdDraftPressure = 5f;
+
+        /// <summary>The blower "has steam" from this much, kg/s: then his usual standing fire.</summary>
+        public const float ColdDraftSteam = 0.25f;
+
+        /// <summary>Firing that thin bed, a throw is at most this share of it, and never under a normal shovelful.</summary>
+        public const float ThinThrowShare = 0.5f;
+
         // Firing: a light round, a heavier one when far behind, the time
         // between throws and between rounds, and the door's lead and hold
         // around each throw, in s.
@@ -87,6 +96,7 @@ namespace RealisticFiring.Core
         private const float SettingDwell = 10f;
         private const float KeepAliveBlower = 0.15f;
         private const float RaisingBlower = 1f;
+        private const float WarmUpBlower = 0.35f;
         private const float FiringBlower = 0.5f;
         private const float QuietBlower = 0.1f;
 
@@ -111,8 +121,8 @@ namespace RealisticFiring.Core
         public const float WiggleEvery = 720f;
 
         // A half shake when ash is this share of the bed, with the engine eased,
-        // no sooner than this after the last.
-        private const float ShakeAshShare = 0.25f;
+        // no sooner than this after the last (FiringAdvice asks the player at the same share).
+        public const float ShakeAshShare = 0.25f;
         private const float ShakeSpacing = 300f;
 
         // Clinker in any zone over this share of its reference bed needs a clean.
@@ -239,12 +249,27 @@ namespace RealisticFiring.Core
             var auxiliary = Math.Max(0f, r.AuxiliarySteam);
             var target = rate * p.BurnTime
                          + PressureGain * p.MaxCoalCapacity * (error > 0f ? error : j.Building ? 0f : 2f * error);
+            var coldBoiler = r.ThermalShockEnabled && r.BoilerTemperature > 0f && r.BoilerTemperature < BoilerThermalShock.WarmTemperature;
+            var warmingTooFast = r.ThermalShockEnabled && r.WarmingTooFast && !j.Working;
+            var protectSuperheater = r.SuperheaterCareEnabled && r.SuperheaterHot && !j.Working && r.Throttle < Drifting.CrackedThrottle;
             // Not working, a thin fire, but standing as much more as the
             // auxiliaries' steam needs: their exhaust and the blower draw it.
             // Building for a start, the blower he opens is for the fire.
             if (!j.Working)
                 target = Math.Min(target, IdleFire * p.MaxCoalCapacity
-                                          + (j.Building ? 0f : fire.Efficiency.RateFor(auxiliary * SteamHeat * Trim) * p.BurnTime));
+                                          + (j.Building || coldBoiler ? 0f : fire.Efficiency.RateFor(auxiliary * SteamHeat * Trim) * p.BurnTime));
+            // Raising steam standing under the game's accelerated startup, before the blower has steam: a thin, bright
+            // fire on natural draft. Without the speedup (Steam Startup 2,500 %) a thin fire never raises steam (the
+            // JK3 stalled at 1.6 bar), so there he keeps his usual standing fire.
+            var thinStart = !j.Working && r.Standing && r.StartupMultiplier > 1.01f && r.Pressure < ColdDraftPressure
+                            && auxiliary < ColdDraftSteam;
+            if (thinStart)
+            {
+                target = Math.Min(target, ColdDraftFire * p.MaxCoalCapacity);
+                least = Math.Min(least, ColdDraftFire * p.MaxCoalCapacity);
+            }
+            if (warmingTooFast || protectSuperheater)
+                target = least;
             CoalTarget = Clamp(target, least, MaxFire * p.MaxCoalCapacity);
 
             WaitingOnSmoke = fire.SootDensity > BlackSmoke && coal > least;
@@ -256,15 +281,19 @@ namespace RealisticFiring.Core
             var boost = Math.Max(1f, r.StartupMultiplier);
             // Both ways of adding coal obey the same smoke and pressure stops.
             // Below the minimum live bed, the pressure stop still permits rescue.
-            var mayFire = !WaitingOnSmoke && (!lifting || coal < least);
-            Stoking = r.HasStoker && (j.Working || boost >= BoostStokes) && fire.FireOn && !outOfWater
+            var mayFire = !WaitingOnSmoke && (!lifting || coal < least) && !warmingTooFast && !protectSuperheater;
+            Stoking = r.HasStoker && (j.Working || boost >= BoostStokes && !coldBoiler) && fire.FireOn && !outOfWater
                       && Mode != FiremanMode.KeepAlive && mayFire;
             if (r.HasStoker)
                 Stoker(dt, fire, r, boost * rate, coal, ref actions);
 
             sinceRound += dt;
             crackLeft = Math.Max(0f, crackLeft - dt);
-            var shovel = Math.Max(0.1f, r.ShovelMass);
+            // A thin fire is fired light: a throw no more than half of it, never under a normal shovelful (6 kg throws on
+            // the S060's 7 kg thin bed starved its start, 11.6 min against 5.6; on the S282's 12 kg they did well).
+            var shovel = Math.Max(0.1f, thinStart
+                ? Math.Min(r.ShovelMass, Math.Max(ShovelSize.Normal, ThinThrowShare * ColdDraftFire * p.MaxCoalCapacity))
+                : r.ShovelMass);
             // With the stoker feeding he fires only a corner it starves;
             // otherwise, or with the start-up boost burning faster than a
             // stoker feeds, the whole of what the fire is short.
@@ -286,7 +315,7 @@ namespace RealisticFiring.Core
             var massTime = boosted ? 1f : Math.Max(1f, shovel / ShovelSize.Normal);
             var rest = boosted ? (far ? BoostedHurriedRoundGap : BoostedRoundGap)
                 : (far ? HurriedRoundGap : RoundGap) * massTime;
-            if (roundLeft == 0 && fire.FireOn && !outOfWater && !WaitingOnSmoke && (!lifting || coal < least)
+            if (roundLeft == 0 && fire.FireOn && !outOfWater && mayFire
                 && deficit >= (corners ? 1f : 0.5f) * shovel && r.TenderCoal >= shovel
                 && sinceRound >= rest / boost)
             {
@@ -472,6 +501,16 @@ namespace RealisticFiring.Core
         {
             if (!fire.FireOn)
                 return;
+            var coldBoiler = r.ThermalShockEnabled && r.BoilerTemperature > 0f && r.BoilerTemperature < BoilerThermalShock.WarmTemperature;
+            var warmingTooFast = r.ThermalShockEnabled && r.WarmingTooFast && !j.Working;
+            var protectSuperheater = r.SuperheaterCareEnabled && r.SuperheaterHot && !j.Working && r.Throttle < Drifting.CrackedThrottle;
+            if (protectSuperheater)
+            {
+                damperWanted = 0f;
+                now = true;
+                actions.Blower = QuietBlower;
+                return;
+            }
             var smoking = blackStack;
             checkingLight = j.Working
                 ? HeardWork < LightWork - LightWorkBand || checkingLight && HeardWork < LightWork
@@ -482,6 +521,8 @@ namespace RealisticFiring.Core
             if (checkingLight)
                 damperWanted = Clamp(1f - (r.Pressure - PressureTarget) / DamperRange,
                     smoking ? pressureHigh ? SmokeDamperHigh : SmokeDamper : 0f, 1f);
+            if (warmingTooFast)
+                damperWanted = Math.Min(damperWanted, 0.25f);
             // At once: draft for a black stack and for the engine working
             // past light work, and a step or more shut with the safety valve
             // about to lift. Shutting at once off the smoke's opening
@@ -491,23 +532,24 @@ namespace RealisticFiring.Core
             now = !float.IsNaN(held)
                   && (fire.SootDensity > BlackSmoke && damperWanted > held
                       || j.Working && !checkingLight && damperWanted > held
-                      || r.Pressure >= r.SafetyValve - LiftMargin && damperWanted <= held - SettingStep);
+                      || r.Pressure >= r.SafetyValve - LiftMargin && damperWanted <= held - SettingStep
+                      || warmingTooFast && damperWanted <= held - SettingStep);
             smokeVented = !j.Working && r.Standing
                           && (fire.SootDensity > StandingSmokeToVent || smokeVented && fire.SootDensity >= StandingVentClears);
             if (j.Working)
                 return;
             var blower = Mode == FiremanMode.KeepAlive ? KeepAliveBlower : IdleBlower;
             if (r.Standing && (j.Building || r.Pressure < PressureTarget - 1f))
-                blower = RaisingBlower;
+                blower = coldBoiler ? WarmUpBlower : RaisingBlower;
             // Through a round he fires standing, not each throw's moment.
             if (roundLeft > 0 || actions.Door > DoorCrack)
-                blower = Math.Max(blower, FiringBlower);
+                blower = Math.Max(blower, coldBoiler ? WarmUpBlower : FiringBlower);
             // A black stack standing wants draft to burn its smoke.
             if (smoking)
                 blower = Math.Max(blower, IdleBlower);
-            // Pressure protection wins over firing and smoke-clearing draft.
+            // Pressure protection and cold-boiler care win over firing and smoke-clearing draft.
             // Use the secondary-air door below to clear smoke at a full boiler.
-            if (r.Pressure >= r.SafetyValve - SoakMargin)
+            if (r.Pressure >= r.SafetyValve - SoakMargin || warmingTooFast)
                 blower = QuietBlower;
             actions.Blower = blower;
             // At a stop, use secondary air to burn the remaining tar before

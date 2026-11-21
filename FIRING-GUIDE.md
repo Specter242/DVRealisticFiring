@@ -53,6 +53,13 @@ jams, and retained table coal, but you still light the fire, break clinker,
 and empty the ashpan. Check which engine the tablet is reading before
 giving an order.
 
+Open **Check** for the step-by-step checklists: cold starts on coal and
+oil, injectors and water, cleaning the fire, the stoker, and drifting and
+layover. They tick off as you work. The same checklists come on paper in
+the **Firing checklists** booklet, one a page. Steam starting equipment
+includes one once; buy another beside the clinometer or use **Controls →
+Equipment → Give firing checklists** (F8).
+
 ## Hand firing coal
 
 **Shape the fire to the draft.** Under a brick arch the back of the grate
@@ -593,7 +600,7 @@ A grinding clash means the booster was turning or you were going too fast.
 
 | What | Target |
 | --- | --- |
-| Shovelful | 3 kg; a few at a time (mouse wheel with the shovel in hand for lighter ones) |
+| Shovelful | 6 kg by default; a few at a time (mouse wheel with the shovel in hand for lighter ones); up to 12 kg while Steam Startup speeds a cold fire |
 | Fresh coal catches | about 30 s: fire ahead of the work |
 | Wiggle the grate | every 10–15 min of hard work |
 | Clean the fire | when clinker shows, about every 2 h of hard work |

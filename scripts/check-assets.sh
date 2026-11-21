@@ -24,7 +24,7 @@ fi
 [[ -f "$bundle" ]] || { echo "Effects bundle not found at $bundle" >&2; exit 1; }
 [[ "$(basename "$bundle")" == realisticfiring_fx ]] || { echo "Expected a realisticfiring_fx bundle" >&2; exit 1; }
 
-# check <loader source> <check source> <check class> <bundle> <log>
+# check <loader source> <check source> <check class> <bundle> <log> [more sources...]
 check() {
     local loader="$1" source="$2" method="$3" fx log="$5" project
     fx="$(realpath "$4")"
@@ -33,7 +33,7 @@ check() {
     cp "$repo/fx/RealisticFiringFX/Packages/manifest.json" "$project/Packages/manifest.json"
     cp "$repo/fx/RealisticFiringFX/ProjectSettings/ProjectVersion.txt" "$project/ProjectSettings/ProjectVersion.txt"
     cp "$loader" "$source" "$project/Assets/"
-    if [[ -n "${6:-}" ]]; then cp "$6" "$project/Assets/"; fi
+    if [[ $# -gt 5 ]]; then cp "${@:6}" "$project/Assets/"; fi
     if ! DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 timeout 180 "$unity" -batchmode -nographics -projectPath "$project" \
             -executeMethod "$method" -fxBundle "$fx" -logFile "$log"; then
         rm -rf "${project:?}"
@@ -59,6 +59,7 @@ fi
 fi
 
 if [[ -f "$manual" ]]; then
-    check "$repo/src/RealisticFiring/Items/FiringManualAssets.cs" "$repo/tools/RealisticFiring.AssetCheck/ManualAssetCheck.cs" \
-        ManualAssetCheck.Run "$manual" "$repo/fx/build/manual-asset-check.log" "$repo/src/RealisticFiring/Items/FiringManualContents.cs"
+    check "$repo/src/RealisticFiring/Items/BookletAssets.cs" "$repo/tools/RealisticFiring.AssetCheck/ManualAssetCheck.cs" \
+        ManualAssetCheck.Run "$manual" "$repo/fx/build/manual-asset-check.log" "$repo/src/RealisticFiring/Items/FiringManualContents.cs" \
+        "$repo/src/RealisticFiring/Items/ChecklistBookletContents.cs"
 fi

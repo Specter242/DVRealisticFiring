@@ -49,19 +49,29 @@ namespace RealisticFiring.Visuals
             public float PlateSpin { get; }
         }
 
+        private sealed class LoadedCab
+        {
+            public Transform Interior;
+            public int CheckedVersion;
+            public string CheckedGuid;
+        }
+
         private readonly string what;
         private readonly StokerJetControls.Valve control;
-        private readonly Dictionary<string, Seat> seats;
+        private readonly Func<string, Seat?> seatLookup;
         private readonly Seat fallback;
-        private readonly HashSet<string> ownHandle;
+        private readonly Func<string, bool> ownHandle;
         private readonly Func<TrainCar, bool> fitted;
         private readonly Action<GameObject, TrainCar, Transform> built;
         private readonly bool byThrottle;
         private readonly Vector3 throttleOffset;
-        private readonly Dictionary<TrainCar, Transform> interiors = new Dictionary<TrainCar, Transform>();
+        private readonly Dictionary<TrainCar, LoadedCab> interiors = new Dictionary<TrainCar, LoadedCab>();
 
- public CabValve(string what, string rootName, string plate, StokerJetControls.Valve control, Dictionary<string, Seat> seats, Seat fallback,
-            HashSet<string> ownHandle, Func<TrainCar, bool> fitted, Action<GameObject, TrainCar, Transform> built = null,
+        /// <summary>Optional hook used by offline checks to observe sync decisions without Unity scene calls.</summary>
+        internal Action<TrainCar, Transform, bool> SyncHook;
+
+ public CabValve(string what, string rootName, string plate, StokerJetControls.Valve control, Func<string, Seat?> seatLookup, Seat fallback,
+            Func<string, bool> ownHandle, Func<TrainCar, bool> fitted, Action<GameObject, TrainCar, Transform> built = null,
             bool byThrottle = false, Vector3 throttleOffset = default)
         {
             this.byThrottle = byThrottle;
@@ -70,9 +80,9 @@ namespace RealisticFiring.Visuals
             RootName = rootName;
             Plate = plate;
             this.control = control;
-            this.seats = seats;
+            this.seatLookup = seatLookup ?? (_ => null);
             this.fallback = fallback;
-            this.ownHandle = ownHandle ?? new HashSet<string>();
+            this.ownHandle = ownHandle ?? (_ => false);
             this.fitted = fitted;
             this.built = built;
         }
@@ -87,17 +97,16 @@ namespace RealisticFiring.Visuals
 
         internal Seat SeatFor(string livery) =>
 #if PUBLIC_RELEASE
-            seats.TryGetValue(livery, out var seat) ? seat
+            seatLookup(livery) ?? fallback;
 #else
             DevSeats.TryGetValue(livery, out var dev) ? dev
-            : seats.TryGetValue(livery, out var seat) ? seat
+            : seatLookup(livery) ?? fallback;
 #endif
-            : fallback;
 
 #if PUBLIC_RELEASE
-        private bool Seated(string livery) => seats.ContainsKey(livery);
+        private bool Seated(string livery) => seatLookup(livery).HasValue;
 #else
-        private bool Seated(string livery) => DevSeats.ContainsKey(livery) || seats.ContainsKey(livery);
+        private bool Seated(string livery) => DevSeats.ContainsKey(livery) || seatLookup(livery).HasValue;
 #endif
 
         // The cab's throttle: whatever feeds the steam engine's throttle control.
@@ -156,19 +165,99 @@ namespace RealisticFiring.Visuals
                 .FirstOrDefault();
         }
 
+        /// <summary>Records a loaded cab and the fittings version and car GUID at which it was checked.</summary>
+        internal void TrackInterior(TrainCar car, Transform interior)
+        {
+            interiors[car] = new LoadedCab
+            {
+                Interior = interior,
+                CheckedVersion = Upgrades.Fittings.Version,
+                CheckedGuid = Upgrades.Fittings.CarGuidOf(car),
+            };
+        }
+
+        /// <summary>Stops tracking <paramref name="car"/> (used for teardown in offline checks).</summary>
+        internal void Untrack(TrainCar car) => interiors.Remove(car);
+
+        /// <summary>Whether any tracked cab needs rechecking because the fittings version or a car's GUID changed.</summary>
+        internal bool NeedsSync()
+        {
+            var version = Upgrades.Fittings.Version;
+            foreach (var pair in interiors)
+            {
+                var car = pair.Key;
+                var cab = pair.Value;
+                if (car == null || cab.Interior == null
+                    || cab.CheckedVersion != version
+                    || !string.Equals(cab.CheckedGuid, Upgrades.Fittings.CarGuidOf(car), StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>Adds or removes the valve on any loaded cab whose fittings version or car GUID changed.</summary>
+        public void EnsureFitted()
+        {
+            if (!NeedsSync())
+                return;
+            SyncLoaded(onlyChanged: true);
+        }
+
         /// <summary>Rebuilds the valve in every loaded cab: as the seating bench moves it, and as its fitting is fitted or taken off.</summary>
         public void RebuildLoaded()
         {
             foreach (var pair in interiors.ToList())
             {
                 var car = pair.Key;
-                var interior = pair.Value;
+                var interior = pair.Value.Interior;
                 if (car == null || interior == null || car.loadedInterior == null || car.loadedInterior.transform != interior)
                 {
                     interiors.Remove(car);
                     continue;
                 }
                 Rebuild(car);
+            }
+        }
+
+        /// <summary>Adds or removes the valve only on loaded cabs whose fitted state changed, leaving other cabs untouched.</summary>
+        public void SyncLoaded(bool onlyChanged = false)
+        {
+            var version = Upgrades.Fittings.Version;
+            var syncHook = SyncHook;
+            foreach (var pair in interiors.ToList())
+            {
+                var car = pair.Key;
+                var cab = pair.Value;
+                var interior = cab.Interior;
+                if (car == null || interior == null || car.loadedInterior == null
+                    || (syncHook == null && car.loadedInterior.transform != interior))
+                {
+                    interiors.Remove(car);
+                    continue;
+                }
+                var guid = Upgrades.Fittings.CarGuidOf(car);
+                if (onlyChanged && cab.CheckedVersion == version && string.Equals(cab.CheckedGuid, guid, StringComparison.Ordinal))
+                    continue;
+                cab.CheckedVersion = version;
+                cab.CheckedGuid = guid;
+                var shouldHave = fitted(car);
+                if (syncHook != null)
+                {
+                    syncHook(car, interior, shouldHave);
+                    continue;
+                }
+                var existing = interior.Find(RootName);
+                if (existing != null && !shouldHave)
+                {
+                    Object.DestroyImmediate(existing.gameObject);
+                    Main.Mod?.Logger.Log($"{car.LogName()}: the {what} is no longer fitted; removed from the cab");
+                }
+                else if (existing == null && shouldHave)
+                {
+                    var result = Attach(car, interior);
+                    if (result != null)
+                        Main.Mod?.Logger.Log($"{car.LogName()}: {result}");
+                }
             }
         }
 
@@ -191,7 +280,7 @@ namespace RealisticFiring.Visuals
         {
             if (car == null || interior == null || interior.Find(RootName) != null || !FireboxRegistry.TryGet(car, out _))
                 return null;
-            interiors[car] = interior;
+            TrackInterior(car, interior);
             if (!fitted(car))
                 return null;
             var controller = car.SimController;
@@ -212,7 +301,7 @@ namespace RealisticFiring.Visuals
 
             // A copy of the S282's blower handwheel; or, where the cab's own
             // blower handle is to be copied, that, from its own cab.
-            var own = ownHandle.Contains(car.carLivery.id);
+            var own = ownHandle(car.carLivery.id);
             var sourceLivery = own ? car.carLivery.id : StokerCab.SourceLivery;
             if (!Globals.G.Types.TryGetLivery(sourceLivery, out var livery) || livery.interiorPrefab == null)
                 return $"no {sourceLivery} cab to take the {what} from";

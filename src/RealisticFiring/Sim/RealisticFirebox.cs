@@ -155,16 +155,18 @@ namespace RealisticFiring.Sim
         public bool ArchFitted { get; private set; } = true;
 
         private int fittedVersion = -1;
+        private string fittedCarGuid;
 
         // The box's figures with its fittings as they are now: a stock
         // engine's arch bought or not, every other box as it is.
         private void Refit()
         {
             fittedVersion = Upgrades.Fittings.Version;
-            ArchFitted = !Character.ArchLength.HasValue || Upgrades.Fittings.Arch;
+            fittedCarGuid = Upgrades.Fittings.CarGuidOf(Car);
+            ArchFitted = !Character.ArchLength.HasValue || Upgrades.Fittings.HasArch(Car);
             Model.Character = ArchFitted ? Character.Grate : Character.Grate.WithoutArch(Character.ArchLength.Value);
             var jetsWere = JetsFitted;
-            JetsFitted = Character.Jets != null && Upgrades.Fittings.Jets;
+            JetsFitted = Character.Jets != null && (Character.JetsAsBuilt || Upgrades.Fittings.HasJets(Car));
             Model.Jets = JetsFitted ? Character.Jets : null;
             // The cab's valve comes and goes with the jets.
             if (JetsFitted != jetsWere && Car != null && Car.loadedInterior != null)
@@ -248,6 +250,13 @@ namespace RealisticFiring.Sim
 
         public float StartupMultiplier { get; private set; } = 1f;
 
+        /// <summary>
+        /// The load, kg, a shovelful of <paramref name="scoop"/> kg scooped now becomes (<see cref="Settings.StartupShovelBoost"/>):
+        /// times the accelerated startup's speedup, up to <see cref="ShovelSize.MostStartupLoad"/>; the scoop with the setting off.
+        /// </summary>
+        internal float StartupScoop(float scoop) =>
+            Main.Settings.StartupShovelBoost ? ShovelSize.StartupLoad(scoop, StartupMultiplier, Model.Parameters.MaxCoalCapacity) : scoop;
+
         /// <summary>Coal the last delivery put on the grate, in kg; 0 when none since the fire was laid.</summary>
         public float LastDeliveryMass { get; private set; }
 
@@ -275,6 +284,9 @@ namespace RealisticFiring.Sim
         public static readonly StokerJetControls.Valve DropGrateControl = new StokerJetControls.Valve("rfDropGrate", "Drop grate", null, 0f);
 
         public void AttachDropGratePort(Port port) => dropGratePort = port;
+
+        /// <summary>Current drop grate lever/model opening, 0 closed to 1 open (readable on both host and multiplayer guests).</summary>
+        internal float DropGrateOpening => dropGratePort != null ? Mathf.Clamp01(dropGratePort.Value) : Model.DropGrateOpening;
 
         /// <summary>
         /// The over-fire jets' globe valve in the cab, a saved control the mod
@@ -310,6 +322,27 @@ namespace RealisticFiring.Sim
         private bool dropGrateWasOpen;
         private float dropGrateCoalBefore;
         private float dropGrateAshBefore;
+        private float slicedRecentlyFor;
+
+        /// <summary>
+        /// Whether an accepted fire-iron slice happened recently while cleaning
+        /// was needed (host-authoritative; mirrored to guests via <see cref="ClientMirror"/>).
+        /// </summary>
+        internal bool SlicedRecently => slicedRecentlyFor > 0f && FiringAdvice.WantsCleaning(Model);
+
+        /// <summary>Applies the host's recent-slice checklist state on a multiplayer guest.</summary>
+        internal void MirrorSlicedRecently(bool sliced) =>
+            slicedRecentlyFor = sliced ? ChecklistReader.RecentActionWindow : 0f;
+
+        private void DecayRecentSlice(float delta)
+        {
+            if (slicedRecentlyFor <= 0f)
+                return;
+            if (!FiringAdvice.WantsCleaning(Model))
+                slicedRecentlyFor = 0f;
+            else if (delta > 0f)
+                slicedRecentlyFor = Mathf.Max(0f, slicedRecentlyFor - delta);
+        }
 
         public void ShakeGrate(ShakeStroke stroke = ShakeStroke.Shake)
         {
@@ -329,6 +362,7 @@ namespace RealisticFiring.Sim
             var before = Model.Zones[(int)zone].Clinker;
             Model.Slice(zone);
             if (GrateLayout.Row(zone) == 0) ClearStokerTable();
+            slicedRecentlyFor = FiringAdvice.WantsCleaning(Model) ? ChecklistReader.RecentActionWindow : 0f;
 #if !PUBLIC_RELEASE
             if (Main.Settings.LogCoalDeliveries)
                 Main.Mod.Logger.Log($"{Car?.ID}: sliced {zone}, clinker {before:F2} -> {Model.Zones[(int)zone].Clinker:F2} kg, " +
@@ -380,6 +414,7 @@ namespace RealisticFiring.Sim
         {
             var lit = intakeWaterContent.Value <= 0.5f;
             Model.LayReadyFire(lit);
+            slicedRecentlyFor = 0f;
             fireOnReadOut.Value = Model.FireOn ? 1f : 0f;
             LastDeliveryMass = 0f;
             LastDeliveryAim = null;
@@ -536,13 +571,22 @@ namespace RealisticFiring.Sim
         /// <summary>Puts the heat port at nothing, for a tick that failed (<see cref="Patches.TickGuard"/>).</summary>
         internal void NoHeat() => heatReadOut.Value = 0f;
 
+        /// <summary>Refits the firebox when upgrade rules/purchases change or <c>logicCar</c> is assigned after spawn.</summary>
+        internal void RefreshFittings()
+        {
+            if (fittedVersion != Upgrades.Fittings.Version || fittedCarGuid != Upgrades.Fittings.CarGuidOf(Car))
+                Refit();
+        }
+
         public override void Tick(float delta)
         {
-            if (fittedVersion != Upgrades.Fittings.Version)
-                Refit();
+            RefreshFittings();
             FollowCoal(delta);
             if (Net.IsClient)
             {
+                // The host's fire runs the speedup; a guest works out the same one (the Multiplayer mod gives it the
+                // host's Steam Startup, the boiler's pressure and the engine's speed), for its shovelfuls and its overlay.
+                StartupMultiplier = ComputeStartupMultiplier();
                 FollowHost(delta);
                 return;
             }
@@ -627,6 +671,7 @@ namespace RealisticFiring.Sim
             temperatureReadOut.Value = Model.Temperature;
             oxygenAvailabilityReadOut.Value = Model.OxygenAvailability;
             UpdateCoalLevel();
+            DecayRecentSlice(delta);
             TrackDoor(delta);
         }
 
@@ -707,6 +752,10 @@ namespace RealisticFiring.Sim
                 if (Mathf.Abs(Model.CoalMass - hostCoal) > 0.5f)
                     Model.MatchCoal(hostCoal);
             }
+            var dropOpen = DropGrateOpening > 0.05f;
+            if (dropOpen && !dropGrateWasOpen)
+                ChecklistReader.NoteDropGrate(Car);
+            dropGrateWasOpen = dropOpen;
             Model.Step(delta, new FireInputs
             {
                 AirFlow = airFlow.Value,
@@ -719,6 +768,7 @@ namespace RealisticFiring.Sim
                 BoilerPressure = boilerPressure.Value,
             });
             Smoke.Step(delta, Model);
+            DecayRecentSlice(delta);
         }
 
         /// <summary>
@@ -782,6 +832,7 @@ namespace RealisticFiring.Sim
             {
                 dropGrateCoalBefore = Model.CoalDumped;
                 dropGrateAshBefore = Model.DroppedAshAndClinker;
+                ChecklistReader.NoteDropGrate(Car);
             }
 #if !PUBLIC_RELEASE
             else if (!open && dropGrateWasOpen && Main.Settings.LogCoalDeliveries)
@@ -870,6 +921,7 @@ namespace RealisticFiring.Sim
         internal void LayBurningBed(float coal)
         {
             Model.Restore(true, coal);
+            slicedRecentlyFor = 0f;
             fireOnReadOut.Value = 1f;
             UpdateCoalLevel();
         }
@@ -928,6 +980,7 @@ namespace RealisticFiring.Sim
             Fireman?.SetMode(SavedFiremanMode);
 
             fireOnReadOut.Value = Model.FireOn ? 1f : 0f;
+            slicedRecentlyFor = 0f;
             UpdateCoalLevel();
         }
 

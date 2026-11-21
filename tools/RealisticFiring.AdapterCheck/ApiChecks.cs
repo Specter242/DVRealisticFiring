@@ -45,8 +45,9 @@ namespace RealisticFiring.AdapterCheck
                   && Names<FeedPumpState>("Off", "Feeding", "Choked", "Racing", "LostSuction", "Tripped")
                   && Names<BoosterState>("CutOut", "Idling", "CocksOpen", "Working")
                   && Names<FiremanMode>("Off", "KeepAlive", "Shunting", "Road")
-                  && Names<FiremanCall>("None", "HeavyAhead", "EasingOff"),
-                "Api's levels, zones, and states are the names its documentation lists");
+                  && Names<FiremanCall>("None", "HeavyAhead", "EasingOff")
+                  && Names<ChecklistId>("CoalColdStart", "OilColdStart", "InjectorsAndWater", "CleaningClinkerAndAsh", "StokerSetup", "DriftingAndLayover"),
+                "Api's levels, zones, states, and checklists are the names its documentation lists");
 
             CheckCoal(check, gameParams);
             CheckOil(check, gameParams);
@@ -68,7 +69,7 @@ namespace RealisticFiring.AdapterCheck
             vessel.waterTemp = 180f;
             var readings = Api.ReadParts(fire, null, null, water, null);
 
-            check(Keys(readings, "fuel", "fire", "grate", "coal", "boiler", "injectors", "advice")
+            check(Keys(readings, "fuel", "fire", "grate", "coal", "boiler", "injectors", "advice", "checklist")
                   && !readings.ContainsKey("burner") && !readings.ContainsKey("overflow") && !readings.ContainsKey("engine")
                   && Equals(readings["fuel"], "Coal") && readings["injectors"] is List<object> injectors && injectors.Count == 0,
                 "Api's coal snapshot has its sections, an empty injector list without this mod's injectors, and no oil or engine sections");
@@ -89,12 +90,18 @@ namespace RealisticFiring.AdapterCheck
             check(Section(readings, "advice", out var advice) && Keys(advice, "level", "text") && Level(advice["level"])
                   && Equals(advice["text"], FireOverlay.CoalAdvice(fire, null, water).Text ?? ""),
                 "Api's next step is the overlay's");
+            check(Section(readings, "checklist", out var coalChecklist)
+                  && Keys(coalChecklist, "id", "name", "shortName", "autoSelected", "allDone", "completedPct", "steps")
+                  && coalChecklist["steps"] is List<object> coalSteps && coalSteps.Count > 0
+                  && coalSteps.All(s => s is Dictionary<string, object> step && Keys(step, "title", "how", "done", "current")),
+                "Api's coal checklist carries its id, titles, completion percentage, and live steps");
 
             // The overlay's glass and boiler dials from the same parts.
             var card = new FireOverlay.Card();
             AccessTools.Method(typeof(FireOverlay), "WaterGauges").Invoke(null, new object[] { card, null, water });
             check(Section(readings, "boiler", out var boiler)
-                  && Keys(boiler, "pressureBar", "workingBar", "pressurePct", "pressureLevel", "glassPct", "glassLevel", "waterC", "heating", "sootLossPct", "scaleLossPct")
+                  && Keys(boiler, "pressureBar", "workingBar", "pressurePct", "pressureLevel", "glassPct", "glassLevel", "waterC", "heating", "sootLossPct", "scaleLossPct",
+                      "thermalShockWearPct", "thermalShockLossPct", "warmingTooFast", "tubeLeakKgPerS")
                   && Math.Abs((float)boiler["glassPct"] - card.Gauges[2].Value * 100f) < 1e-3f && Equals(boiler["glassLevel"], card.Gauges[2].Level.ToString())
                   && Math.Abs((float)boiler["pressureBar"] - 11f) < 1e-4f && card.Gauges[3].Text == "11.0 bar"
                   && Math.Abs((float)boiler["pressurePct"] / 110f - card.Gauges[3].Value) < 1e-4f && Equals(boiler["pressureLevel"], card.Gauges[3].Level.ToString()),
@@ -108,7 +115,7 @@ namespace RealisticFiring.AdapterCheck
             oil.SetGameParams(gameParams);
             var water = Water(out _);
             var readings = Api.ReadParts(null, oil, null, water, null);
-            check(Keys(readings, "fuel", "fire", "burner", "boiler", "injectors", "advice") && Equals(readings["fuel"], "Oil")
+            check(Keys(readings, "fuel", "fire", "burner", "boiler", "injectors", "advice", "checklist") && Equals(readings["fuel"], "Oil")
                   && !readings.ContainsKey("grate") && !readings.ContainsKey("coal") && !readings.ContainsKey("stoker"),
                 "Api's oil snapshot has its sections and no coal sections");
             check(Section(readings, "fire", out var fire) && Keys(fire, "lit", "heatPct", "level", "draftPct", "draftLevel", "smokePct")
@@ -122,6 +129,13 @@ namespace RealisticFiring.AdapterCheck
                 $"Api's burner: its valves and temperatures, and while it is out the steps to light it, one of them current ({(burner != null && burner["lighting"] is List<object> l ? l.Count : 0)} steps)");
             check(Section(readings, "advice", out var advice) && Equals(advice["text"], FireOverlay.OilAdvice(FireController.ReadOil(oil), water).Text ?? ""),
                 "Api's oil next step is the overlay's");
+            check(Section(readings, "checklist", out var oilChecklist)
+                  && Keys(oilChecklist, "id", "name", "shortName", "autoSelected", "allDone", "completedPct", "steps")
+                  && Equals(oilChecklist["id"], "OilColdStart")
+                  && oilChecklist["steps"] is List<object> oilSteps
+                  && burner != null && burner["lighting"] is List<object> lightingSteps
+                  && oilSteps.Count == lightingSteps.Count + 1,
+                "Api's cold oil checklist auto-selects OilColdStart and unifies with burner lighting steps");
             check(BaseTypesOnly(readings), "Api's oil snapshot holds only base library types, every number finite");
         }
 

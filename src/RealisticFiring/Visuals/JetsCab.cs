@@ -15,18 +15,11 @@ namespace RealisticFiring.Visuals
 
         private static readonly CabValve.Seat Default = new CabValve.Seat(new Vector3(0.15f, 0f, 0f), Vector3.zero);
 
-        private static readonly Dictionary<string, CabValve.Seat> Seats = new Dictionary<string, CabValve.Seat>
-        {
-            ["LocoS282A"] = new CabValve.Seat(new Vector3(-0.11f, 2.41f, 0.11f), Vector3.zero, new Vector3(0.10f, 0.21f, -0.045f), 0f, 180f, plateSquare: true, inCar: true),
-            // On the turret's empty valve, left of the blowdown's (the turret's
-            // handles 0.197 m apart), its plate under it as the others'.
-            ["LocoS060"] = new CabValve.Seat(new Vector3(-0.204f, 3.205f, -1.973f), Vector3.zero, inCar: true),
-        };
-
-        private static readonly HashSet<string> OwnHandle = new HashSet<string> { "LocoS060" };
-
-        internal static readonly CabValve Valve = new CabValve("over-fire jets' valve", RootName, "JETS", RealisticFirebox.JetsControl, Seats, Default, OwnHandle,
-            car => FireboxRegistry.TryGet(car, out var firebox) && firebox.JetsFitted,
+        internal static readonly CabValve Valve = new CabValve("over-fire jets' valve", RootName, "JETS", RealisticFirebox.JetsControl,
+            livery => LocomotiveProfiles.For(livery)?.Cab.JetsValveSeat ?? MakerFitRegistry.TryGetJetsSeat(livery),
+            Default,
+            livery => LocomotiveProfiles.For(livery)?.Cab.JetsValveOwnHandle == true || MakerFitRegistry.JetsOwnHandle(livery),
+            car => FireboxRegistry.TryGet(car, out var firebox) && firebox.Character.Jets != null && (firebox.Character.JetsAsBuilt || Upgrades.Fittings.HasJets(car)),
             (root, car, interior) =>
             {
                 if (FireboxRegistry.TryGet(car, out var firebox))
@@ -38,6 +31,7 @@ namespace RealisticFiring.Visuals
 #endif
         internal static CabValve.Seat SeatFor(string livery) => Valve.SeatFor(livery);
         internal static CabValve.Seat SeatInCar(TrainCar car, string livery) => Valve.SeatInCar(car, livery);
+        public static void EnsureFitted() => Valve.EnsureFitted();
         public static void RebuildLoaded() => Valve.RebuildLoaded();
         public static void Rebuild(TrainCar car) => Valve.Rebuild(car);
         public static string Attach(TrainCar car, Transform interior) => Valve.Attach(car, interior);

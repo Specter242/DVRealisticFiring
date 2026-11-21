@@ -286,12 +286,15 @@ namespace RealisticStackEffects
             testDynamoSteam = request.DynamoOn ? plume.Car.GetComponentsInChildren<ParticleSystem>(true)
                 .Where(p => p.GetComponentsInParent<Transform>(true).Any(t => t.name == "DynamoSteam")).ToArray()
                 : Array.Empty<ParticleSystem>();
+            var captureCar = plume.Car;
+            SteamVents testVents = null;
             try
             {
                 if (request.DynamoOn)
                     if (dynamoPort != null)
                         dynamoPort.Value = 1f;
-                plume.Vents?.Test(request.Vents);
+                testVents = VentsFor(plume, captureCar);
+                testVents?.Test(request.Vents);
                 if (resize)
                 {
                     Screen.SetResolution(request.RenderWidth, request.RenderHeight, modeBefore);
@@ -389,8 +392,10 @@ namespace RealisticStackEffects
                 testDynamoPressure = null;
                 testDynamoPlume = null;
                 testDynamoSteam = Array.Empty<ParticleSystem>();
-                if (plume != null)
-                    plume.Vents?.Test(null);
+                testVents?.Test(null);
+                var currentVents = VentsFor(plume, captureCar);
+                if (currentVents != null && currentVents != testVents)
+                    currentVents.Test(null);
                 if (request.DynamoOn)
                 {
                     if (dynamoPort != null)
@@ -434,6 +439,11 @@ namespace RealisticStackEffects
                 StackHost.Mod.Logger.Log($"Plume capture '{request.Name}' done: {count} shots in {folder}");
             }
         }
+
+        private static SteamVents VentsFor(ChimneyPlume plume, TrainCar car) =>
+            plume != null && plume.Vents != null ? plume.Vents
+            : car != null && ChimneyPlume.TryGet(car, out var owner) ? owner.Vents
+            : null;
 
         // Coal into the engine's firebox as a shovelful lands: through the
         // game's coal transfer where the car has one (the shovel's own path),

@@ -44,7 +44,13 @@ namespace RealisticFiring.Visuals
         // The plate on the side above the rod, in m.
         private const float PlateUp = 0.14f;
 
-        private static readonly HashSet<string> NoHanger = new HashSet<string> { "Jk3A" };
+        // Liveries whose handle has no hanger live in LocomotiveProfiles (Cab.AshpanNoHanger).
+        // The hanger is one mesh with the rod, not readable to cut, so the rod's
+        // model is hidden and the rod drawn again bare, from the loco's side
+        // out, as the model has it (read offline, 2026-10-17): the rod 8.5 mm
+        // round to the collar, 20 mm round from 0.84 to 0.86 m along, and a
+        // boss 13 mm round to 0.875 m; the hanger a strap rising 0.3 m from
+        // it at 0.8 m along, with its own collider.
         private const float RodRadius = 0.0085f;
         private const float CollarRadius = 0.019f;
         private const float CollarFrom = 0.84f;
@@ -53,41 +59,31 @@ namespace RealisticFiring.Visuals
         private const float BossTo = 0.875f;
         private const float RodIntoSide = 0.03f;
 
-        private static readonly Dictionary<string, Vector3> Placements = new Dictionary<string, Vector3>
+        private static bool TryProfilePull(string livery, out Vector3 pull)
         {
-            ["S484-840A"] = new Vector3(-1.08f, 1.27f, -6.83f),
-            ["S464-730"] = new Vector3(-1.07f, 1.18f, 1.79f),
-            ["LocoS282A"] = new Vector3(-0.61f, 0.99f, 1.66f),
-            ["LocoS060"] = new Vector3(-0.73f, 1.11f, -2.26f),
-            ["FEF-3"] = new Vector3(-1.35f, 1.33f, -7.26f),
-            ["Jk3A"] = new Vector3(-0.86f, 1.01f, -0.87f),
-            ["em_lms_8f_loc_black"] = new Vector3(-1.00f, 1.42f, -2.39f), // 2026-10-14
-            ["em_lms_8f_loc_grey"] = new Vector3(-1.00f, 1.42f, -2.39f),
-            [QjStokerCab.Livery] = new Vector3(-1.4f, 1.53f, -0.11f), 
-            ["S2102-720"] = new Vector3(-1.46f, 1.05f, -3.9f), 
-            ["em_fowler_4f_4027"] = new Vector3(-0.92f, 0.79f, -3.45f), 
-            ["em_fowler_4f_44422"] = new Vector3(-0.92f, 0.79f, -3.45f),
-            ["S260N-580A"] = new Vector3(-0.79f, 0.8f, -0.03f), 
-            ["S040N-270"] = new Vector3(-0.63f, 0.53f, -1.26f), 
-            ["S0440NG-890"] = new Vector3(-1.09f, 0.84f, -0.9f), 
-            ["S440NCF-400A"] = new Vector3(-0.92f, 0.86f, 0.4f), 
-        };
+            if (LocomotiveProfiles.TryGet(livery, out var profile) && profile.Cab.AshpanPull is Vector3 seated)
+            {
+                pull = seated;
+                return true;
+            }
+            pull = default;
+            return false;
+        }
 
         // Seats set this session on the seating bench (SeatingBench, a
-        // development tool), by livery, as Placements: they come first and
-        // are never saved. And where each livery's pull was last built, for
-        // the bench to start from.
+        // development tool), by livery: they come first and are never saved.
+        // And where each livery's pull was last built, for the bench to start from.
 #if !PUBLIC_RELEASE
         internal static readonly Dictionary<string, Vector3> DevPlacements = new Dictionary<string, Vector3>();
 #endif
         private static readonly Dictionary<string, Vector3> BuiltPulls = new Dictionary<string, Vector3>();
 
-        /// <summary>Where <paramref name="livery"/>'s pull is seated (the bench's or the table's), or last built; false before one is built.</summary>
+        /// <summary>Where <paramref name="livery"/>'s pull is seated (the bench's or the profile's), or last built; false before one is built.</summary>
         internal static bool TrySeat(string livery, out Vector3 pull) =>
 #if PUBLIC_RELEASE
-            Placements.TryGetValue(livery, out pull) || BuiltPulls.TryGetValue(livery, out pull);
+            TryProfilePull(livery, out pull) || MakerFitRegistry.TryGetAshpan(livery, out pull) || BuiltPulls.TryGetValue(livery, out pull);
 #else
-            DevPlacements.TryGetValue(livery, out pull) || Placements.TryGetValue(livery, out pull) || BuiltPulls.TryGetValue(livery, out pull);
+            DevPlacements.TryGetValue(livery, out pull) || TryProfilePull(livery, out pull) || MakerFitRegistry.TryGetAshpan(livery, out pull) || BuiltPulls.TryGetValue(livery, out pull);
 #endif
 
         private static readonly HashSet<AshpanLever> Levers = new HashSet<AshpanLever>();
@@ -159,9 +155,9 @@ namespace RealisticFiring.Visuals
         {
             if (root == null || root.transform.Find(RootName) != null
 #if PUBLIC_RELEASE
-                || (!firebox.GrateBox.HasValue && !Placements.ContainsKey(car.carLivery.id)))
+                || (!firebox.GrateBox.HasValue && !TryProfilePull(car.carLivery.id, out _) && !MakerFitRegistry.TryGetAshpan(car.carLivery.id, out _)))
 #else
-                || (!firebox.GrateBox.HasValue && !Placements.ContainsKey(car.carLivery.id) && !DevPlacements.ContainsKey(car.carLivery.id)))
+                || (!firebox.GrateBox.HasValue && !TryProfilePull(car.carLivery.id, out _) && !DevPlacements.ContainsKey(car.carLivery.id) && !MakerFitRegistry.TryGetAshpan(car.carLivery.id, out _)))
 #endif
                 return;
             var result = Build(root.transform);
@@ -195,9 +191,10 @@ namespace RealisticFiring.Visuals
             // it, unless seated for the livery.
             var frame = car.transform;
 #if PUBLIC_RELEASE
-            var seatedFor = Placements.TryGetValue(car.carLivery.id, out var seated);
+            var seatedFor = TryProfilePull(car.carLivery.id, out var seated) || MakerFitRegistry.TryGetAshpan(car.carLivery.id, out seated);
 #else
-            var seatedFor = DevPlacements.TryGetValue(car.carLivery.id, out var seated) || Placements.TryGetValue(car.carLivery.id, out seated);
+            var seatedFor = DevPlacements.TryGetValue(car.carLivery.id, out var seated) || TryProfilePull(car.carLivery.id, out seated)
+                || MakerFitRegistry.TryGetAshpan(car.carLivery.id, out seated);
 #endif
             float pull, y, z, side;
             bool found;
@@ -235,7 +232,7 @@ namespace RealisticFiring.Visuals
             handle.SetPositionAndRotation(frame.TransformPoint(new Vector3(pull + RodLength, y, z)),
                 Quaternion.LookRotation(-frame.right, frame.up));
 
-            if (NoHanger.Contains(car.carLivery.id))
+            if (LocomotiveProfiles.For(car.carLivery.id)?.Cab.AshpanNoHanger == true || MakerFitRegistry.AshpanNoHanger(car.carLivery.id))
                 DropHanger(handle, pull + RodLength - (found ? side : wall) - RodIntoSide);
 
             var button = handle.Find(SourceButton);

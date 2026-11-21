@@ -213,7 +213,8 @@ namespace RealisticFiring
             {
                 Label = "Feed",
                 Value = (man.OnPump ? $"pump {r.Pump.ToString().ToLowerInvariant()}" : $"injector {InjectorWord(r.Injector)}") +
-                        (man.BlowingDown ? $" · blowing down at {r.Solids:F0} ppm" : ""),
+                        (man.BlowingDown ? $" · blowing down at {r.Solids:F0} ppm" : "") +
+                        (man.BlowingGlass ? " · blowing glass" : ""),
                 Level = man.OnPump ? null : InjectorLevel(r.Injector),
             });
             var road = rig.Road;
@@ -421,7 +422,8 @@ namespace RealisticFiring
             }
             yield return $"Glass {rig.GlassShown:P0}, holding {rig.GlassTargetShown:P0}; " +
                          (man.OnPump ? $"feed pump {r.Pump.ToString().ToLowerInvariant()}" : $"injector {r.Injector.ToString().ToLowerInvariant()}") +
-                         (man.BlowingDown ? $"; blowing down ({r.Solids:F0} ppm)" : "");
+                         (man.BlowingDown ? $"; blowing down ({r.Solids:F0} ppm)" : "") +
+                         (man.BlowingGlass ? "; blowing glass through" : "");
             yield return DescribeRoad(rig.Road);
             var held = rig.Hands.Where(h => h.YieldLeft > 0f).Select(h => $"{h.Name} ({h.YieldLeft:F0} s)").ToList();
             if (held.Count > 0)

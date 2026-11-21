@@ -74,6 +74,18 @@ namespace RealisticFiring.Multiplayer
         /// <summary>Whether the host's coal-fired engines have their automatic fire door.</summary>
         public bool AutoFireDoor;
 
+        /// <summary>Whether the host upgrades locomotives individually rather than fleet-wide.</summary>
+        public bool PerLocomotive;
+
+        /// <summary>The host's wrapping <c>Upgrades.Fittings.Version</c>, for ordering against per-car mirror snapshots.</summary>
+        public ushort HostVersion;
+
+        /// <summary>Maximum per-car fitting entries carried in one packet.</summary>
+        public const int MaxCarFittings = 512;
+
+        /// <summary>When <see cref="PerLocomotive"/> is true: each spawned upgradable locomotive's network ID and effective upgrade mask.</summary>
+        public (ushort Car, ushort Mask)[] CarFittings = new (ushort, ushort)[0];
+
         public void Serialize(BinaryWriter writer)
         {
             writer.Write(Arch);
@@ -86,6 +98,15 @@ namespace RealisticFiring.Multiplayer
             writer.Write(DriftingValve);
             writer.Write(ByPass);
             writer.Write(AutoFireDoor);
+            writer.Write(PerLocomotive);
+            writer.Write(HostVersion);
+            var count = PerLocomotive && CarFittings != null ? System.Math.Min(CarFittings.Length, MaxCarFittings) : 0;
+            writer.Write((ushort)count);
+            for (var i = 0; i < count; i++)
+            {
+                writer.Write(CarFittings[i].Car);
+                writer.Write(CarFittings[i].Mask);
+            }
         }
 
         public void Deserialize(BinaryReader reader)
@@ -100,6 +121,26 @@ namespace RealisticFiring.Multiplayer
             DriftingValve = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
             ByPass = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
             AutoFireDoor = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
+            PerLocomotive = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
+            HostVersion = reader.BaseStream.Position + 2 <= reader.BaseStream.Length ? reader.ReadUInt16() : (ushort)0;
+            if (reader.BaseStream.Position + 2 <= reader.BaseStream.Length)
+            {
+                var count = reader.ReadUInt16();
+                if (count > MaxCarFittings)
+                    count = 0;
+                var list = new (ushort, ushort)[count];
+                var read = 0;
+                for (var i = 0; i < count && reader.BaseStream.Position + 4 <= reader.BaseStream.Length; i++)
+                {
+                    list[i] = (reader.ReadUInt16(), reader.ReadUInt16());
+                    read++;
+                }
+                CarFittings = read == count ? list : new (ushort, ushort)[0];
+            }
+            else
+            {
+                CarFittings = new (ushort, ushort)[0];
+            }
         }
     }
 

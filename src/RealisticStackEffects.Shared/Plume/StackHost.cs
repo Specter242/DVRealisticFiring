@@ -23,6 +23,12 @@ namespace RealisticStackEffects
         /// <summary>The season the steam's air is taken from, without DV Seasons.</summary>
         SmokeSeason SmokeSeason { get; }
 
+        /// <summary>Multiplier on how strongly exhaust steam shows in the air (0.5 to 2; 1 is realistic for the weather).</summary>
+        float SteamVisibility { get; }
+
+        /// <summary>Multiplier on how strongly the weather's wind drifts the plume (0 to 2; 1 is normal, 0 is still air).</summary>
+        float WindStrength { get; }
+
         bool HeatShimmer { get; }
 
         /// <summary>Whether the engine's other steam (dynamo, cylinder cocks, safety valves, leaks) is drawn as the plume, as the session started.</summary>
@@ -87,6 +93,14 @@ namespace RealisticStackEffects
 #endif
             : Auto.Quality;
 
+        /// <summary>The steam visibility multiplier, clamped to its valid range (1 if unset or invalid).</summary>
+        public static float SteamVisibility =>
+            PlumeSettings.ClampSteamVisibility(Settings != null ? Settings.SteamVisibility : PlumeSettings.DefaultSteamVisibility);
+
+        /// <summary>The plume wind strength multiplier, clamped to its valid range (1 if unset or invalid).</summary>
+        public static float WindStrength =>
+            PlumeSettings.ClampWindStrength(Settings != null ? Settings.WindStrength : PlumeSettings.DefaultWindStrength);
+
         /// <summary>Notes that a plume has particles in the air this frame, for the automatic quality.</summary>
         public static void SmokeInTheAir() => smokeSeen = Time.unscaledTime;
 
@@ -149,5 +163,14 @@ namespace RealisticStackEffects
 
         /// <summary>The scale of the developer tools' windows.</summary>
         public static Func<float> GuiScale = () => 1f;
+
+        /// <summary>
+        /// Resolves optional stack geometry hints for a car (lip height, bore,
+        /// outside radius) and names their source; returns false when none is provided.
+        /// </summary>
+        public delegate bool StackGeometryResolver(TrainCar car, out StackGeometryHint hint, out string by);
+
+        /// <summary>Optional host-provided stack geometry hints (API v3 providers or locomotive profiles).</summary>
+        public static StackGeometryResolver StackGeometry;
     }
 }

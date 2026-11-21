@@ -47,6 +47,10 @@ namespace RealisticFiring.Multiplayer
                 case FireAction.Sand:
                 case FireAction.Wood:
                 case FireAction.Rag:
+                case FireAction.StoveWood:
+                case FireAction.StoveRag:
+                case FireAction.StoveIgnite:
+                case FireAction.StoveDoorToggle:
                     var key = player << 8 | (byte)action;
                     var least = (uint)(LeastInterval * (ticksPerSecond > 0u ? ticksPerSecond : 1u));
                     if (lastAt.TryGetValue(key, out var last) && tick - last < least)

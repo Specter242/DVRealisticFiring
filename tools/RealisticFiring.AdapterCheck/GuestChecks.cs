@@ -98,9 +98,25 @@ namespace RealisticFiring.AdapterCheck
 
             var fittings = new Multiplayer.FittingsPacket { Arch = true, Booster = true, Snifting = true, ByPass = true, AutoFireDoor = true, Seq = 41000 };
             var gotFittings = new Multiplayer.FittingsPacket();
+            var perLocoFittings = new Multiplayer.FittingsPacket
+            {
+                PerLocomotive = true,
+                HostVersion = 77,
+                Seq = 41001,
+                CarFittings = new[]
+                {
+                    ((ushort)10, (ushort)(UpgradeMask.BrickArch | UpgradeMask.S282Stoker)),
+                    ((ushort)22, (ushort)(UpgradeMask.AutomaticFireDoor | UpgradeMask.SniftingValves)),
+                },
+            };
+            var gotPerLoco = new Multiplayer.FittingsPacket();
             check(RoundTrip(fittings.Serialize, gotFittings.Deserialize) && gotFittings.Arch && gotFittings.Booster && gotFittings.Snifting && gotFittings.ByPass && gotFittings.AutoFireDoor
-                  && !gotFittings.DriftingValve && !gotFittings.Jets && !gotFittings.Stoker && !gotFittings.FeedPump && gotFittings.Seq == 41000,
-                "the host's fittings reach a guest with the drifting fittings and the automatic fire door among them");
+                  && !gotFittings.DriftingValve && !gotFittings.Jets && !gotFittings.Stoker && !gotFittings.FeedPump && !gotFittings.PerLocomotive && gotFittings.Seq == 41000
+                  && RoundTrip(perLocoFittings.Serialize, gotPerLoco.Deserialize) && gotPerLoco.PerLocomotive && gotPerLoco.HostVersion == 77 && gotPerLoco.Seq == 41001
+                  && gotPerLoco.CarFittings.Length == 2
+                  && gotPerLoco.CarFittings[0] == ((ushort)10, (ushort)(UpgradeMask.BrickArch | UpgradeMask.S282Stoker))
+                  && gotPerLoco.CarFittings[1] == ((ushort)22, (ushort)(UpgradeMask.AutomaticFireDoor | UpgradeMask.SniftingValves)),
+                "the host's fittings reach a guest in both fleet-wide and per-locomotive modes");
 
             var air = new Multiplayer.DoorAirPacket { Car = 300, Air = (byte)AutoFireDoorAir.Exhausted, Seq = 65534, Source = 3 };
             var gotAir = new Multiplayer.DoorAirPacket();

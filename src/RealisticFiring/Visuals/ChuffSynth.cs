@@ -17,12 +17,8 @@ namespace RealisticFiring.Visuals
         /// <summary>Whether it is heard in place of the recordings; the game check turns it off to compare them.</summary>
         internal static bool Heard = true;
 
-        // Against the recorded chuffs' loudness, outside the cab and in it, over four paces (game checks of 2026-11-18,
-        // and of 2026-11-19 with the blower shut and the rest of the game measured alone, job 2966). With the voice's
-        // lift for slow beats, the cab's 1.19 left a start's chuffs 3 dB under the recordings and a brisk pace's 5.
-        // The lineside's 0.67 left a crawl's beats unheard outside with the lift (job 2982): 0.9, with the steeper lift.
-        internal static float LinesideGain = 0.9f;
-        internal static float CabGain = 1.7f;
+        internal static float LinesideGain = 1.3f;
+        internal static float CabGain = 2.4f;
 
         /// <summary>For the game check, whose listener stands beside the moving engine: whether to hear as from the cab.</summary>
         internal static bool? ForceInCab;
@@ -148,8 +144,10 @@ namespace RealisticFiring.Visuals
             var near = listener == null || (listener.position - transform.position).sqrMagnitude < reach * reach;
             voice.Open = near && Heard && Main.Settings != null && Main.Settings.RealisticChuffs ? 1f : 0f;
             voice.InCab = (ForceInCab ?? PlayerManager.Car == car) ? 1f : 0f;
-            voice.LinesideGain = LinesideGain;
-            voice.CabGain = CabGain;
+            // The player's "Chuff volume, %", at once.
+            var volume = Main.Settings != null ? Mathf.Clamp(Main.Settings.ChuffVolume, 0f, 200f) / 100f : 1f;
+            voice.LinesideGain = LinesideGain * volume;
+            voice.CabGain = CabGain * volume;
             if (voice.Open > 0f && source.enabled && source.gameObject.activeInHierarchy && !source.isPlaying)
                 source.Play();
             Tell(turns);

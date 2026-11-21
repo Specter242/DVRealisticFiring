@@ -15,57 +15,7 @@ namespace RealisticFiring.Visuals
         private static readonly int CutoffId = Shader.PropertyToID("_Cutoff");
         private static readonly int BumpMapId = Shader.PropertyToID("_BumpMap");
 
-        /// <summary>An engine's arch, in its car's frame (m; y up, z along the car), as its firehole is given.</summary>
-        internal readonly struct Shape
-        {
-            public Shape(float footAlong, float footUp, float lipAlong, float slope, int tubes)
-            {
-                FootAlong = footAlong;
-                FootUp = footUp;
-                LipAlong = lipAlong;
-                Slope = slope;
-                Tubes = tubes;
-            }
-
-            /// <summary>Where the bricks' underside meets the throat sheet or the tube plate: its place along the car and its height.</summary>
-            public readonly float FootAlong;
-            public readonly float FootUp;
-            /// <summary>The lip's place along the car: where the bricks end, toward the door.</summary>
-            public readonly float LipAlong;
-            /// <summary>How steeply the bricks rise toward the door, degrees from the car's level.</summary>
-            public readonly float Slope;
-            /// <summary>The arch tubes the bricks lie on.</summary>
-            public readonly int Tubes;
-        }
-
-        // Each engine's arch, set in its own box as its maker drew it: the
-        // foot on the throat sheet or the tube plate under the lowest tubes,
-        // the lip leaving room under the crown for the gases.
-        private static readonly Dictionary<string, Shape> Shapes = new Dictionary<string, Shape>
-        {
-            // The S282, a light Mikado's box with a short combustion chamber
-            // and a Security arch on arch tubes (RME Aug. 1918). The stock
-            // box (mesh 's282_firebox'): the door sheet at z 0.21, the grate
-            // sloping down 7 degrees to z 2.0 to 2.2, a throat sheet rising
-            // forward from there to y 2.10 at z 2.74, the chamber's floor on
-            // to the tube plate at z 3.14 (its tubes from y 2.19 up), the
-            // crown at y 2.95 over the door and 3.09 from z 2.74 on, 1.03 m
-            // between the side sheets. The arch springs from the throat
-            // sheet under the chamber and covers the front half of the
-            // grate, its lip 0.9 m over the grate and 0.65 m under the
-            // crown; two tubes and three rows of bricks span the box, as
-            // the footage's.
-            ["LocoS282A"] = new Shape(2.59f, 1.9f, 1.25f, 15f, 2),
-            // The S060, a small switcher's narrow box with a short arch and
-            // no arch tubes (the USATC S100's bricks spring from studs on
-            // the side sheets). The stock box (mesh 's060_firebox'): the
-            // door sheet at z -1.82, a throat sheet rising forward from y
-            // 1.88 at z -0.17 to y 2.10 at the tube plate, z 0.04, the crown
-            // level at y 2.78, 0.90 m between the side sheets. The arch
-            // springs from the throat and covers the front two fifths of
-            // the box, its lip 0.55 m under the crown.
-            ["LocoS060"] = new Shape(-0.12f, 1.93f, -0.8f, 15f, 0),
-        };
+        // Per-locomotive arch shapes live in LocomotiveProfiles (Cab.BrickArch).
 
         // The test bed's: the foot raised, the bricks reaching further
         // toward the door, m, and a slope in place of the engine's own (0
@@ -167,7 +117,7 @@ namespace RealisticFiring.Visuals
         private ZonedCoalBed bed;
         private FireboxFlames flames;
         private FireboxVolume volume;
-        private Shape shape;
+        private BrickArchShape shape;
         private Transform holder;
         private MeshRenderer archRenderer;
         private Material material;
@@ -267,8 +217,8 @@ namespace RealisticFiring.Visuals
             var flames = fire != null ? fire.GetComponent<FireboxFlames>() : null;
             var car = firebox != null ? firebox.Car : null;
             var livery = car != null && car.carLivery != null ? car.carLivery.id : null;
-            if (wall == null || bed == null || !bed.Ready || flames == null || flames.SmokeSpace == null || livery == null
-                || !Shapes.TryGetValue(livery, out var shape) || fire.GetComponent<BrickArch>() != null)
+            if (wall == null || bed == null || !bed.Ready || flames == null || flames.SmokeSpace == null
+                || !(LocomotiveProfiles.For(livery)?.Cab.BrickArch is BrickArchShape shape) || fire.GetComponent<BrickArch>() != null)
                 return null;
             var arch = fire.gameObject.AddComponent<BrickArch>();
             arch.bed = bed;

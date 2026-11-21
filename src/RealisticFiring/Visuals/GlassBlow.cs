@@ -18,13 +18,11 @@ namespace RealisticFiring.Visuals
         private const float DrawDown = 3f;
         private const float TopShare = 0.5f;
 
-        // The water in the glass falls this fast while drained and comes back
-        // this fast, s; and its surface jumps by up to this much of the glass
-        // as it boils. Bubbles drawn in the water never showed: the gauge's
-        // cover glass hides whatever is behind it (jobs 2346 to 2350), so the
-        // surface boils instead.
-        private const float FallTime = 0.25f;
-        private const float RiseTime = 0.7f;
+        // Surface boil amplitude while blowing through or rebounding. Bubbles
+        // drawn in the water never showed: the gauge's cover glass hides
+        // whatever is behind it (jobs 2346 to 2350), so the surface boils instead.
+        // Fall and rebound time constants come from Core.GaugeGlassChoke so
+        // clear glasses snap back briskly and choked glasses creep sluggishly.
         private const float Jiggle = 0.06f;
 
         private const string HissClip = "SteamRelease_01";
@@ -126,9 +124,8 @@ namespace RealisticFiring.Visuals
             var level = glass.NormalizeValue(glass.Value, false);
             var bottom = rig.Opening(TryCockRig.GlassBottom);
             var top = rig.Opening(TryCockRig.GlassTop);
-            // Shut and settled, the glass is the game's: it follows the level
-            // as it moves (a level falling as the boiler cooled outran the
-            // eased one and held the glass, job 2345).
+            // Shut and settled, the glass is the game's: it follows the standing
+            // column level (which already carries choking lag/sticking).
             if (!overriding && bottom <= 0f && top <= 0f)
             {
                 shown = level;
@@ -136,6 +133,10 @@ namespace RealisticFiring.Visuals
                 UpdateSound();
                 return;
             }
+            var glassChoke = rig.Water?.GlassChoke;
+            var choke = glassChoke != null ? glassChoke.Choke : 0f;
+            var fallTime = glassChoke != null ? glassChoke.FallTimeNow : Core.GaugeGlassChoke.ClearFallTime;
+            var riseTime = glassChoke != null ? glassChoke.ReboundTimeNow : Core.GaugeGlassChoke.ClearReboundTime;
             var target = level;
             var drawn = Mathf.Clamp01((bottom + TopShare * top) * DrawDown);
             if (drawn > 0f)
@@ -143,16 +144,18 @@ namespace RealisticFiring.Visuals
             if (float.IsNaN(shown))
                 shown = level;
             var before = shown;
-            shown += (target - shown) * Mathf.Min(1f, dt / (target < shown ? FallTime : RiseTime));
+            shown += (target - shown) * Mathf.Min(1f, dt / (target < shown ? fallTime : riseTime));
             var moving = dt > 0f ? Mathf.Abs(shown - before) / dt : 0f;
             var inGlass = Mathf.Clamp01(shown) > 0.02f;
-            var stirred = inGlass ? Mathf.Clamp01(3f * (bottom + top) + 2f * moving) : 0f;
+            var lively = 1f - 0.7f * Mathf.Clamp01(choke);
+            var stirred = inGlass ? Mathf.Clamp01((3f * (bottom + top) + 2f * moving) * lively) : 0f;
             agitation += (stirred - agitation) * Mathf.Min(1f, dt / 0.3f);
 
             var settled = bottom <= 0f && top <= 0f && Mathf.Abs(shown - level) < 0.01f && agitation < 0.02f;
             if (settled)
             {
                 shown = level;
+                agitation = 0f;
                 if (overriding)
                 {
                     overriding = false;

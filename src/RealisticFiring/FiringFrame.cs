@@ -1,15 +1,11 @@
-using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using RealisticFiring.Sim;
 using UnityEngine;
 
 namespace RealisticFiring
 {
  internal static class FiringFrame
     {
-        // Engines fired from the front: BorING's cab-forward, its door at the
-        // forward end of its box, the fireman facing the rear.
-        private static readonly HashSet<string> FromTheFront = new HashSet<string> { "S440NCF-400A" };
-
         // Half a turn about the vertical, written out: Quaternion.Euler is the
         // engine's native call, which the adapter check can't make.
         private static readonly Quaternion HalfTurn = new Quaternion(0f, 1f, 0f, 0f);
@@ -22,7 +18,9 @@ namespace RealisticFiring
         }
 
         /// <summary>Whether <paramref name="livery"/> is fired from the front, its door facing the car's front.</summary>
-        internal static bool Reversed(string livery) => livery != null && FromTheFront.Contains(livery);
+        internal static bool Reversed(string livery) =>
+            (LocomotiveProfiles.TryGet(livery, out var profile) && profile.ReversedFiringFrame)
+            || MakerFitRegistry.IsReversedDoor(livery);
 
         /// <summary>Whether <paramref name="car"/> is fired from the front.</summary>
         internal static bool Reversed(TrainCar car) => car != null && car.carLivery != null && Reversed(car.carLivery.id);

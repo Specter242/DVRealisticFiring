@@ -301,14 +301,30 @@ namespace RealisticFiring
             water != null ? FiringAdvice.Bursting(water.BoilerPressure, water.SafetyValve, water.BurstPressure) : null;
 
         /// <summary>The next step at the foot of a coal fire's pages.</summary>
+        // The regulator over half open: too hard at work for a shake that loses fire.
+        private static bool WorkingHard(TrainCar car)
+        {
+            var engine = car != null ? EngineDrift.EngineOf(car) : null;
+            return engine != null && engine.throttleControl.Value > 0.5f;
+        }
+
         internal static Advice CoalAdvice(RealisticFirebox firebox, InjectorRig rig, BoilerWaterRig waterRig)
         {
             var door = firebox.HasDoorPort ? firebox.DoorOpening : 0f;
             // A cold fire wanting wood or rags none of which is at hand: where the nearest supplies are.
             var supplies = !firebox.Model.FireOn && !LighterRule.LightsCoal ? Items.SupplyPlaces.Hint(firebox.Model.StarterMass > 0f) : null;
-            var advice = Bursting(waterRig) ?? FiringAdvice.ForCoal(firebox.Model, door, rig != null ? Visuals.GaugeGlass.Read(rig) : 1f, Injectors(rig),
+            var glassReading = rig != null ? Visuals.GaugeGlass.Read(rig) : 1f;
+            var boilerPressure = waterRig != null ? waterRig.BoilerPressure : rig != null ? rig.BoilerPressure : 1f;
+            var glassCheck = waterRig != null && waterRig.HasGlassCocks
+                ? waterRig.GlassChoke.Status(waterRig.ImpuritiesActive, waterRig.FoamingConcentrationNow, boilerPressure)
+                : GlassCheck.Clear;
+            var warmingTooFast = waterRig != null && waterRig.ThermalShockActive && waterRig.ThermalShock.WarmingTooFast;
+            var superheaterHot = EngineSuperheater.TryGet(firebox.Car, out var sh) && sh.SuperheaterCareActive && sh.Model.Overheating;
+            var advice = Bursting(waterRig) ?? FiringAdvice.ForCoal(firebox.Model, door, glassReading, Injectors(rig),
                 waterRig != null && waterRig.DriftingWearing, LighterRule.LightsCoal, waterRig != null && waterRig.Drift.SniftingOpen,
-                DriftingFittings.Valve(firebox.Car), supplies);
+                DriftingFittings.Valve(firebox.Car), supplies, glassCheck, boilerPressure, warmingTooFast, superheaterHot,
+                firebox.StartupMultiplier > 1.01f, WorkingHard(firebox.Car),
+                Main.Settings.ShakeGrateKey.keyCode != KeyCode.None ? Main.Settings.ShakeGrateKey.keyCode.ToString() : null);
             if (advice.Level == AdviceLevel.Ok && firebox.StokerTableLoaded)
                 advice = new Advice(AdviceLevel.Watch, "Rake the back of the fire to clear the stoker table. Ease the feed or raise the jets to keep it clear.");
             return advice;
@@ -403,9 +419,19 @@ namespace RealisticFiring
             c.Rows.Add(new Row { Label = "Feed pump", Value = rig.Pump == null ? "none fitted" : Pump(rig.PumpFlow), Level = rig.Pump != null && (rig.PumpFlow.State == FeedPumpState.Racing || rig.PumpFlow.State == FeedPumpState.LostSuction) ? AdviceLevel.Act : (AdviceLevel?)null });
             if (BoilerWaterRig.TryGet(rig.Car, out var waterRig))
             {
-                c.Rows.Add(Main.Settings.BoilerWaterImpurities
-                    ? new Row { Label = "Impurities", Value = $"{waterRig.Water.FoamingConcentration:F0} ppm · foam {P0(waterRig.Water.Foam)}", Level = waterRig.Water.Foam > 0.05f ? AdviceLevel.Watch : (AdviceLevel?)null }
+                var impuritiesOn = waterRig.ImpuritiesActive;
+                c.Rows.Add(impuritiesOn
+                    ? new Row { Label = "Impurities", Value = $"{waterRig.FoamingConcentrationNow:F0} ppm · foam {P0(waterRig.FoamNow)}", Level = waterRig.FoamNow > 0.05f ? AdviceLevel.Watch : (AdviceLevel?)null }
                     : new Row { Label = "Impurities", Value = "off" });
+                if (waterRig.HasGlassCocks && impuritiesOn)
+                {
+                    var choke = waterRig.GlassChoke;
+                    c.Rows.Add(choke.IsStuck
+                        ? new Row { Label = "Gauge glass", Value = "sticking · try cocks & blow through", Level = AdviceLevel.Act }
+                        : choke.IsSluggish
+                            ? new Row { Label = "Gauge glass", Value = "sluggish · blow through", Level = AdviceLevel.Watch }
+                            : new Row { Label = "Gauge glass", Value = "lively" });
+                }
                 var soot = waterRig.Fouling.SootLoss;
                 var scale = BoilerFouling.ScaleLossOf(waterRig.Fouling.ScaleMass, waterRig.HeatingSurface);
                 c.Rows.Add(new Row
@@ -413,6 +439,22 @@ namespace RealisticFiring
                     Label = "Tubes, scale", Value = $"soot {P0(soot)} · scale {P0(scale)} of the heat",
                     Level = soot + scale >= 0.05f ? AdviceLevel.Watch : (AdviceLevel?)null,
                 });
+                var shock = waterRig.ThermalShock;
+                if (waterRig.ThermalShockActive)
+                {
+                    var leakText = shock.WarmingTooFast
+                        ? shock.Wear >= 0.005f ? $"WARMING TOO FAST · {P0(shock.Wear)} leak" : "WARMING TOO FAST"
+                        : shock.Wear >= 0.005f
+                            ? waterRig.TubeLeakRate * 60f >= 0.05f
+                                ? $"{P0(shock.Wear)} leak · {waterRig.TubeLeakRate * 60f:F1} kg/min"
+                                : $"{P0(shock.Wear)} tube leak"
+                            : "sound";
+                    var leakLevel = shock.WarmingTooFast || shock.Wear >= 0.25f ? AdviceLevel.Act
+                        : shock.Wear >= 0.005f ? AdviceLevel.Watch : (AdviceLevel?)null;
+                    c.Rows.Add(new Row { Label = "Tubes, stays", Value = leakText, Level = leakLevel });
+                }
+                else
+                    c.Rows.Add(new Row { Label = "Tubes, stays", Value = "off" });
                 c.Rows.Add(waterRig.Plug != null
                     ? new Row { Label = "Fusible plug", Value = waterRig.Plug.Melted ? "MELTED" : $"{waterRig.Plug.CoreTemperature:F0} °C", Level = waterRig.Plug.Melted ? AdviceLevel.Act : (AdviceLevel?)null }
                     : waterRig.Alarm != null
@@ -443,6 +485,7 @@ namespace RealisticFiring
                 c.Rows.Add(new Row { Label = "Steam chest", Value = $"{engine.steamChestPressureReadOut.Value - 1f:F1} bar" });
                 c.Rows.Add(new Row { Label = "Mean pressure", Value = $"{cycle.MeanEffectivePressure:F1} bar" });
                 if (EngineSuperheater.TryGet(engine, out var superheater))
+                {
                     c.Rows.Add(new Row
                     {
                         Label = "Superheat",
@@ -450,6 +493,25 @@ namespace RealisticFiring
                             ? "none: saturated"
                             : $"{superheater.Model.Superheat:F0} °C · steam {superheater.SteamTemperature(engine.intakePressure.Value):F0} °C",
                     });
+                    if (!superheater.Model.Spec.Saturated)
+                    {
+                        var model = superheater.Model;
+                        if (superheater.SuperheaterCareActive)
+                        {
+                            var status = model.Overheating ? "HOT · " : model.ApproachingOverheat ? "warm · " : "";
+                            var level = model.Overheating || model.Wear >= 0.25f ? AdviceLevel.Act
+                                : model.ApproachingOverheat || model.Wear >= 0.05f ? AdviceLevel.Watch : (AdviceLevel?)null;
+                            c.Rows.Add(new Row
+                            {
+                                Label = "Elements",
+                                Value = $"{model.ElementTemperature:F0} °C · {status}{P0(model.Health)} health",
+                                Level = level,
+                            });
+                        }
+                        else
+                            c.Rows.Add(new Row { Label = "Elements", Value = $"{model.ElementTemperature:F0} °C · off" });
+                    }
+                }
                 var condensing = cylinders.Admitted > 0f ? cylinders.Condensed / cylinders.Admitted : 0f;
                 c.Rows.Add(new Row
                 {

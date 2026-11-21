@@ -122,6 +122,11 @@ namespace RealisticFiring.Items
         {
             if (button < FiringTabletPanel.Pages)
                 SelectPage(button);
+            else if (State?.Page == FiringTabletGadget.ChecklistPage)
+            {
+                panel?.HandleChecklistAction(TargetCar(), button - FiringTabletPanel.Pages);
+                refreshAt = 0f;
+            }
             else
                 GiveOrder(button - FiringTabletPanel.Pages);
         }
@@ -144,7 +149,7 @@ namespace RealisticFiring.Items
             root = screen.GetComponent<RectTransform>();
             root.sizeDelta = new Vector2(Width, Height);
             if (surface == null) BuildSurface();
-            panel = new FiringTabletPanel(root, 1f, dialKey, "FIRING TABLET");
+            panel = new FiringTabletPanel(root, 1f, dialKey, "FIRING TABLET", Visuals.CabControlSpotlight.IsVr());
             PlaceButtons();
             item?.Item?.ReCacheRenderers();
         }
@@ -156,13 +161,21 @@ namespace RealisticFiring.Items
             panel?.PlaceButtons(setButton);
         }
 
-        // The panel's button over its rectangle: made the first time, then shown or hidden.
+        // The panel's button over its rectangle: made the first time, then positioned and shown or hidden.
         private void SetButton(int index, Rect area, bool on)
         {
             var button = buttons[index];
             if (button == null)
-                button = buttons[index] = AddButton(index < FiringTabletPanel.Pages ? "page " + index : "order " + (index - FiringTabletPanel.Pages),
+                button = buttons[index] = AddButton(index < FiringTabletPanel.Pages ? "page " + index : "action " + (index - FiringTabletPanel.Pages),
                     area, () => Pressed(index));
+            else
+            {
+                button.transform.localPosition = new Vector3((area.center.x - Width * 0.5f) * PixelSize,
+                    (Height * 0.5f - area.center.y) * PixelSize, ButtonFront + ButtonDepth * 0.5f);
+                var box = button.GetComponent<BoxCollider>();
+                if (box != null)
+                    box.size = new Vector3(area.width * PixelSize, area.height * PixelSize, ButtonDepth);
+            }
             if (button.activeSelf != on)
                 button.SetActive(on);
         }

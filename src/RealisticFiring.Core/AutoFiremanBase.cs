@@ -189,6 +189,13 @@ namespace RealisticFiring.Core
         public const float BurstShut = 6f;
         private const float BlowdownLeastPressure = 3f;
 
+        // Gauge glass blow-through: in dirty water he blows the glass through
+        // periodically (every 15 min), or at once when it turns sluggish, for a short burst.
+        public const float GlassBlowEvery = 900f;
+        public const float GlassBlowDuration = 3f;
+        public const float GlassBlowMinBurst = 1.5f;
+        public const float GlassBlowCooldown = 20f;
+
         /// <summary>The water is out of sight in the glass at this share, about where a glass's bottom sits.</summary>
         public const float LowGlass = 0.1f;
 
@@ -232,6 +239,10 @@ namespace RealisticFiring.Core
         private bool blowingDown;
         private float burstLeft;
         private float sinceBurst = BurstShut;
+        private float glassBlowLeft;
+        private float glassBlowElapsed;
+        private float glassBlowCooldown;
+        private bool wasGlassBlowing;
         private FiremanCall call;
 
         /// <summary>What he hears of the engine's work, over a few seconds.</summary>
@@ -256,6 +267,8 @@ namespace RealisticFiring.Core
                 {
                     lastPressure = seenGlass = float.NaN;
                     glassTrend = 0f;
+                    glassBlowLeft = glassBlowElapsed = glassBlowCooldown = 0f;
+                    wasGlassBlowing = false;
                 }
                 mode = value;
             }
@@ -300,6 +313,9 @@ namespace RealisticFiring.Core
 
         /// <summary>Whether he is blowing the boiler down.</summary>
         public bool BlowingDown => blowingDown;
+
+        /// <summary>Whether he is blowing the gauge glass through.</summary>
+        public bool BlowingGlass => glassBlowLeft > 0f;
 
         /// <summary>The most steam a fire of these figures can make, in kg/s.</summary>
         public static float MostSteam(FireboxParameters p) => MostSteam(p.Efficiency);
@@ -471,12 +487,31 @@ namespace RealisticFiring.Core
         {
             // He reads the glass through its bobbing and watches which way it
             // goes, as the water would stand level: he knows the grade he is on.
-            var level = r.Glass - r.GlassTilt;
-            if (float.IsNaN(seenGlass))
+            // If the glass is stuck or being blown through, he tries the gauge
+            // cocks for the true level so a falsely high glass never bares the
+            // crown sheet and blowing the glass never leaves his feed decisions
+            // running on a stale or drawn-down reading.
+            var trustTryCocks = r.HasTryCockGlass && (r.GlassBlowing || r.GlassChoke >= GaugeGlassChoke.StuckThreshold);
+            var reading = trustTryCocks ? r.TryCockGlass : r.Glass;
+            var level = reading - r.GlassTilt;
+            if (r.GlassBlowing && !trustTryCocks)
+            {
+                if (float.IsNaN(seenGlass))
+                    seenGlass = GlassGoal;
+                wasGlassBlowing = true;
+            }
+            else if (float.IsNaN(seenGlass) || wasGlassBlowing)
+            {
+                wasGlassBlowing = false;
                 seenGlass = level;
-            var before = seenGlass;
-            seenGlass += (level - seenGlass) * Math.Min(1f, dt / GlassReadTime);
-            glassTrend += ((seenGlass - before) / dt - glassTrend) * Math.Min(1f, dt / TrendTime);
+                glassTrend = 0f;
+            }
+            else
+            {
+                var before = seenGlass;
+                seenGlass += (level - seenGlass) * Math.Min(1f, dt / GlassReadTime);
+                glassTrend += ((seenGlass - before) / dt - glassTrend) * Math.Min(1f, dt / TrendTime);
+            }
 
             var hardAhead = call == FiremanCall.HeavyAhead || j.Building || reserveAhead > SacrificeFromWork && Mode == FiremanMode.Road;
             var goal = hardAhead ? GlassBeforeWork : GlassGoal;
@@ -651,6 +686,47 @@ namespace RealisticFiring.Core
             {
                 sinceBurst += dt;
             }
+
+            // Blow the gauge glass through when it grows sluggish, or periodically in dirty water.
+            if (r.HasGlassCocks)
+            {
+                var dirt = Math.Max(r.Solids, r.FoamingSolids);
+                var wantsBlow = r.Pressure > BlowdownLeastPressure
+                    && (r.GlassChoke >= GaugeGlassChoke.SluggishThreshold
+                        || dirt >= GaugeGlassChoke.ChokeOnsetPpm && r.TimeSinceGlassBlow >= GlassBlowEvery);
+                if (glassBlowLeft <= 0f && wantsBlow && glassBlowCooldown <= 0f)
+                {
+                    glassBlowLeft = GlassBlowDuration;
+                    glassBlowElapsed = 0f;
+                }
+                if (glassBlowLeft > 0f)
+                {
+                    if (r.Pressure <= BlowdownLeastPressure)
+                    {
+                        glassBlowLeft = 0f;
+                        glassBlowCooldown = GlassBlowCooldown;
+                    }
+                    else
+                    {
+                        actions.GlassBlowCock = 1f;
+                        glassBlowLeft -= dt;
+                        glassBlowElapsed += dt;
+                        if (r.GlassChoke <= 0.01f && glassBlowElapsed >= GlassBlowMinBurst)
+                            glassBlowLeft = 0f;
+                        if (glassBlowLeft <= 0f)
+                            glassBlowCooldown = GlassBlowCooldown;
+                    }
+                }
+                else if (glassBlowCooldown > 0f)
+                {
+                    glassBlowCooldown = Math.Max(0f, glassBlowCooldown - dt);
+                }
+            }
+            else
+            {
+                glassBlowLeft = 0f;
+                glassBlowCooldown = 0f;
+            }
         }
 
         /// <summary>
@@ -707,7 +783,9 @@ namespace RealisticFiring.Core
         protected static FiremanNotice WaterNotices(FiremanReadings r)
         {
             var notices = FiremanNotice.None;
-            if (r.Glass <= LowGlass)
+            var trustTryCocks = r.HasTryCockGlass && (r.GlassBlowing || r.GlassChoke >= GaugeGlassChoke.StuckThreshold);
+            var reading = trustTryCocks ? r.TryCockGlass : (r.GlassBlowing ? 1f : r.Glass);
+            if (reading <= LowGlass)
                 notices |= FiremanNotice.LowWater;
             if (r.TenderWater <= 0f)
                 notices |= FiremanNotice.TenderWaterOut;

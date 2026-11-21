@@ -1,6 +1,7 @@
 using System.Globalization;
 using DV.CashRegister;
 using DV.ServicePenalty.UI;
+using RealisticFiring.Core;
 using TMPro;
 
 namespace RealisticFiring.Upgrades
@@ -14,9 +15,15 @@ namespace RealisticFiring.Upgrades
         private TextMeshPro title1, title2, upgradeName, price, insertWallet, depositedText, deposited;
 
         private UpgradesScreen.Upgrade upgrade;
+        private UpgradeScope quotedScope;
+        private TrainCar targetCar;
+        private string targetId;
 
         /// <summary>Whether the kiosk has the stock payment screen this borrows from.</summary>
         internal bool Ready => register != null && deposited != null;
+
+        /// <summary>Whether the current upgrade scope still matches the scope captured when this payment screen opened.</summary>
+        internal bool QuoteScopeMatches => Fittings.Scope == quotedScope;
 
         internal void Init(DisplayScreenSwitcher kiosk, UpgradesScreen list, CareerManagerInfoScreen info)
         {
@@ -36,8 +43,14 @@ namespace RealisticFiring.Upgrades
             deposited = stock.depositedValue;
         }
 
-        /// <summary>The upgrade the screen sells next.</summary>
-        internal void Sell(UpgradesScreen.Upgrade upgrade) => this.upgrade = upgrade;
+        /// <summary>The upgrade (and optional target locomotive in per-loco mode) the screen sells next.</summary>
+        internal void Sell(UpgradesScreen.Upgrade upgrade, UpgradeScope scope, TrainCar targetCar = null, string targetId = null)
+        {
+            this.upgrade = upgrade;
+            quotedScope = scope;
+            this.targetCar = scope == UpgradeScope.PerLocomotive ? targetCar : null;
+            this.targetId = scope == UpgradeScope.PerLocomotive ? targetId : null;
+        }
 
         public override void Activate(IDisplayScreen previousScreen)
         {
@@ -45,7 +58,7 @@ namespace RealisticFiring.Upgrades
             register.CashAdded += ShowDeposited;
             register.CashRemoved += ShowDeposited;
             title1.text = UpgradesMenu.Entry;
-            title2.text = "Upgrade:";
+            title2.text = !string.IsNullOrEmpty(targetId) ? $"Upgrade ({targetId}):" : "Upgrade:";
             upgradeName.text = upgrade.Name;
             price.text = Dollars(upgrade.Price);
             insertWallet.text = CareerManagerLocalization.INSERT_WALLET_TO_PAY;
@@ -69,12 +82,19 @@ namespace RealisticFiring.Upgrades
                     kiosk.SetActiveDisplay(list);
                     break;
                 case InputAction.Confirm:
-                    // Short, the register plays its not-enough sound and the screen stays.
-                    if (upgrade == null || !upgrade.CanBuy || !register.Buy())
+                    if (upgrade == null || !QuoteScopeMatches)
+                    {
+                        kiosk.SetActiveDisplay(list);
                         break;
-                    upgrade.Buy();
-                    Main.Mod?.Logger.Log($"Bought the {upgrade.Name} upgrade for {Dollars(upgrade.Price)}: {upgrade.Engines} has it now");
-                    UpgradesMenu.ShowInfo(info, list, upgrade.Name, upgrade.BoughtLine);
+                    }
+                    // Short, the register plays its not-enough sound and the screen stays.
+                    if (!upgrade.CanBuyFor(targetCar) || !register.Buy())
+                        break;
+                    upgrade.BuyFor(targetCar);
+                    var idForLog = quotedScope == UpgradeScope.PerLocomotive ? targetId : null;
+                    var who = !string.IsNullOrEmpty(idForLog) ? idForLog : upgrade.Engines;
+                    Main.Mod?.Logger.Log($"Bought the {upgrade.Name} upgrade for {Dollars(upgrade.Price)}: {who} has it now");
+                    UpgradesMenu.ShowInfo(info, list, upgrade.Name, upgrade.ConfirmationFor(idForLog));
                     kiosk.SetActiveDisplay(info);
                     break;
             }

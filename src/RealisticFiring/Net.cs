@@ -31,6 +31,11 @@ namespace RealisticFiring
         // the zone aimed at; for a rag, its oil (Value) and whether it burns (Direction 1).
         Wood,
         Rag,
+        // A guest's firewood, rag, lighter ignition, or fallback door toggle on a caboose stove.
+        StoveWood,
+        StoveRag,
+        StoveIgnite,
+        StoveDoorToggle,
     }
 
     /// <summary>Something the host's fire did that players near the loco should see and hear.</summary>

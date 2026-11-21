@@ -9,55 +9,26 @@ namespace RealisticFiring.Sim
     /// </summary>
     internal static class FireboxRegistry
     {
+        internal static readonly HashSet<string> BuiltInLiveries = new HashSet<string>(LocomotiveProfiles.CoalLiveries);
+
         /// <summary>
-        /// Liveries whose coal firebox the mod replaces: the stock coal locos
-        /// and the custom (CCL) locos with compatible controls and interiors.
+        /// Liveries whose coal firebox the mod replaces: the stock coal locos,
+        /// built-in custom (CCL) locos, and any loaded coal maker-fit profiles.
         /// </summary>
-        public static readonly IReadOnlyCollection<string> SupportedLiveries = new HashSet<string>
-        {
-            "LocoS282A",
-            "LocoS060",
-            // Lilla and Cruzer's hand-fired JK3 (Nexus 1334, 1.0.1), read
-            // from its release bundle 2026-10-10. Jk3B is its tender.
-            "Jk3A",
-            // LittleNiko36's NYC Dreyfuss Hudson (Nexus 1688; measured
-            // 2026-10-08) and 4-8-4 (Nexus 1494), a UP FEF-3 in a made-up
-            // road's livery ("Black Arrow", per its bundle).
-            "S464-730",
-            "S484-840A",
-            // Cypress and LittleNiko36's UP FEF-3 No. 844 (Nexus 1590, 1.0.58),
-            // read from its bundle and seated in game 2026-10-09.
-            "FEF-3",
-            // Emerald's LMS 8F (Nexus 1360, 1.2.1), read from its bundle
-            // 2026-10-14; the WD Photographic scheme is a paint, not a livery.
-            "em_lms_8f_loc_black",
-            "em_lms_8f_loc_grey",
-            // Emerald's LMS Fowler 4F 0-6-0 (Nexus 1457, 1.1.1), read from its
-            // bundle 2026-11-15: its BR livery (No. 44422) and its LMS one
-            // (No. 4027). em_lms_4f_tender_br and _lms are its tenders.
-            "em_fowler_4f_44422",
-            "em_fowler_4f_4027",
-            // LittleNiko36's S2102-870 (Nexus 1779, 1.0.0), a China Railways
-            // QJ 2-10-2 with CCL's steam stoker, read from its bundle
-            // 2026-10-19. S2102-870B is its tender.
-            "S2102-870",
-            // E_noob's DB BR95 (Nexus 1792, 1.0.0), a Prussian T 20 2-10-2
-            // tank engine, hand fired from its bunker, read from its bundle
-            // 2026-10-24.
-            "S2102-720",
-            "S260N-580A",
-            "S040N-270",
-            "S0440NG-890",
-            "S440NCF-400A",
-        };
+        public static IReadOnlyCollection<string> SupportedLiveries => MakerFitRegistry.AllCoalLiveries(BuiltInLiveries);
 
         private static readonly Dictionary<TrainCar, RealisticFirebox> Fireboxes = new Dictionary<TrainCar, RealisticFirebox>();
 
         /// <summary>Every realistic firebox, by car.</summary>
         public static IEnumerable<RealisticFirebox> All => Fireboxes.Where(pair => pair.Key != null).Select(pair => pair.Value).ToList();
 
+        internal static bool IsSupported(string livery, string carType = null) =>
+            livery != null && !LeftStock.IsExcluded(livery, carType)
+            && (BuiltInLiveries.Contains(livery) || MakerFitRegistry.IsCoalLivery(livery));
+
         public static bool IsSupported(TrainCar car) =>
-            car != null && car.carLivery != null && SupportedLiveries.Contains(car.carLivery.id);
+            car != null && car.carLivery != null && !LeftStock.IsExcluded(car)
+            && IsSupported(car.carLivery.id, car.carLivery.parentType != null ? car.carLivery.parentType.id : null);
 
         public static void Register(RealisticFirebox firebox)
         {

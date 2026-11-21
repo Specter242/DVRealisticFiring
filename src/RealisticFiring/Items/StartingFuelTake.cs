@@ -19,7 +19,7 @@ namespace RealisticFiring.Items
     {
         private static void Postfix(GrabberInteractionHandlerDV __instance, ref Grabber.Trigger? __result)
         {
-            if (__result != Grabber.Trigger.Hold || !Main.ReplacementEnabled) return;
+            if (__result != Grabber.Trigger.Hold || (!Main.ReplacementEnabled && !(Main.Settings != null && Main.Settings.CabooseStove))) return;
             var grabber = __instance.GetComponent<Grabber>();
             var hit = grabber != null ? grabber.Raycaster?.CurrentlyHit.collider : null;
             if (hit == null || hit.name != StartingFuelBody.ContentsName) return;

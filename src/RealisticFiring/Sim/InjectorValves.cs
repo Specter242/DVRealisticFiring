@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using RealisticFiring.Core;
 
 namespace RealisticFiring.Sim
@@ -14,48 +13,28 @@ namespace RealisticFiring.Sim
  public static readonly StokerJetControls.Valve TenderWater = new StokerJetControls.Valve("rfTenderWater", "Right tender water valve", null, 1f);
         public static readonly StokerJetControls.Valve TenderWaterLeft = new StokerJetControls.Valve("rfTenderWater2", "Left tender water valve", null, 1f);
 
-        private static readonly HashSet<string> TenderValved = new HashSet<string> { "em_lms_stanier_tender_1_black", "em_lms_stanier_tender_1_grey" };
-
         /// <summary>Whether this session fits the tender <paramref name="livery"/> with water valves.</summary>
-        public static bool HasTenderValves(string livery) => livery != null && Main.Session.InjectorSteamValves && TenderValved.Contains(livery);
+        public static bool HasTenderValves(string livery) =>
+            livery != null && Main.Session.InjectorSteamValves && !LeftStock.IsExcluded(livery)
+            && ((LocomotiveProfiles.TryGetTender(livery, out var tender) && tender.HasWaterValves) || MakerFitRegistry.HasTenderWaterValves(livery));
 
         /// <summary>The tender's water valve to the injector at <paramref name="index"/> (the right is 0, the left 1).</summary>
         public static StokerJetControls.Valve TenderValve(int index) => index == 0 ? TenderWater : TenderWaterLeft;
 
-        // The 4F's injector steam valves are on its backplate too (Powell,
-        // Living with L.M.S. Locomotives, 1977, ch. 4), where its cab has its
-        // two injector handles.
-        private static readonly HashSet<string> OwnLeverSteam = new HashSet<string>
-        {
-            "em_lms_8f_loc_black", "em_lms_8f_loc_grey", "em_fowler_4f_44422", "em_fowler_4f_4027",
-        };
-
         /// <summary>Whether <paramref name="livery"/>'s own injector levers are the steam valves, and the added controls the water regulators.</summary>
-        public static bool OwnLeverIsSteam(string livery) => livery != null && OwnLeverSteam.Contains(livery);
+        public static bool OwnLeverIsSteam(string livery) =>
+            livery != null && ((LocomotiveProfiles.TryGet(livery, out var profile) && profile.Injector.OwnLeverIsSteam) || MakerFitRegistry.OwnLeverIsSteam(livery));
 
         /// <summary>The steam lever's notches, at 0, <see cref="InjectorSpec.SteamPrime"/>, and 1.</summary>
         public static readonly string[] Notches = { "Off", "Prime", "Feed" };
 
-        private static readonly HashSet<string> Fitted = new HashSet<string>
-        {
-            "LocoS282A", "LocoS060", "Jk3A", "S464-730", "FEF-3", "S484-840A", "A.T.&S.F. 2901-A",
-            "em_lms_8f_loc_black", "em_lms_8f_loc_grey", "S2102-870", "S2102-720", "em_fowler_4f_44422", "em_fowler_4f_4027",
-            "S260N-580A", "S040N-270", "S0440NG-890", "S440NCF-400A",
-        };
-
-        // The S282's cab-mounted replacement and the JK3's lift their water,
-        // as do BorING's narrow-gauge engines' (American practice of their
-        // day, inferred). The other supported engines keep their non-lifting
-        // equipment.
-        private static readonly HashSet<string> Lifters = new HashSet<string>
-        {
-            "LocoS282A", "Jk3A", "S260N-580A", "S040N-270", "S0440NG-890", "S440NCF-400A",
-        };
-
         /// <summary>Whether this session fits <paramref name="livery"/> with steam valves.</summary>
-        public static bool Fits(string livery) => livery != null && Main.Session.InjectorSteamValves && Fitted.Contains(livery);
+        public static bool Fits(string livery) =>
+            livery != null && Main.Session.InjectorSteamValves
+            && ((LocomotiveProfiles.TryGet(livery, out var profile) && profile.Injector.HasSteamValves) || MakerFitRegistry.HasInjectorSteamValves(livery));
 
-        public static bool Lifting(string livery) => livery != null && Lifters.Contains(livery);
+        public static bool Lifting(string livery) =>
+            livery != null && ((LocomotiveProfiles.TryGet(livery, out var profile) && profile.Injector.Lifting) || MakerFitRegistry.IsLiftingInjector(livery));
 
         /// <summary>How many injectors <paramref name="livery"/> has, and so steam valves.</summary>
         public static int Count(string livery) => InjectorRig.HasTwoValveGraph(livery) ? 2 : 1;

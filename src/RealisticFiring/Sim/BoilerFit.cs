@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using LocoSim.Definitions;
 using RealisticFiring.Core;
 
@@ -6,40 +5,6 @@ namespace RealisticFiring.Sim
 {
  internal static class BoilerFit
     {
-        private const float LbPerHour = 0.45359237f / 3600f;
-
-        // The prototypes' most evaporation, actual, kg/s.
-        private static readonly Dictionary<string, float> Steam = new Dictionary<string, float>
-        {
-            // LMS Class 5 at the front-end limit, 23,050 lb/h (Cox, British
-            // Railways Standard Steam Locomotives, 1966): the 8F "was never
-            // subjected to similar constant speed tests, but the corresponding
-            // Class 5 4-6-0 was most thoroughly tested", its firebox identical.
-            ["em_lms_8f_loc_black"] = 23050f * LbPerHour,
-            ["em_lms_8f_loc_grey"] = 23050f * LbPerHour,
-            ["em_fowler_4f_44422"] = 12000f * LbPerHour,
-            ["em_fowler_4f_4027"] = 12000f * LbPerHour,
-            // NYC J-3a, 85,000 lb/h with the standard front end, Selkirk
-            // standing tests (Railway Age, 18 Jan 1941, p.181).
-            ["S464-730"] = 85000f * LbPerHour,
-            // UP FEF-1, 68,700 lb/h by Cole's ratios (Brandt, RME Mar 1940
-            // p.104), times the tested engines' mean margin over Cole's,
-            // 1.22 (the J-3a 1.40, the Santa Fe 3765s 1.03): no FEF was tested.
-            ["FEF-3"] = 83600f * LbPerHour,
-            ["S484-840A"] = 83600f * LbPerHour,
-            // Santa Fe 3766, 82,000 lb/h (AT&SF Test Report 87312, in
-            // Stagner, Trains, Feb 1987); no 2900 was tested.
-            ["A.T.&S.F. 2901-A"] = 82000f * LbPerHour,
-            // China Railways QJ, "up to 95 kg steam per square meter and
-            // hour" on 255.3 m² (Hans Schaefer's QJ pages; Datong's figures).
-            ["S2102-870"] = 95f * 255.3f / 3600f,
-            // Prussian T 20 No. 77 001's best on the EZA's 1923 runs, 75 kg of
-            // water per m² of heating surface and hour on 200 m², a light
-            // train up 1:10; the heavy trains 44 to 53 (Nordmann, Organ 1924,
-            // p.100).
-            ["S2102-720"] = 75f * 200f / 3600f,
-        };
-
         /// <summary>
         /// Sizes <paramref name="definition"/>'s fire to its engine's
         /// prototype, before the fire is built from it. Returns the maker's
@@ -64,7 +29,10 @@ namespace RealisticFiring.Sim
         internal static bool TryBurnTime(string livery, float maxCoalCapacity, float efficiencyAtMaxCombustion, bool oil, out float burnTime)
         {
             burnTime = 0f;
-            if (livery == null || !Steam.TryGetValue(livery, out var steam))
+            float steam;
+            if (LocomotiveProfiles.TryGet(livery, out var profile) && profile.PrototypeEvaporation is float builtIn)
+                steam = builtIn;
+            else if (!MakerFitRegistry.TryGetMaxEvaporation(livery, out steam))
                 return false;
             burnTime = FireboxParameters.BurnTimeFor(maxCoalCapacity, efficiencyAtMaxCombustion,
                 steam * AutoFiremanBase.SteamHeat, oil ? OilFire.MaxFeedFactor : 1f);

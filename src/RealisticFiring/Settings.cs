@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Xml.Serialization;
 using UnityEngine;
 using UnityModManagerNet;
@@ -33,7 +34,7 @@ namespace RealisticFiring
             "dead ash, flaring when fire drops in. 0 turns it off.")]
         public float AshpanGlow = 1f;
 
-        // The chimney's six do nothing while Realistic Stack Effects draws the
+        // The chimney's eight do nothing while Realistic Stack Effects draws the
         // chimneys (its own settings apply): the window greys them, and a
         // settings list leaves them out (ChimneyHandedOff).
 
@@ -53,14 +54,25 @@ namespace RealisticFiring
             "its weather is used instead.")]
         public RealisticStackEffects.Core.SmokeSeason SmokeSeason = RealisticStackEffects.Core.SmokeSeason.Summer;
 
+        [Draw("Steam visibility, ×", DrawType.Slider, Min = RealisticStackEffects.Core.PlumeSettings.MinSteamVisibility, Max = RealisticStackEffects.Core.PlumeSettings.MaxSteamVisibility, Precision = 1, InvisibleOn = "#ChimneyHandedOff|True", Tooltip =
+            "Scales how strongly exhaust steam shows in the air. 1 is realistic for the\n" +
+            "weather; raise it for a fuller plume in dry summer air, or lower it for a\n" +
+            "subtler one.")]
+        public float SteamVisibility = RealisticStackEffects.Core.PlumeSettings.DefaultSteamVisibility;
+
+        [Draw("Plume wind, ×", DrawType.Slider, Min = RealisticStackEffects.Core.PlumeSettings.MinWindStrength, Max = RealisticStackEffects.Core.PlumeSettings.MaxWindStrength, Precision = 1, InvisibleOn = "#ChimneyHandedOff|True", Tooltip =
+            "Scales how strongly the weather's wind drifts the plume. 1 is normal; 0 is\n" +
+            "still air.")]
+        public float WindStrength = RealisticStackEffects.Core.PlumeSettings.DefaultWindStrength;
+
+        [Draw("Heat shimmer", InvisibleOn = "#ChimneyHandedOff|True", Tooltip = "Shimmer above the stack. Needs custom smoke effects.")]
+        public bool HeatShimmer = true;
+
         [Draw("Realistic chimney smoke (restart)", InvisibleOn = "#ChimneyHandedOff|True", Tooltip = "Use smoke driven by the realistic fire on supported locomotives.")]
         public bool RealisticSmoke = true;
 
         [Draw("Custom smoke effects (restart)", InvisibleOn = "#ChimneyHandedOff|True", Tooltip = "Use the mod's chimney effects when their assets are available.")]
         public bool CustomSmokeEffects = true;
-
-        [Draw("Heat shimmer (restart)", InvisibleOn = "#ChimneyHandedOff|True", Tooltip = "Shimmer above the stack. Needs custom smoke effects.")]
-        public bool HeatShimmer = true;
 
         [Draw("Steam around the engine (restart)", InvisibleOn = "#ChimneyHandedOff|True", Tooltip =
             "Draw the dynamo, cylinder cocks, safety valves, whistle, and leaks as the\n" +
@@ -87,9 +99,15 @@ namespace RealisticFiring
 
         [Draw("Largest shovelful, kg", Min = MinShovelful, Max = MaxShovelful, Precision = 1, Tooltip =
             "A full shovel on supported coal locomotives, and the fireman's (never under 3\n" +
-            "kg for him). With the shovel in hand, the mouse wheel takes less, half a\n" +
-            "kilogram a click down to 1 kg. A normal shovelful is 3 kg.")]
+            "kg for him). With the shovel in hand, the mouse wheel (or trigger + stick in\n" +
+            "VR) takes less, half a kilogram a click down to 1 kg. 6 kg by default.")]
         public float ShovelfulMass = DefaultShovelful;
+
+        [Draw("Bigger shovelfuls during the accelerated startup", Tooltip =
+            "While the game's Steam Startup speeds up a cold engine's fire, each shovelful\n" +
+            "you scoop is bigger by as much, up to 12 kg (less in a small firebox): fewer\n" +
+            "throws. None at Steam Startup 2,500 %; a stoker's own feed is unchanged.")]
+        public bool StartupShovelBoost = true;
 
         // The shovelful the mouse wheel has picked, kg; 0, the default, is a
         // full one, which follows the largest. Not drawn: the wheel sets it,
@@ -98,9 +116,9 @@ namespace RealisticFiring
 
         internal const float MinShovelful = 1f;
         internal const float MaxShovelful = 8f;
-        internal const float DefaultShovelful = 3f;
+        internal const float DefaultShovelful = 6f;
 
-        /// <summary>The largest shovelful, kg (a full shovel, and the fireman's, never under 3 kg for him): the setting, or 3 where it is out of range.</summary>
+        /// <summary>The largest shovelful, kg (a full shovel, and the fireman's, never under 3 kg for him): the setting, or <see cref="DefaultShovelful"/> where it is out of range.</summary>
         internal float Shovelful => ShovelfulMass >= MinShovelful && ShovelfulMass <= MaxShovelful ? ShovelfulMass : DefaultShovelful;
 
         /// <summary>The player's own shovelful, kg: the wheel's pick, 1 kg up to <see cref="Shovelful"/>, or a full one.</summary>
@@ -137,6 +155,11 @@ namespace RealisticFiring
             "it.")]
         public float GrateLeverSensitivity = 0.35f;
 
+        [Draw("Caboose stove", Tooltip =
+            "Make the caboose's stove work with firewood, oiled rags, and the lighter, with\n" +
+            "firelight, interior warmth, and chimney smoke. Applies immediately.")]
+        public bool CabooseStove = true;
+
         [Header("Boiler")]
         [Draw("Realistic injectors (restart)", Tooltip = "Use live-steam injectors on the mod's steam locomotives.")]
         public bool RealisticInjectors = true;
@@ -150,8 +173,9 @@ namespace RealisticFiring
         public bool SeparateInjectorSteamValve = true;
 
         [Draw("Boiler water impurities", Tooltip =
-            "Dissolved solids build up and cause foaming and carryover. Blow down regularly;\n" +
-            "wash out to clear them.")]
+            "Dissolved solids build up, causing foaming, carryover, and a choking gauge\n" +
+            "glass. Blow down regularly, blow through the glass, check try cocks, or wash\n" +
+            "out to clear them.")]
         public bool BoilerWaterImpurities = true;
 
         [Draw("Feed water quality", DrawType.ToggleGroup, Tooltip = "Better water brings fewer dissolved solids into the boiler.")]
@@ -161,6 +185,17 @@ namespace RealisticFiring
             "Fit the prototype's protection. A melted plug drowns the fire; the Hudson uses\n" +
             "an alarm.")]
         public bool FusiblePlugs = true;
+
+        [Draw("Boiler thermal shock", Tooltip =
+            "Forcing a cold boiler hard stresses tubes and stays, causing slow leaks and\n" +
+            "efficiency loss until repaired at a service station. Off by default.")]
+        public bool BoilerThermalShock;
+
+        [Draw("Superheater element care", Tooltip =
+            "Shutting off on a hot fire without steam flow overheats and scales the\n" +
+            "superheater elements. Crack the throttle, open the drifting valve, or ease the\n" +
+            "fire.")]
+        public bool SuperheaterCare = true;
 
         [Header("Engine")]
         [Draw("Realistic cylinders", Tooltip = "Valve events, clearance, cushioning, port flow, and blast-pipe back pressure.")]
@@ -183,10 +218,28 @@ namespace RealisticFiring
             "equipment.")]
         public bool FitFeedPumps = true;
 
+        [Draw("Stoker jams (restart)", Tooltip =
+            "Lumps, foreign objects, or wet-coal packing can jam the screw. Reverse its\n" +
+            "engine to clear it.")]
+        public bool StokerJams = true;
+
+        [Draw("Stoker jet valves in the cab", Tooltip = "Show the stoker's distribution valves. Applies when the cab next loads.")]
+        public bool ShowStokerJetValves = true;
+
         // The upgrade rules: each fitting bought in a career (Upgrades on a
         // career manager), or always or never fitted. A change refits the
         // engines through OnChange, from the window or a settings list alike.
 
+        [Header("Upgrades")]
+        [Draw("Career upgrade scope", DrawType.ToggleGroup, Tooltip =
+            "Fleet-wide: buying an upgrade fits every eligible locomotive.\n" +
+            "Per locomotive: Upgrades lists the S282s and S060s you own (Owned Vehicles,\n" +
+            "a restored engine); pick one by its ID and buy its upgrades for it alone.\n" +
+            "Prior fleet-wide purchases stay fitted; new purchases apply only to the\n" +
+            "picked locomotive and are kept across saves.\n" +
+            "Switching back to Fleet-wide hides per-locomotive purchases until you return\n" +
+            "to Per locomotive; nothing is lost.")]
+        public Core.UpgradeScope UpgradeScope = Core.UpgradeScope.FleetWide;
         // The stock engines' brick arch.
         [Draw("Brick arch", DrawType.ToggleGroup, Tooltip =
             "Without it the engines burn about 7 to 13 % more coal for the same work, steam\n" +
@@ -206,10 +259,10 @@ namespace RealisticFiring
         // The S282's and S060's automatic fire door, the same way. Never
         // fitted also turns off the one the car packs' engines have as built.
         [Draw("Automatic fire door", DrawType.ToggleGroup, Tooltip =
-            "With the shovel in hand at the fire door, holding the jump key opens the door\n" +
-            "with air, and it shuts when you let go. Buy it for the S282 and S060 in a\n" +
-            "career at a career manager's Upgrades screen. The Hudson, 844, S484-840 and QJ\n" +
-            "have it as built, unless this is Never fitted.")]
+            "With the shovel in hand at the fire door, holding jump (or trigger in VR)\n" +
+            "opens the door with air, and it shuts when you let go. Buy it for the S282 and\n" +
+            "S060 in a career at a career manager's Upgrades screen. The Hudson, 844,\n" +
+            "S484-840 and QJ have it as built, unless this is Never fitted.")]
         public Upgrades.UpgradeRule AutomaticFireDoor = Upgrades.UpgradeRule.BuyInCareer;
 
         // The stock engines' snifting valves on their steam chests, the same
@@ -261,20 +314,16 @@ namespace RealisticFiring
             "manager's Upgrades screen. Changing to or from Never fitted takes a restart.")]
         public Upgrades.UpgradeRule S282Booster = Upgrades.UpgradeRule.BuyInCareer;
 
-        [Draw("Stoker jams (restart)", Tooltip =
-            "Lumps, foreign objects, or wet-coal packing can jam the screw. Reverse its\n" +
-            "engine to clear it.")]
-        public bool StokerJams = true;
-
-        [Draw("Stoker jet valves in the cab", Tooltip = "Show the stoker's distribution valves. Applies when the cab next loads.")]
-        public bool ShowStokerJetValves = true;
-
         [Header("Sound")]
         [Draw("Realistic chuffs", Tooltip =
             "Each beat as loud as the steam it lets go, the soft and hard sounds\n" +
             "blending, each engine's own slightly uneven beat, a drifting engine's\n" +
             "panting, and echoes off walls, cuttings and tunnels. Off, the game's own.")]
         public bool RealisticChuffs = true;
+
+        [Draw("Chuff volume, %", DrawType.Slider, Min = 0, Max = 200, Precision = 0, Tooltip =
+            "How loud the realistic chuffs are. 100 is normal; 0 is silent.")]
+        public float ChuffVolume = 100f;
 
         [Draw("Oil burner volume, ×", DrawType.Slider, Min = 0, Max = 2, Precision = 1, Tooltip = "The roar and drumming of the burner. 1 is normal volume; 0 is silent.")]
         public float OilBurnerVolume = 1f;
@@ -326,6 +375,9 @@ namespace RealisticFiring
         [Draw("Fireman's orders", Tooltip = "Shows or hides his window. Hold Alt to free the mouse and click it.")]
         public KeyBinding FiremanKey = Bind(KeyCode.F7);
 
+        [Draw("Show added controls", Tooltip = "Briefly highlights every cab control added or reworked by Realistic Firing on\nthe current locomotive (~10 s). Unbound until you bind it.")]
+        public KeyBinding ShowControlsKey = new KeyBinding();
+
         [Draw("Fireman: off", Tooltip = "Orders the fireman on your engine off. Unbound until you bind it; Ctrl,\nShift, or Alt may go with the key.")]
         public KeyBinding FiremanOffKey = new KeyBinding();
 
@@ -363,10 +415,16 @@ namespace RealisticFiring
         public bool GiveFiringManual;
 
         [XmlIgnore]
+        public bool GiveFiringChecklists;
+
+        [XmlIgnore]
         public bool GiveWoodCrate;
 
         [XmlIgnore]
         public bool GiveRagTin;
+
+        [XmlIgnore]
+        public bool ShowAddedControls;
 
         // Recovery for an engine stranded with a melted plug, on the loco
         // you're on, as a service station's repair does.
@@ -456,10 +514,11 @@ namespace RealisticFiring
 
         // Which defaults the settings were saved with: 0 before 1.11.1, 1 the
         // aiming keypad drawn, 2 the shovelful always a real one, 3 the S282's
-        // stoker an upgrade. Not in the menu.
+        // stoker an upgrade, 4 boiler thermal shock and superheater care kept
+        // off for Relaxed players. Not in the menu.
         public int DefaultsVersion;
 
-        private const int CurrentDefaults = 3;
+        private const int CurrentDefaults = 4;
 
  public bool ApplyNewDefaults()
         {
@@ -474,9 +533,19 @@ namespace RealisticFiring
             if (DefaultsVersion < 3 && !RetrofitS282Stoker)
                 S282Stoker = Upgrades.UpgradeRule.NeverFitted;
             RetrofitS282Stoker = true;
+            // Existing Relaxed players keep the new care systems off instead of
+            // having them switched on silently and breaking IsRelaxed.
+            if (DefaultsVersion < 4 && WasOldRelaxed)
+            {
+                BoilerThermalShock = false;
+                SuperheaterCare = false;
+            }
             DefaultsVersion = CurrentDefaults;
             return true;
         }
+
+        private bool WasOldRelaxed => !InjectorTechniqueAndHeat && !BoilerWaterImpurities
+                                      && !RainWetsCoal && !StokerJams && ClinkerTendency <= RelaxedClinker;
 
         /// <summary>
         /// Moves each key still on its old Ctrl default to the new one, once;
@@ -513,6 +582,8 @@ namespace RealisticFiring
         {
             InjectorTechniqueAndHeat = false;
             BoilerWaterImpurities = false;
+            BoilerThermalShock = false;
+            SuperheaterCare = false;
             RainWetsCoal = false;
             StokerJams = false;
             ClinkerTendency = RelaxedClinker;
@@ -521,11 +592,13 @@ namespace RealisticFiring
             OnChange();
         }
 
-        /// <summary>The mod as it comes: what <see cref="ApplyRelaxed"/> turned off, back on.</summary>
+        /// <summary>The mod as it comes: what <see cref="ApplyRelaxed"/> turned off, back on, but thermal shock, which is off as it comes.</summary>
         internal void ApplyStandard()
         {
             InjectorTechniqueAndHeat = true;
             BoilerWaterImpurities = true;
+            BoilerThermalShock = false;
+            SuperheaterCare = true;
             RainWetsCoal = true;
             StokerJams = true;
             ClinkerTendency = 1f;
@@ -535,12 +608,12 @@ namespace RealisticFiring
         internal const float RelaxedClinker = 0.3f;
 
         /// <summary>Whether the difficulty options stand as <see cref="ApplyRelaxed"/> leaves them.</summary>
-        internal bool IsRelaxed => !InjectorTechniqueAndHeat && !BoilerWaterImpurities && !RainWetsCoal && !StokerJams
-                                   && ClinkerTendency <= RelaxedClinker;
+        internal bool IsRelaxed => !InjectorTechniqueAndHeat && !BoilerWaterImpurities && !BoilerThermalShock && !SuperheaterCare
+                                   && !RainWetsCoal && !StokerJams && ClinkerTendency <= RelaxedClinker;
 
         /// <summary>Whether they stand as the mod comes.</summary>
-        internal bool IsStandard => InjectorTechniqueAndHeat && BoilerWaterImpurities && RainWetsCoal && StokerJams
-                                    && Mathf.Approximately(ClinkerTendency, 1f);
+        internal bool IsStandard => InjectorTechniqueAndHeat && BoilerWaterImpurities && !BoilerThermalShock && SuperheaterCare
+                                    && RainWetsCoal && StokerJams && Mathf.Approximately(ClinkerTendency, 1f);
 
         /// <summary>
         /// After any change, from the window, a settings list (the Comms
@@ -559,7 +632,7 @@ namespace RealisticFiring
         // The upgrade rules as OnChange last saw them; null before its first call.
         private string appliedRules;
 
-        private string UpgradeRules => $"{BrickArch} {OverFireJets} {AutomaticFireDoor} {SniftingValves} {DriftingValve} {ByPassValves} {S282Stoker} {S282FeedPump} {S282Booster}";
+        private string UpgradeRules => $"{UpgradeScope} " + string.Join(" ", Upgrades.Fittings.All.Select(spec => spec.Rule(this)));
 
         // Change() also caches the key for UMM's new-input-system path.
         private static KeyBinding Bind(KeyCode key, bool ctrl = false, bool shift = false, bool alt = false)

@@ -186,4 +186,210 @@ namespace RealisticStackEffects.Core.Tests;
         Assert.True(PlumeRise.Survival(100f) < 0.1f);
         Assert.True(PlumeRise.Survival(300f) > 0f);
     }
+
+    [Fact]
+    public void CalmDawnInversionCapsRiseGentlyAndSpreadsLaterallyWhileMiddayTowersFreely()
+    {
+        var dawnStrength = PlumeWind.InversionStrength(hour: 5.5f, windSpeed: 0.3f, rain: 0f);
+        var dawnCeiling = PlumeWind.InversionCeiling(hour: 5.5f, windSpeed: 0.3f, rain: 0f);
+        var noonStrength = PlumeWind.InversionStrength(hour: 13f, windSpeed: 0.3f, rain: 0f);
+        var noonCeiling = PlumeWind.InversionCeiling(hour: 13f, windSpeed: 0.3f, rain: 0f);
+
+        // Below the inversion layer rise is unaffected; above it slows toward zero.
+        Assert.Equal(1f, PlumeRise.InversionDamping(10f, dawnCeiling, dawnStrength), 4);
+        var dampingHigh = PlumeRise.InversionDamping(55f, dawnCeiling, dawnStrength);
+        Assert.InRange(dampingHigh, 0f, 0.1f);
+        Assert.True(PlumeRise.InversionSpread(4f, dampingHigh) > 1f);
+
+        // Midday leaves rise completely unconstrained and adds no flattening spread.
+        Assert.Equal(1f, PlumeRise.InversionDamping(55f, noonCeiling, noonStrength), 4);
+        Assert.Equal(0f, PlumeRise.InversionSpread(4f, 1f), 4);
+
+        // Climb an idling plume for 60 s: calm dawn levels off gently near the ceiling, midday climbs freely.
+        var flux = Flux(Idling);
+        float dawnHeight = 0f, noonHeight = 0f;
+        for (var t = 0f; t < 60f; t += 0.05f)
+        {
+            dawnHeight += PlumeRise.RiseSpeed(flux, dawnHeight, 0.3f, 1f, dawnCeiling, dawnStrength) * 0.05f;
+            noonHeight += PlumeRise.RiseSpeed(flux, noonHeight, 0.3f, 1f, noonCeiling, noonStrength) * 0.05f;
+        }
+        Assert.InRange(dawnHeight, 25f, 55f);
+        Assert.True(noonHeight > 100f, $"midday height {noonHeight:F1} m");
+    }
+
+    [Fact]
+    public void SlipstreamDownwashPullsSoftExhaustDownBehindAFastTrain()
+    {
+        const float driftingExit = 1.2f;
+        var driftingFlux = PlumeRise.StackFlux(1e6f, 0f);
+        var downwash = PlumeRise.Downwash(height: 0.2f, trainSpeed: 20f, exitSpeed: driftingExit, flux: driftingFlux);
+
+        // Gentle downward velocity strong enough to beat down soft drifting smoke, within cap.
+        Assert.InRange(downwash, 1f, PlumeRise.MaxDownwash);
+        Assert.True(downwash > PlumeRise.RiseSpeed(driftingFlux, 0.2f, 20f),
+            $"downwash {downwash:F2} m/s should exceed weak bent-over rise");
+    }
+
+    [Fact]
+    public void SlipstreamDownwashVanishesWhenStationaryUnderHardExhaustAloftOrAtBoilerFloor()
+    {
+        var softFlux = PlumeRise.StackFlux(1e6f, 0f);
+        var hardFlux = Flux(Working);
+
+        // Stationary and slow yard movement: zero downwash.
+        Assert.Equal(0f, PlumeRise.Downwash(height: 0f, trainSpeed: 0f, exitSpeed: 1.2f, flux: softFlux));
+        Assert.Equal(0f, PlumeRise.Downwash(height: 0f, trainSpeed: 2f, exitSpeed: 1.2f, flux: softFlux));
+
+        // Hard working exhaust punches cleanly above the wake even at high speed.
+        Assert.Equal(0f, PlumeRise.Downwash(height: 0f, trainSpeed: 25f, exitSpeed: 18f, flux: hardFlux));
+        Assert.Equal(0f, PlumeRise.Downwash(height: 0.5f, trainSpeed: 20f, exitSpeed: 14f, flux: hardFlux));
+
+        // Decays rapidly with height above the stack lip.
+        var atLip = PlumeRise.Downwash(height: 0f, trainSpeed: 20f, exitSpeed: 1.2f, flux: softFlux);
+        var twoUp = PlumeRise.Downwash(height: 2f, trainSpeed: 20f, exitSpeed: 1.2f, flux: softFlux);
+        var tenUp = PlumeRise.Downwash(height: 10f, trainSpeed: 20f, exitSpeed: 1.2f, flux: softFlux);
+        Assert.True(twoUp < 0.45f * atLip, $"2 m up {twoUp:F2} vs lip {atLip:F2}");
+        Assert.True(tenUp < 0.02f * atLip, $"10 m up {tenUp:F3} vs lip {atLip:F2}");
+
+        // Tapers to zero at the boiler-top floor so smoke never dives through the boiler or ground.
+        Assert.Equal(0f, PlumeRise.Downwash(height: PlumeRise.DownwashFloor, trainSpeed: 25f, exitSpeed: 1.2f, flux: softFlux));
+        Assert.Equal(0f, PlumeRise.Downwash(height: PlumeRise.DownwashFloor - 2f, trainSpeed: 25f, exitSpeed: 1.2f, flux: softFlux));
+        var midBoiler = PlumeRise.Downwash(height: 0.5f * PlumeRise.DownwashFloor, trainSpeed: 20f, exitSpeed: 1.2f, flux: softFlux);
+        Assert.InRange(midBoiler, 0.01f, atLip);
+    }
+
+    [Fact]
+    public void SlipstreamDownwashIsZeroForDistantParcelsInBothTravelDirections()
+    {
+        var softFlux = PlumeRise.StackFlux(1e6f, 0f);
+        const float trainSpeed = 20f;
+        const float exitSpeed = 1.2f;
+
+        // Horizontal distance from the stack lip is symmetric for forward and reverse travel.
+        foreach (var signedOffset in new[] { -30f, 30f, -PlumeRise.DownwashWakeLength, PlumeRise.DownwashWakeLength, -120f, 120f })
+        {
+            var horizontalDistance = MathF.Abs(signedOffset);
+            var downwash = PlumeRise.Downwash(height: 0f, trainSpeed: trainSpeed, exitSpeed: exitSpeed, flux: softFlux,
+                horizontalDistance: horizontalDistance, age: 0f);
+            Assert.Equal(0f, downwash);
+        }
+
+        // Near the stack lip it acts; mid-wake it weakens smoothly before vanishing at DownwashWakeLength.
+        var atStack = PlumeRise.Downwash(height: 0f, trainSpeed: trainSpeed, exitSpeed: exitSpeed, flux: softFlux, horizontalDistance: 0f, age: 0f);
+        var midWake = PlumeRise.Downwash(height: 0f, trainSpeed: trainSpeed, exitSpeed: exitSpeed, flux: softFlux, horizontalDistance: 0.5f * PlumeRise.DownwashWakeLength, age: 0f);
+        Assert.True(midWake > 0f && midWake < atStack);
+    }
+
+    [Fact]
+    public void DriftingParcelRecoversUpwardAfterLeavingLocomotiveWake()
+    {
+        var softFlux = PlumeRise.StackFlux(1e6f, 0f);
+        const float trainSpeed = 20f;
+        const float exitSpeed = 1.2f;
+        const float drag = 2f;
+        const float dt = 0.05f;
+        var strength = PlumeRise.DownwashStrength(trainSpeed, exitSpeed, softFlux);
+
+        var height = 0.2f;
+        var horizontal = 0f;
+        var verticalVelocity = 0.2f;
+        var minHeight = height;
+
+        for (var t = 0f; t < 30f; t += dt)
+        {
+            var wake = PlumeRise.Wake(height);
+            var airSpeed = trainSpeed * (1f - wake);
+            var rise = PlumeRise.RiseSpeed(softFlux, height, airSpeed);
+            var inWake = horizontal < PlumeRise.DownwashWakeLength;
+            var downwash = inWake ? PlumeRise.Downwash(strength, height, horizontal, age: t, trainSpeed: trainSpeed, stepDt: dt) : 0f;
+            var targetUp = rise - downwash;
+            var keep = MathF.Exp(-drag * dt);
+            verticalVelocity = targetUp + (verticalVelocity - targetUp) * keep;
+            if (inWake)
+                verticalVelocity = PlumeRise.ClampDownwashVertical(verticalVelocity, height, dt);
+            height += verticalVelocity * dt;
+            horizontal += airSpeed * dt;
+            minHeight = MathF.Min(minHeight, height);
+        }
+
+        // Initial downwash beats the smoke below the lip, never below DownwashFloor,
+        // and once past the wake buoyancy lifts it cleanly well above the lip.
+        Assert.True(minHeight < 0.2f, $"parcel should dip in wake (minHeight {minHeight:F2} m)");
+        Assert.True(minHeight >= PlumeRise.DownwashFloor - 1e-4f, $"parcel overshot DownwashFloor ({minHeight:F2} m)");
+        Assert.True(height > 3f, $"parcel should recover upward after leaving wake, ended at {height:F2} m");
+    }
+
+    [Fact]
+    public void DelayedDownwashUpdateNeverOvershootsDownwashFloor()
+    {
+        var softFlux = PlumeRise.StackFlux(1e6f, 0f);
+        const float trainSpeed = 25f;
+        const float exitSpeed = 1.0f;
+        const float drag = 2f;
+        const float delayedDt = 0.5f;
+        var strength = PlumeRise.DownwashStrength(trainSpeed, exitSpeed, softFlux);
+
+        // Start halfway to DownwashFloor already moving downward fast on a delayed 0.5 s step.
+        var height = -0.5f;
+        var velocityUp = -1.8f;
+        var downwash = PlumeRise.Downwash(strength, height, horizontalDistance: 4f, age: 0.2f, trainSpeed: trainSpeed, stepDt: delayedDt);
+        var targetUp = -downwash;
+        var keep = MathF.Exp(-drag * delayedDt);
+        velocityUp = targetUp + (velocityUp - targetUp) * keep;
+        velocityUp = PlumeRise.ClampDownwashVertical(velocityUp, height, delayedDt);
+
+        var nextHeight = height + velocityUp * delayedDt;
+        Assert.True(nextHeight >= PlumeRise.DownwashFloor - 1e-5f, $"delayed step landed at {nextHeight:F3} m below floor {PlumeRise.DownwashFloor}");
+
+        // Already at or below the floor: downward velocity is clamped to >= 0.
+        Assert.Equal(0f, PlumeRise.ClampDownwashVertical(-1.5f, PlumeRise.DownwashFloor, delayedDt));
+        Assert.Equal(0f, PlumeRise.ClampDownwashVertical(-1.5f, PlumeRise.DownwashFloor - 0.5f, delayedDt));
+    }
+
+    [Fact]
+    public void InversionSpreadWidensLaterallyWithoutAcceleratingDilutionOrRetirement()
+    {
+        var dawnStrength = PlumeWind.InversionStrength(hour: 5.5f, windSpeed: 0.3f, rain: 0f);
+        var dawnCeiling = PlumeWind.InversionCeiling(hour: 5.5f, windSpeed: 0.3f, rain: 0f);
+        var flux = Flux(Idling);
+        const float height = 35f;
+        const float airSpeed = 0.3f;
+
+        var undampedRise = PlumeRise.RiseSpeed(flux, height, airSpeed);
+        var damping = PlumeRise.InversionDamping(height, dawnCeiling, dawnStrength);
+        var rise = undampedRise * damping;
+        var inversionSpread = PlumeRise.InversionSpread(undampedRise, damping);
+        Assert.True(inversionSpread > 0.5f);
+
+        // Lateral widening velocity increases under the inversion.
+        var wideningWithout = PlumeRise.WideningRate(rise, airSpeed, spreadScale: 1f, inversionSpread: 0f);
+        var wideningWith = PlumeRise.WideningRate(rise, airSpeed, spreadScale: 1f, inversionSpread: inversionSpread);
+        Assert.True(wideningWith > wideningWithout + 0.5f);
+
+        // SpreadOn does NOT absorb inversionSpread, so dilution and particle survival stay intact.
+        var spread = PlumeRise.SpreadOn(0f, seconds: 20f, airSpeed: airSpeed, scale: 1f);
+        var dilution = PlumeRise.Dilution(height, spread);
+        var survival = PlumeRise.Survival(height, spread);
+        Assert.Equal(PlumeRise.Dilution(height, PlumeRise.SpreadWidth(20f, airSpeed)), dilution, 5);
+        Assert.Equal(PlumeRise.Survival(height, PlumeRise.SpreadWidth(20f, airSpeed)), survival, 5);
+    }
+
+    [Fact]
+    public void InversionSpreadOnSaturatesFiniteMaxValueAndPreservesMonotonicityOnOverflow()
+    {
+        var saturated = PlumeRise.InversionSpreadOn(0f, 2f, float.MaxValue);
+        Assert.True(float.IsFinite(saturated), $"expected finite saturation, got {saturated}");
+        Assert.Equal(float.MaxValue, saturated);
+
+        // Subsequent updates stay finite and monotonic rather than resetting to 0.
+        var followUp = PlumeRise.InversionSpreadOn(saturated, 1f, 1f);
+        Assert.True(float.IsFinite(followUp), $"expected finite follow-up, got {followUp}");
+        Assert.True(followUp >= saturated, $"follow-up {followUp} fell below {saturated}");
+        Assert.Equal(float.MaxValue, followUp);
+
+        // Overflow from an already large finite width also saturates cleanly.
+        var additiveOverflow = PlumeRise.InversionSpreadOn(float.MaxValue, 1f, float.MaxValue);
+        Assert.True(float.IsFinite(additiveOverflow));
+        Assert.Equal(float.MaxValue, additiveOverflow);
+    }
 }

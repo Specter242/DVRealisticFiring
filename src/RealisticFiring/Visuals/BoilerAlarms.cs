@@ -21,22 +21,29 @@ namespace RealisticFiring.Visuals
         private const float LoudestBlow = 0.6f;
         private const float BlowPitch = 0.75f;
 
+        // Subtle hiss from tubes/stays strained by cold-start thermal shock.
+        private const float LeakPitch = 1.45f;
+        private const float LeakVolume = 0.18f;
+
         private BoilerWaterRig rig;
         private AudioSource whistle;
         private AudioSource blow;
+        private AudioSource leak;
 
         /// <summary>
-        /// Gives <paramref name="car"/>'s boiler its alarm or plug sounds, at the
-        /// fire. Returns a line for the log, or null without either guard.
+        /// Gives <paramref name="car"/>'s boiler its alarm, plug, and tube-leak
+        /// hiss sounds, at the fire. Returns a line for the log, or null without a boiler rig.
         /// </summary>
         public static string Attach(TrainCar car, Fire fire)
         {
-            if (!BoilerWaterRig.TryGet(car, out var rig) || (rig.Alarm == null && rig.Plug == null))
+            if (!BoilerWaterRig.TryGet(car, out var rig))
                 return null;
             var alarms = fire.GetComponent<BoilerAlarms>();
             if (alarms == null)
                 alarms = fire.gameObject.AddComponent<BoilerAlarms>();
             alarms.Set(car, rig);
+            if (rig.Alarm == null && rig.Plug == null)
+                return null;
             var heard = rig.Alarm != null
                 ? alarms.whistle != null ? "low-water alarm whistle" : $"low-water alarm (no '{WhistleClipName}' clip)"
                 : alarms.blow != null ? "fusible plug" : $"fusible plug (no '{BlowClipName}' clip)";
@@ -46,16 +53,18 @@ namespace RealisticFiring.Visuals
         private void Set(TrainCar car, BoilerWaterRig rig)
         {
             this.rig = rig;
-            if (whistle != null || blow != null)
+            if (whistle != null || blow != null || leak != null)
                 return;
             var mixer = car.interior != null
                 ? car.interior.GetComponentsInChildren<AudioSource>(true).Select(s => s.outputAudioMixerGroup).FirstOrDefault(g => g != null)
                 : null;
             var clips = Resources.FindObjectsOfTypeAll<AudioClip>();
+            var steamClip = clips.FirstOrDefault(c => c.name == BlowClipName);
             if (rig.Alarm != null)
                 whistle = Sound("LowWaterAlarm", clips.FirstOrDefault(c => c.name == WhistleClipName), mixer, WhistlePitch, Vector3.up * WhistleAboveFire);
             if (rig.Plug != null)
-                blow = Sound("FusiblePlug", clips.FirstOrDefault(c => c.name == BlowClipName), mixer, BlowPitch, Vector3.zero);
+                blow = Sound("FusiblePlug", steamClip, mixer, BlowPitch, Vector3.zero);
+            leak = Sound("TubeLeakHiss", steamClip, mixer, LeakPitch, Vector3.zero);
         }
 
         private AudioSource Sound(string name, AudioClip clip, UnityEngine.Audio.AudioMixerGroup mixer, float pitch, Vector3 offset)
@@ -87,7 +96,10 @@ namespace RealisticFiring.Visuals
             SetVolume(whistle, rig.Alarm != null && rig.Alarm.Sounding
                 ? WhistleVolume * LowWaterAlarm.AudibleShare(rig.BoilerPressure)
                   * Mathf.Clamp(Main.Settings.LowWaterAlarmVolume, 0f, 2f) : 0f);
-            SetVolume(blow, Mathf.Clamp01(rig.PlugVent / LoudestBlow) * Mathf.Max(0f, Main.Settings.SteamVentVolume));
+            var vents = Mathf.Max(0f, Main.Settings.SteamVentVolume);
+            SetVolume(blow, Mathf.Clamp01(rig.PlugVent / LoudestBlow) * vents);
+            var leakShare = Mathf.Clamp01(rig.TubeLeakRate / BoilerThermalShock.MaxLeakRate);
+            SetVolume(leak, leakShare > 0.01f ? LeakVolume * Mathf.Sqrt(leakShare) * vents : 0f);
         }
 
         private static void SetVolume(AudioSource source, float volume)

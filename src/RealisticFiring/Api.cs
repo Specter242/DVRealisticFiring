@@ -110,8 +110,13 @@ namespace RealisticFiring
         /// <c>heating</c>, raising steam from cold, the water below
         /// boiling; <c>sootLossPct</c> and <c>scaleLossPct</c>, the heat
         /// the tubes lose to soot and the boiler to scale;
+        /// <c>thermalShockWearPct</c>, accumulated tube/stay leak wear;
+        /// <c>thermalShockLossPct</c>, heat lost from thermal-shock leaks;
+        /// <c>warmingTooFast</c>, true while a cold boiler is being forced
+        /// faster than safe; <c>tubeLeakKgPerS</c>, slow water/steam leak rate;
         /// <c>impuritiesPpm</c> and <c>foamPct</c>, only while the
-        /// impurities setting is on; <c>plug</c> with <c>melted</c> and
+        /// impurities setting is on, plus <c>glassChokePct</c> on engines with
+        /// glass blow-through cocks; <c>plug</c> with <c>melted</c> and
         /// <c>coreC</c>, on an engine with a fusible plug;
         /// <c>lowWaterAlarm</c> with <c>sounding</c>, on one with an
         /// alarm.</item>
@@ -135,8 +140,9 @@ namespace RealisticFiring
         /// <c>cutoffPct</c>; <c>steamChestBar</c>; <c>meanPressureBar</c>,
         /// the mean effective pressure; <c>steamKgPerS</c>, the steam the
         /// cylinders use; <c>condensingPct</c>, the share of it condensing
-        /// in them; <c>superheated</c>, and while it is, <c>superheatC</c>
-        /// and <c>steamC</c>.</item>
+        /// in them; <c>superheated</c>, and while it is, <c>superheatC</c>,
+        /// <c>steamC</c>, <c>superheaterElementC</c>,
+        /// <c>superheaterHealthPct</c>, and <c>superheaterOverheating</c>.</item>
         /// <item><c>booster</c>, with a booster fitted: <c>state</c>,
         /// "CutOut", "Idling", "CocksOpen", or "Working"; <c>warmPct</c>.</item>
         /// <item><c>fireman</c>, with this mod's automatic fireman:
@@ -145,6 +151,13 @@ namespace RealisticFiring
         /// <c>callLeftS</c>, until the call lapses.</item>
         /// <item><c>advice</c>: the next step at the foot of the overlay,
         /// <c>level</c> and <c>text</c>.</item>
+        /// <item><c>checklist</c>: the auto-selected live firing checklist for
+        /// this locomotive: <c>id</c> ("CoalColdStart", "OilColdStart",
+        /// "InjectorsAndWater", "CleaningClinkerAndAsh", "StokerSetup", or
+        /// "DriftingAndLayover"), <c>name</c>, <c>shortName</c>,
+        /// <c>autoSelected</c>, <c>allDone</c>, <c>completedPct</c> (0 to 100),
+        /// and <c>steps</c>, a list of dictionaries each with <c>title</c>,
+        /// <c>how</c>, <c>done</c>, and <c>current</c>.</item>
         /// </list>
         /// </summary>
         public static IDictionary<string, object> Read(TrainCar car)
@@ -205,8 +218,26 @@ namespace RealisticFiring
                     ["call"] = fireman.Fireman.Call.ToString(),
                     ["callLeftS"] = fireman.Fireman.CallLeft,
                 };
+            readings["checklist"] = ChecklistSection(ChecklistReader.EvaluateParts(coal, oil, rig, water, car));
             return readings;
         }
+
+        private static Dictionary<string, object> ChecklistSection(Checklist checklist) => new Dictionary<string, object>
+        {
+            ["id"] = checklist.Id.ToString(),
+            ["name"] = checklist.Name,
+            ["shortName"] = checklist.ShortName,
+            ["autoSelected"] = checklist.AutoSelected,
+            ["allDone"] = checklist.AllDone,
+            ["completedPct"] = checklist.Steps.Count > 0 ? checklist.CompletedCount * 100f / checklist.Steps.Count : 100f,
+            ["steps"] = checklist.Steps.Select(step => (object)new Dictionary<string, object>
+            {
+                ["title"] = step.Title,
+                ["how"] = step.How,
+                ["done"] = step.Done,
+                ["current"] = step.Current,
+            }).ToList(),
+        };
 
         private static void ReadCoal(Dictionary<string, object> readings, RealisticFirebox firebox, InjectorRig rig, BoilerWaterRig water)
         {
@@ -335,10 +366,17 @@ namespace RealisticFiring
             boiler["heating"] = water.BelowBoilingNow;
             boiler["sootLossPct"] = water.Fouling.SootLoss * 100f;
             boiler["scaleLossPct"] = BoilerFouling.ScaleLossOf(water.Fouling.ScaleMass, water.HeatingSurface) * 100f;
-            if (Main.Settings != null && Main.Settings.BoilerWaterImpurities)
+            var shockOn = water.ThermalShockActive;
+            boiler["thermalShockWearPct"] = shockOn ? water.ThermalShock.Wear * 100f : 0f;
+            boiler["thermalShockLossPct"] = water.ThermalShockEfficiencyLoss * 100f;
+            boiler["warmingTooFast"] = shockOn && water.ThermalShock.WarmingTooFast;
+            boiler["tubeLeakKgPerS"] = shockOn ? water.TubeLeakRate : 0f;
+            if (water.ImpuritiesActive)
             {
-                boiler["impuritiesPpm"] = water.Water.FoamingConcentration;
-                boiler["foamPct"] = water.Water.Foam * 100f;
+                boiler["impuritiesPpm"] = water.FoamingConcentrationNow;
+                boiler["foamPct"] = water.FoamNow * 100f;
+                if (water.HasGlassCocks)
+                    boiler["glassChokePct"] = water.GlassChoke.Choke * 100f;
             }
             if (water.Plug != null)
                 boiler["plug"] = new Dictionary<string, object>
@@ -392,8 +430,12 @@ namespace RealisticFiring
             readings["superheated"] = superheated;
             if (superheated)
             {
+                var careOn = superheater.SuperheaterCareActive;
                 readings["superheatC"] = superheater.Model.Superheat;
                 readings["steamC"] = superheater.SteamTemperature(engine.intakePressure.Value);
+                readings["superheaterElementC"] = superheater.Model.ElementTemperature;
+                readings["superheaterHealthPct"] = careOn ? superheater.Model.Health * 100f : 100f;
+                readings["superheaterOverheating"] = careOn && superheater.Model.Overheating;
             }
             return readings;
         }

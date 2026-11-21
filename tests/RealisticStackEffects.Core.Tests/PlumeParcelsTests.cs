@@ -191,4 +191,215 @@ namespace RealisticStackEffects.Core.Tests;
         Assert.Equal(PlumeParcels.MostDepth, PlumeParcels.Depth(3f, 0.8f, 0.5f, 0.01f));
         Assert.True(PlumeParcels.Opacity(PlumeParcels.MostDepth) > 0.99f);
     }
+
+    [Fact]
+    public void ParcelSootVariationIsDeterministicBoundedAndPreservesMean()
+    {
+        const int count = 10000;
+        double depthSum = 0.0, shadeSum = 0.0;
+        float minDepth = float.MaxValue, maxDepth = float.MinValue;
+        float minShade = float.MaxValue, maxShade = float.MinValue;
+
+        for (uint seed = 1; seed <= count; seed++)
+        {
+            var depth = PlumeParcels.SootDepthFactor(seed, smokiness: 1f);
+            var shade = PlumeParcels.SootShadeFactor(seed, smokiness: 1f);
+
+            // Deterministic on repeat lookup.
+            Assert.Equal(depth, PlumeParcels.SootDepthFactor(seed, 1f));
+            Assert.Equal(shade, PlumeParcels.SootShadeFactor(seed, 1f));
+
+            // Strictly bounded within +/- MaxSootVariation.
+            Assert.InRange(depth, 1f - PlumeParcels.MaxSootVariation - 1e-5f, 1f + PlumeParcels.MaxSootVariation + 1e-5f);
+            Assert.InRange(shade, 1f - PlumeParcels.MaxSootVariation - 1e-5f, 1f + PlumeParcels.MaxSootVariation + 1e-5f);
+
+            // Sootier parcels are darker and cleaner parcels lighter.
+            Assert.Equal(2f, depth + shade, 4);
+
+            depthSum += depth;
+            shadeSum += shade;
+            minDepth = MathF.Min(minDepth, depth);
+            maxDepth = MathF.Max(maxDepth, depth);
+            minShade = MathF.Min(minShade, shade);
+            maxShade = MathF.Max(maxShade, shade);
+        }
+
+        // Mean darkness and shade are preserved across seeds.
+        Assert.InRange(depthSum / count, 0.995, 1.005);
+        Assert.InRange(shadeSum / count, 0.995, 1.005);
+        // Full contrast range is spanned.
+        Assert.True(maxDepth - minDepth > 1.8f * PlumeParcels.MaxSootVariation);
+        Assert.True(maxShade - minShade > 1.8f * PlumeParcels.MaxSootVariation);
+    }
+
+    [Fact]
+    public void ParcelSootVariationIsStrongOnHeavySmokeAndAbsentOnCleanSteam()
+    {
+        var cleanSteam = PlumeRise.Parcel(opacity: 0.7f, smokeShare: 0f);
+        var lightHaze = PlumeRise.Parcel(opacity: 0.15f, smokeShare: 0.35f);
+        var heavyCoal = PlumeRise.Parcel(opacity: 0.97f, smokeShare: 0.95f);
+
+        Assert.Equal(0f, PlumeParcels.Smokiness(cleanSteam));
+        Assert.InRange(PlumeParcels.Smokiness(lightHaze), 0.1f, 0.5f);
+        Assert.True(PlumeParcels.Smokiness(heavyCoal) > 0.9f);
+
+        // Find a seed with strong variation.
+        uint activeSeed = 1;
+        for (uint s = 1; s < 100; s++)
+            if (MathF.Abs(PlumeParcels.SootVariation(s)) > 0.7f) { activeSeed = s; break; }
+
+        var variedSteam = PlumeParcels.VarySoot(cleanSteam, activeSeed);
+        Assert.Equal(cleanSteam.SteamDepth, variedSteam.SteamDepth);
+        Assert.Equal(0f, variedSteam.SmokeDepth);
+
+        var variedHaze = PlumeParcels.VarySoot(lightHaze, activeSeed);
+        var variedCoal = PlumeParcels.VarySoot(heavyCoal, activeSeed);
+        var hazeDelta = MathF.Abs(variedHaze.SmokeDepth / lightHaze.SmokeDepth - 1f);
+        var coalDelta = MathF.Abs(variedCoal.SmokeDepth / heavyCoal.SmokeDepth - 1f);
+        Assert.Equal(heavyCoal.SteamDepth, variedCoal.SteamDepth);
+        Assert.True(coalDelta > hazeDelta * 2f, $"coal delta {coalDelta:F3} should exceed haze delta {hazeDelta:F3}");
+    }
+
+    [Fact]
+    public void CalmDawnInversionExpandsParcelHorizontalTargetOffsetAndFlattensVerticalWithoutAcceleratingDilution()
+    {
+        var dawnStrength = PlumeWind.InversionStrength(hour: 5.5f, windSpeed: 0.3f, rain: 0f);
+        var dawnCeiling = PlumeWind.InversionCeiling(hour: 5.5f, windSpeed: 0.3f, rain: 0f);
+        var noonStrength = PlumeWind.InversionStrength(hour: 13f, windSpeed: 0.3f, rain: 0f);
+        var noonCeiling = PlumeWind.InversionCeiling(hour: 13f, windSpeed: 0.3f, rain: 0f);
+
+        var flux = PlumeRise.StackFlux(2e6f, 1f);
+        const float height = 35f;
+        const float airSpeed = 0.3f;
+        const float lump = 0.4f;
+        const float dt = 0.25f;
+
+        var spreadWithInversion = 0f;
+        var spreadWithoutInversion = 0f;
+        var inversionSpreadWidth = 0f;
+        var dawnDamping = 1f;
+        var noonDamping = 1f;
+
+        for (var step = 0; step < 80; step++)
+        {
+            var undampedRise = PlumeRise.RiseSpeed(flux, height, airSpeed, calmShare: 0.7f);
+            dawnDamping = PlumeRise.InversionDamping(height, dawnCeiling, dawnStrength);
+            noonDamping = PlumeRise.InversionDamping(height, noonCeiling, noonStrength);
+            var inversionSpreadRate = PlumeRise.InversionSpread(undampedRise, dawnDamping);
+
+            spreadWithInversion = PlumeRise.SpreadOn(spreadWithInversion, dt, airSpeed);
+            spreadWithoutInversion = PlumeRise.SpreadOn(spreadWithoutInversion, dt, airSpeed);
+            inversionSpreadWidth = PlumeRise.InversionSpreadOn(inversionSpreadWidth, dt, inversionSpreadRate);
+        }
+
+        // 3. parcel.Spread (and therefore PlumeWidth, Dilution, and SurvivalAt) stays identical to no-inversion.
+        Assert.Equal(spreadWithoutInversion, spreadWithInversion, 5);
+        var widthWith = PlumeRise.PlumeWidth(height, spreadWithInversion);
+        var widthWithout = PlumeRise.PlumeWidth(height, spreadWithoutInversion);
+        Assert.Equal(widthWithout, widthWith, 5);
+        Assert.Equal(PlumeRise.Dilution(height, spreadWithoutInversion), PlumeRise.Dilution(height, spreadWithInversion), 5);
+        Assert.Equal(PlumeRise.SurvivalAt(widthWithout), PlumeRise.SurvivalAt(widthWith), 5);
+
+        var envelope = PlumeParcels.Envelope(widthWith, leastShown: 0.5f);
+        PlumeParcels.TargetOffsets(envelope, lump, dawnDamping, inversionSpreadWidth,
+            out var dawnHorizontal, out var dawnVertical);
+        PlumeParcels.TargetOffsets(envelope, lump, noonDamping, 0f,
+            out var noonHorizontal, out var noonVertical);
+
+        var baseOffset = PlumeParcels.Offset(envelope, lump, 1f);
+        Assert.Equal(baseOffset, noonHorizontal, 5);
+        Assert.Equal(baseOffset, noonVertical, 5);
+
+        // 1. Under calm dawn inversion, parcel mode expands horizontally MORE than without inversion.
+        Assert.True(inversionSpreadWidth > 5f, $"accumulated inversion spread {inversionSpreadWidth:F2} m");
+        Assert.True(dawnHorizontal > noonHorizontal + 2.5f,
+            $"dawn horizontal {dawnHorizontal:F2} m should exceed noon {noonHorizontal:F2} m");
+
+        // 2. Vertical offset is compressed by flattening.
+        Assert.True(dawnVertical < noonVertical * 0.7f,
+            $"dawn vertical {dawnVertical:F2} m should be flattened well below noon {noonVertical:F2} m");
+        Assert.True(dawnVertical >= baseOffset * PlumeParcels.MinInversionVerticalScale - 1e-4f);
+    }
+
+    [Fact]
+    public void ParcelTargetOffsetsHandleBoundaryAndInvalidInputsSafely()
+    {
+        var baseOffset = PlumeParcels.Offset(envelope: 10f, lump: 0.4f, @out: 1f);
+
+        // Full inversion damping flattens vertical offset to MinInversionVerticalScale.
+        PlumeParcels.TargetOffsets(10f, 0.4f, inversionDamping: 0f, inversionSpreadWidth: 6f,
+            out var horizFull, out var vertFull);
+        Assert.Equal(baseOffset + 3f, horizFull, 4);
+        Assert.Equal(baseOffset * PlumeParcels.MinInversionVerticalScale, vertFull, 4);
+
+        // Even when lump fills the base envelope (baseOffset == 0), inversion spread still widens horizontally.
+        PlumeParcels.TargetOffsets(10f, 1f, inversionDamping: 0.2f, inversionSpreadWidth: 4f,
+            out var horizUnitLump, out var vertUnitLump);
+        Assert.Equal(2f, horizUnitLump, 4);
+        Assert.Equal(0f, vertUnitLump, 4);
+
+        // Negative or NaN inputs never produce NaN or shrink horizontal spread below baseOffset.
+        PlumeParcels.TargetOffsets(10f, 0.4f, float.NaN, float.NaN, out var horizNan, out var vertNan);
+        Assert.Equal(baseOffset, horizNan, 4);
+        Assert.Equal(baseOffset, vertNan, 4);
+
+        // InversionSpreadOn accumulates monotonically and ignores negative/NaN terms.
+        var accumulated = PlumeRise.InversionSpreadOn(2f, 0.5f, 1.2f);
+        Assert.Equal(2.6f, accumulated, 4);
+        Assert.Equal(accumulated, PlumeRise.InversionSpreadOn(accumulated, -1f, 2f), 4);
+        Assert.Equal(accumulated, PlumeRise.InversionSpreadOn(accumulated, 1f, -2f), 4);
+        Assert.Equal(0f, PlumeRise.InversionSpreadOn(float.NaN, float.NaN, float.NaN), 4);
+    }
+
+    [Fact]
+    public void ParcelTargetOffsetsGuardNonFiniteEnvelopeLumpAndOverflowInputs()
+    {
+        // NaN envelope alone falls back to 0 base offset while preserving inversion lateral spread.
+        PlumeParcels.TargetOffsets(float.NaN, 0.4f, 0.5f, 6f, out var horizNanEnv, out var vertNanEnv);
+        Assert.True(float.IsFinite(horizNanEnv) && float.IsFinite(vertNanEnv));
+        Assert.Equal(3f, horizNanEnv, 4);
+        Assert.Equal(0f, vertNanEnv, 4);
+
+        // NaN lump alone treats lump as 0 (baseOffset = 0.5 * envelope).
+        PlumeParcels.TargetOffsets(10f, float.NaN, 1f, 0f, out var horizNanLump, out var vertNanLump);
+        Assert.True(float.IsFinite(horizNanLump) && float.IsFinite(vertNanLump));
+        Assert.Equal(5f, horizNanLump, 4);
+        Assert.Equal(5f, vertNanLump, 4);
+
+        // +/-Infinity envelope alone treats envelope as 0.
+        foreach (var infEnvelope in new[] { float.PositiveInfinity, float.NegativeInfinity })
+        {
+            PlumeParcels.TargetOffsets(infEnvelope, 0.4f, 0.5f, 4f, out var horiz, out var vert);
+            Assert.True(float.IsFinite(horiz) && float.IsFinite(vert));
+            Assert.Equal(2f, horiz, 4);
+            Assert.Equal(0f, vert, 4);
+        }
+
+        // +/-Infinity lump alone treats lump as 0.
+        foreach (var infLump in new[] { float.PositiveInfinity, float.NegativeInfinity })
+        {
+            PlumeParcels.TargetOffsets(10f, infLump, 1f, 0f, out var horiz, out var vert);
+            Assert.True(float.IsFinite(horiz) && float.IsFinite(vert));
+            Assert.Equal(5f, horiz, 4);
+            Assert.Equal(5f, vert, 4);
+        }
+
+        // Finite overflow saturates cleanly to float.MaxValue rather than +Infinity.
+        PlumeParcels.TargetOffsets(float.MaxValue, -2f, 1f, float.MaxValue, out var horizOverflow, out var vertOverflow);
+        Assert.True(float.IsFinite(horizOverflow) && float.IsFinite(vertOverflow));
+        Assert.Equal(float.MaxValue, horizOverflow);
+        Assert.Equal(float.MaxValue, vertOverflow);
+
+        // No combination of non-finite, negative, zero, or extreme finite inputs ever returns NaN or Infinity.
+        var samples = new[] { float.NaN, float.NegativeInfinity, -10f, 0f, 10f, float.MaxValue, float.PositiveInfinity };
+        foreach (var env in samples)
+        foreach (var lump in samples)
+        foreach (var damping in samples)
+        foreach (var spread in samples)
+        {
+            PlumeParcels.TargetOffsets(env, lump, damping, spread, out var h, out var v);
+            Assert.True(float.IsFinite(h) && h >= 0f, $"non-finite/negative horizontal {h} for ({env}, {lump}, {damping}, {spread})");
+            Assert.True(float.IsFinite(v) && v >= 0f, $"non-finite/negative vertical {v} for ({env}, {lump}, {damping}, {spread})");
+        }
+    }
 }

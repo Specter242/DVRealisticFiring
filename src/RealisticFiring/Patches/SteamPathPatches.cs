@@ -16,12 +16,20 @@ namespace RealisticFiring.Patches
     [HarmonyPatch(typeof(ReciprocatingSteamEngine), nameof(ReciprocatingSteamEngine.GetSaveStateData))]
     internal static class SteamPathSavePatch
     {
-        private static void Postfix(ReciprocatingSteamEngine __instance, JObject __result) => EngineSteamPath.Save(__instance, __result);
+        private static void Postfix(ReciprocatingSteamEngine __instance, JObject __result)
+        {
+            EngineSteamPath.Save(__instance, __result);
+            EngineSuperheater.Save(__instance, __result);
+        }
     }
 
     [HarmonyPatch(typeof(ReciprocatingSteamEngine), nameof(ReciprocatingSteamEngine.SetSaveStateData))]
     internal static class SteamPathLoadPatch
     {
-        private static void Postfix(ReciprocatingSteamEngine __instance, JObject savedData) => EngineSteamPath.Load(__instance, savedData);
+        private static void Postfix(ReciprocatingSteamEngine __instance, JObject savedData)
+        {
+            EngineSteamPath.Load(__instance, savedData);
+            EngineSuperheater.Load(__instance, savedData);
+        }
     }
 }

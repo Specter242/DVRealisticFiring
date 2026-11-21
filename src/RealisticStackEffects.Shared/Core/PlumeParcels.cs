@@ -36,6 +36,45 @@ namespace RealisticStackEffects.Core
             0.5f * Math.Max(0f, envelope) * Math.Max(0f, 1f - lump) * Math.Min(1f, Math.Max(0f, @out));
 
         /// <summary>
+        /// Minimum vertical offset share when a thermal inversion completely damps
+        /// buoyant rise, flattening parcel vertical spread into a horizontal sheet.
+        /// </summary>
+        public const float MinInversionVerticalScale = 0.35f;
+
+        /// <summary>
+        /// Target horizontal and vertical radial offsets, in m, for a parcel in a
+        /// plume of <paramref name="envelope"/> m across with lump share
+        /// <paramref name="lump"/>, under thermal inversion rise multiplier
+        /// <paramref name="inversionDamping"/> (0 fully capped to 1 unconstrained)
+        /// and accumulated lateral inversion spread <paramref name="inversionSpreadWidth"/> m.
+        /// Horizontal offset widens by half of <paramref name="inversionSpreadWidth"/>
+        /// while vertical offset compresses toward <see cref="MinInversionVerticalScale"/>
+        /// of the base offset, leaving <paramref name="envelope"/> and parcel dilution unchanged.
+        /// </summary>
+        public static void TargetOffsets(
+            float envelope,
+            float lump,
+            float inversionDamping,
+            float inversionSpreadWidth,
+            out float horizontalOffset,
+            out float verticalOffset)
+        {
+            var safeEnvelope = IsFinite(envelope) && envelope > 0f ? envelope : 0f;
+            var safeLump = IsFinite(lump) ? lump : 0f;
+            var baseOffset = 0.5 * safeEnvelope * Math.Max(0.0, 1.0 - safeLump);
+            var damping = float.IsNaN(inversionDamping) ? 1f : inversionDamping < 0f ? 0f : inversionDamping > 1f ? 1f : inversionDamping;
+            var verticalScale = MinInversionVerticalScale + (1.0 - MinInversionVerticalScale) * damping;
+            var extraSpread = IsFinite(inversionSpreadWidth) && inversionSpreadWidth > 0f ? inversionSpreadWidth : 0f;
+            horizontalOffset = SaturateNonNegative(baseOffset + 0.5 * extraSpread);
+            verticalOffset = SaturateNonNegative(baseOffset * verticalScale);
+        }
+
+        private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
+
+        private static float SaturateNonNegative(double value) =>
+            double.IsNaN(value) || value <= 0.0 ? 0f : value >= float.MaxValue ? float.MaxValue : (float)value;
+
+        /// <summary>
         /// How far out a particle's place is, 0 to 1, for its draw by its
         /// seed (<paramref name="draw"/>, 0 to 1). Even through a ball
         /// (the cube root) half of them sat in its outer fifth, the rim's
@@ -95,6 +134,76 @@ namespace RealisticStackEffects.Core
 
         /// <summary>No particle is drawn deeper than this: 0.998 opaque.</summary>
         public const float MostDepth = 6f;
+
+        /// <summary>Maximum parcel-to-parcel soot optical depth and shade variation (±14%) on smoky fires.</summary>
+        public const float MaxSootVariation = 0.14f;
+
+        /// <summary>
+        /// Deterministic zero-mean signed variation in [-1, 1] for
+        /// <paramref name="seed"/>, for parcel-to-parcel soot and shade contrast.
+        /// </summary>
+        public static float SootVariation(uint seed)
+        {
+            unchecked
+            {
+                var h = seed ^ 0xd6e8feb8u;
+                h ^= h >> 16;
+                h *= 0x7feb352du;
+                h ^= h >> 15;
+                h *= 0x846ca68bu;
+                h ^= h >> 16;
+                return (float)((h / 4294967295.0) * 2.0 - 1.0);
+            }
+        }
+
+        /// <summary>
+        /// How smoky a parcel is, 0 (clean steam) to 1 (heavy coal smoke),
+        /// combining its smoke's share of total optical depth and its lip opacity.
+        /// </summary>
+        public static float Smokiness(PlumeParcel parcel)
+        {
+            var smoke = Math.Max(0f, parcel.SmokeDepth);
+            if (!(smoke > 0f))
+                return 0f;
+            var total = Math.Max(0f, parcel.SteamDepth) + smoke;
+            var share = total > 1e-4f ? smoke / total : 0f;
+            var atLip = PlumeRise.OpacityOf(smoke, 0f);
+            return Math.Min(1f, Math.Max(share, atLip));
+        }
+
+        /// <summary>
+        /// Multiplicative factor on a parcel's soot optical depth for
+        /// <paramref name="seed"/> and <paramref name="smokiness"/> (0 to 1):
+        /// 1 on clean steam, within [1 - <see cref="MaxSootVariation"/>,
+        /// 1 + <see cref="MaxSootVariation"/>] on smoky fires, preserving the mean.
+        /// </summary>
+        public static float SootDepthFactor(uint seed, float smokiness)
+        {
+            var s = smokiness < 0f ? 0f : smokiness > 1f ? 1f : smokiness;
+            return 1f + MaxSootVariation * s * SootVariation(seed);
+        }
+
+        /// <summary>
+        /// Multiplicative factor on a parcel's smoke shade brightness for
+        /// <paramref name="seed"/> and <paramref name="smokiness"/> (0 to 1):
+        /// darker on sootier parcels and lighter on cleaner ones, preserving the mean.
+        /// </summary>
+        public static float SootShadeFactor(uint seed, float smokiness)
+        {
+            var s = smokiness < 0f ? 0f : smokiness > 1f ? 1f : smokiness;
+            return 1f - MaxSootVariation * s * SootVariation(seed);
+        }
+
+        /// <summary>
+        /// Returns <paramref name="parcel"/> with deterministic seed-based soot
+        /// optical depth variation applied; steam depth is unchanged.
+        /// </summary>
+        public static PlumeParcel VarySoot(PlumeParcel parcel, uint seed) =>
+            new PlumeParcel
+            {
+                SteamDepth = parcel.SteamDepth,
+                SmokeDepth = parcel.SmokeDepth * SootDepthFactor(seed, Smokiness(parcel)),
+            };
 
         /// <summary>The opacity of an optical depth.</summary>
         public static float Opacity(float depth) => 1f - (float)Math.Exp(-Math.Max(0f, depth));

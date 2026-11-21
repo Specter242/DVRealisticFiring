@@ -14,6 +14,36 @@ namespace RealisticFiring.Core
         /// <summary>Chunks the game's standard <c>shovel</c> item carries (measured in game).</summary>
         public const int StandardShovelChunks = 3;
 
+ public const float MostStartupLoad = 12f;
+
+        /// <summary>
+        /// The most a startup shovelful weighs in a box of <paramref name="boxCapacity"/> kg:
+        /// <see cref="MostStartupLoad"/>, but in a small box no more than the bed the advice calls thick for a cold
+        /// start (<see cref="FiringAdvice.ThickColdBed"/> times the fireman's thin bed). On the S060's 60 kg box a
+        /// 12 kg load was over that alone: the thin-fire advice followed nearly every throw, and it smoked twice as
+        /// much for 8 % more coal (game, job 3126); there it is 9.6 kg. 0 or less: no box known.
+        /// </summary>
+        public static float StartupCap(float boxCapacity) =>
+            boxCapacity > 0f
+                ? Math.Min(MostStartupLoad, FiringAdvice.ThickColdBed * AutoFireman.ColdDraftFire * boxCapacity)
+                : MostStartupLoad;
+
+        /// <summary>
+        /// The load a shovelful of <paramref name="scoop"/> kg becomes at a <paramref name="startupMultiplier"/> (the
+        /// firebox's speedup now): times the speedup, up to <see cref="StartupCap"/> for a box of
+        /// <paramref name="boxCapacity"/> kg, never less than the scoop.
+        /// </summary>
+        public static float StartupLoad(float scoop, float startupMultiplier, float boxCapacity = 0f)
+        {
+            if (!(scoop > 0f) || float.IsNaN(startupMultiplier) || startupMultiplier <= 1f)
+                return scoop;
+            return Math.Max(scoop, Math.Min(scoop * startupMultiplier, StartupCap(boxCapacity)));
+        }
+
+        /// <summary>What a load shows for its boost: " (startup ×4)", or nothing unboosted.</summary>
+        public static string BoostNote(float boost) =>
+            boost > 1.01f ? string.Format(System.Globalization.CultureInfo.InvariantCulture, " (startup ×{0:0.#})", boost) : "";
+
         /// <summary>
         /// The pile mass a shovel should load so that a standard shovel puts
         /// <paramref name="shovelfulMass"/> kg into the firebox. Shovels with
@@ -38,7 +68,7 @@ namespace RealisticFiring.Core
         public static float Scoop(float picked, float largest, float least) =>
             picked >= least ? Math.Min(picked, largest) : largest;
 
-        /// <summary>A normal shovelful, kg: the setting's default, and the least the fireman fires.</summary>
+        /// <summary>A normal shovelful, kg: the least the fireman fires (the setting's default before 6 kg).</summary>
         public const float Normal = 3f;
 
  public static float Fireman(float largest) => Math.Max(Normal, largest);

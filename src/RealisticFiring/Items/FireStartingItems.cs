@@ -289,6 +289,7 @@ namespace RealisticFiring.Items
         {
             if (Consumed || Held || Net.ItemsRemote || collision == null) return;
             FuelFireboxIntake.Strike(this);
+            if (!Consumed) Visuals.CabooseStoveTarget.Strike(this);
         }
 
         internal bool HeldLocally => item != null && item.IsGrabbed();
@@ -444,7 +445,10 @@ namespace RealisticFiring.Items
                     item.ItemRigidbody.mass = FireStartingItems.EmptyMass(Kind) + Count * FireStartingItems.ContentMass(Kind);
             }
             if (Kind == StartingFuelKind.Wood || Kind == StartingFuelKind.Rag)
+            {
                 FuelFireboxIntake.Track(this);
+                if (!Consumed) Visuals.CabooseStoveTarget.Track(this);
+            }
         }
 
         private Newtonsoft.Json.Linq.JObject Save(Newtonsoft.Json.Linq.JObject data)

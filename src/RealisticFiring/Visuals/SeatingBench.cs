@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using RealisticFiring.Core;
 using RealisticFiring.Shed;
 using RealisticFiring.Sim;
 using UnityEngine;
@@ -51,6 +53,7 @@ namespace RealisticFiring.Visuals
         private static float height = 640f;
         private static float rebuiltAt;
         private static bool previewFirehole;
+        private static string exportStatus;
 
         /// <summary>A part the bench seats: its sliders and how its seat is read, set, and written.</summary>
         private sealed class Part
@@ -84,6 +87,8 @@ namespace RealisticFiring.Visuals
         // A hand-fired cab's feed pump valve and gauge stand on the backhead alone.
         private static bool OnBackhead(TrainCar car) => InCab(car, FeedPumpCab.BackheadRoot);
 
+        private const string FireholeTable = "LocomotiveProfiles (Firehole)";
+
         private static readonly Part[] Parts =
         {
             new Part
@@ -107,7 +112,7 @@ namespace RealisticFiring.Visuals
             new Part
             {
                 Title = "QJ stoker engine steam valve (beside the jet bank)",
-                Table = "QjStokerCab.StokerSeats",
+                Table = "LocomotiveProfiles (Cab.QjStokerSeat)",
                 Labels = new[] { "Across, m (from instruments)", "Up, m", "Out, m (+ into the backhead)" },
                 Spans = new[] { 0.5f, 0.5f, 0.2f },
                 Present = car => car.carLivery.id == QjStokerCab.Livery && InCab(car, StokerCab.RootName),
@@ -120,12 +125,12 @@ namespace RealisticFiring.Visuals
                 Apply = (id, v) => QjStokerCab.DevStokerSeats[id] = new Vector3(v[0], v[1], v[2]),
                 Clear = id => QjStokerCab.DevStokerSeats.Remove(id),
                 Rebuild = RebuildManifold,
-                Line = (id, v) => $"[\"{id}\"] = new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}),",
+                Line = (id, v) => $"QjStokerSeat = new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}),",
             },
             new Part
             {
                 Title = "Stoker manifold (from the fireman's stoker valve's mount)",
-                Table = "StokerCab.Placements",
+                Table = "LocomotiveProfiles (Cab.StokerManifold)",
                 Labels = new[] { "Across, cm (+ toward the cab's middle)", "Up, cm", "Out, cm (+ into the panel)", "Turn, °", "Tilt, °" },
                 Spans = new[] { 100f, 100f, 40f, 90f, 90f },
                 Present = car => InCab(car, StokerCab.RootName),
@@ -138,12 +143,12 @@ namespace RealisticFiring.Visuals
                 Apply = (id, v) => StokerCab.DevPlacements[id] = new StokerCab.Placement(new Vector3(v[0], v[1], v[2]), v[3], v[4]),
                 Clear = id => StokerCab.DevPlacements.Remove(id),
                 Rebuild = RebuildManifold,
-                Line = (id, v) => $"[\"{id}\"] = new Placement(new Vector3({Cm(v[0])}, {Cm(v[1])}, {Cm(v[2])}), {Deg(v[3])}, {Deg(v[4])}),",
+                Line = (id, v) => $"StokerManifold = new StokerCab.Placement(new Vector3({Cm(v[0])}, {Cm(v[1])}, {Cm(v[2])}), {Deg(v[3])}, {Deg(v[4])}),",
             },
             new Part
             {
                 Title = "Stoker operating lever (moved from under the manifold, car frame)",
-                Table = "StokerCab.LeverMoves",
+                Table = "LocomotiveProfiles (Cab.StokerLeverMove)",
                 Labels = new[] { "Across, m (+ right)", "Up, m (where the floor is looked for)", "Along, m (+ forward)" },
                 Spans = new[] { 1f, 0.5f, 1f },
                 Present = car => InCab(car, StokerCab.RootName),
@@ -156,12 +161,12 @@ namespace RealisticFiring.Visuals
                 Apply = (id, v) => StokerCab.DevLeverMoves[id] = new Vector3(v[0], v[1], v[2]),
                 Clear = id => StokerCab.DevLeverMoves.Remove(id),
                 Rebuild = RebuildManifold,
-                Line = (id, v) => $"[\"{id}\"] = new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}),",
+                Line = (id, v) => $"StokerLeverMove = new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}),",
             },
             new Part
             {
                 Title = "Feed pump valve and gauge beside the manifold (or on a hand-fired cab's backhead)",
-                Table = "FeedPumpCab.Spots",
+                Table = "LocomotiveProfiles (Cab.FeedPumpSpot)",
                 Present = car => InjectorRig.TryGet(car, out var rig) && rig.Pump != null && (InCab(car, StokerCab.RootName) || OnBackhead(car)),
                 Read = (part, car, id) =>
                 {
@@ -192,8 +197,8 @@ namespace RealisticFiring.Visuals
                     FeedPumpCab.RebuildOnBackhead();
                 },
                 Line = (id, v) => v.Length == 5
-                    ? $"[\"{id}\"] = new Spot(Vector2.zero, new Vector2({M(v[3])}, {M(v[4])}), new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])})),"
-                    : $"[\"{id}\"] = new Spot(new Vector2({M(v[0])}, {M(v[1])}), new Vector2({M(v[2])}, {M(v[3])})),",
+                    ? $"FeedPumpSpot = new FeedPumpCab.Spot(Vector2.zero, new Vector2({M(v[3])}, {M(v[4])}), new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])})),"
+                    : $"FeedPumpSpot = new FeedPumpCab.Spot(new Vector2({M(v[0])}, {M(v[1])}), new Vector2({M(v[2])}, {M(v[3])})),",
             },
             new Part
             {
@@ -216,7 +221,7 @@ namespace RealisticFiring.Visuals
             new Part
             {
                 Title = "Injector steam lever on the backhead (from the stock handle; on a manifold's side, the first slider runs along it)",
-                Table = "InjectorSteamCab.Seats",
+                Table = "LocomotiveProfiles (Cab.InjectorSteamSeat)",
                 Labels = new[] { "Toward the cab's middle, m", "Up, m", "Out from the backhead, m", "Turn, ° (about the backhead's up)",
                     "Tilt, ° (about across)", "Twist, ° (about its face)" },
                 Spans = new[] { 0.5f, 0.5f, 0.2f, 180f, 90f, 90f },
@@ -231,12 +236,12 @@ namespace RealisticFiring.Visuals
                 Apply = (id, v) => InjectorSteamCab.DevSeats[id] = (new Vector3(v[0], v[1], v[2]), new Vector3(v[3], v[4], v[5])),
                 Clear = id => InjectorSteamCab.DevSeats.Remove(id),
                 Rebuild = car => InjectorSteamCab.RebuildLoaded(),
-                Line = (id, v) => $"[\"{id}\"] = (new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}), new Vector3({Deg(v[3])}, {Deg(v[4])}, {Deg(v[5])})),",
+                Line = (id, v) => $"InjectorSteamSeat = (new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}), new Vector3({Deg(v[3])}, {Deg(v[4])}, {Deg(v[5])})),",
             },
             new Part
             {
                 Title = "Ashpan lever's pull (car frame)",
-                Table = "AshpanLever.Placements",
+                Table = "LocomotiveProfiles (Cab.AshpanPull)",
                 Unknown = "not built yet: load the engine's outside (walk near it) once",
                 Labels = new[] { "Across, m (+ right)", "Up, m", "Along, m (+ forward)" },
                 Spans = new[] { 0.6f, 0.6f, 1.5f },
@@ -251,12 +256,12 @@ namespace RealisticFiring.Visuals
                 Apply = (id, v) => AshpanLever.DevPlacements[id] = new Vector3(v[0], v[1], v[2]),
                 Clear = id => AshpanLever.DevPlacements.Remove(id),
                 Rebuild = car => AshpanLever.RebuildLoaded(),
-                Line = (id, v) => $"[\"{id}\"] = new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}),",
+                Line = (id, v) => $"AshpanPull = new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}),",
             },
             new Part
             {
                 Title = "Booster's latch, idling valve, and gauge (car frame; facing the wall on its side)",
-                Table = "BoosterCab.CarSeats",
+                Table = "LocomotiveProfiles (Cab.BoosterCarSeat)",
                 Labels = new[] { "Across, m (+ right; + toward the right wall)", "Up, m", "Along, m (+ forward)" },
                 Spans = new[] { 0.3f, 0.6f, 0.6f },
                 Present = car => InCab(car, BoosterCab.Root),
@@ -271,12 +276,12 @@ namespace RealisticFiring.Visuals
                 Apply = (id, v) => BoosterCab.DevCarSeats[id] = new Vector3(v[0], v[1], v[2]),
                 Clear = id => BoosterCab.DevCarSeats.Remove(id),
                 Rebuild = car => BoosterCab.RebuildLoaded(),
-                Line = (id, v) => $"[\"{id}\"] = new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}),",
+                Line = (id, v) => $"BoosterCarSeat = new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}),",
             },
             new Part
             {
                 Title = "Over-fire jets' valve (its wheel's place in the car's frame)",
-                Table = "JetsCab.Seats",
+                Table = "LocomotiveProfiles (Cab.JetsValveSeat)",
                 Labels = new[] { "Across, m (+ right)", "Up, m", "Along, m (+ forward, into the backhead)", "Tilt, ° (about across)", "Turn, ° (about up)", "Twist, ° (about along)",
                                  "JETS plate across, m (the wheel's x)", "Plate up, m (its y)", "Plate out, m (its z)", "Plate spin, ° (in its face)", "Plate turn, ° (about up)" },
                 Spans = new[] { 0.6f, 0.6f, 0.6f, 90f, 90f, 90f, 0.4f, 0.4f, 0.1f, 180f, 180f },
@@ -291,12 +296,12 @@ namespace RealisticFiring.Visuals
                 Apply = (id, v) => JetsCab.DevSeats[id] = new CabValve.Seat(new Vector3(v[0], v[1], v[2]), new Vector3(v[3], v[4], v[5]), new Vector3(v[6], v[7], v[8]), v[9], v[10], JetsCab.SeatFor(id).PlateSquare, inCar: true),
                 Clear = id => JetsCab.DevSeats.Remove(id),
                 Rebuild = car => JetsCab.RebuildLoaded(),
-                Line = (id, v) => $"[\"{id}\"] = new CabValve.Seat(new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}), new Vector3({Deg(v[3])}, {Deg(v[4])}, {Deg(v[5])}), new Vector3({M(v[6])}, {M(v[7])}, {M(v[8])}), {Deg(v[9])}, {Deg(v[10])}, plateSquare: {(JetsCab.SeatFor(id).PlateSquare ? "true" : "false")}, inCar: true),",
+                Line = (id, v) => $"JetsValveSeat = new CabValve.Seat(new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}), new Vector3({Deg(v[3])}, {Deg(v[4])}, {Deg(v[5])}), new Vector3({M(v[6])}, {M(v[7])}, {M(v[8])}), {Deg(v[9])}, {Deg(v[10])}, plateSquare: {(JetsCab.SeatFor(id).PlateSquare ? "true" : "false")}, inCar: true),",
             },
             new Part
             {
                 Title = "Drifting valve (its wheel's place in the car's frame)",
-                Table = "DriftingValveCab.Seats",
+                Table = "LocomotiveProfiles (Cab.DriftingValveSeat)",
                 Labels = new[] { "Across, m (+ right)", "Up, m", "Along, m (+ forward, into the backhead)", "Tilt, ° (about across)", "Turn, ° (about up)", "Twist, ° (about along)",
                                  "DRIFTING plate across, m (the wheel's x)", "Plate up, m (its y)", "Plate out, m (its z)", "Plate spin, ° (in its face)", "Plate turn, ° (about up)" },
                 Spans = new[] { 1.5f, 1f, 1.5f, 180f, 180f, 180f, 0.4f, 0.4f, 0.1f, 180f, 180f },
@@ -311,12 +316,12 @@ namespace RealisticFiring.Visuals
                 Apply = (id, v) => DriftingValveCab.Valve.DevSeats[id] = new CabValve.Seat(new Vector3(v[0], v[1], v[2]), new Vector3(v[3], v[4], v[5]), new Vector3(v[6], v[7], v[8]), v[9], v[10], DriftingValveCab.Valve.SeatFor(id).PlateSquare, inCar: true),
                 Clear = id => DriftingValveCab.Valve.DevSeats.Remove(id),
                 Rebuild = car => DriftingValveCab.Valve.RebuildLoaded(),
-                Line = (id, v) => $"[\"{id}\"] = new CabValve.Seat(new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}), new Vector3({Deg(v[3])}, {Deg(v[4])}, {Deg(v[5])}), new Vector3({M(v[6])}, {M(v[7])}, {M(v[8])}), {Deg(v[9])}, {Deg(v[10])}, plateSquare: {(DriftingValveCab.Valve.SeatFor(id).PlateSquare ? "true" : "false")}, inCar: true),",
+                Line = (id, v) => $"DriftingValveSeat = new CabValve.Seat(new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}), new Vector3({Deg(v[3])}, {Deg(v[4])}, {Deg(v[5])}), new Vector3({M(v[6])}, {M(v[7])}, {M(v[8])}), {Deg(v[9])}, {Deg(v[10])}, plateSquare: {(DriftingValveCab.Valve.SeatFor(id).PlateSquare ? "true" : "false")}, inCar: true),",
             },
             new Part
             {
                 Title = "Drop grate lever (from the fire-dump lever, car frame)",
-                Table = "DropGrateCab.Placements",
+                Table = "LocomotiveProfiles (Cab.DropGrateOffset)",
                 Labels = new[] { "Across, m (+ right)", "Up, m (where the floor is looked for)", "Along, m (+ forward)" },
                 Spans = new[] { 1f, 0.5f, 1f },
                 Present = car => InCab(car, DropGrateCab.RootName),
@@ -329,12 +334,12 @@ namespace RealisticFiring.Visuals
                 Apply = (id, v) => DropGrateCab.DevPlacements[id] = new Vector3(v[0], v[1], v[2]),
                 Clear = id => DropGrateCab.DevPlacements.Remove(id),
                 Rebuild = car => DropGrateCab.RebuildLoaded(),
-                Line = (id, v) => $"[\"{id}\"] = new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}),",
+                Line = (id, v) => $"DropGrateOffset = new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}),",
             },
             new Part
             {
                 Title = "Firehole opening (keypad, stoker chunks and jets)",
-                Table = "FireholeOpening.Holes",
+                Table = FireholeTable,
                 Unknown = "not known yet: aim the shovel at the open door once (keypad on)",
                 Labels = new[] { "Middle across, m (+ right)", "Foot, m", "Width, m", "Height, m", "Its plane along, m (+ forward, deeper)" },
                 Spans = new[] { 0.5f, 0.5f, 0.4f, 0.4f, 0.8f },
@@ -350,7 +355,7 @@ namespace RealisticFiring.Visuals
                 Apply = (id, v) => FireholeOpening.DevHoles[id] = (v[0], v[1], v[2], v[3], v[4]),
                 Clear = id => FireholeOpening.DevHoles.Remove(id),
                 Rebuild = car => StokerSpray.Recalibrate(car),
-                Line = (id, v) => $"[\"{id}\"] = ({Firehole(v[0])}, {Firehole(v[1])}, {Firehole(v[2])}, {Firehole(v[3])}, {Firehole(v[4])}),",
+                Line = (id, v) => $"Firehole = new FireholeSeat({Firehole(v[0])}, {Firehole(v[1])}, {Firehole(v[2])}, {Firehole(v[3])}, {Firehole(v[4])}),",
             },
             ShedPart(false),
             ShedPart(true),
@@ -359,7 +364,7 @@ namespace RealisticFiring.Visuals
         private static Part ShedPart(bool water) => new Part
         {
             Title = water ? "Shed water hose connection (car frame)" : "Shed blower line connection (its flange, car frame)",
-            Table = water ? "ShedConnections.WaterSeated" : "ShedConnections.Seated",
+            Table = water ? "LocomotiveProfiles (Shed.WaterSeat)" : "LocomotiveProfiles (Shed.BlowerSeat)",
             Labels = new[] { "Across, m (− left, + right: its side)", "Up, m", "Along, m (+ forward)", "Swung toward the front, °",
                 "Turned down, °", "Spun about its axis, °", "Further out along its axis, m" },
             Spans = new[] { 1.5f, 1f, 2f, 90f, 90f, 180f, 0.2f },
@@ -379,7 +384,9 @@ namespace RealisticFiring.Visuals
                 if (line != null)
                     Main.Mod.Logger.Log($"{car.LogName()}: {line}");
             },
-            Line = (id, v) => $"[\"{id}\"] = (new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}), {Deg(v[3])}, {Deg(v[4])}, {Deg(v[5])}, {M(v[6])}),",
+            Line = (id, v) => water
+                ? $"WaterSeat = new ShedSeat(new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}), {Deg(v[3])}, {Deg(v[4])}, {Deg(v[5])}, {M(v[6])}),"
+                : $"BlowerSeat = new ShedSeat(new Vector3({M(v[0])}, {M(v[1])}, {M(v[2])}), {Deg(v[3])}, {Deg(v[4])}, {Deg(v[5])}, {M(v[6])}),",
         };
 
         /// <summary>Seats the engine the player is on, or else the nearest steam engine.</summary>
@@ -418,6 +425,7 @@ namespace RealisticFiring.Visuals
             if (id == livery)
                 return;
             livery = id;
+            exportStatus = null;
             foreach (var part in Parts)
             {
                 part.Loaded = false;
@@ -473,12 +481,16 @@ namespace RealisticFiring.Visuals
         {
             scroll = GUILayout.BeginScrollView(scroll, GUILayout.Height(height - 30f));
             GUILayout.BeginHorizontal();
-            GUILayout.Label(target != null ? $"Seating {target.LogName()} ('{livery}')" : "No steam engine here: board one or stand by it", GUILayout.Width(Width - 230f));
+            GUILayout.Label(target != null ? $"Seating {target.LogName()} ('{livery}')" : "No steam engine here: board one or stand by it", GUILayout.Width(Width - 360f));
             if (GUILayout.Button("Nearest"))
                 Retarget();
             if (GUILayout.Button("Write to the log"))
                 WriteToLog();
+            if (GUILayout.Button("Export maker-fit JSON"))
+                ExportMakerFitJson();
             GUILayout.EndHorizontal();
+            if (!string.IsNullOrEmpty(exportStatus))
+                GUILayout.Label(exportStatus);
             GUILayout.Label("Each part starts from its seat for this livery (its table's, or its default) and moves live; nothing here is saved.");
             if (target != null && livery != null)
             {
@@ -495,7 +507,7 @@ namespace RealisticFiring.Visuals
         private static void DrawPart(Part part)
         {
             Header(part.Title);
-            if (part.Table == "FireholeOpening.Holes")
+            if (part.Table == FireholeTable)
                 previewFirehole = GUILayout.Toggle(previewFirehole, "Show placement keypad (no shovel needed)");
             if (!part.Present(target))
             {
@@ -551,6 +563,202 @@ namespace RealisticFiring.Visuals
                 if (!part.Loaded && !part.Read(part, target, livery))
                     continue;
                 Main.Mod.Logger.Log($"Seating bench, {part.Table}: {part.Line(livery, part.Values)}");
+            }
+        }
+
+        /// <summary>
+        /// Builds and logs a ready-to-paste realistic-firing.json snippet
+        /// containing every seated cab part, firehole, and shed connection for
+        /// the active locomotive, and writes a copy under SeatingExports/.
+        /// </summary>
+        private static void ExportMakerFitJson()
+        {
+            if (target == null || livery == null)
+            {
+                exportStatus = "No steam engine selected to export.";
+                Main.Mod.Logger.Log("Seating bench: no steam engine to export maker-fit JSON");
+                return;
+            }
+            var seated = new Dictionary<string, float[]>(StringComparer.Ordinal);
+            foreach (var part in Parts)
+            {
+                if (!part.Present(target))
+                    continue;
+                if (!part.Loaded && !part.Read(part, target, livery))
+                    continue;
+                seated[part.Table] = part.Values;
+            }
+
+            var json = BuildExportJson(
+                livery,
+                OilBurnerFit.IsOilBurner(target),
+                seated,
+                JetsCab.SeatFor(livery).PlateSquare,
+                DriftingValveCab.Valve.SeatFor(livery).PlateSquare);
+
+            Main.Mod.Logger.Log($"Seating bench maker-fit JSON for {target.LogName()} ('{livery}'):\n{json}");
+            try
+            {
+                GUIUtility.systemCopyBuffer = json;
+            }
+            catch
+            {
+                // Clipboard may be unavailable in headless sessions.
+            }
+
+            var written = TryWriteExportFile(livery, json);
+            exportStatus = written != null
+                ? $"Exported maker-fit JSON to log, clipboard, and {written}"
+                : "Exported maker-fit JSON to log and clipboard.";
+        }
+
+        /// <summary>
+        /// Formats seated part values (keyed by <see cref="Part.Table"/>) into a
+        /// valid schemaVersion 1 realistic-firing.json snippet.
+        /// </summary>
+        internal static string BuildExportJson(
+            string liveryId,
+            bool oil,
+            IDictionary<string, float[]> seatedParts,
+            bool jetsPlateSquare = false,
+            bool driftingPlateSquare = false)
+        {
+            var cab = new MakerFitCab();
+            if (seatedParts != null)
+            {
+                if (seatedParts.TryGetValue("FireholeOpening.Holes", out var hole) && hole != null && hole.Length >= 5)
+                {
+                    cab.Firehole = new MakerFitFirehole
+                    {
+                        MiddleM = hole[0],
+                        FootM = hole[1],
+                        WidthM = hole[2],
+                        HeightM = hole[3],
+                        PlaneM = hole[4],
+                    };
+                }
+                if (seatedParts.TryGetValue("InjectorSteamCab.Seats", out var inj) && inj != null && inj.Length >= 6)
+                {
+                    cab.InjectorSteam = new MakerFitInjectorSteamSeat
+                    {
+                        Position = new MakerFitVec3(inj[0], inj[1], inj[2]),
+                        Rotation = new MakerFitVec3(inj[3], inj[4], inj[5]),
+                    };
+                }
+                if (seatedParts.TryGetValue("DropGrateCab.Placements", out var drop) && drop != null && drop.Length >= 3)
+                {
+                    cab.DropGrate = new MakerFitTransformSeat
+                    {
+                        Position = new MakerFitVec3(drop[0], drop[1], drop[2]),
+                    };
+                }
+                if (seatedParts.TryGetValue("AshpanLever.Placements", out var ash) && ash != null && ash.Length >= 3)
+                {
+                    cab.Ashpan = new MakerFitAshpanSeat
+                    {
+                        Position = new MakerFitVec3(ash[0], ash[1], ash[2]),
+                    };
+                }
+                if (seatedParts.TryGetValue("StokerCab.Placements", out var man) && man != null && man.Length >= 5)
+                {
+                    cab.StokerManifold = new MakerFitStokerManifoldSeat
+                    {
+                        OffsetCm = new MakerFitVec3(man[0], man[1], man[2]),
+                        TurnDeg = man[3],
+                        TiltDeg = man[4],
+                    };
+                }
+                if (seatedParts.TryGetValue("StokerCab.LeverMoves", out var stokerLever) && stokerLever != null && stokerLever.Length >= 3)
+                {
+                    cab.StokerLever = new MakerFitTransformSeat
+                    {
+                        Position = new MakerFitVec3(stokerLever[0], stokerLever[1], stokerLever[2]),
+                    };
+                }
+                if (seatedParts.TryGetValue("FeedPumpCab.Spots", out var pump) && pump != null && (pump.Length == 4 || pump.Length == 5))
+                {
+                    cab.FeedPump = pump.Length == 5
+                        ? new MakerFitFeedPumpSeat
+                        {
+                            ValveInCar = new MakerFitVec3(pump[0], pump[1], pump[2]),
+                            GaugeOffset = new MakerFitVec2(pump[3], pump[4]),
+                        }
+                        : new MakerFitFeedPumpSeat
+                        {
+                            ValveOffset = new MakerFitVec2(pump[0], pump[1]),
+                            GaugeOffset = new MakerFitVec2(pump[2], pump[3]),
+                        };
+                }
+                if (seatedParts.TryGetValue("FeedPumpCab.LeverGaugeSeats", out var wallGauge) && wallGauge != null && wallGauge.Length >= 3)
+                {
+                    cab.FeedPump = cab.FeedPump ?? new MakerFitFeedPumpSeat();
+                    cab.FeedPump.WallGauge = new MakerFitVec3(wallGauge[0], wallGauge[1], wallGauge[2]);
+                }
+                if (seatedParts.TryGetValue("BoosterCab.CarSeats", out var booster) && booster != null && booster.Length >= 3)
+                {
+                    cab.Booster = new MakerFitBoosterSeat
+                    {
+                        Position = new MakerFitVec3(booster[0], booster[1], booster[2]),
+                    };
+                }
+                if (seatedParts.TryGetValue("JetsCab.Seats", out var jets) && jets != null && jets.Length >= 11)
+                    cab.Jets = ToCabValveSeat(jets, jetsPlateSquare);
+                if (seatedParts.TryGetValue("DriftingValveCab.Seats", out var drift) && drift != null && drift.Length >= 11)
+                    cab.DriftingValve = ToCabValveSeat(drift, driftingPlateSquare);
+                if (seatedParts.TryGetValue("ShedConnections.Seated", out var blower) && blower != null && blower.Length >= 7)
+                    cab.ShedBlower = ToShedSeat(blower);
+                if (seatedParts.TryGetValue("ShedConnections.WaterSeated", out var water) && water != null && water.Length >= 7)
+                    cab.ShedWater = ToShedSeat(water);
+            }
+
+            var profile = new MakerFitProfile
+            {
+                SchemaVersion = MakerFitProfile.CurrentSchemaVersion,
+                Liveries = new[] { liveryId },
+                Fuel = oil ? MakerFitFuel.Oil : MakerFitFuel.Coal,
+                Cab = cab.HasAny ? cab : null,
+            };
+            return MakerFitFormatter.Format(profile);
+        }
+
+        private static MakerFitCabValveSeat ToCabValveSeat(float[] v, bool plateSquare) => new MakerFitCabValveSeat
+        {
+            Position = new MakerFitVec3(v[0], v[1], v[2]),
+            Rotation = new MakerFitVec3(v[3], v[4], v[5]),
+            InCar = true,
+            PlateOffset = new MakerFitVec3(v[6], v[7], v[8]),
+            PlateSpinDeg = v[9],
+            PlateTurnDeg = v[10],
+            PlateSquare = plateSquare,
+        };
+
+        private static MakerFitShedSeat ToShedSeat(float[] v) => new MakerFitShedSeat
+        {
+            Enabled = true,
+            Position = new MakerFitVec3(v[0], v[1], v[2]),
+            SwingDeg = v[3],
+            DownDeg = v[4],
+            SpinDeg = v[5],
+            OutM = v[6],
+        };
+
+        private static string TryWriteExportFile(string liveryId, string json)
+        {
+            if (Main.Mod == null || string.IsNullOrWhiteSpace(Main.Mod.Path))
+                return null;
+            try
+            {
+                var dir = Path.Combine(Main.Mod.Path, "SeatingExports");
+                Directory.CreateDirectory(dir);
+                var safe = string.Concat(liveryId.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+                var file = Path.Combine(dir, $"{safe}.realistic-firing.json");
+                File.WriteAllText(file, json + Environment.NewLine);
+                return $"SeatingExports/{safe}.realistic-firing.json";
+            }
+            catch (Exception e)
+            {
+                Main.Mod.Logger.Warning($"Seating bench could not write maker-fit export file: {e.Message}");
+                return null;
             }
         }
 

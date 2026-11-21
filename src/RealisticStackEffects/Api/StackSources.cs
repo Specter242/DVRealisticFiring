@@ -77,6 +77,24 @@ namespace RealisticStackEffects.Api
         bool Add(string name, string kind, UnityEngine.Vector3 at, UnityEngine.Vector3 facing, Func<float> strength);
     }
 
+    /// <summary>
+    /// Optional dimensions of a locomotive's chimney, in metres, as another mod
+    /// reports them to Realistic Stack Effects (<see cref="StackSources.RegisterGeometry"/>).
+    /// Any field left null falls back to the stack's mesh or the mod's default.
+    /// From contract version 3. Fields are only ever added, never changed or removed.
+    /// </summary>
+    public struct StackGeometry
+    {
+        /// <summary>Height of the stack's lip above the smoke emitter along the stack's axis, m (0 to 3).</summary>
+        public float? LipHeight;
+
+        /// <summary>Inside bore radius of the chimney at the lip, m (0.08 to 0.5).</summary>
+        public float? BoreRadius;
+
+        /// <summary>Outside radius of the chimney at the lip, m (0.1 to 0.5).</summary>
+        public float? OutsideRadius;
+    }
+
     /// <summary>Another mod's fire under a locomotive's chimney.</summary>
     public interface IStackFireSource
     {
@@ -105,8 +123,19 @@ namespace RealisticStackEffects.Api
         // Providers that threw once, left out from then on.
         private static readonly HashSet<string> Failed = new HashSet<string>();
 
-        /// <summary>The contract's version: 2 (1 had the fires alone; 2 adds <see cref="EngineSteam"/>). It only grows; check it before using anything added later.</summary>
-        public static int ApiVersion => 2;
+        private static readonly List<KeyValuePair<string, Func<TrainCar, StackGeometry?>>> GeometryProviders =
+            new List<KeyValuePair<string, Func<TrainCar, StackGeometry?>>>();
+
+        // Geometry providers that threw once, left out from then on.
+        private static readonly HashSet<string> FailedGeometry = new HashSet<string>();
+
+        /// <summary>
+        /// The contract's version: 3 (1 had the fires alone; 2 adds
+        /// <see cref="EngineSteam"/>; 3 adds <see cref="StackGeometry"/> and
+        /// <see cref="RegisterGeometry"/>). It only grows; check it before
+        /// using anything added later.
+        /// </summary>
+        public static int ApiVersion => 3;
 
         private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<SteamVents, Steam> Steams =
             new System.Runtime.CompilerServices.ConditionalWeakTable<SteamVents, Steam>();
@@ -166,6 +195,58 @@ namespace RealisticStackEffects.Api
                 throw new ArgumentException("A provider needs its mod's ID and a function");
             Providers.Add(new KeyValuePair<string, Func<TrainCar, IStackFireSource>>(modId, provider));
             Main.Mod?.Logger.Log($"{modId} feeds its fires to the chimney smoke");
+        }
+
+        /// <summary>
+        /// Registers <paramref name="modId"/>'s stack geometry provider. As each
+        /// steam locomotive's plume is set up, it is asked for that engine's
+        /// chimney dimensions, and answers null to keep the stack's mesh reading
+        /// or built-in fallback. The first provider to answer with a usable
+        /// dimension wins; a provider that throws is logged once and skipped.
+        /// From contract version 3.
+        /// </summary>
+        public static void RegisterGeometry(string modId, Func<TrainCar, StackGeometry?> provider)
+        {
+            if (string.IsNullOrEmpty(modId) || provider == null)
+                throw new ArgumentException("A geometry provider needs its mod's ID and a function");
+            GeometryProviders.Add(new KeyValuePair<string, Func<TrainCar, StackGeometry?>>(modId, provider));
+            Main.Mod?.Logger.Log($"{modId} supplies stack geometry hints to the chimney smoke");
+        }
+
+        /// <summary>
+        /// The sanitized stack geometry a registered provider answers with for
+        /// <paramref name="car"/>; null when none answers with a usable dimension.
+        /// </summary>
+        internal static Core.StackGeometryHint? GeometryFor(TrainCar car, out string by)
+        {
+            by = null;
+            foreach (var pair in GeometryProviders)
+            {
+                if (FailedGeometry.Contains(pair.Key))
+                    continue;
+                try
+                {
+                    var geometry = pair.Value(car);
+                    if (!geometry.HasValue)
+                        continue;
+                    var hint = new Core.StackGeometryHint
+                    {
+                        LipHeight = geometry.Value.LipHeight,
+                        BoreRadius = geometry.Value.BoreRadius,
+                        OutsideRadius = geometry.Value.OutsideRadius,
+                    }.Sanitize();
+                    if (!hint.HasAny)
+                        continue;
+                    by = pair.Key;
+                    return hint;
+                }
+                catch (Exception e)
+                {
+                    FailedGeometry.Add(pair.Key);
+                    Main.Mod?.Logger.LogException($"{pair.Key}'s stack geometry hint failed; it is left out from now on", e);
+                }
+            }
+            return null;
         }
 
         /// <summary>

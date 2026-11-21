@@ -2,9 +2,9 @@ namespace RealisticFiring
 {
  internal static class EquipmentActions
     {
-        internal const int FireIron = 0, WoodCrate = 1, RagTin = 2, Manual = 3;
+        internal const int FireIron = 0, WoodCrate = 1, RagTin = 2, Manual = 3, Checklists = 4;
 
-        internal static readonly string[] Labels = { "Give fire iron", "Give firewood crate", "Give rag tin", "Give firing manual" };
+        internal static readonly string[] Labels = { "Give fire iron", "Give firewood crate", "Give rag tin", "Give firing manual", "Give firing checklists" };
 
         internal static readonly string[] Help =
         {
@@ -12,6 +12,7 @@ namespace RealisticFiring
             "A full crate of firewood for lighting a cold fire, when none is at hand.",
             "A full tin of rags to oil and light, when none is at hand.",
             "An illustrated booklet with a clickable table of contents.",
+            "A paper booklet of the six firing checklists, one a page.",
         };
 
         /// <summary>Gives the item of <paramref name="action"/>; its notice, or null for no such action.</summary>
@@ -28,6 +29,8 @@ namespace RealisticFiring
                     return Net.ItemsRemote ? "In multiplayer, only the host can give a rag tin" : Items.FireStartingItems.GiveToPlayer(Items.StartingFuelKind.RagBox);
                 case Manual:
                     return Net.ItemsRemote ? "Ask the multiplayer host to give you a firing manual" : Items.FiringManual.GiveToPlayer();
+                case Checklists:
+                    return Net.ItemsRemote ? "In multiplayer, buy the firing checklists at a gadget shop, beside the clinometer" : Items.ChecklistBooklet.GiveToPlayer();
                 default:
                     return null;
             }

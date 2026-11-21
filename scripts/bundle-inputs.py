@@ -46,6 +46,8 @@ INPUT_SETS = {
         ("scripts/build-manual.sh", True),
         (PROJECT + "/Assets/Editor/FiringManualBuilder.cs", True),
         (ASSETS + "/Manual/manual_p*.png", True),
+        # The checklist booklet's pages, built into the same bundle.
+        (ASSETS + "/Manual/checklists_p*.png", True),
     ],
 }
 BUNDLE_SETS = {

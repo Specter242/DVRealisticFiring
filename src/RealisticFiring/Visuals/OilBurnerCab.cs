@@ -23,23 +23,8 @@ namespace RealisticFiring.Visuals
         private const float ValveSpacing = 0.14f;
         private const float LabelDrop = 0.05f;
 
-        // Seated per livery once placed in game: the first valve's offset from
-        // the firing valve, in the frame (across inboard, up, out), m; others
-        // take the default.
-        private static readonly Dictionary<string, Vector3> Seats = new Dictionary<string, Vector3>
-        {
-            ["A.T.&S.F. 2901-A"] = new Vector3(-0.36f, 0.03f, 0f),
-        };
-
-        private static readonly Dictionary<string, Dictionary<string, string>> LooseWheels = new Dictionary<string, Dictionary<string, string>>
-        {
-            ["A.T.&S.F. 2901-A"] = new Dictionary<string, string>
-            {
-                [OilBurnerFit.Atomizer.Id] = "HW.014",
-                [OilBurnerFit.Heater.Id] = "HW.017",
-                [OilBurnerFit.ShopSteam.Id] = "HW.015",
-            },
-        };
+        // Per-locomotive valve row seats and loose handwheel assignments live
+        // in LocomotiveProfiles (Cab.OilBurnerValveSeat and Cab.OilBurnerLooseWheels).
 
         private const int AtomizerNotches = 41;
 
@@ -125,7 +110,9 @@ namespace RealisticFiring.Visuals
             // offsets across are signed toward the middle of the cab.
             frame.SetPositionAndRotation(anchor, Quaternion.LookRotation(frameCar.forward, frameCar.up));
 
-            var first = Seats.TryGetValue(car.carLivery.id, out var seat)
+            var cabProfile = LocomotiveProfiles.For(car.carLivery.id)?.Cab;
+            var seated = cabProfile?.OilBurnerValveSeat;
+            var first = seated is Vector3 seat
                 ? new Vector3(inboard * seat.x, seat.y, seat.z)
                 : new Vector3(inboard * FirstValve, 0f, 0f);
             // The valves wear the cab's own handwheels where it has them.
@@ -138,7 +125,7 @@ namespace RealisticFiring.Visuals
             };
             if (shopSteamPort != null)
                 valves.Add((OilBurnerFit.ShopSteam, shopSteamPort, "SHOP STEAM", () => ShopSteamHover(firebox)));
-            var loose = LooseWheels.TryGetValue(car.carLivery.id, out var assigned) ? assigned : null;
+            var loose = cabProfile?.OilBurnerLooseWheels;
             var inRow = 0;
             var placed = new List<Transform>();
             foreach (var (valve, port, plate, hover) in valves)
@@ -187,7 +174,7 @@ namespace RealisticFiring.Visuals
                    (firing != null ? $"'{firing.name}'{(restepped ? $" (now {FiringValveNotches} notches)" : "")}" : "(no firing valve found in the cab; placed at the backhead's middle)") +
                    (inRow > 0
                        ? $", the row's first at ({local.x:F2}, {local.y:F2}, {local.z:F2}) m in the car frame" +
-                         (Seats.ContainsKey(car.carLivery.id) ? " (seated for the livery)" : "") +
+                         (seated.HasValue ? " (seated for the livery)" : "") +
                          (look != null ? $", wheels like the cab's '{look.Name}'" : ", wheels like the S282's")
                        : "");
         }

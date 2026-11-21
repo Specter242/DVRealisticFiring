@@ -113,12 +113,8 @@ namespace RealisticFiring.Visuals
             return true;
         }
 
-        /// <summary>
-        /// A loop of the game's, in place of its own update
-        /// (ChuffClipsSimReader.ChuffLoop.UpdateLoops): taking over from the
-        /// single beats as they fade, as loud as they were, and panting when
-        /// drifting. False leaves it to the game.
-        /// </summary>
+        private static float Volume => Main.Settings != null ? Mathf.Clamp(Main.Settings.ChuffVolume, 0f, 200f) / 100f : 1f;
+
         internal static bool TryLoop(ChuffClipsSimReader.ChuffLoop loop, float volumeInput, float beatsPerSecond, out bool active)
         {
             active = false;
@@ -126,7 +122,7 @@ namespace RealisticFiring.Visuals
                 return false;
             // Shut off and drifting, the loops have no steam of their own: the panting in its place.
             var drifting = !(volumeInput > 0f) && player.breath > 0f;
-            var master = player.SynthHeard && !drifting ? 0f : loop.chuffFrequencyToMasterVolume.Evaluate(beatsPerSecond) * Voice.LoopShare(beatsPerSecond);
+            var master = player.SynthHeard && !drifting ? 0f : loop.chuffFrequencyToMasterVolume.Evaluate(beatsPerSecond) * Voice.LoopShare(beatsPerSecond) * Volume;
             ref var isActive = ref LoopActive(loop);
             var was = isActive;
             active = isActive = master > 0f;
@@ -162,7 +158,7 @@ namespace RealisticFiring.Visuals
                 }
                 else if (exhaust > 1f)
                 {
-                    var loudness = Voice.Loudness(exhaust) * master * beat.Volume * Random.Range(0.95f, 1.05f);
+                    var loudness = Voice.Loudness(exhaust) * master * beat.Volume * Volume * Random.Range(0.95f, 1.05f);
                     var tiers = Voice.Tiers(exhaust, reader.mediumPressureThreshold, reader.highPressureThreshold);
                     var soft = Clip(reader.lowPressureClips, index);
                     var medium = Clip(reader.mediumPressureClips, index);
@@ -175,7 +171,7 @@ namespace RealisticFiring.Visuals
                 }
                 else if (breath > 0f)
                 {
-                    var panting = breath * master * beat.Volume;
+                    var panting = breath * master * beat.Volume * Volume;
                     var soft = Clip(reader.lowPressureClips, index);
                     space.Play(soft, panting, pitch * Voice.BreathPitch, late);
                     space.Echo(soft, panting, pitch * Voice.BreathPitch, late);

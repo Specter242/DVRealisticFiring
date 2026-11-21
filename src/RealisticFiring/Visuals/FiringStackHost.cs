@@ -16,6 +16,7 @@ namespace RealisticFiring.Visuals
             StackHost.Mod = Main.Mod;
             StackHost.Settings = new StackSettings();
             StackHost.Assets = new StackAssets();
+            StackHost.StackGeometry = StackEffectsLink.TryGetStackGeometry;
 #if !PUBLIC_RELEASE
             StackHost.PlumeTimed = start => PerfMeter.Stop(PerfSection.ChimneyPlume, start);
             StackHost.CameraTimed = start => PerfMeter.Stop(PerfSection.PlumeCamera, start);
@@ -33,6 +34,8 @@ namespace RealisticFiring.Visuals
             }
 
             public SmokeSeason SmokeSeason => Main.Settings.SmokeSeason;
+            public float SteamVisibility => PlumeSettings.ClampSteamVisibility(Main.Settings.SteamVisibility);
+            public float WindStrength => PlumeSettings.ClampWindStrength(Main.Settings.WindStrength);
             public bool HeatShimmer => Main.Settings.HeatShimmer;
             public bool EngineSteam => Main.Settings.EngineSteam;
             public bool CustomEffects => Main.Session.CustomSmokeEffects;

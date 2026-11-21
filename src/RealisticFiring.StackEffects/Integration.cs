@@ -21,6 +21,11 @@ namespace RealisticFiring.StackEffects
             // and a method that names it must not be compiled against it.
             if (StackSources.ApiVersion >= 2)
                 LinkEngineSteam();
+            // Optional stack geometry hints came with the contract's third
+            // version: guarded and NoInlining so Realistic Firing stays
+            // backwards-compatible with Realistic Stack Effects v1 and v2.
+            if (StackSources.ApiVersion >= 3)
+                LinkStackGeometry(mod.Info.Id);
             return true;
         }
 
@@ -35,6 +40,33 @@ namespace RealisticFiring.StackEffects
                 if (steam == null)
                     return null;
                 return (steam, (name, kind, at, facing, strength) => steam.Add(name, kind.ToString(), at, facing, strength));
+            };
+        }
+
+        // Optional chimney geometry hints from built-in locomotive profiles
+        // and loaded maker fits, registered with Realistic Stack Effects v3+.
+        // The delegate made here, not by a method group: the compiler caches a
+        // method group's delegate in a static field of a hidden class, typed with
+        // the v3 StackGeometry, and with Realistic Stack Effects 1.2.2 that class
+        // can't load, so every scan of this assembly's types failed (the game's
+        // console at start, with a crash report; job 3117).
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void LinkStackGeometry(string modId)
+        {
+            StackSources.RegisterGeometry(modId, new System.Func<TrainCar, StackGeometry?>(GeometryFor));
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal static StackGeometry? GeometryFor(TrainCar car)
+        {
+            var hint = StackEffectsLink.StackGeometryFor(car);
+            if (!hint.HasValue)
+                return null;
+            return new StackGeometry
+            {
+                LipHeight = hint.Value.LipHeight,
+                BoreRadius = hint.Value.BoreRadius,
+                OutsideRadius = hint.Value.OutsideRadius,
             };
         }
     }

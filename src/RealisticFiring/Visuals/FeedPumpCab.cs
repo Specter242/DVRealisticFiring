@@ -40,21 +40,6 @@ namespace RealisticFiring.Visuals
             public Vector3? ValveInCar { get; }
         }
 
-        private static readonly Dictionary<string, Spot> Spots = new Dictionary<string, Spot>
-        {
-            // Below the manifold, a little inboard, beside the stoker valve.
-            ["FEF-3"] = new Spot(new Vector2(-0.11f, -0.40f), new Vector2(-0.11f, -0.28f)),
-            // Above and outboard of the dynamo valve, by the sight glass.
-            ["S484-840A"] = new Spot(Vector2.zero, new Vector2(0f, 0.12f), new Vector3(0.75f, 3.47f, -8.36f)),
-            // The Hudson's valve is its fireman's injector lever; the gauge
-            // six inches above the manifold and three inboard, below the lever.
-            ["S464-730"] = new Spot(Vector2.zero, new Vector2(0.076f, 0.24f)),
-            // Beside the QJ's triangle, clear of the speedometer above it.
-            [QjStokerCab.Livery] = new Spot(new Vector2(0.26f, -0.28f), new Vector2(0.26f, -0.14f)),
-            ["LocoS282A"] = new Spot(Vector2.zero, new Vector2(0f, 0.12f), new Vector3(-0.46f, 2.9f, 0.06f)),
-            ["S2102-720"] = new Spot(Vector2.zero, new Vector2(0f, 0.12f), new Vector3(-0.8f, 3.11f, -3.53f)),
-        };
-
         private static readonly Spot DefaultSpot = new Spot(new Vector2(-0.165f, -0.12f), new Vector2(-0.165f, 0.03f));
 
         // Seats set this session on the seating bench (SeatingBench, a
@@ -65,13 +50,15 @@ namespace RealisticFiring.Visuals
         internal static readonly Dictionary<string, Vector3> DevLeverGaugeSeats = new Dictionary<string, Vector3>();
 #endif
 
-        /// <summary>Where the pump's valve and gauge go beside the manifold for <paramref name="livery"/>: the bench's seat, the table's, or the default.</summary>
+        /// <summary>Where the pump's valve and gauge go beside the manifold for <paramref name="livery"/>: the bench's seat, the profile's, or the default.</summary>
         internal static Spot SpotFor(string livery) =>
 #if PUBLIC_RELEASE
-            Spots.TryGetValue(livery, out var seated) ? seated
+            LocomotiveProfiles.For(livery)?.Cab.FeedPumpSpot is Spot seated ? seated
+            : MakerFitRegistry.TryGetFeedPumpSpot(livery, out var maker) ? maker
 #else
             DevSpots.TryGetValue(livery, out var dev) ? dev
-            : Spots.TryGetValue(livery, out var seated) ? seated
+            : LocomotiveProfiles.For(livery)?.Cab.FeedPumpSpot is Spot seated ? seated
+            : MakerFitRegistry.TryGetFeedPumpSpot(livery, out var maker) ? maker
 #endif
             : DefaultSpot;
 
@@ -79,17 +66,19 @@ namespace RealisticFiring.Visuals
         internal static Vector3 LeverGaugeSeatFor(string livery) =>
 #if PUBLIC_RELEASE
             LeverGaugeSeats.TryGetValue(livery, out var seated) ? seated
+            : MakerFitRegistry.TryGetFeedPumpWallGauge(livery, out var maker) ? maker
 #else
             DevLeverGaugeSeats.TryGetValue(livery, out var dev) ? dev
             : LeverGaugeSeats.TryGetValue(livery, out var seated) ? seated
+            : MakerFitRegistry.TryGetFeedPumpWallGauge(livery, out var maker) ? maker
 #endif
             : LeverGaugeDefault;
 
         // Whether a livery's wall gauge is seated (by the bench or the table).
 #if PUBLIC_RELEASE
-        private static bool LeverGaugeSeated(string livery) => LeverGaugeSeats.ContainsKey(livery);
+        private static bool LeverGaugeSeated(string livery) => LeverGaugeSeats.ContainsKey(livery) || MakerFitRegistry.TryGetFeedPumpWallGauge(livery, out _);
 #else
-        private static bool LeverGaugeSeated(string livery) => DevLeverGaugeSeats.ContainsKey(livery) || LeverGaugeSeats.ContainsKey(livery);
+        private static bool LeverGaugeSeated(string livery) => DevLeverGaugeSeats.ContainsKey(livery) || LeverGaugeSeats.ContainsKey(livery) || MakerFitRegistry.TryGetFeedPumpWallGauge(livery, out _);
 #endif
 
         // A hand-fired engine with a feed pump has no stoker manifold to carry
@@ -103,13 +92,15 @@ namespace RealisticFiring.Visuals
         private static readonly Vector2 BackheadGauge = new Vector2(0f, 0.12f);
         private static readonly Dictionary<string, Spot> BuiltOnBackhead = new Dictionary<string, Spot>();
 
-        // A spot that gives the valve in the car's frame, from the bench or the table.
+        // A spot that gives the valve in the car's frame, from the bench or the profile.
         private static Spot? SeatedInCar(string livery) =>
 #if PUBLIC_RELEASE
-            Spots.TryGetValue(livery, out var seated) && seated.ValveInCar.HasValue ? seated
+            LocomotiveProfiles.For(livery)?.Cab.FeedPumpSpot is Spot seated && seated.ValveInCar.HasValue ? seated
+            : MakerFitRegistry.TryGetFeedPumpSpot(livery, out var maker) && maker.ValveInCar.HasValue ? maker
 #else
             DevSpots.TryGetValue(livery, out var dev) && dev.ValveInCar.HasValue ? dev
-            : Spots.TryGetValue(livery, out var seated) && seated.ValveInCar.HasValue ? seated
+            : LocomotiveProfiles.For(livery)?.Cab.FeedPumpSpot is Spot seated && seated.ValveInCar.HasValue ? seated
+            : MakerFitRegistry.TryGetFeedPumpSpot(livery, out var maker) && maker.ValveInCar.HasValue ? maker
 #endif
             : (Spot?)null;
 
@@ -124,8 +115,12 @@ namespace RealisticFiring.Visuals
         /// </summary>
         public static string AttachOnBackhead(TrainCar car, Transform interior)
         {
-            if (car == null || interior == null || interior.Find(BackheadRoot) != null || !InjectorRig.TryGet(car, out var rig) || rig.Pump == null
+            if (car == null || interior == null || interior.Find(BackheadRoot) != null || !InjectorRig.TryGet(car, out var rig)
                 || !FeedwaterFit.TryGet(car.carLivery.id, out var fit) || fit.OnInjectorLever)
+                return null;
+            if (fit.Upgrade)
+                CheckedGuids[car] = Upgrades.Fittings.CarGuidOf(car);
+            if (rig.Pump == null)
                 return null;
             var flow = car.SimController != null ? car.SimController.SimulationFlow : null;
             // On a stoker engine the manifold carries it, but for an upgrade's, which has a seat of its own.
@@ -174,8 +169,26 @@ namespace RealisticFiring.Visuals
             return new Spot(Vector2.zero, BackheadGauge, new Vector3(at.x + inward * BackheadFromLever.x, at.y + BackheadFromLever.y, at.z));
         }
 
+        private static readonly Dictionary<TrainCar, string> CheckedGuids = new Dictionary<TrainCar, string>();
         private static float nextCheck;
         private static int fittedVersion = -1;
+
+        internal static void TrackUpgradeCar(TrainCar car) => CheckedGuids[car] = Upgrades.Fittings.CarGuidOf(car);
+
+        internal static void Untrack(TrainCar car) => CheckedGuids.Remove(car);
+
+        internal static bool AnyGuidChanged()
+        {
+            foreach (var pair in CheckedGuids)
+            {
+                var car = pair.Key;
+                if (car == null || car.loadedInterior == null)
+                    return true;
+                if (!System.String.Equals(pair.Value, Upgrades.Fittings.CarGuidOf(car), System.StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
+        }
 
         /// <summary>
         /// Builds an upgrade's pump valve and gauge in a loaded cab once it is
@@ -184,17 +197,21 @@ namespace RealisticFiring.Visuals
         /// </summary>
         public static void EnsureFitted()
         {
-            if (Time.unscaledTime < nextCheck)
+            var refit = fittedVersion != Upgrades.Fittings.Version || AnyGuidChanged();
+            if (!refit && Time.unscaledTime < nextCheck)
                 return;
             nextCheck = Time.unscaledTime + 1f;
-            var refit = fittedVersion != Upgrades.Fittings.Version;
             fittedVersion = Upgrades.Fittings.Version;
+            foreach (var key in CheckedGuids.Keys.ToList())
+                if (key == null || key.loadedInterior == null)
+                    CheckedGuids.Remove(key);
             foreach (var rig in InjectorRig.All)
             {
                 var car = rig.Car;
                 var interior = car != null && car.loadedInterior != null ? car.loadedInterior.transform : null;
                 if (interior == null || !FeedwaterFit.TryGet(car.carLivery.id, out var fit) || !fit.Upgrade)
                     continue;
+                CheckedGuids[car] = Upgrades.Fittings.CarGuidOf(car);
                 var root = interior.Find(BackheadRoot);
                 if (root != null && rig.Pump == null)
                 {

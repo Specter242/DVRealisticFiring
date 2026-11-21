@@ -41,13 +41,6 @@ namespace RealisticFiring.Visuals
         private const float FallbackDrop = 0.9f;
         private const float PivotAboveFloor = 0.05f;
 
-        private static readonly Dictionary<string, Vector3> LeverMoves = new Dictionary<string, Vector3>
-        {
-            ["S464-730"] = new Vector3(0.45f, 0f, -0.15f), // a foot and a half inboard, six inches aft
-            ["LocoS282A"] = new Vector3(0f, 0f, -0.3f), // a foot aft
-            [QjStokerCab.Livery] = new Vector3(-0.38f, 0f, 0f), 
-        };
-
         // The label is a plate lying flat on the floor, face up, in line with
         // the lever, aft of its foot, between it and the fireman standing
         // behind it, so the handle never hides it, in m. (The plate's face
@@ -59,13 +52,8 @@ namespace RealisticFiring.Visuals
 
         // What the manifold is placed from: the loco's own stoker valve on the
         // fireman's side, or, on a loco fitted with the mod's stoker, the
-        // fireman's blower valve.
+        // anchor port listed in LocomotiveProfiles.
         private const string StokerPort = "stokerControl.EXT_IN";
-
-        private static readonly Dictionary<string, string> AnchorPorts = new Dictionary<string, string>
-        {
-            ["LocoS282A"] = "blower.EXT_IN",
-        };
 
         // The stoker engine's own wheel, above the master jet, on locos fitted
         // with the mod's stoker.
@@ -126,26 +114,8 @@ namespace RealisticFiring.Visuals
             public float Tilt { get; }
         }
 
-        private static readonly Dictionary<string, Placement> Placements = new Dictionary<string, Placement>
-        {
-            ["S464-730"] = new Placement(new Vector3(19.2f, -8.1f, -11.5f), 8f, -1f),
-            ["LocoS282A"] = new Placement(new Vector3(88f, 25f, 9f), -9f, 0f),
-            // The S484-840 has one stoker valve, on the right beside the injector.
-            ["S484-840A"] = new Placement(new Vector3(-1f, -20f, 0f), -6f, 0f),
-            // The 844's stoker valve sits low beside its blower valve; the
-            // manifold stands 80 cm above it.
-            ["FEF-3"] = new Placement(new Vector3(-34f, 80f, 8f), 0f, 0f),
-            // Initial instrument bracket for the QJ placement session. Its
-            // existing six-wheel bank stays in place and needs no manifold.
-            // A row above the triangle, below the speedometer, standing
-            // clear of the cladding. The pump sits to the bank's right.
-            [QjStokerCab.Livery] = new Placement(new Vector3(0f, 10f, -4f), 0f, 0f),
-        };
-
-        private static readonly Dictionary<string, string> StokerValveCopies = new Dictionary<string, string>
-        {
-            ["FEF-3"] = "Controllers/Left/automaticStoker",
-        };
+        // Per-locomotive manifold placements, lever moves, valve copy paths,
+        // and supply pipe heights live in LocomotiveProfiles.
 
         // Where the copy's wheel sits on the manifold's face, below the
         // fine-coal jet and its plate, in m.
@@ -154,37 +124,36 @@ namespace RealisticFiring.Visuals
         private static readonly Placement DefaultPlacement = new Placement(new Vector3(18f, 0f, 0f), 0f, 0f);
 
         // Seats set this session on the seating bench (SeatingBench, a
-        // development tool), by livery: they come before the tables and are
+        // development tool), by livery: they come before the profiles and are
         // never saved.
 #if !PUBLIC_RELEASE
         internal static readonly Dictionary<string, Placement> DevPlacements = new Dictionary<string, Placement>();
         internal static readonly Dictionary<string, Vector3> DevLeverMoves = new Dictionary<string, Vector3>();
 #endif
 
-        /// <summary>Where the manifold sits for <paramref name="livery"/>: the bench's seat, the table's, or the default.</summary>
+        /// <summary>Where the manifold sits for <paramref name="livery"/>: the bench's seat, the profile's, or the default.</summary>
         internal static Placement PlacementFor(string livery) =>
 #if PUBLIC_RELEASE
-            Placements.TryGetValue(livery, out var known) ? known
+            LocomotiveProfiles.For(livery)?.Cab.StokerManifold is Placement known ? known
+            : MakerFitRegistry.TryGetStokerManifold(livery, out var maker) ? maker
 #else
             DevPlacements.TryGetValue(livery, out var dev) ? dev
-            : Placements.TryGetValue(livery, out var known) ? known
+            : LocomotiveProfiles.For(livery)?.Cab.StokerManifold is Placement known ? known
+            : MakerFitRegistry.TryGetStokerManifold(livery, out var maker) ? maker
 #endif
             : DefaultPlacement;
 
         /// <summary>Where the operating lever moves from its place under the manifold, for <paramref name="livery"/>, in the car frame, m.</summary>
         internal static Vector3 LeverMoveFor(string livery) =>
 #if PUBLIC_RELEASE
-            LeverMoves.TryGetValue(livery, out var seated) ? seated
+            LocomotiveProfiles.For(livery)?.Cab.StokerLeverMove is Vector3 seated ? seated
+            : MakerFitRegistry.TryGetStokerLever(livery, out var maker) ? maker
 #else
             DevLeverMoves.TryGetValue(livery, out var dev) ? dev
-            : LeverMoves.TryGetValue(livery, out var seated) ? seated
+            : LocomotiveProfiles.For(livery)?.Cab.StokerLeverMove is Vector3 seated ? seated
+            : MakerFitRegistry.TryGetStokerLever(livery, out var maker) ? maker
 #endif
             : Vector3.zero;
-
-        private static readonly Dictionary<string, float> SupplyPipeAt = new Dictionary<string, float>
-        {
-            ["S464-730"] = -0.08f,
-        };
 
         private const float SupplyRadius = 0.014f;
         private const float SupplySearch = 0.6f;
@@ -193,8 +162,34 @@ namespace RealisticFiring.Visuals
         private const float FlangeThickness = 0.012f;
 
         private static readonly Dictionary<TrainCar, Transform> Interiors = new Dictionary<TrainCar, Transform>();
+        private static readonly Dictionary<TrainCar, string> CheckedGuids = new Dictionary<TrainCar, string>();
         private static Mesh cylinder;
         private static Material steel;
+
+        internal static void TrackInterior(TrainCar car, Transform interior)
+        {
+            Interiors[car] = interior;
+            CheckedGuids[car] = Upgrades.Fittings.CarGuidOf(car);
+        }
+
+        internal static void Untrack(TrainCar car)
+        {
+            Interiors.Remove(car);
+            CheckedGuids.Remove(car);
+        }
+
+        internal static bool AnyGuidChanged()
+        {
+            foreach (var car in Interiors.Keys)
+            {
+                if (car == null || car.loadedInterior == null)
+                    continue;
+                CheckedGuids.TryGetValue(car, out var prev);
+                if (!System.String.Equals(prev, Upgrades.Fittings.CarGuidOf(car), System.StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
+        }
 
         /// <summary>
         /// Builds the manifold in a newly loaded cab interior. Returns a line for
@@ -212,18 +207,20 @@ namespace RealisticFiring.Visuals
             // The S282's stoker not yet bought: no manifold, until it is (EnsureBuilt).
             if (!Fitted(flow))
             {
-                Interiors[car] = interior;
+                TrackInterior(car, interior);
                 return "the stoker is not fitted (an upgrade at a career manager): no manifold in the cab";
             }
 
             if (car.carLivery.id == QjStokerCab.Livery)
             {
-                Interiors[car] = interior;
+                TrackInterior(car, interior);
                 return QjStokerCab.Attach(car, interior, flow);
             }
 
             // The anchor valve on the fireman's side: the one furthest to the left.
-            var anchorPort = AnchorPorts.TryGetValue(car.carLivery.id, out var listed) ? listed : StokerPort;
+            var cabProfile = LocomotiveProfiles.For(car.carLivery.id)?.Cab;
+            var anchorPort = cabProfile?.StokerAnchorPort
+                ?? (MakerFitRegistry.TryGetStokerAnchorPort(car.carLivery.id, out var makerAnchor) ? makerAnchor : StokerPort);
             var anchor = interior.GetComponentsInChildren<InteractablePortFeeder>(false)
                 .Where(f => f.portId == anchorPort)
                 .Select(f => f.transform)
@@ -239,7 +236,7 @@ namespace RealisticFiring.Visuals
                 return $"no '{SourceValve}/{SourceControl}' in the {SourceLivery} cab; the jets stay at their settings";
             var sourceLabel = livery.interiorPrefab.transform.Find(SourceLabel);
 
-            Interiors[car] = interior;
+            TrackInterior(car, interior);
 
             // Built inactive, so nothing wakes before it is posed and rewired.
             var root = new GameObject(RootName);
@@ -259,9 +256,11 @@ namespace RealisticFiring.Visuals
 
             var engine = flow.TryGetPort(StokerJetControls.Engine.PortId, out var enginePort);
             BuildPipes(frame, engine);
-            var supply = SupplyPipeAt.TryGetValue(car.carLivery.id, out var supplyAt)
+            var supply = cabProfile?.StokerSupplyPipeAt is float supplyAt
                 ? BuildSupplyPipe(frame, car, supplyAt)
-                : null;
+                : MakerFitRegistry.TryGetStokerSupplyPipeAt(car.carLivery.id, out var makerSupplyAt)
+                    ? BuildSupplyPipe(frame, car, makerSupplyAt)
+                    : null;
             var labels = 0;
             Transform plateFacing = null;
             if (engine)
@@ -286,7 +285,7 @@ namespace RealisticFiring.Visuals
                 ? PlaceLever(livery.interiorPrefab.transform, frame, leverPort, car, sourceControl, sourceLabel)
                 : null;
 
-            var copied = !engine && StokerValveCopies.TryGetValue(car.carLivery.id, out var copyPath)
+            var copied = !engine && cabProfile?.StokerValveCopyPath is string copyPath
                 ? PlaceStokerValveCopy(car, flow, frame, mount, copyPath, anchorPort, sourceControl, sourceLabel, plateFacing)
                 : null;
 
@@ -324,7 +323,7 @@ namespace RealisticFiring.Visuals
                     var interior = pair.Value;
                     if (car == null || interior == null || car.loadedInterior == null || car.loadedInterior.transform != interior)
                     {
-                        Interiors.Remove(car);
+                        Untrack(car);
                         continue;
                     }
                     var old = interior.Find(RootName);
@@ -348,21 +347,22 @@ namespace RealisticFiring.Visuals
         /// </summary>
         public static void EnsureBuilt()
         {
-            if (Time.unscaledTime < nextCheck)
+            var refit = fittedVersion != Upgrades.Fittings.Version || AnyGuidChanged();
+            if (!refit && Time.unscaledTime < nextCheck)
                 return;
             nextCheck = Time.unscaledTime + 1f;
-            var refit = fittedVersion != Upgrades.Fittings.Version;
             fittedVersion = Upgrades.Fittings.Version;
             foreach (var car in Interiors.Keys.ToList())
             {
                 if (car == null)
                 {
-                    Interiors.Remove(car);
+                    Untrack(car);
                     continue;
                 }
                 var interior = car.loadedInterior != null ? car.loadedInterior.transform : null;
                 if (interior == null)
                     continue;
+                CheckedGuids[car] = Upgrades.Fittings.CarGuidOf(car);
                 var root = interior.Find(RootName);
                 var fitted = Fitted(car.SimController != null ? car.SimController.SimulationFlow : null);
                 if (root != null && !fitted)

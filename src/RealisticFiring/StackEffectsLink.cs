@@ -49,5 +49,41 @@ namespace RealisticFiring
             FireboxRegistry.TryGet(car, out var firebox) ? new CoalStack(car, firebox)
             : RealisticOilFirebox.TryGet(car, out var oil) ? new OilStack(car, oil)
             : (IStackFire)null;
+
+        /// <summary>
+        /// Optional stack geometry hint for <paramref name="car"/> from built-in
+        /// locomotive profiles or loaded maker fits; null for excluded or unhinted cars.
+        /// </summary>
+        internal static RealisticStackEffects.Core.StackGeometryHint? StackGeometryFor(TrainCar car)
+        {
+            if (car == null || car.carLivery == null || LeftStock.IsExcluded(car))
+                return null;
+            var livery = car.carLivery.id;
+            if (LocomotiveProfiles.TryGet(livery, out var profile)
+                && profile.StackGeometry is RealisticStackEffects.Core.StackGeometryHint builtIn)
+            {
+                var clean = builtIn.Sanitize();
+                if (clean.HasAny)
+                    return clean;
+            }
+            if (MakerFitRegistry.TryGetStackGeometry(livery, out var maker))
+                return maker;
+            return null;
+        }
+
+        /// <summary><see cref="StackHost.StackGeometry"/> callback when Realistic Firing hosts the plume itself.</summary>
+        internal static bool TryGetStackGeometry(TrainCar car, out RealisticStackEffects.Core.StackGeometryHint hint, out string by)
+        {
+            var found = StackGeometryFor(car);
+            if (found.HasValue)
+            {
+                hint = found.Value;
+                by = "RealisticFiring";
+                return true;
+            }
+            hint = default;
+            by = null;
+            return false;
+        }
     }
 }

@@ -22,6 +22,9 @@ namespace RealisticStackEffects
     [HarmonyAfter("RealisticFiring")]
     internal static class SmokeReaderInitPatch
     {
+        internal delegate StockStack StockFactory(out string how);
+        internal delegate bool ActiveBindingLookup(out IStackFire boundFire, out TrainCar boundCar);
+
         private static void Postfix(SteamSmokeParticlePortReader __instance, SimulationFlow simFlow)
         {
             try
@@ -29,19 +32,112 @@ namespace RealisticStackEffects
                 var car = TrainCar.Resolve(__instance.gameObject);
                 if (car == null || OlderFiring())
                     return;
-                // Another mod's fire where one feeds it, else the game's own.
-                string how = null;
-                var fire = StackSources.For(car, () => StockStack.For(car, __instance, simFlow, out how), out var by)
-                           ?? StockStack.For(car, __instance, simFlow, out how);
-                if (by != null)
-                    how = $"the fire from {by}";
-                var result = ChimneyPlume.Attach(__instance, simFlow, car, fire);
+                var result = AttachReader(
+                    car,
+                    __instance,
+                    (out string h) => StockStack.CreateCandidate(car, __instance, simFlow, out h),
+                    fire => ChimneyPlume.Attach(__instance, simFlow, car, fire),
+                    (out IStackFire boundFire, out TrainCar boundCar) => TryGetActiveBinding(__instance, out boundFire, out boundCar),
+                    out var how);
                 Main.Mod.Logger.Log($"{LogName(car)}: {result}; {how}");
             }
             catch (Exception e)
             {
                 Main.Mod.Logger.LogException("Chimney smoke setup failed; keeping the stock smoke", e);
             }
+        }
+
+        private static bool TryGetActiveBinding(SteamSmokeParticlePortReader reader, out IStackFire boundFire, out TrainCar boundCar)
+        {
+            if (reader != null && reader.TryGetComponent<ChimneyPlume>(out var plume))
+            {
+                boundCar = plume.BoundCar;
+                if (plume.Active)
+                {
+                    boundFire = plume.BoundFire;
+                    return true;
+                }
+            }
+            else
+            {
+                boundCar = null;
+            }
+            boundFire = null;
+            return false;
+        }
+
+        // Resolves the candidate fire, attaches the plume, and reconciles
+        // StockStack.OnCar only against the fire and car the active plume
+        // actually bound. A failed rebind or early exception that leaves an
+        // older active plume running leaves its existing StockStack
+        // registration untouched, while a successful cross-car rebind or
+        // retirement clears any stale entry on the previous car.
+        internal static string AttachReader(
+            TrainCar car,
+            SteamSmokeParticlePortReader reader,
+            StockFactory stock,
+            Func<IStackFire, string> attach,
+            ActiveBindingLookup tryGetActiveBinding,
+            out string how)
+        {
+            how = null;
+            IStackFire fire = null;
+            tryGetActiveBinding(out _, out var previousCar);
+            try
+            {
+                fire = ResolveFire(car, stock, out how);
+                return attach(fire);
+            }
+            finally
+            {
+                ReconcileStockStack(car, previousCar, reader, fire, tryGetActiveBinding);
+            }
+        }
+
+        // Another mod's fire where one feeds it, else an unregistered StockStack
+        // candidate for AttachReader to register once ChimneyPlume binds it.
+        // Should an external provider fail later at read time, its lazy stock
+        // fallback registers on creation because the plume is already active.
+        internal static IStackFire ResolveFire(TrainCar car, StockFactory stock, out string how)
+        {
+            var fire = StackSources.For(car, () =>
+            {
+                var fallback = stock(out _);
+                StockStack.Register(car, fallback);
+                return fallback;
+            }, out var by);
+            if (fire != null)
+            {
+                how = $"the fire from {by}";
+                return fire;
+            }
+            return stock(out how);
+        }
+
+        private static void ReconcileStockStack(
+            TrainCar car,
+            TrainCar previousCar,
+            SteamSmokeParticlePortReader reader,
+            IStackFire fire,
+            ActiveBindingLookup tryGetActiveBinding)
+        {
+            var movedCar = !ReferenceEquals(previousCar, null) && !ReferenceEquals(previousCar, car);
+            if (tryGetActiveBinding(out var boundFire, out var boundCar))
+            {
+                if (fire != null && ReferenceEquals(boundFire, fire) && ReferenceEquals(boundCar, car))
+                {
+                    if (movedCar)
+                        StockStack.Remove(previousCar, reader);
+                    if (fire is StockStack candidate)
+                        StockStack.Register(car, candidate);
+                    else
+                        StockStack.Remove(car, reader);
+                }
+                return;
+            }
+            if (movedCar)
+                StockStack.Remove(previousCar, reader);
+            StockStack.Remove(car, reader);
         }
 
         /// <summary>Whether a Realistic Firing from before the hand-off has been found beside this mod.</summary>

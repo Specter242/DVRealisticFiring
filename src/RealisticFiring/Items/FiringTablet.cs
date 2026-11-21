@@ -163,7 +163,8 @@ namespace RealisticFiring.Items
     internal sealed class FiringTabletGadget : GadgetBase
     {
         internal const int FiremanPage = 3;
-        internal const int Pages = 4;
+        internal const int ChecklistPage = 4;
+        internal const int Pages = 5;
         private int page;
         internal int Page
         {
@@ -197,7 +198,7 @@ namespace RealisticFiring.Items
     {
         private void Awake() => GetComponent<InventoryItemSpec>().NameOverride = FiringTablet.DisplayName;
         public string GetNameParam() => FiringTablet.DisplayName;
-        public string GetCustomDescription() => "A portable firing display. Fire, Water, and Engine show the same readings as F6; Fireman has his orders and the engineer's calls. " +
+        public string GetCustomDescription() => "A portable firing display. Fire, Water, and Engine show the same readings as F6; Fireman has his orders and the engineer's calls; Check shows live step-by-step checklists and cab control labels. " +
             "Press the screen controls to change pages or give orders (mouse mode while held on desktop). While held, it reads the engine you are tending; " +
             "on a large gadget mount, it reads that engine. Pick it up again with an empty hand. No wiring is needed.";
     }

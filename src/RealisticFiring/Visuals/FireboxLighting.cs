@@ -12,10 +12,10 @@ namespace RealisticFiring.Visuals
 {
  internal static class PlainFireboxWalls
     {
-        internal static readonly Dictionary<string, Color> Tones = new Dictionary<string, Color>
-        {
-            ["S2102-720"] = new Color(0.30f, 0.24f, 0.20f),
-        };
+        internal static readonly Dictionary<string, Color> Tones = LocomotiveProfiles.All
+            .Where(profile => profile.Cab.PlainFireboxWallTone.HasValue)
+            .SelectMany(profile => profile.Liveries.Select(livery => (livery, profile.Cab.PlainFireboxWallTone.Value)))
+            .ToDictionary(pair => pair.livery, pair => pair.Value);
     }
 
     internal sealed class FireboxLighting : MonoBehaviour
@@ -70,6 +70,12 @@ namespace RealisticFiring.Visuals
         internal static float DoorDaylight = 0.2f;
         internal static float DoorBounce = 0.15f;
         internal static float S060Light = 1.6f;
+
+        private static float LightGain(TrainCar car)
+        {
+            var gain = LocomotiveProfiles.For(car)?.Cab.FireboxLightGain ?? 1f;
+            return gain != 1f && S060Light != 1.6f ? S060Light : gain;
+        }
 
         // Staybolt heads on the box's sheets, 0 none to 1 (FireboxWall).
         internal static float Staybolts = 1f;
@@ -200,7 +206,7 @@ namespace RealisticFiring.Visuals
             if (!bed.Seen && Time.unscaledTime < hiddenLightAt)
                 return;
             hiddenLightAt = Time.unscaledTime + 0.25f;
-            var gain = firebox.Car?.carLivery?.id == "LocoS060" ? S060Light : 1f;
+            var gain = LightGain(firebox.Car);
             foreach (var (renderer, _, _) in taken)
                 Apply(renderer, WallLight * gain);
             if (bed.BedRenderer != null)
@@ -322,7 +328,7 @@ namespace RealisticFiring.Visuals
                 // And the bricks' own light on what lies under and beside
                 // them: their glow, and the fire's light they give back.
                 var middle = corner + 0.5f * (acrossArch + alongArch);
-                var gain = firebox.Car?.carLivery?.id == "LocoS060" ? S060Light : 1f;
+                var gain = LightGain(firebox.Car);
                 var radiance = FireColors.At(Mathf.Clamp01(0.93f * arch.Heat)) * BrickArch.ArchGlow
                                + LightAt(middle, -upArch) * (BrickArch.ArchLight * gain * BrickArch.ArchAlbedo);
                 archGlow = new Vector4(radiance.r, radiance.g, radiance.b, 0f);

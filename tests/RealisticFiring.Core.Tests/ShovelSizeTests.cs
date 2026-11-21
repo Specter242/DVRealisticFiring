@@ -17,6 +17,42 @@ public class ShovelSizeTests
     }
 
     [Fact]
+    public void TheAcceleratedStartupBoostsTheShovelfulUpToTwelveKilograms()
+    {
+        Assert.Equal(6f, ShovelSize.StartupLoad(6f, 1f));
+        Assert.Equal(6f, ShovelSize.StartupLoad(6f, 0.5f));
+        Assert.Equal(6f, ShovelSize.StartupLoad(6f, float.NaN));
+        Assert.Equal(9f, ShovelSize.StartupLoad(6f, 1.5f));
+        Assert.Equal(12f, ShovelSize.StartupLoad(6f, 25f));
+        Assert.Equal(12f, ShovelSize.StartupLoad(3f, 25f));
+        Assert.Equal(7.5f, ShovelSize.StartupLoad(3f, 2.5f));
+        // Never less than the player's own, even over the cap.
+        Assert.Equal(14f, ShovelSize.StartupLoad(14f, 25f));
+        Assert.Equal(" (startup ×2)", ShovelSize.BoostNote(2f));
+        Assert.Equal(" (startup ×2.5)", ShovelSize.BoostNote(2.5f));
+        Assert.Equal("", ShovelSize.BoostNote(1f));
+        // The pile gives the boosted shovelful times the coal multiplier, as any: the same cost per kilogram.
+        Assert.Equal(48f, ShovelSize.PileCapacity(ShovelSize.StartupLoad(6f, 25f), 3, consumptionMultiplier: 4f), 4);
+    }
+
+    [Fact]
+    public void ASmallFireboxTakesAStartupShovelfulNoThickerThanItsColdBedShouldBe()
+    {
+        // The S060's 60 kg box: twice the fireman's 8 % thin bed, 9.6 kg (game, job 3126: 12 kg kept the advice
+        // calling the bed thick after nearly every throw). The S282's 150 kg box keeps 12 kg.
+        Assert.Equal(9.6f, ShovelSize.StartupCap(60f), 3);
+        Assert.Equal(12f, ShovelSize.StartupCap(150f));
+        Assert.Equal(12f, ShovelSize.StartupCap(0f));
+        Assert.Equal(9.6f, ShovelSize.StartupLoad(6f, 25f, 60f), 3);
+        Assert.Equal(12f, ShovelSize.StartupLoad(6f, 25f, 150f));
+        Assert.Equal(9f, ShovelSize.StartupLoad(6f, 1.5f, 60f));
+        // Never less than the player's own.
+        Assert.Equal(8f, ShovelSize.StartupLoad(8f, 25f, 40f));
+        // One load at the cap is just the bed the advice calls thick, not over it.
+        Assert.False(ShovelSize.StartupCap(60f) > FiringAdvice.ThickColdBed * AutoFireman.ColdDraftFire * 60f + 1e-4f);
+    }
+
+    [Fact]
     public void OtherShovelsKeepTheirSizeRatio()
     {
         Assert.Equal(4f, ShovelSize.PileCapacity(3f, shovelChunks: 4, consumptionMultiplier: 1f), 4);

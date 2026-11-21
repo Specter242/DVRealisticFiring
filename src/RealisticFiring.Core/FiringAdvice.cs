@@ -83,7 +83,14 @@ namespace RealisticFiring.Core
         /// <summary>Whether a shed stand's blower line reaches the engine: the shed's steam comes only by plugging one in.</summary>
         public bool StandNearby;
         public float GlassLevel;
+        public GlassCheck GlassCheck;
         public IReadOnlyList<InjectorReading> Injectors;
+        /// <summary>Whether the cold boiler is warming too fast and needs the fire eased.</summary>
+        public bool BoilerWarmingTooFast;
+        /// <summary>Whether the superheater elements are overheating with the throttle shut.</summary>
+        public bool SuperheaterHot;
+        /// <summary>Whether the locomotive has a cab drifting valve fitted.</summary>
+        public bool DriftingValve;
     }
 
     /// <summary>One step of lighting an oil fire, for the overlay's checklist.</summary>
@@ -117,6 +124,37 @@ namespace RealisticFiring.Core
         /// <summary>A zone with less than this share of the middle zone's coal is burning thin.</summary>
         public const float ThinShare = 0.35f;
 
+        /// <summary>The share of the bed that is ash, coal and ash on the grate together; 0 with nothing on it.</summary>
+        public static float AshShare(FireModel fire)
+        {
+            var bed = fire.CoalMass + fire.AshMass;
+            return bed > 0f ? fire.AshMass / bed : 0f;
+        }
+
+        /// <summary>Whether ash wants shaking through the grate: over <see cref="AutoFireman.ShakeAshShare"/> of the bed, as the fireman shakes.</summary>
+        public static bool WantsShake(FireModel fire) => fire.FireOn && AshShare(fire) > AutoFireman.ShakeAshShare;
+
+        /// <summary>
+        /// A shake to tell the player of: <see cref="WantsShake"/>, but not while a fire is starting
+        /// (<paramref name="boostedStart"/>, or the wood still in), where the bed is young and a shake loses fire. The
+        /// advice and the Cleaning checklist both read it, so they agree (game, job 3126: the checklist asked for a
+        /// shake through most of every boosted start while the advice held it back).
+        /// </summary>
+        public static bool ShakeDue(FireModel fire, bool boostedStart) => !boostedStart && fire.StarterMass <= 0f && WantsShake(fire);
+
+        // The shake, in a fireman's words: a half stroke of the fire-dump lever (or the Shake grate key) with the
+        // engine eased; working hard, a short rock (a wiggle, almost no fire lost) until it can be eased.
+        private static string ShakeText(bool workingHard, string shakeKey)
+        {
+            var key = string.IsNullOrEmpty(shakeKey) ? "" : $", or {shakeKey}";
+            return workingHard
+                ? "Ash is building on the grate: a short rock of the fire-dump lever now, and a proper shake when you ease the throttle."
+                : $"Ash is building on the grate: give it a shake with the throttle eased (half a stroke of the fire-dump lever{key}).";
+        }
+
+        /// <summary>Raising steam standing, a bed over this many times the automatic fireman's thin cold bed is too thick for natural draft.</summary>
+        public const float ThickColdBed = 2f;
+
         /// <summary>The ashpan this full wants emptying, as the fireman says.</summary>
         public const float FullAshpan = 0.5f;
 
@@ -148,12 +186,18 @@ namespace RealisticFiring.Core
         /// <paramref name="driftingValve"/>, it has a drifting valve in the cab.
         /// </summary>
         public static Advice ForCoal(FireModel fire, float door, float glass, IReadOnlyList<InjectorReading> injectors, bool driftingHookedUp = false,
-            bool lighterLightsCoal = false, bool sniftingOpen = false, bool driftingValve = false, SupplyHint? supplies = null)
+            bool lighterLightsCoal = false, bool sniftingOpen = false, bool driftingValve = false, SupplyHint? supplies = null,
+            GlassCheck glassCheck = GlassCheck.Clear, float boilerPressure = GaugeGlassChoke.BlowMinPressure,
+            bool boilerWarmingTooFast = false, bool superheaterHot = false, bool boostedStart = false,
+            bool workingHard = false, string shakeKey = null)
         {
             if (fire == null)
                 throw new ArgumentNullException(nameof(fire));
             if (Injector(injectors) is Advice injector)
                 return injector;
+            var canBlowGlass = GaugeGlassChoke.CanBlowThrough(boilerPressure);
+            if (glassCheck == GlassCheck.Stuck && canBlowGlass)
+                return new Advice(AdviceLevel.Act, "The glass looks dead — don't trust it: check the try cocks and blow the glass through.");
             if (glass < LowGlass)
                 return new Advice(AdviceLevel.Act, "Water's low in the glass: get the injector on.");
             if (!fire.FireOn && lighterLightsCoal)
@@ -190,6 +234,20 @@ namespace RealisticFiring.Core
                     return new Advice(AdviceLevel.Watch, "The wood has caught: let the flames take all of it before adding coal. Keep air reaching the fire.");
                 return RagAdvice(fire);
             }
+            if (boilerWarmingTooFast)
+                return new Advice(AdviceLevel.Act, "Ease the fire — boiler warming too fast.");
+            if (superheaterHot)
+                return new Advice(AdviceLevel.Act, driftingValve
+                    ? "Superheater hot — crack throttle or drifting valve."
+                    : "Superheater hot — crack throttle or close the damper.");
+            // Raising steam standing under the accelerated startup (boostedStart): natural draft burns no more than a
+            // thin fire until the blower has steam (the automatic fireman keeps to AutoFireman.ColdDraftFire there; a
+            // thick bed only smokes and wastes coal).
+            if (boostedStart && boilerPressure < AutoFireman.ColdDraftPressure
+                && fire.CoalMass > ThickColdBed * AutoFireman.ColdDraftFire * fire.Parameters.MaxCoalCapacity)
+                return new Advice(AdviceLevel.Watch, "Keep a thin, bright fire until the blower has steam: the natural draft can't burn more.");
+            if (glassCheck == GlassCheck.Sluggish && canBlowGlass)
+                return new Advice(AdviceLevel.Watch, "The glass is moving sluggishly: blow it through with its bottom cock and check the try cocks.");
             if (driftingHookedUp)
             {
                 var spare = driftingValve ? "open the drifting valve, drop the reverser to full gear, or crack the throttle" : "drop the reverser to full gear, or crack the throttle";
@@ -204,12 +262,19 @@ namespace RealisticFiring.Core
                 return new Advice(AdviceLevel.Watch, $"Fire the {GrateLayout.Describe((GrateZone)thin)}: it's burning thin ({fire.Zones[thin].Coal:F1} kg).");
             var clean = WantsCleaning(fire);
             var pan = fire.AshpanFill >= FullAshpan;
+            var shake = ShakeDue(fire, boostedStart);
             if (clean && pan)
                 return new Advice(AdviceLevel.Watch, "Clinker's building and the ashpan's half full: clean the fire and empty the pan.");
             if (clean)
                 return new Advice(AdviceLevel.Watch, "Clinker's building: clean the fire.");
+            if (pan && shake)
+                return new Advice(AdviceLevel.Watch, "Ash is building on the grate and the ashpan's half full: empty the pan on a service or shed track, then shake the grate.");
             if (pan)
                 return new Advice(AdviceLevel.Watch, "Ashpan's half full: empty it on a service or shed track.");
+            if (shake)
+                return new Advice(AdviceLevel.Watch, ShakeText(workingHard, shakeKey));
+            if (glassCheck == GlassCheck.Due && canBlowGlass)
+                return new Advice(AdviceLevel.Watch, "Dirty water and the glass hasn't been blown through lately: crack its bottom cock to see it's free.");
             return new Advice(AdviceLevel.Ok, "Steady fire. Keep firing light and often.");
         }
 
@@ -260,26 +325,41 @@ namespace RealisticFiring.Core
         /// <summary>The next step on an oil fire: lighting it up, then reading the burner.</summary>
         public static Advice ForOil(OilReading oil)
         {
+            var canBlowGlass = GaugeGlassChoke.CanBlowThrough(oil.BoilerPressure);
             // Water before fire: a fire lit over an empty glass burns the
             // crown sheet (audit 2026-11-09: the lighting steps came first).
+            if (!oil.FireOn && oil.GlassCheck == GlassCheck.Stuck && canBlowGlass)
+                return new Advice(AdviceLevel.Act, "The glass looks dead — don't trust it: check the try cocks and blow the glass through.");
             if (!oil.FireOn && oil.GlassLevel < LowGlass)
                 return new Advice(AdviceLevel.Act, "Water's low in the glass: fill her before you light the fire (a shed stand's water hose, or the hand pump).");
             if (!oil.FireOn)
                 return Lighting(oil);
             if (Injector(oil.Injectors) is Advice injector)
                 return injector;
+            if (oil.GlassCheck == GlassCheck.Stuck && canBlowGlass)
+                return new Advice(AdviceLevel.Act, "The glass looks dead — don't trust it: check the try cocks and blow the glass through.");
             if (oil.GlassLevel < LowGlass)
                 return new Advice(AdviceLevel.Act, "Water's low in the glass: get the injector on.");
             if (oil.OilTemperature > OilFire.HotOil)
                 return new Advice(AdviceLevel.Act, $"The oil's too hot ({oil.OilTemperature:F0} °C): it sputters and smokes. Shut the OIL HEATER and let it cool.");
+            if (oil.BoilerWarmingTooFast)
+                return new Advice(AdviceLevel.Act, "Ease the fire — boiler warming too fast.");
+            if (oil.SuperheaterHot)
+                return new Advice(AdviceLevel.Act, oil.DriftingValve
+                    ? "Superheater hot — crack throttle or drifting valve."
+                    : "Superheater hot — crack throttle or ease the firing valve.");
             if (oil.OnSteamLine && oil.SteamLineOpening > 0f && oil.BoilerPressure >= OwnSteam)
                 return new Advice(AdviceLevel.Watch, $"She makes her own steam ({oil.BoilerPressure - 1f:F1} bar): shut the stand's valve and take its line off before you leave.", LightingSteps + 1);
+            if (oil.GlassCheck == GlassCheck.Sluggish && canBlowGlass)
+                return new Advice(AdviceLevel.Watch, "The glass is moving sluggishly: blow it through with its bottom cock and check the try cocks.");
             if (oil.StackSmoke >= BlackStack)
                 return new Advice(AdviceLevel.Act, "Black at the stack: too much oil for the air. Ease the firing valve or open the damper.");
             if (oil.StackSmoke < HazeStack)
                 return new Advice(AdviceLevel.Watch, "Clear stack: too much air, wasting heat. Ease the damper or blower, or give her more oil.");
             if (oil.FlueSoot > SootedFlues)
                 return new Advice(AdviceLevel.Watch, "Flues are sooting: at speed, load the shovel at the sand box and throw it through the peep hole.");
+            if (oil.GlassCheck == GlassCheck.Due && canBlowGlass)
+                return new Advice(AdviceLevel.Watch, "Dirty water and the glass hasn't been blown through lately: crack its bottom cock to see it's free.");
             return new Advice(AdviceLevel.Ok, "Light haze at the stack: she's burning right.");
         }
 

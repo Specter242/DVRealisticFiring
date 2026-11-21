@@ -130,11 +130,17 @@ namespace RealisticFiring.Core
         public bool TechniqueAndHeat { get; set; } = true;
 
         /// <summary>
+        /// Default lever opening that primes a single-lever injector (or steam
+        /// opening in the Prime notch of a two-valve injector).
+        /// </summary>
+        public const float DefaultCrackOpening = 0.2f;
+
+        /// <summary>
         /// The lever opening that primes it: the first movement of a Sellers
         /// non-lifting injector's single lever (PRR, 1949). Opened past this
         /// before the jet takes hold, the jet breaks.
         /// </summary>
-        public float CrackOpening { get; set; } = 0.2f;
+        public float CrackOpening { get; set; } = DefaultCrackOpening;
 
         // The least it delivers steadily, as a share of its most at that
         // pressure (absolute bar): William Sellers & Co.'s self-acting

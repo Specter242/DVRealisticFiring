@@ -64,7 +64,9 @@ namespace RealisticStackEffects.Core
         public PlumeAir(float temperature, float humidity)
         {
             Temperature = temperature;
-            Humidity = Math.Max(0f, Math.Min(1f, humidity));
+            Humidity = float.IsNaN(humidity) || float.IsInfinity(humidity)
+                ? 0f
+                : Math.Max(0f, Math.Min(1f, humidity));
         }
 
         /// <summary>The air's temperature, °C.</summary>
@@ -101,6 +103,37 @@ namespace RealisticStackEffects.Core
         private const float RainCooling = 4f;
         private const float RainHumidity = 0.97f;
 
+        /// <summary>
+        /// The game's local height-fog density (<c>WeatherDriver.GetLocalFogDensity()</c>,
+        /// stored on its 4th-root scale) up to which clear, non-foggy overcast, and
+        /// above-fog presets sit (0.15–0.30).
+        /// </summary>
+        public const float ClearFogDensity = 0.30f;
+
+        /// <summary>
+        /// The game's local height-fog density at which fog reaches full saturation
+        /// (dense valley fog sits at 0.84–1.00).
+        /// </summary>
+        public const float FullFogDensity = 0.90f;
+
+        /// <summary>
+        /// Maps the game's local height-fog density (<c>WeatherDriver.GetLocalFogDensity()</c>)
+        /// to a 0..1 fog factor for <see cref="Air"/> and <see cref="WithTemperature"/>,
+        /// leaving clear-sky and non-foggy overcast presets at 0 and saturating in dense fog.
+        /// Non-finite inputs return 0.
+        /// </summary>
+        public static float FogFromDensity(float density)
+        {
+            if (float.IsNaN(density) || float.IsInfinity(density) || density <= ClearFogDensity)
+                return 0f;
+            if (density >= FullFogDensity)
+                return 1f;
+            return (density - ClearFogDensity) / (FullFogDensity - ClearFogDensity);
+        }
+
+        private static float Clamp01Finite(float value) =>
+            float.IsNaN(value) || float.IsInfinity(value) || value <= 0f ? 0f : value >= 1f ? 1f : value;
+
         private struct Season
         {
             public float Mean;
@@ -132,10 +165,10 @@ namespace RealisticStackEffects.Core
             var temperature = day.Mean + day.Swing * DayShape(hour);
             var dewPoint = Math.Min(day.DewPoint, temperature);
             var humidity = (float)(Psychrometrics.SaturationPressure(dewPoint) / Psychrometrics.SaturationPressure(temperature));
-            var wet = Math.Max(0f, Math.Min(1f, rain));
+            var wet = Clamp01Finite(rain);
             temperature -= RainCooling * wet;
             humidity = Math.Min(1f, humidity + (RainHumidity - humidity) * Math.Max(0f, wet * 2f - wet * wet));
-            humidity += (1f - humidity) * Math.Max(0f, Math.Min(1f, fog));
+            humidity += (1f - humidity) * Clamp01Finite(fog);
             return new PlumeAir(temperature, humidity);
         }
 
@@ -157,14 +190,14 @@ namespace RealisticStackEffects.Core
         /// </summary>
         public static PlumeAir WithTemperature(float temperature, float hour, float rain, float fog)
         {
-            var wet = Math.Max(0f, Math.Min(1f, rain));
+            var wet = Clamp01Finite(rain);
             var swing = SeasonsSwing - SeasonsRainDamping * wet;
             var phase = (float)Math.Sin((hour - 9.0) * Math.PI / 12.0);
             var coolest = temperature - swing * (phase + 1f);
             var dewPoint = Math.Min(temperature, coolest - NightAboveDewPoint);
             var humidity = (float)(Psychrometrics.SaturationPressure(dewPoint) / Psychrometrics.SaturationPressure(temperature));
             humidity = Math.Min(1f, humidity + (RainHumidity - humidity) * Math.Max(0f, wet * 2f - wet * wet));
-            humidity += (1f - humidity) * Math.Max(0f, Math.Min(1f, fog));
+            humidity += (1f - humidity) * Clamp01Finite(fog);
             return new PlumeAir(temperature, humidity);
         }
 

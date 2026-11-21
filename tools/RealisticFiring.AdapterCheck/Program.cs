@@ -227,9 +227,12 @@ namespace RealisticFiring.AdapterCheck
             BoringNarrowGaugeChecks.Run(gameParams, Check);
             CheckJk3Firebox(gameParams);
             CheckBoilerWater();
+            GaugeGlassChokeChecks.Run(gameParams, Check);
             CheckServiceGrace();
             CheckSniftingValves();
             CheckAutoFireDoor();
+            PerLocoUpgradesChecks.Run(Check);
+            VrParityChecks.Run(gameParams, def, Check);
             CheckGlassTilt();
             CheckFiremanGlassDisplay();
             CheckOverlayBoilerFallback();
@@ -285,8 +288,14 @@ namespace RealisticFiring.AdapterCheck
             CheckFiringTabletStartingItems();
             CommsTabletChecks.Run(Check);
             TabletSettingsChecks.Run(Check);
+            ProfileRegistryChecks.Run(Check);
+            FittingsChecks.Run(Check);
             FiremanApiChecks.Run(Check);
             ApiChecks.Run(Check);
+            MakerFitChecks.Run(Check);
+            CabooseStoveChecks.Run(Check);
+            ChecklistChecks.Run(Check);
+            BoilerAndSuperheaterCareChecks.Run(Check);
             CheckNewDefaults();
             CheckOilIgnitionBinding();
             CheckFireboxQualitySettings();
@@ -842,7 +851,9 @@ namespace RealisticFiring.AdapterCheck
             {
                 var assembly = Assembly.LoadFrom(path);
                 CheckHudPolicy();
+                MakerFitChecks.RunMultiplayerShape(Check);
                 GuestChecks.Run(Check);
+                CabooseStoveChecks.RunWithMultiplayer(Check);
                 var type = assembly.GetType("Multiplayer.Components.Networking.Train.NetworkedTrainCar", throwOnError: true);
                 var targets = Multiplayer.CabControlsCompatibility.PatchTargets(type);
                 var helpers = targets.SelectMany(method => Multiplayer.CabControlsCompatibility.Transpile(
@@ -3697,7 +3708,8 @@ namespace RealisticFiring.AdapterCheck
         }
 
         // The realistic fires fed to Realistic Stack Effects: every field of
-        // the plume's reading crosses into its contract's intact.
+        // the plume's reading crosses into its contract's intact, and API v3
+        // stack geometry hints forward from built-in profiles and maker fits.
         private static void CheckStackEffectsFeed()
         {
             var fire = new MarkedFire();
@@ -3711,6 +3723,83 @@ namespace RealisticFiring.AdapterCheck
             }).Select(f => f.Name).ToList();
             Check(lost.Count == 0, $"the realistic fires reach Realistic Stack Effects intact, {fields.Length} fields" +
                                    (lost.Count > 0 ? $" (lost: {string.Join(", ", lost)})" : ""));
+
+            Check(RealisticStackEffects.Api.StackSources.ApiVersion == 3,
+                $"Realistic Stack Effects contract is at API version {RealisticStackEffects.Api.StackSources.ApiVersion} (v3 geometry hints)");
+
+            var linkGeom = typeof(RealisticFiring.StackEffects.Integration).GetMethod("LinkStackGeometry", BindingFlags.Static | BindingFlags.NonPublic);
+            Check(linkGeom != null && (linkGeom.MethodImplementationFlags & MethodImplAttributes.NoInlining) != 0,
+                "LinkStackGeometry is marked NoInlining so Realistic Firing stays backwards-compatible with Realistic Stack Effects v1/v2");
+
+            // A type's fields must load against an older Realistic Stack Effects: with 1.2.2 (v2) the game's console
+            // failed scanning this assembly (job 3117) because a hidden method-group cache class held a
+            // Func<TrainCar, StackGeometry?>. Only methods may name the v3 types, behind the version check.
+            bool NamesV3(Type t) => t != null && (t == typeof(RealisticStackEffects.Api.StackGeometry)
+                || (t.IsGenericType && t.GetGenericArguments().Any(NamesV3)) || (t.HasElementType && NamesV3(t.GetElementType())));
+            var v3Fields = typeof(RealisticFiring.StackEffects.Integration).Assembly.GetTypes()
+                .SelectMany(t => t.GetFields(BindingFlags.Static | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
+                    .Where(f => NamesV3(f.FieldType)).Select(f => $"{t.Name}.{f.Name}"))
+                .ToList();
+            Check(v3Fields.Count == 0,
+                "no type in RealisticFiring.StackEffects holds a v3 Realistic Stack Effects type in a field, so its types load against v1/v2" +
+                (v3Fields.Count > 0 ? $" (found: {string.Join(", ", v3Fields)})" : ""));
+
+            TrainCar MakeCar(string liveryId, string carTypeId)
+            {
+                var cachedPtr = AccessTools.Field(typeof(UnityEngine.Object), "m_CachedPtr");
+                var carType = (DV.ThingTypes.TrainCarType_v2)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(DV.ThingTypes.TrainCarType_v2));
+                cachedPtr.SetValue(carType, new IntPtr(1));
+                carType.id = carTypeId;
+                var livery = (DV.ThingTypes.TrainCarLivery)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(DV.ThingTypes.TrainCarLivery));
+                cachedPtr.SetValue(livery, new IntPtr(1));
+                livery.id = liveryId;
+                livery.parentType = carType;
+                var car = (TrainCar)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(TrainCar));
+                cachedPtr.SetValue(car, new IntPtr(1));
+                car.carLivery = livery;
+                return car;
+            }
+
+            var s484 = MakeCar("S484-840A", "S484-840");
+            var s282 = MakeCar("LocoS282A", "LocoS282");
+            var excluded = MakeCar("S484-841A", "S484-841A");
+
+            var s484Geom = RealisticFiring.StackEffects.Integration.GeometryFor(s484);
+            var s282Geom = RealisticFiring.StackEffects.Integration.GeometryFor(s282);
+            var excludedGeom = RealisticFiring.StackEffects.Integration.GeometryFor(excluded);
+            Check(s484Geom.HasValue && Math.Abs(s484Geom.Value.LipHeight.GetValueOrDefault() - 0.37f) < 1e-4f
+                  && !s484Geom.Value.BoreRadius.HasValue && !s484Geom.Value.OutsideRadius.HasValue
+                  && !s282Geom.HasValue && !excludedGeom.HasValue,
+                "API v3 geometry provider forwards S484-840A's 0.37 m stack lip and returns null for unhinted or excluded locos");
+
+            // Custom maker-fit stack geometry forwards through Integration.GeometryFor too.
+            var tempRoot = Path.Combine(Path.GetTempPath(), "rf-stack-geom-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var fitsDir = Path.Combine(tempRoot, "Mods", "RealisticFiring", "Fits");
+                Directory.CreateDirectory(fitsDir);
+                File.WriteAllText(Path.Combine(fitsDir, "stack-hint.json"), @"{
+  ""schemaVersion"": 1,
+  ""liveries"": [""CustomStackHint462""],
+  ""stack"": { ""lipHeightM"": 0.46, ""boreRadiusM"": 0.21, ""outsideRadiusM"": 0.29 }
+}");
+                Sim.MakerFitRegistry.LoadFromModDirectory(Path.Combine(tempRoot, "Mods", "RealisticFiring"));
+                var customCar = MakeCar("CustomStackHint462", "CustomStackHint462Type");
+                var customGeom = RealisticFiring.StackEffects.Integration.GeometryFor(customCar);
+                Check(customGeom.HasValue
+                      && Math.Abs(customGeom.Value.LipHeight.GetValueOrDefault() - 0.46f) < 1e-4f
+                      && Math.Abs(customGeom.Value.BoreRadius.GetValueOrDefault() - 0.21f) < 1e-4f
+                      && Math.Abs(customGeom.Value.OutsideRadius.GetValueOrDefault() - 0.29f) < 1e-4f,
+                    "API v3 geometry provider forwards custom maker-fit stack geometry hints");
+            }
+            finally
+            {
+                Sim.MakerFitRegistry.Reset();
+                if (Directory.Exists(tempRoot))
+                {
+                    try { Directory.Delete(tempRoot, recursive: true); } catch { }
+                }
+            }
         }
 
         private static void CheckPlumeReinitialization()
@@ -3733,6 +3822,25 @@ namespace RealisticFiring.AdapterCheck
             var add = ComponentCall("AddComponent");
             Check(get >= 0 && add > get && instructions.Skip(get).Take(add - get).Any(i => i.opcode == System.Reflection.Emit.OpCodes.Ret),
                 "plume attachment checks and returns its existing driver before another component or FX clone can be created");
+
+            var onCar = type.GetField("OnCar", BindingFlags.Static | BindingFlags.NonPublic);
+            var onCarArgs = onCar != null && onCar.FieldType.IsGenericType
+                && onCar.FieldType.GetGenericTypeDefinition() == typeof(System.Runtime.CompilerServices.ConditionalWeakTable<,>)
+                ? onCar.FieldType.GetGenericArguments() : new Type[0];
+            Check(onCarArgs.Length == 2 && onCarArgs[0] == typeof(TrainCar)
+                  && onCarArgs[1].IsGenericType && onCarArgs[1].Name == "CarPlumes`1"
+                  && onCarArgs[1].GetGenericArguments().SequenceEqual(new[] { type }),
+                "ChimneyPlume tracks every stack per car via CarPlumes<ChimneyPlume> for multi-stack locomotives");
+            var attachVentsCalls = PatchProcessor.GetOriginalInstructions(AccessTools.Method(type, "AttachVents"))
+                .Select(i => i.operand as MethodInfo).Where(m => m != null).ToList();
+            var canOwnIndex = attachVentsCalls.FindIndex(m => m.Name == "CanOwnVents");
+            var createIndex = attachVentsCalls.FindIndex(m => m.DeclaringType == typeof(SteamVents) && m.Name == nameof(SteamVents.Create));
+            Check(canOwnIndex >= 0 && createIndex > canOwnIndex,
+                "only one active stack per car creates SteamVents (CanOwnVents guards SteamVents.Create)");
+            var describeOilCalls = PatchProcessor.GetOriginalInstructions(AccessTools.Method(typeof(FireController), "DescribeOil"))
+                .Select(i => i.operand as MethodInfo).Where(m => m != null).ToList();
+            Check(describeOilCalls.Any(m => m.DeclaringType == type && m.Name == nameof(ChimneyPlume.TryGetMaxPlumeTop)),
+                "oil fire status reads the tallest active plume top across all stacks on the car");
         }
 
         // A fire that sets each field of the plume's reading to its own value.
@@ -4174,9 +4282,10 @@ namespace RealisticFiring.AdapterCheck
                   && Items.FiringTabletGadget.SavedPage(new JObject { ["rfTabletPage"] = 1 }) == 1
                   && Items.FiringTabletGadget.SavedPage(new JObject { ["rfTabletPage"] = 2 }) == 2
                   && Items.FiringTabletGadget.SavedPage(new JObject { ["rfTabletPage"] = 3 }) == 3
-                  && Items.FiringTabletGadget.SavedPage(new JObject { ["rfTabletPage"] = long.MaxValue }) == 3
+                  && Items.FiringTabletGadget.SavedPage(new JObject { ["rfTabletPage"] = 4 }) == 4
+                  && Items.FiringTabletGadget.SavedPage(new JObject { ["rfTabletPage"] = long.MaxValue }) == 4
                   && FireOverlay.Pages == 3,
-                "saved tablet restores all four pages without adding a fireman page to F6; missing, invalid, and out-of-range data stays bounded");
+                "saved tablet restores all five pages without adding fireman or checklist pages to F6; missing, invalid, and out-of-range data stays bounded");
             var framed = true;
             foreach (var fov in new[] { 30f, 31f, 45f, 65f, 90f, 110f, 120f })
                 foreach (var aspect in new[] { 4d / 3d, 16d / 9d, 21d / 9d })

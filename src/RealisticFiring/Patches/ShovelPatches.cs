@@ -22,12 +22,16 @@ namespace RealisticFiring.Patches
 
         private static void Postfix(ShovelNonPhysicalCoal __instance, ICoalPile coalPile, ref float __result)
         {
-            var shovelfulMass = Main.Settings.Scoop;
             if (!(coalPile is Component pile) || pile == null)
                 return;
             var car = TrainCar.Resolve(pile.gameObject);
             if (!FireboxRegistry.TryGetTended(car, out var firebox))
                 return;
+            // Bigger during the accelerated startup, fixed as it is scooped: the pile gives its weight times the coal
+            // multiplier as for any shovelful, so a career pays the same for each kilogram.
+            var scoop = Main.Settings.Scoop;
+            var shovelfulMass = firebox.StartupScoop(scoop);
+            StartupLoad.Note(__instance, shovelfulMass, scoop > 0f ? shovelfulMass / scoop : 1f);
 
             var controller = firebox.Car.SimController != null ? firebox.Car.SimController.firebox : null;
             var multiplier = controller != null && controller.coalConsumptionMultiplier > 0f
@@ -49,6 +53,43 @@ namespace RealisticFiring.Patches
     }
 
     /// <summary>
+    /// What each shovel took at its last scoop (kg into the firebox, and the
+    /// accelerated startup's boost on it), for the aim label while it is loaded.
+    /// </summary>
+    internal static class StartupLoad
+    {
+        private sealed class Load
+        {
+            public float Kg, Boost;
+        }
+
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ShovelNonPhysicalCoal, Load> Loads =
+            new System.Runtime.CompilerServices.ConditionalWeakTable<ShovelNonPhysicalCoal, Load>();
+
+        /// <summary>The note the aim label adds while a loaded, boosted shovel aims into a firebox ("12 kg (startup ×4)"), or null.</summary>
+        internal static string Hover;
+        internal static float HoverAt = float.NegativeInfinity;
+
+        internal static void Note(ShovelNonPhysicalCoal shovel, float kg, float boost)
+        {
+            var load = Loads.GetOrCreateValue(shovel);
+            load.Kg = kg;
+            load.Boost = boost;
+        }
+
+        internal static bool TryGet(ShovelNonPhysicalCoal shovel, out float kg, out float boost)
+        {
+            kg = 0f;
+            boost = 1f;
+            if (shovel == null || !Loads.TryGetValue(shovel, out var load))
+                return false;
+            kg = load.Kg;
+            boost = load.Boost;
+            return true;
+        }
+    }
+
+    /// <summary>
     /// The keyboard and HUD "shovel coal" action moves whole tender chunks into
     /// the firebox with no shovel (12 kg each on the S282). On a realistic
     /// firebox each chunk becomes one of the player's shovelfuls instead, which follows
@@ -59,10 +100,10 @@ namespace RealisticFiring.Patches
     {
         private static bool Prefix(CoalPileSimController __instance, FireboxSimController fireboxController, byte chunkCount)
         {
-            var shovelfulMass = Main.Settings.Scoop;
             if (fireboxController == null
-                || !FireboxRegistry.TryGet(TrainCar.Resolve(fireboxController.gameObject), out _))
+                || !FireboxRegistry.TryGet(TrainCar.Resolve(fireboxController.gameObject), out var firebox))
                 return true;
+            var shovelfulMass = firebox.StartupScoop(Main.Settings.Scoop);
 
             var multiplier = fireboxController.coalConsumptionMultiplier > 0f ? fireboxController.coalConsumptionMultiplier : 1f;
             var mass = chunkCount * ShovelSize.PileCapacity(shovelfulMass, ShovelSize.StandardShovelChunks, multiplier);
@@ -95,7 +136,13 @@ namespace RealisticFiring.Patches
                 return;
 
             if (FireboxAim.TryAim(grabber.Cursor.GetRay(), target, car, firebox, out var across, out var depth, out var box))
+            {
                 firebox.NoteAim(new DoorAimSample(DoorAim.ZoneFor(across, depth), across, depth, __instance.IsLoaded ? DoorAimKind.Shovel : DoorAimKind.Rake, Time.time, FiringFrame.Of(car), box));
+                // A boosted load says so beside the aim (FireController's aim label).
+                StartupLoad.Hover = __instance.IsLoaded && StartupLoad.TryGet(__instance, out var kg, out var boost) && boost > 1.01f
+                    ? $" {Items.ShovelfulWheel.Kg(kg)}{ShovelSize.BoostNote(boost)}" : null;
+                StartupLoad.HoverAt = Time.time;
+            }
         }
 
         // Places the nearest hit on the target's colliders within that
@@ -174,9 +221,9 @@ namespace RealisticFiring.Patches
             return FireboxRegistry.TryGet(car, out firebox);
         }
 
-        /// <summary>An empty shovel can rake through the door once it is open as far as for shoveling.</summary>
+        /// <summary>An empty desktop shovel can rake through the door once it is open as far as for shoveling; VR rakes via <see cref="Items.VrShovelRakeController"/>.</summary>
         public static bool CanRake(ShovelNonPhysicalCoal shovel, RealisticFirebox firebox) =>
-            !shovel.IsLoaded && firebox.DoorOpening >= ShovelNonPhysicalCoal.REQUIRED_DOOR_OPENED_PERCENTAGE_NON_VR;
+            !VRManager.IsVREnabled() && !shovel.IsLoaded && firebox.DoorOpening >= ShovelNonPhysicalCoal.REQUIRED_DOOR_OPENED_PERCENTAGE_NON_VR;
     }
 
     /// <summary>

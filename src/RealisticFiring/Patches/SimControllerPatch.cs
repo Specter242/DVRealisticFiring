@@ -119,7 +119,11 @@ namespace RealisticFiring.Patches
                     Main.Mod.Logger.Warning($"{trainCar.carLivery.id}: no firebox door port; door air stays closed");
                 if (__instance.simFlow.TryGetPort(RealisticFirebox.DropGrateControl.PortId, out var dropGratePort, canBeNullOrEmpty: true))
                     firebox.AttachDropGratePort(dropGratePort);
-                if (__instance.simFlow.TryGetPort(RealisticFirebox.JetsControl.PortId, out var jetsPort, canBeNullOrEmpty: true))
+                // Only where the engine can have the over-fire jets: elsewhere the port isn't in the graph, and the
+                // lookup logged "Port[rfOverFireJets.EXT_IN] not defined!" twice a load (the 8F; canBeNullOrEmpty
+                // covers only an empty id).
+                if (firebox.Character.Jets != null
+                    && __instance.simFlow.TryGetPort(RealisticFirebox.JetsControl.PortId, out var jetsPort, canBeNullOrEmpty: true))
                     firebox.AttachJetsPort(jetsPort);
                 if (__instance.simFlow.TryGetPort(RealisticFirebox.AshpanControl.PortId, out var ashpanPort, canBeNullOrEmpty: true))
                 {

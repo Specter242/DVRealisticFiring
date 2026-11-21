@@ -24,6 +24,69 @@ namespace RealisticFiring.Core.Tests;
 
     private static float[] Even(float kg) => Enumerable.Repeat(kg, GrateLayout.ZoneCount).ToArray();
 
+    // A lit bed of burning coal with ash among it, each zone alike.
+    private static FireModel Ashy(float coalKg, float ashKg)
+    {
+        var fire = new FireModel(S282);
+        var data = new float[GrateLayout.ZoneCount * 4];
+        for (var i = 0; i < GrateLayout.ZoneCount; i++)
+        {
+            data[i * 4 + 1] = coalKg / GrateLayout.ZoneCount;
+            data[i * 4 + 2] = ashKg / GrateLayout.ZoneCount;
+        }
+        Assert.True(fire.RestoreZones(true, data));
+        return fire;
+    }
+
+    [Fact]
+    public void AshBuildingOnTheGrateIsToldToShakeIt()
+    {
+        var ashy = Ashy(30f, 12f);
+        Assert.True(FiringAdvice.WantsShake(ashy));
+        var eased = FiringAdvice.ForCoal(ashy, 0.1f, 0.6f, Feeding, shakeKey: "Z");
+        Assert.Equal(AdviceLevel.Watch, eased.Level);
+        Assert.Equal("Ash is building on the grate: give it a shake with the throttle eased (half a stroke of the fire-dump lever, or Z).", eased.Text);
+        // Working hard, a short rock (almost no fire lost) until the throttle can be eased.
+        Assert.Contains("a short rock of the fire-dump lever now", FiringAdvice.ForCoal(ashy, 0.1f, 0.6f, Feeding, workingHard: true).Text);
+        // With the ashpan half full, the pan first: shaking fills it.
+        ashy.RestoreAshpan(10000f);
+        Assert.Contains("empty the pan on a service or shed track, then shake the grate", FiringAdvice.ForCoal(ashy, 0.1f, 0.6f, Feeding).Text);
+        // Little ash, or a fire starting under the accelerated startup: no shake.
+        Assert.False(FiringAdvice.WantsShake(Ashy(30f, 5f)));
+        Assert.DoesNotContain("shake", FiringAdvice.ForCoal(Ashy(30f, 5f), 0.1f, 0.6f, Feeding).Text);
+        Assert.DoesNotContain("shake", FiringAdvice.ForCoal(Ashy(30f, 12f), 0.1f, 0.6f, Feeding, boilerPressure: 8f, boostedStart: true).Text);
+        // The checklist reads the same rule (ShakeDue), so it holds the shake back during a start too.
+        Assert.True(FiringAdvice.ShakeDue(Ashy(30f, 12f), boostedStart: false));
+        Assert.False(FiringAdvice.ShakeDue(Ashy(30f, 12f), boostedStart: true));
+    }
+
+    [Fact]
+    public void ClinkerToCleanComesBeforeAShake()
+    {
+        var fire = Bed(Even(5f), Even(6f));
+        var data = fire.SaveZones();
+        for (var i = 0; i < GrateLayout.ZoneCount; i++)
+            data[i * 4 + 2] = 3f;
+        Assert.True(fire.RestoreZones(true, data));
+        Assert.True(FiringAdvice.WantsShake(fire) && FiringAdvice.WantsCleaning(fire));
+        Assert.Equal("Clinker's building: clean the fire.", FiringAdvice.ForCoal(fire, 0.1f, 0.6f, Feeding).Text);
+    }
+
+    [Fact]
+    public void RaisingSteamStandingAThickBedIsToldToKeepItThin()
+    {
+        // 40 kg on a 150 kg box at 2 bar, standing under the accelerated startup: natural draft can't burn it until
+        // the blower has steam.
+        var thick = Bed(Even(40f / GrateLayout.ZoneCount));
+        var advice = FiringAdvice.ForCoal(thick, 0.1f, 0.6f, Feeding, boilerPressure: 2f, boostedStart: true);
+        Assert.Equal(AdviceLevel.Watch, advice.Level);
+        Assert.Contains("thin, bright fire until the blower has steam", advice.Text);
+        // Moving or without the speedup, or with steam for the blower, or already thin: not that.
+        Assert.DoesNotContain("blower has steam", FiringAdvice.ForCoal(thick, 0.1f, 0.6f, Feeding, boilerPressure: 2f, boostedStart: false).Text);
+        Assert.DoesNotContain("blower has steam", FiringAdvice.ForCoal(thick, 0.1f, 0.6f, Feeding, boilerPressure: 8f, boostedStart: true).Text);
+        Assert.DoesNotContain("blower has steam", FiringAdvice.ForCoal(Bed(Even(1f)), 0.1f, 0.6f, Feeding, boilerPressure: 2f, boostedStart: true).Text);
+    }
+
     [Fact]
     public void ABoilerDamagedPastItsSafetyValveIsWarnedOf()
     {

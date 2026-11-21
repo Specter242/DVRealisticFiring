@@ -51,5 +51,11 @@ namespace RealisticStackEffects
             next = spent;
             next.Clear();
         }
+
+        public void Clear()
+        {
+            current.Clear();
+            next.Clear();
+        }
     }
 }

@@ -21,35 +21,24 @@ namespace RealisticFiring.Visuals
         private static readonly string[] Notches = { "Closed", "Open" };
 
         // Where the lever stands from the fire-dump lever, in the car frame (x
-        // right, z forward), in m: a foot aft of it, unless seated for the
-        // loco.
+        // right, z forward), in m: a foot aft of it, unless seated in LocomotiveProfiles.
         private static readonly Vector3 DefaultFromDump = new Vector3(0f, 0f, -0.3f);
-        private static readonly Dictionary<string, Vector3> Placements = new Dictionary<string, Vector3>
-        {
-            [QjStokerCab.Livery] = new Vector3(0.95f, -0.17f, -0.3f), 
-            ["S2102-720"] = new Vector3(0f, 0f, -0.3f), 
-            ["em_fowler_4f_4027"] = new Vector3(0f, 0f, -0.3f), 
-            ["em_fowler_4f_44422"] = new Vector3(0f, 0f, -0.3f),
-            ["S260N-580A"] = new Vector3(0f, 0f, -0.3f), 
-            ["S040N-270"] = new Vector3(0.72f, 0f, -0.3f), 
-            ["S0440NG-890"] = new Vector3(0.88f, 0f, -0.05f), 
-            ["S440NCF-400A"] = new Vector3(0f, 0f, 0.3f), 
-        };
 
         // Seats set this session on the seating bench (SeatingBench, a
-        // development tool), by livery, as Placements: they come first and
-        // are never saved.
+        // development tool), by livery: they come first and are never saved.
 #if !PUBLIC_RELEASE
         internal static readonly Dictionary<string, Vector3> DevPlacements = new Dictionary<string, Vector3>();
 #endif
 
-        /// <summary>Where the lever stands from the fire-dump lever for <paramref name="livery"/>: the bench's seat, the table's, or the default.</summary>
+        /// <summary>Where the lever stands from the fire-dump lever for <paramref name="livery"/>: the bench's seat, the profile's, or the default.</summary>
         internal static Vector3 SeatFor(string livery) =>
 #if PUBLIC_RELEASE
-            Placements.TryGetValue(livery, out var seated) ? seated
+            LocomotiveProfiles.For(livery)?.Cab.DropGrateOffset is Vector3 seated ? seated
+            : MakerFitRegistry.TryGetDropGrate(livery, out var maker) ? maker
 #else
             DevPlacements.TryGetValue(livery, out var dev) ? dev
-            : Placements.TryGetValue(livery, out var seated) ? seated
+            : LocomotiveProfiles.For(livery)?.Cab.DropGrateOffset is Vector3 seated ? seated
+            : MakerFitRegistry.TryGetDropGrate(livery, out var maker) ? maker
 #endif
             : FiringFrame.Reversed(livery) ? -DefaultFromDump // aft of the door is forward on an engine fired from the front
             : DefaultFromDump;

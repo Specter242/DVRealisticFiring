@@ -62,6 +62,51 @@ namespace RealisticStackEffects.Core
         /// <summary>The height over which the train's wake falls away, m.</summary>
         public const float WakeDepth = 1.5f;
 
+        /// <summary>The height above the stack lip over which slipstream downwash decays, m.</summary>
+        public const float DownwashDepth = 2f;
+
+        /// <summary>
+        /// Lowest height relative to the stack lip at which slipstream downwash
+        /// acts, m (boiler-top / cab-roof level): below this downwash is zero so
+        /// soft smoke rolls along the boiler instead of diving through it.
+        /// </summary>
+        public const float DownwashFloor = -1f;
+
+        /// <summary>Maximum gentle downward velocity pulled into the smokebox wake, m/s.</summary>
+        public const float MaxDownwash = 2.2f;
+
+        /// <summary>
+        /// Horizontal distance from the stack lip beyond which the locomotive's
+        /// low-pressure wake ends and slipstream downwash is zero, in m.
+        /// </summary>
+        public const float DownwashWakeLength = 22f;
+
+        /// <summary>
+        /// Characteristic travel length over which parcel-age downwash fades out
+        /// in the locomotive's wake (tau = DownwashWakeDecayLength / max(trainSpeed, 1)), in m.
+        /// </summary>
+        public const float DownwashWakeDecayLength = 15f;
+
+        /// <summary>
+        /// Minimum look-ahead step used to bound downward downwash velocity against
+        /// <see cref="DownwashFloor"/>, in s, preventing inter-pass overshoot on
+        /// delayed particle updates.
+        /// </summary>
+        public const float DownwashFloorHorizon = 0.5f;
+
+        // Train speed and exhaust punch thresholds for slipstream downwash ("beating down").
+        private const float MinDownwashSpeed = 3f;
+        private const float FullDownwashSpeed = 18f;
+        private const float WeakDownwashRatio = 0.15f;
+        private const float ClearDownwashRatio = 0.65f;
+        private const float WeakDownwashPunch = 3f;
+        private const float ClearDownwashPunch = 10f;
+
+        // Diurnal thermal inversion vertical transition and lateral flattening scales.
+        private const float InversionSoftBand = 6f;
+        private const float InversionDecayDepth = 8f;
+        private const float InversionSpreadShare = 0.45f;
+
  public const float WidthPerHeight = 0.3f;
 
         // Seen across, the plume thins as its height to the two-thirds once
@@ -114,6 +159,149 @@ namespace RealisticStackEffects.Core
                 return calm;
             var bent = BentRise * (float)Math.Sqrt(flux / bending / z);
             return Math.Min(calm, bent);
+        }
+
+        /// <summary>
+        /// As <see cref="RiseSpeed(float, float, float, float)"/>, damped by a
+        /// diurnal thermal inversion layer at <paramref name="inversionCeiling"/> m
+        /// with <paramref name="inversionStrength"/> (0 none to 1 calm dawn).
+        /// </summary>
+        public static float RiseSpeed(float flux, float height, float airSpeed, float calmShare, float inversionCeiling, float inversionStrength) =>
+            RiseSpeed(flux, height, airSpeed, calmShare) * InversionDamping(height, inversionCeiling, inversionStrength);
+
+        /// <summary>
+        /// Vertical rise multiplier (0 to 1) from a diurnal thermal inversion
+        /// layer at <paramref name="ceiling"/> m above the stack with
+        /// <paramref name="strength"/> (0 to 1): 1 below the stable layer or
+        /// when no inversion applies, easing smoothly toward 0 aloft so a calm
+        /// dawn's plume levels off into a hanging layer.
+        /// </summary>
+        public static float InversionDamping(float height, float ceiling, float strength)
+        {
+            if (!(strength > 0f) || float.IsInfinity(ceiling) || !(ceiling > 0f))
+                return 1f;
+            var s = strength > 1f ? 1f : strength;
+            var onset = Math.Max(0f, ceiling - InversionSoftBand);
+            var over = height - onset;
+            if (!(over > 0f))
+                return 1f;
+            return (float)Math.Exp(-s * over * over / (InversionDecayDepth * (over + InversionDecayDepth)));
+        }
+
+        /// <summary>
+        /// Extra horizontal spreading rate, in m/s, when an inversion slows
+        /// vertical rise: suppressed buoyancy spreads laterally into a flat layer
+        /// without accelerating dilution or retirement.
+        /// </summary>
+        public static float InversionSpread(float undampedRise, float damping) =>
+            InversionSpreadShare * Math.Max(0f, undampedRise) * (1f - Math.Min(1f, Math.Max(0f, damping)));
+
+        /// <summary>
+        /// Accumulates lateral width gained under a thermal inversion ceiling, in m,
+        /// from <paramref name="inversionSpreadWidth"/> m over <paramref name="seconds"/> s
+        /// at lateral spreading rate <paramref name="inversionSpread"/> m/s.
+        /// Kept apart from <see cref="SpreadOn"/> so a calm-dawn capped layer expands
+        /// horizontally without accelerating <see cref="Dilution(float, float)"/> or
+        /// <see cref="SurvivalAt(float)"/>.
+        /// </summary>
+        public static float InversionSpreadOn(float inversionSpreadWidth, float seconds, float inversionSpread)
+        {
+            var current = inversionSpreadWidth > 0f && !float.IsInfinity(inversionSpreadWidth) ? inversionSpreadWidth : 0f;
+            var rate = inversionSpread > 0f && !float.IsInfinity(inversionSpread) ? inversionSpread : 0f;
+            var dt = seconds > 0f && !float.IsInfinity(seconds) ? seconds : 0f;
+            var next = current + (double)dt * rate;
+            return next >= float.MaxValue ? float.MaxValue : (float)next;
+        }
+
+        /// <summary>
+        /// Lateral widening velocity scale, in m/s, combining buoyant expansion,
+        /// ambient turbulence spread, and any inversion-driven horizontal flattening.
+        /// </summary>
+        public static float WideningRate(float rise, float airSpeed, float spreadScale = 1f, float inversionSpread = 0f) =>
+            WidthPerHeight * Math.Max(0f, rise) + SpreadRate(airSpeed, spreadScale) + Math.Max(0f, inversionSpread);
+
+        /// <summary>
+        /// Frame-constant peak slipstream downwash velocity at the stack lip, in
+        /// m/s (&gt;= 0), from train speed, exhaust exit speed, and buoyancy flux.
+        /// Precompute once per frame and pass to
+        /// <see cref="Downwash(float, float, float, float, float, float)"/>.
+        /// </summary>
+        public static float DownwashStrength(float trainSpeed, float exitSpeed, float flux)
+        {
+            if (!(trainSpeed > MinDownwashSpeed))
+                return 0f;
+            var speedFactor = SmoothStep(MinDownwashSpeed, FullDownwashSpeed, trainSpeed);
+            var buoyancyPunch = flux > 0f ? 0.5f * (float)Math.Pow(flux, 1.0 / 3.0) : 0f;
+            var punch = Math.Max(0f, exitSpeed) + buoyancyPunch;
+            var ratio = punch / trainSpeed;
+            var weakByRatio = 1f - SmoothStep(WeakDownwashRatio, ClearDownwashRatio, ratio);
+            var weakByPunch = 1f - SmoothStep(WeakDownwashPunch, ClearDownwashPunch, punch);
+            var weakExhaust = weakByRatio * weakByPunch;
+            if (!(weakExhaust > 0f))
+                return 0f;
+            return Math.Min(MaxDownwash, MaxDownwash * speedFactor * weakExhaust);
+        }
+
+        /// <summary>
+        /// Downward velocity, in m/s (&gt;= 0, subtracted from vertical rise),
+        /// pulled into the locomotive's low-pressure wake ("smoke beating down"):
+        /// confined to <see cref="DownwashWakeLength"/> m horizontally from the
+        /// stack in either travel direction and decaying with parcel age,
+        /// decaying rapidly with height, and bounded so a step of
+        /// <paramref name="stepDt"/> s (at least <see cref="DownwashFloorHorizon"/> s)
+        /// cannot carry smoke below <see cref="DownwashFloor"/>.
+        /// </summary>
+        public static float Downwash(float strength, float height, float horizontalDistance, float age, float trainSpeed, float stepDt = DownwashFloorHorizon)
+        {
+            if (!(strength > 0f) || !(height > DownwashFloor))
+                return 0f;
+            if (!(horizontalDistance < DownwashWakeLength) || float.IsNaN(horizontalDistance))
+                return 0f;
+            var dist = Math.Max(0f, horizontalDistance);
+            var distanceFactor = 1f - SmoothStep(0f, DownwashWakeLength, dist);
+            if (!(distanceFactor > 0f))
+                return 0f;
+            var tau = DownwashWakeDecayLength / Math.Max(trainSpeed, 1f);
+            var ageFactor = age > 0f ? (float)Math.Exp(-age / tau) : 1f;
+            var heightFactor = height >= 0f
+                ? (float)Math.Exp(-height / DownwashDepth)
+                : SmoothStep(DownwashFloor, 0f, height);
+            var raw = Math.Min(MaxDownwash, strength * distanceFactor * ageFactor * heightFactor);
+            var horizon = Math.Max(float.IsNaN(stepDt) ? DownwashFloorHorizon : stepDt, DownwashFloorHorizon);
+            var maxAllowed = (height - DownwashFloor) / horizon;
+            return Math.Min(raw, maxAllowed);
+        }
+
+        /// <summary>
+        /// Convenience overload of <see cref="Downwash(float, float, float, float, float, float)"/>
+        /// computing <see cref="DownwashStrength"/> from train speed, exit speed, and buoyancy flux.
+        /// </summary>
+        public static float Downwash(float height, float trainSpeed, float exitSpeed, float flux,
+            float horizontalDistance = 0f, float age = 0f, float stepDt = DownwashFloorHorizon) =>
+            Downwash(DownwashStrength(trainSpeed, exitSpeed, flux), height, horizontalDistance, age, trainSpeed, stepDt);
+
+        /// <summary>
+        /// Bounds a parcel's vertical velocity <paramref name="verticalVelocity"/>
+        /// (m/s) while inside the locomotive's downwash wake so a step of
+        /// <paramref name="stepDt"/> s (at least <see cref="DownwashFloorHorizon"/> s)
+        /// cannot carry the parcel below <see cref="DownwashFloor"/>.
+        /// </summary>
+        public static float ClampDownwashVertical(float verticalVelocity, float height, float stepDt = DownwashFloorHorizon)
+        {
+            if (verticalVelocity >= 0f)
+                return verticalVelocity;
+            if (!(height > DownwashFloor))
+                return 0f;
+            var horizon = Math.Max(float.IsNaN(stepDt) ? DownwashFloorHorizon : stepDt, DownwashFloorHorizon);
+            var minVelocity = -(height - DownwashFloor) / horizon;
+            return Math.Max(verticalVelocity, minVelocity);
+        }
+
+        private static float SmoothStep(float edge0, float edge1, float value)
+        {
+            var t = (value - edge0) / (edge1 - edge0);
+            t = t < 0f ? 0f : t > 1f ? 1f : t;
+            return t * t * (3f - 2f * t);
         }
 
         /// <summary>

@@ -23,7 +23,7 @@ namespace RealisticFiring.Patches
         private static void Add(SimController __instance, TrainCar trainCar)
         {
             var graph = __instance.connectionsDefinition;
-            if (trainCar == null || graph == null || graph.executionOrder == null || graph.connections == null)
+            if (trainCar == null || trainCar.carLivery == null || LeftStock.IsExcluded(trainCar) || graph == null || graph.executionOrder == null || graph.connections == null)
                 return;
             if (!BoosterFit.TryGet(trainCar.carLivery.id, out var fit) || graph.executionOrder.Any(d => d != null && d.ID == BoosterFit.BoosterId))
                 return;

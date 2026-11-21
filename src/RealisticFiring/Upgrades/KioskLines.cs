@@ -11,13 +11,18 @@ namespace RealisticFiring.Upgrades
     /// The kiosk's own text lines that the Upgrades screen writes to, borrowed
     /// from the stock owned-vehicles list as Railroad Contracts does: its
     /// title, its rows (a name and a value column each), the info line under
-    /// them, and the scroll arrows. Every kiosk screen clears its lines when
-    /// it closes, so screens share them.
+    /// them, the paragraph it shows when the player owns nothing, and the
+    /// scroll arrows. Every kiosk screen clears its lines when it closes, so
+    /// screens share them.
     /// </summary>
     internal sealed class KioskLines
     {
         public TextMeshPro Title;
         public TextMeshPro Info;
+
+        /// <summary>The owned-vehicles list's "no owned vehicles" paragraph, over its rows; may be null.</summary>
+        public TextMeshPro Paragraph;
+
         public readonly List<(TextMeshPro Name, TextMeshPro Value)> Rows = new List<(TextMeshPro, TextMeshPro)>();
         public GameObject ArrowUp, ArrowDown;
 
@@ -30,6 +35,7 @@ namespace RealisticFiring.Upgrades
             {
                 Title = owned.titleText,
                 Info = owned.pressPrintInfo,
+                Paragraph = owned.paragraphText,
                 ArrowUp = owned.scrollUpArrow,
                 ArrowDown = owned.scrollDownArrow,
             };

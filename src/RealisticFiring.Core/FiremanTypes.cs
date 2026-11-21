@@ -204,8 +204,44 @@ namespace RealisticFiring.Core
         /// <summary>Solids in the boiler water, in ppm; 0 where nothing models them.</summary>
         public float Solids;
 
+        /// <summary>Dissolved solids and suspended sludge in the boiler water, in ppm; 0 where nothing models them.</summary>
+        public float FoamingSolids;
+
+        /// <summary>Whether this engine has glass blow-through cocks and try cocks he can work.</summary>
+        public bool HasGlassCocks;
+
+        /// <summary>Obstruction of the glass's lower passage, 0 clear to 1 blocked.</summary>
+        public float GlassChoke;
+
+        /// <summary>Whether the gauge glass is currently being blown through or rebounding.</summary>
+        public bool GlassBlowing;
+
+        /// <summary>Seconds steaming since the glass was last blown clear.</summary>
+        public float TimeSinceGlassBlow;
+
+        /// <summary>Whether <see cref="TryCockGlass"/> carries the true water level as checked at the try cocks.</summary>
+        public bool HasTryCockGlass;
+
+        /// <summary>True water level on the glass scale (0 crown sheet to 1 steam outlet), checked at the try cocks when the glass sticks.</summary>
+        public float TryCockGlass;
+
         /// <summary>Coal one shovelful puts on the fire, in kg.</summary>
         public float ShovelMass;
+
+        /// <summary>Boiler water/metal temperature, in °C (0 when unknown).</summary>
+        public float BoilerTemperature;
+
+        /// <summary>Whether boiler thermal shock care is enabled (off in Relaxed preset).</summary>
+        public bool ThermalShockEnabled;
+
+        /// <summary>Whether the cold boiler is warming faster than safe and needs the fire eased.</summary>
+        public bool WarmingTooFast;
+
+        /// <summary>Whether superheater element care is enabled (off in Relaxed preset).</summary>
+        public bool SuperheaterCareEnabled;
+
+        /// <summary>Whether the superheater elements are getting too hot with the throttle shut.</summary>
+        public bool SuperheaterHot;
     }
 
     /// <summary>What the fireman does this tick.</summary>
@@ -240,6 +276,9 @@ namespace RealisticFiring.Core
 
         /// <summary>The blowdown valve, 0 shut to 1 open.</summary>
         public float Blowdown;
+
+        /// <summary>The gauge glass bottom blow-through cock, 0 shut to 1 open, where fitted.</summary>
+        public float GlassBlowCock;
 
         /// <summary>The ashpan damper, 0 shut to 1 open.</summary>
         public float Damper;

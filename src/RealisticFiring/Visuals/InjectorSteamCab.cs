@@ -32,38 +32,36 @@ namespace RealisticFiring.Visuals
         private const float PlateGap = 0.035f;
         private const float PlateProud = 0.004f;
 
-        private static readonly Dictionary<string, (Vector3 Move, Vector3 Turns)> Seats = new Dictionary<string, (Vector3, Vector3)>
-        {
-            ["LocoS282A"] = (new Vector3(0.11f, 0.03f, 0.14f), new Vector3(-180f, 0f, 2f)), // 2026-10-11
-            ["LocoS060"] = (new Vector3(-0.09f, -0.37f, 0.02f), new Vector3(-180f, 0f, 2f)), // 2026-10-11
-            ["Jk3A"] = (new Vector3(-0.06f, -0.13f, 0.02f), new Vector3(-180f, 0f, 2f)), // both levers, 2026-10-11
-            ["S484-840A"] = (new Vector3(-0.25f, -0.19f, -0.01f), new Vector3(-180f, 0f, 2f)), // 2026-10-11
-            ["S464-730"] = (new Vector3(0f, -0.22f, 0f), new Vector3(-180f, 0f, 2f)), // 2026-10-11
-            ["FEF-3"] = (new Vector3(-0.14f, -0.48f, -0.03f), new Vector3(-180f, 0f, 2f)), // 2026-10-11
-            [QjStokerCab.Livery] = (new Vector3(-0.2f, 0f, 0f), new Vector3(-180f, 0f, 2f)), 
-            ["S2102-720"] = (new Vector3(0.09f, -0.17f, 0f), new Vector3(-180f, 0f, 2f)), 
-            ["S260N-580A"] = (new Vector3(0f, 0f, 0f), new Vector3(-180f, 0f, 2f)), 
-            ["S040N-270"] = (new Vector3(0f, 0f, 0f), new Vector3(-180f, 0f, 2f)), 
-            ["S0440NG-890"] = (new Vector3(0f, 0f, 0f), new Vector3(-180f, 0f, 2f)), 
-            ["S440NCF-400A"] = (new Vector3(0.02f, -0.01f, 0.11f), new Vector3(-360f, 0f, 2f)),
-        };
-
+        // Per-locomotive steam lever seats, fixed seats, side seats, dummy
+        // wheels, and water seats live in LocomotiveProfiles.
         private static readonly Vector3 SeatTurns = new Vector3(-180f, 0f, 2f);
 
+        private static bool TryProfileSeat(string livery, out (Vector3 Move, Vector3 Turns) seat)
+        {
+            if (LocomotiveProfiles.TryGet(livery, out var profile) && profile.Cab.InjectorSteamSeat is (Vector3, Vector3) found)
+            {
+                seat = found;
+                return true;
+            }
+            seat = default;
+            return false;
+        }
+
         // Seats set this session on the seating bench (SeatingBench, a
-        // development tool), by livery, as Seats: they come first and are
-        // never saved.
+        // development tool), by livery: they come first and are never saved.
 #if !PUBLIC_RELEASE
         internal static readonly Dictionary<string, (Vector3 Move, Vector3 Turns)> DevSeats = new Dictionary<string, (Vector3, Vector3)>();
 #endif
 
-        /// <summary>The backhead lever's seat for <paramref name="livery"/>: the bench's, the table's, or none (no move, the usual turns).</summary>
+        /// <summary>The backhead lever's seat for <paramref name="livery"/>: the bench's, the profile's, or none (no move, the usual turns).</summary>
         internal static (Vector3 Move, Vector3 Turns) SeatFor(string livery) =>
 #if PUBLIC_RELEASE
-            Seats.TryGetValue(livery, out var seat) ? seat
+            TryProfileSeat(livery, out var seat) ? seat
+            : MakerFitRegistry.TryGetInjectorSteamSeat(livery, out var maker) ? maker
 #else
             DevSeats.TryGetValue(livery, out var dev) ? dev
-            : Seats.TryGetValue(livery, out var seat) ? seat
+            : TryProfileSeat(livery, out var seat) ? seat
+            : MakerFitRegistry.TryGetInjectorSteamSeat(livery, out var maker) ? maker
 #endif
             : (Vector3.zero, SeatTurns);
 
@@ -84,18 +82,9 @@ namespace RealisticFiring.Visuals
             }
         }
 
-        private static readonly Dictionary<string, Vector3> FixedSeats = new Dictionary<string, Vector3>
-        {
-            ["LocoS282A"] = new Vector3(0.26f, 0.13f, 0.21f),
-        };
-
-        private static readonly Dictionary<string, Vector3> SideSeats = new Dictionary<string, Vector3>
-        {
-            ["S440NCF-400A"] = new Vector3(0.07f, -0.01f, 0.15f),
-        };
-
-        /// <summary>Whether <paramref name="livery"/>'s lever sits on the side of its handle's fitting (<see cref="SideSeats"/>), where the bench's x runs along the fitting.</summary>
-        internal static bool OnSide(string livery) => livery != null && SideSeats.ContainsKey(livery);
+        /// <summary>Whether <paramref name="livery"/>'s lever sits on the side of its handle's fitting, where the bench's x runs along the fitting.</summary>
+        internal static bool OnSide(string livery) =>
+            LocomotiveProfiles.For(livery)?.Cab.InjectorSteamSideSeat != null || MakerFitRegistry.TryGetInjectorSteamSideOffset(livery, out _);
 
         /// <summary>Builds the steam levers in a newly loaded cab interior. Returns a line for the log, or null.</summary>
         public static string Attach(TrainCar car, Transform interior)
@@ -128,7 +117,7 @@ namespace RealisticFiring.Visuals
                 foreach (var feeder in feeders)
                     notes.Add(circuit.OwnLeverIsSteam
                         ? BuildCabRegulator(regulators, car, interior, root, feeder, circuit, valve) ?? BuildWater(car, interior, root, feeder, circuit, valve)
-                        : DummyWheels.TryGetValue(car.carLivery.id, out var dummy)
+                        : LocomotiveProfiles.For(car.carLivery.id)?.Cab.InjectorDummyWheel is (string Name, float PlateAft) dummy
                             ? BuildWheel(car, interior, root, feeder, circuit, valve, dummy.Name, dummy.PlateAft)
                             : Build(car, interior, root, feeder, circuit, valve));
             }
@@ -189,10 +178,8 @@ namespace RealisticFiring.Visuals
             return notched.Count == 0 ? "no injector steam handles to step" : $"injector steam handles step {string.Join(", ", InjectorValves.Notches)}: {string.Join(", ", notched)}";
         }
 
-        private static readonly Dictionary<string, (string Name, float PlateAft)> DummyWheels = new Dictionary<string, (string, float)>
-        {
-            ["A.T.&S.F. 2901-A"] = ("Injector 2", 0.1f),
-        };
+        // Engines whose cab model has a second injector wheel with nothing
+        // behind it beside the working one live in LocomotiveProfiles (Cab.InjectorDummyWheel).
         private const float DummyReach = 0.3f;
 
         private static string BuildWheel(TrainCar car, Transform interior, Transform root, InteractablePortFeeder feeder, InjectorCircuit circuit,
@@ -329,14 +316,20 @@ namespace RealisticFiring.Visuals
             // every engine but one fired from the front (FiringFrame).
             var forward = FiringFrame.Of(car).forward;
 #if PUBLIC_RELEASE
-            var seatedHere = Seats.TryGetValue(car.carLivery.id, out var seat);
+            var seatedHere = TryProfileSeat(car.carLivery.id, out var seat) || MakerFitRegistry.TryGetInjectorSteamSeat(car.carLivery.id, out seat);
 #else
-            var seatedHere = DevSeats.TryGetValue(car.carLivery.id, out var seat) || Seats.TryGetValue(car.carLivery.id, out seat);
+            var seatedHere = DevSeats.TryGetValue(car.carLivery.id, out var seat) || TryProfileSeat(car.carLivery.id, out seat)
+                || MakerFitRegistry.TryGetInjectorSteamSeat(car.carLivery.id, out seat);
 #endif
             var aim = stock.position + middle * (Across + seat.Move.x) + up * (Up + seat.Move.y);
             var proud = seat.Move.z;
-            var fixedSeat = FixedSeats.TryGetValue(car.carLivery.id, out var fromHandle);
-            var sideSeat = SideSeats.TryGetValue(car.carLivery.id, out var onSide);
+            var profileCab = LocomotiveProfiles.For(car.carLivery.id)?.Cab;
+            var fixedSeat = profileCab?.InjectorSteamFixedSeat != null || MakerFitRegistry.TryGetInjectorSteamFixedOffset(car.carLivery.id, out _);
+            var fromHandle = profileCab?.InjectorSteamFixedSeat
+                ?? (MakerFitRegistry.TryGetInjectorSteamFixedOffset(car.carLivery.id, out var makerFixed) ? makerFixed : Vector3.zero);
+            var sideSeat = profileCab?.InjectorSteamSideSeat != null || MakerFitRegistry.TryGetInjectorSteamSideOffset(car.carLivery.id, out _);
+            var onSide = profileCab?.InjectorSteamSideSeat
+                ?? (MakerFitRegistry.TryGetInjectorSteamSideOffset(car.carLivery.id, out var makerSide) ? makerSide : Vector3.zero);
             var surface = aim;
             var normal = -forward;
             var surfaceName = "none";
@@ -403,12 +396,10 @@ namespace RealisticFiring.Visuals
                    $"a copy of the S282's sander lever" + plates;
         }
 
-        private static readonly Dictionary<string, (Vector2 Right, Vector2 Left)> WaterSeats = new Dictionary<string, (Vector2, Vector2)>
-        {
-            ["em_lms_8f_loc_black"] = (new Vector2(0.55f, 0.95f), new Vector2(0.4f, 1.3f)),
-            ["em_lms_8f_loc_grey"] = (new Vector2(0.55f, 0.95f), new Vector2(0.4f, 1.3f)),
-        };
-
+        // Where a cab's own lever is the injector's steam valve, up on the
+        // manifold atop the backhead, and the cab models no water regulator
+        // to work (CabWaterRegulators), one is added low by the injector
+        // under the footsteps (seats in LocomotiveProfiles.Cab.InjectorWaterSeats).
         private const float WallSearchFrom = 0.25f;
         private const float WallSearch = 1.6f;
         private const float FallbackWall = 1f;
@@ -432,7 +423,7 @@ namespace RealisticFiring.Visuals
             var side = local.x < 0f ? -1f : 1f;
             var outward = car.transform.right * side;
             var up = car.transform.up;
-            var seat = WaterSeats.TryGetValue(car.carLivery.id, out var seated)
+            var seat = LocomotiveProfiles.For(car.carLivery.id)?.Cab.InjectorWaterSeats is (Vector2 Right, Vector2 Left) seated
                 ? side > 0f ? seated.Right : seated.Left
                 : new Vector2(0.5f, 0.9f);
             var deck = InjectorOverflow.TryFindCabFloor(car, out var floor) ? floor : local.y - 1.6f;

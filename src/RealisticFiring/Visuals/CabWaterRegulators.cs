@@ -10,15 +10,6 @@ namespace RealisticFiring.Visuals
 {
  internal static class CabWaterRegulators
     {
-        // The cab mesh carrying each engine's regulators, and how far each
-        // turns, in degrees: the handwheel nearly a whole turn, the handle as
-        // far as the cab side lets it.
-        private static readonly Dictionary<string, (string Mesh, float RightTurn, float LeftTurn)> Fits = new Dictionary<string, (string, float, float)>
-        {
-            ["em_lms_8f_loc_black"] = ("CAB.113", 354f, 150f),
-            ["em_lms_8f_loc_grey"] = ("CAB.113", 354f, 150f),
-        };
-
         /// <summary>
         /// Lever valves a cab models in a mesh no copy of which can be read, worked
         /// where they stand: each side's valve's upright axis at its lever's
@@ -35,25 +26,23 @@ namespace RealisticFiring.Visuals
             public float Turn;
         }
 
-        private static readonly Levers Lms4F = new Levers
-        {
-            Left = new Vector3(-1.0425f, 2.115f, -3.6905f),
-            Right = new Vector3(1.0425f, 2.405f, -3.6905f),
-            Reach = 0.115f,
-            Turn = 150f,
-        };
-
-        private static readonly Dictionary<string, Levers> InPlace = new Dictionary<string, Levers>
-        {
-            ["em_fowler_4f_44422"] = Lms4F,
-            ["em_fowler_4f_4027"] = Lms4F,
-        };
-
         /// <summary>The lever valves worked in place on <paramref name="livery"/>, or null.</summary>
-        internal static Levers InPlaceFor(string livery) => livery != null && InPlace.TryGetValue(livery, out var levers) ? levers : null;
+        internal static Levers InPlaceFor(string livery) =>
+            LocomotiveProfiles.For(livery)?.Cab.WaterRegulatorInPlace
+            ?? (MakerFitRegistry.TryGetInPlaceWaterRegulators(livery, out var maker) ? maker : null);
+
+        private static bool TryCutFit(string livery, out (string Mesh, float RightTurn, float LeftTurn) fit)
+        {
+            if (LocomotiveProfiles.For(livery)?.Cab.WaterRegulatorMesh is (string, float, float) known)
+            {
+                fit = known;
+                return true;
+            }
+            return MakerFitRegistry.TryGetCutWaterRegulators(livery, out fit);
+        }
 
         /// <summary>Whether <paramref name="livery"/>'s regulators are cut from its cab's mesh and turned.</summary>
-        internal static bool CutFromMesh(string livery) => livery != null && Fits.ContainsKey(livery);
+        internal static bool CutFromMesh(string livery) => TryCutFit(livery, out _);
 
         // An in-place lever's grip: a square on the valve's axis wide enough to
         // hold the lever at any turn, this deep, m.
@@ -109,9 +98,9 @@ namespace RealisticFiring.Visuals
         {
             if (car == null || interior == null || car.carLivery == null)
                 return null;
-            if (InPlace.TryGetValue(car.carLivery.id, out var levers))
+            if (InPlaceFor(car.carLivery.id) is Levers levers)
                 return new Cab { Livery = car.carLivery.id, InPlace = levers };
-            if (!Fits.TryGetValue(car.carLivery.id, out var fit))
+            if (!TryCutFit(car.carLivery.id, out var fit))
                 return null;
             var filter = interior.GetComponentsInChildren<MeshFilter>(true)
                 .FirstOrDefault(f => f.sharedMesh != null && (f.sharedMesh.name == fit.Mesh || Originals.ContainsKey(f.sharedMesh)));
@@ -169,7 +158,8 @@ namespace RealisticFiring.Visuals
             var pivot = cabFrame.TransformPoint(new Vector3(axis.x, spindle.Box.max.y, axis.y));
             control.position = pivot;
             spec.jointAxis = control.InverseTransformDirection(-cabFrame.up).normalized;
-            var turn = side > 0f ? Fits[cab.Livery].RightTurn : Fits[cab.Livery].LeftTurn;
+            TryCutFit(cab.Livery, out var fit);
+            var turn = side > 0f ? fit.RightTurn : fit.LeftTurn;
             var min = SetHinge(spec, turn);
 
             // The parts, cut from the cab's mesh, drawn where they were when shut.

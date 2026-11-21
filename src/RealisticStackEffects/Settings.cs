@@ -31,14 +31,25 @@ namespace RealisticStackEffects
             "its weather is used instead.")]
         public SmokeSeason SmokeSeason = SmokeSeason.Summer;
 
+        [Draw("Steam visibility, ×", DrawType.Slider, Min = PlumeSettings.MinSteamVisibility, Max = PlumeSettings.MaxSteamVisibility, Precision = 1, Tooltip =
+            "Scales how strongly exhaust steam shows in the air. 1 is realistic for the\n" +
+            "weather; raise it for a fuller plume in dry summer air, or lower it for a\n" +
+            "subtler one.")]
+        public float SteamVisibility = PlumeSettings.DefaultSteamVisibility;
+
+        [Draw("Plume wind, ×", DrawType.Slider, Min = PlumeSettings.MinWindStrength, Max = PlumeSettings.MaxWindStrength, Precision = 1, Tooltip =
+            "Scales how strongly the weather's wind drifts the plume. 1 is normal; 0 is\n" +
+            "still air.")]
+        public float WindStrength = PlumeSettings.DefaultWindStrength;
+
+        [Draw("Heat shimmer", Tooltip = "Shimmer above the stack. Needs custom smoke effects.")]
+        public bool HeatShimmer = true;
+
         [Draw("Steam around the engine (restart)", Tooltip =
             "Draw the dynamo, cylinder cocks, safety valves, whistle, and leaks as the\n" +
             "chimney's steam, by the weather. Needs custom smoke effects; off, the game's own\n" +
             "puffs stay.")]
         public bool EngineSteam = true;
-
-        [Draw("Heat shimmer (restart)", Tooltip = "Shimmer above the stack. Needs custom smoke effects.")]
-        public bool HeatShimmer = true;
 
         [Draw("Custom smoke effects (restart)", Tooltip =
             "Use the mod's own chimney effects when their assets are installed. Off, the\n" +

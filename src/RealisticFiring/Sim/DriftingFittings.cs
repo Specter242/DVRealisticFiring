@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using LocoSim.Implementations;
 using RealisticFiring.Core;
@@ -8,84 +7,53 @@ namespace RealisticFiring.Sim
 {
  internal static class DriftingFittings
     {
-        /// <summary>A prototype's drifting fittings, fitted always.</summary>
-        internal readonly struct Equipment
-        {
-            public Equipment(bool snifting, bool valve, bool byPass)
-            {
-                Snifting = snifting;
-                Valve = valve;
-                ByPass = byPass;
-            }
-
-            public bool Snifting { get; }
-            public bool Valve { get; }
-            public bool ByPass { get; }
-        }
-
-        /// <summary>The engines that buy them: the stock S282 and S060.</summary>
-        private static readonly HashSet<string> Upgraded = new HashSet<string> { "LocoS282A", "LocoS060" };
-
-        /// <summary>
-        /// What the other supported engines' prototypes carried, by livery,
-        /// from the research of 2026-11-15
-        /// (development/drifting-fittings-20261115/research.md): the verified
-        /// and the likely; no fittings found on the NYC J-3a, the JK3 (no
-        /// prototype), or BorING's narrow-gauge engines (slide valves and
-        /// saturated steam; at most a relief valve).
-        /// </summary>
-        private static readonly Dictionary<string, Equipment> Prototype = new Dictionary<string, Equipment>
-        {
-            // The Santa Fe 2900 class's Wagner by-pass valves (called drifting
-            // valves, but admitting no steam), verified for the class.
-            ["A.T.&S.F. 2901-A"] = new Equipment(snifting: false, valve: false, byPass: true),
-            // The DR class 95's automatic pressure equalizers (Druckausgleich),
-            // verified; their type unknown.
-            ["S2102-720"] = new Equipment(snifting: false, valve: false, byPass: true),
-            ["S2102-870"] = new Equipment(snifting: false, valve: false, byPass: true),
-            // The LMS 8F's snifting valves by the cylinders and the 4F's at the
-            // smokebox's foot, likely (BR later took many off; when, unknown).
-            ["em_lms_8f_loc_black"] = new Equipment(snifting: true, valve: false, byPass: false),
-            ["em_lms_8f_loc_grey"] = new Equipment(snifting: true, valve: false, byPass: false),
-            ["em_fowler_4f_44422"] = new Equipment(snifting: true, valve: false, byPass: false),
-            ["em_fowler_4f_4027"] = new Equipment(snifting: true, valve: false, byPass: false),
-        };
-
         /// <summary>The drifting valve's control in the cab: saved, so a valve left open stays open.</summary>
         public static readonly StokerJetControls.Valve ValveControl = new StokerJetControls.Valve("rfDriftingValve", "Drifting valve", null, 0f);
 
+        private static DriftingProfile ProfileOf(string livery) =>
+            LocomotiveProfiles.TryGet(livery, out var profile) ? profile.Drifting
+            : MakerFitRegistry.TryGetDriftingFittings(livery, out var maker) ? maker
+            : DriftingProfile.None;
+
         /// <summary>Whether <paramref name="livery"/> buys the fittings as upgrades.</summary>
-        public static bool Upgradable(string livery) => livery != null && Upgraded.Contains(livery);
+        public static bool Upgradable(string livery) => ProfileOf(livery).IsUpgradable;
 
         private static string Livery(TrainCar car) => car != null && car.carLivery != null ? car.carLivery.id : null;
 
         /// <summary>Whether <paramref name="car"/> has its snifting valves now.</summary>
         public static bool Snifting(TrainCar car)
         {
-            var livery = Livery(car);
-            return Upgradable(livery) ? Upgrades.Fittings.Snifting : livery != null && Prototype.TryGetValue(livery, out var e) && e.Snifting;
+            var d = ProfileOf(Livery(car));
+            return d.IsUpgradable ? Upgrades.Fittings.HasSnifting(car) : d.PrototypeSnifting;
         }
 
         /// <summary>Whether <paramref name="car"/> has its drifting valve now.</summary>
         public static bool Valve(TrainCar car)
         {
-            var livery = Livery(car);
-            return Upgradable(livery) ? Upgrades.Fittings.DriftingValve : livery != null && Prototype.TryGetValue(livery, out var e) && e.Valve;
+            var d = ProfileOf(Livery(car));
+            return d.IsUpgradable ? Upgrades.Fittings.HasDriftingValve(car) : d.PrototypeValve;
         }
 
         /// <summary>Whether <paramref name="car"/> has its by-pass valves now.</summary>
         public static bool ByPass(TrainCar car)
         {
-            var livery = Livery(car);
-            return Upgradable(livery) ? Upgrades.Fittings.ByPass : livery != null && Prototype.TryGetValue(livery, out var e) && e.ByPass;
+            var d = ProfileOf(Livery(car));
+            return d.IsUpgradable ? Upgrades.Fittings.HasByPass(car) : d.PrototypeByPass;
         }
 
         /// <summary>Whether <paramref name="livery"/> may carry any drifting fitting, bought or its prototype's.</summary>
-        public static bool MayHave(string livery) => Upgradable(livery) || livery != null && Prototype.ContainsKey(livery);
+        public static bool MayHave(string livery)
+        {
+            var d = ProfileOf(livery);
+            return d.IsUpgradable || d.HasPrototype;
+        }
 
         /// <summary>Whether <paramref name="livery"/> can ever have a drifting valve: its sim graph then carries the valve's control.</summary>
-        public static bool CanHaveValve(string livery) =>
-            Upgradable(livery) || livery != null && Prototype.TryGetValue(livery, out var e) && e.Valve;
+        public static bool CanHaveValve(string livery)
+        {
+            var d = ProfileOf(livery);
+            return d.IsUpgradable || d.PrototypeValve;
+        }
     }
 
     /// <summary>

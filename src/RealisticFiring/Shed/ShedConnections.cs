@@ -37,51 +37,29 @@ namespace RealisticFiring.Shed
         // The mouth was measured from the end-ring vertices, not the mesh's
         // overall center (its side branch makes that center 17 mm off-axis).
         internal const string QjWaterFitting = "Model/QJ body/colliders/Cube.044";
-        internal static readonly Vector3 QjWaterMouth = new Vector3(-1.5431395f, 1.5876111f, 2.4728939f);
+        internal static readonly Vector3 QjWaterMouth = Sim.LocomotiveProfiles.QjWaterMouth;
 
- private static readonly Dictionary<string, (Vector3 At, float Swing, float Down, float Spin, float Out)> Seated =
-            new Dictionary<string, (Vector3, float, float, float, float)>
+        // Per-locomotive blower and water connection seats, sides, and
+        // exclusions live in Sim.LocomotiveProfiles.
+        private static bool TrySeated(string livery, bool water, out (Vector3 At, float Swing, float Down, float Spin, float Out) seat)
         {
-            ["LocoS282A"] = (new Vector3(-0.48f, 1.93f, 10.32f), 0f, 44f, 90f, 0.03f),
-            ["LocoS060"] = (new Vector3(0.52f, 1.97f, 3.60f), 0f, 34f, 0f, 0f),
-            ["S464-730"] = (new Vector3(-0.74f, 2.33f, 12.47f), 0f, 43f, 0f, 0f),
-            ["FEF-3"] = (new Vector3(-0.76f, 2.36f, 7.77f), 0f, 54f, 0f, 0f),
-            ["S484-840A"] = (new Vector3(-0.79f, 2.45f, 7.57f), 0f, 54f, 0f, 0f),
-            ["A.T.&S.F. 2901-A"] = (new Vector3(-0.64f, 2.31f, 8.08f), 0f, 79f, 0f, 0f),
-            ["Jk3A"] = (new Vector3(-0.90f, 1.35f, 3.25f), 0f, -13f, 0f, 0f),
-            [QjStokerCab.Livery] = (new Vector3(-1.25f, 2.11f, 11.69f), 0f, -15f, 0f, 0f), 
-            ["S2102-720"] = (new Vector3(-1f, 2.21f, 4.85f), 0f, 0f, 0f, 0f), 
-            ["S260N-580A"] = (new Vector3(-0.23f, 1f, 4.25f), 0f, 0f, 0f, 0f), 
-            ["S0440NG-890"] = (new Vector3(-0.53f, 1.46f, 3.3f), 0f, -8f, 0f, 0f), 
-        };
-
- private static readonly Dictionary<string, (Vector3 At, float Swing, float Down, float Spin, float Out)> WaterSeated =
-            new Dictionary<string, (Vector3, float, float, float, float)>
-        {
-            ["LocoS060"] = (new Vector3(-0.65f, 1.47f, -1.00f), 0f, 0f, 0f, 0f),
-            ["Jk3A"] = (new Vector3(-0.54f, 1.31f, -1.35f), 0f, 0f, 0f, 0f),
-            ["LocoS282A"] = (new Vector3(-0.22f, 1.15f, 2.28f), 0f, 0f, 0f, 0f),
-            // The 8F: set on the grey livery; the black is the same engine.
-            ["em_lms_8f_loc_grey"] = (new Vector3(-0.66f, 1.55f, -2.15f), 0f, 0f, 0f, 0f),
-            ["em_lms_8f_loc_black"] = (new Vector3(-0.66f, 1.55f, -2.15f), 0f, 0f, 0f, 0f),
-            // The Dreyfuss Hudson.
-            ["S464-730"] = (new Vector3(-0.93f, 1.49f, 0.72f), 0f, 0f, 0f, 0f),
-            ["FEF-3"] = (new Vector3(-1.42f, 1.77f, -7.27f), 0f, 0f, 0f, 0f),
-            ["S484-840A"] = (new Vector3(-0.72f, 1.41f, -7.23f), 0f, 0f, 0f, 0f),
-            // The Santa Fe 2901: far back on its long boiler.
-            ["A.T.&S.F. 2901-A"] = (new Vector3(-1.22f, 2.03f, -7.98f), 0f, 0f, 0f, 0f),
-            [QjStokerCab.Livery] = (QjWaterMouth, 0f, 0f, 0f, 0f), 
-            ["S2102-720"] = (new Vector3(-1.28f, 1.24f, -3.36f), 0f, 90f, 0f, 0f), 
-            ["em_fowler_4f_4027"] = (new Vector3(-0.8f, 1.41f, -1.52f), 0f, 0f, 0f, 0f), 
-            ["em_fowler_4f_44422"] = (new Vector3(-0.8f, 1.41f, -1.52f), 0f, 0f, 0f, 0f),
-            ["S260N-580A"] = (new Vector3(-0.41f, 0.93f, -0.35f), 0f, 0f, 0f, 0f), 
-            ["S0440NG-890"] = (new Vector3(-1.24f, 1.05f, -0.45f), 0f, 90f, 0f, 0f), 
-            ["S440NCF-400A"] = (new Vector3(-0.61f, 1.04f, 0.09f), 0f, 0f, 0f, 0f), 
-        };
+            if (Sim.LocomotiveProfiles.TryGet(livery, out var profile))
+            {
+                var found = water ? profile.Shed.WaterSeat : profile.Shed.BlowerSeat;
+                if (found.HasValue)
+                {
+                    seat = found.Value.AsTuple();
+                    return true;
+                }
+            }
+            if (Sim.MakerFitRegistry.TryGetShedSeat(livery, water, out seat))
+                return true;
+            seat = default;
+            return false;
+        }
 
         // Seats set this session on the seating bench (Visuals.SeatingBench, a
-        // development tool), by livery, as Seated and WaterSeated: they come
-        // first and are never saved.
+        // development tool), by livery: they come first and are never saved.
 #if !PUBLIC_RELEASE
         internal static readonly Dictionary<string, (Vector3 At, float Swing, float Down, float Spin, float Out)> DevSeated =
             new Dictionary<string, (Vector3, float, float, float, float)>();
@@ -89,20 +67,13 @@ namespace RealisticFiring.Shed
             new Dictionary<string, (Vector3, float, float, float, float)>();
 #endif
 
- private static readonly HashSet<string> RightSide = new HashSet<string> { "LocoS060" };
-
- private static readonly HashSet<string> NoConnection = new HashSet<string>
-        {
-            "em_lms_8f_loc_black", "em_lms_8f_loc_grey", "em_fowler_4f_44422", "em_fowler_4f_4027", "S040N-270", "S440NCF-400A",
-        };
-
         /// <summary>Whether <paramref name="livery"/> gets a shed blower line connection.</summary>
-        internal static bool HasBlowerConnection(string livery) => livery == null || !NoConnection.Contains(livery);
-
- private static readonly HashSet<string> NoWater = new HashSet<string> { "S040N-270" };
+        internal static bool HasBlowerConnection(string livery) =>
+            livery == null || ((!Sim.LocomotiveProfiles.TryGet(livery, out var profile) || profile.Shed.HasBlowerConnection) && Sim.MakerFitRegistry.HasShedBlower(livery));
 
         /// <summary>Whether <paramref name="livery"/> gets a shed water connection.</summary>
-        internal static bool HasWaterConnection(string livery) => livery == null || !NoWater.Contains(livery);
+        internal static bool HasWaterConnection(string livery) =>
+            livery == null || ((!Sim.LocomotiveProfiles.TryGet(livery, out var profile) || profile.Shed.HasWaterConnection) && Sim.MakerFitRegistry.HasShedWater(livery));
 
         private sealed class Connection
         {
@@ -208,38 +179,20 @@ namespace RealisticFiring.Shed
             return $"{name}: it goes in the connection {place} on {Sim.CarNames.LogName(nearest.Car)}";
         }
 
-        // The landmarks in the readme and booklet's socket table. Water and
-        // direct steam share the filling socket; the blower has its own line.
-        // Unknown engines retain the description of their actual socket position.
+        // The landmarks in the readme and booklet's socket table, held in
+        // Sim.LocomotiveProfiles. Water and direct steam share the filling
+        // socket; the blower has its own line. Unknown engines retain the
+        // description of their actual socket position.
         internal static string Describe(string livery, bool water, Vector3 local, float halfLength)
         {
-            switch (livery)
+            if (Sim.LocomotiveProfiles.TryGet(livery, out var profile))
             {
-                case "LocoS282A":
-                    return water ? "low on the left behind the last driving wheel, just ahead of the cab"
-                        : "low on the left side of the smokebox";
-                case "LocoS060":
-                    return water ? "on the left ahead of the cab, below the firebox"
-                        : "low on the right side of the smokebox";
-                case "Jk3A":
-                    return water ? "on the left ahead of the cab, below the firebox"
-                        : "low on the left side of the smokebox, tilted slightly upward";
-                case "em_lms_8f_loc_grey":
-                case "em_lms_8f_loc_black":
-                    if (water) return "low on the left side of the firebox, below the cab";
-                    break; // No blower socket on the 8F.
-                case "S464-730":
-                case "S484-840A":
-                case "A.T.&S.F. 2901-A":
-                    return water ? "on the left below the cab, at the rear of the boiler"
-                        : "low on the left side of the smokebox";
-                case "FEF-3":
-                    return water ? "on the left outside the firebox, below the cab"
-                        : "low on the left side of the smokebox";
-                case QjStokerCab.Livery:
-                    return water ? "on the left at the plain gray spigot ahead of the cab"
-                        : "low on the left side of the smokebox, tilted upward";
+                var hint = water ? profile.Shed.WaterHint : profile.Shed.BlowerHint;
+                if (hint != null)
+                    return hint;
             }
+            if (Sim.MakerFitRegistry.TryGetShedLandmark(livery, water, out var landmark))
+                return landmark;
             return Describe(local, halfLength);
         }
 
@@ -300,10 +253,10 @@ namespace RealisticFiring.Shed
             Vector3 at;
             string how;
 #if PUBLIC_RELEASE
-            if ((water ? WaterSeated : Seated).TryGetValue(livery, out var seat))
+            if (TrySeated(livery, water, out var seat))
 #else
             if ((water ? DevWaterSeated : DevSeated).TryGetValue(livery, out var seat)
-                || (water ? WaterSeated : Seated).TryGetValue(livery, out seat))
+                || TrySeated(livery, water, out seat))
 #endif
             {
                 at = seat.At;
@@ -356,9 +309,9 @@ namespace RealisticFiring.Shed
                 return false;
             var livery = car.carLivery != null ? car.carLivery.id : "";
 #if PUBLIC_RELEASE
-            if (!(water ? WaterSeated : Seated).TryGetValue(livery, out seat))
+            if (!TrySeated(livery, water, out seat))
 #else
-            if (!(water ? DevWaterSeated : DevSeated).TryGetValue(livery, out seat) && !(water ? WaterSeated : Seated).TryGetValue(livery, out seat))
+            if (!(water ? DevWaterSeated : DevSeated).TryGetValue(livery, out seat) && !TrySeated(livery, water, out seat))
 #endif
                 seat = (connection.Guessed, 0f, 0f, 0f, 0f);
             return true;
@@ -465,10 +418,10 @@ namespace RealisticFiring.Shed
                 : reader.smokeParticlesParent != null ? reader.smokeParticlesParent.transform.position : reader.transform.position;
             var stack = car.transform.InverseTransformPoint(stackAt);
             stackGuess = stack;
-            if (car.carLivery != null && NoConnection.Contains(car.carLivery.id))
+            if (car.carLivery != null && !HasBlowerConnection(car.carLivery.id))
                 return null;
             var height = stack.y - UnderStack;
-            var onRight = car.carLivery != null && RightSide.Contains(car.carLivery.id);
+            var onRight = car.carLivery != null && Sim.LocomotiveProfiles.For(car.carLivery.id)?.Shed.BlowerRightSide == true;
             var side = Side(car, new Vector3(0f, height, stack.z), onRight);
             var local = new Vector3(onRight ? side : -side, height, stack.z);
 

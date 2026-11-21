@@ -116,6 +116,8 @@ namespace RealisticFiring
             catch (System.Exception e) { Faults.Report("the feed pump's cab controls", null, e); }
             try { Visuals.BoosterCab.EnsureFitted(); }
             catch (System.Exception e) { Faults.Report("the booster's cab controls", null, e); }
+            try { Visuals.JetsCab.EnsureFitted(); }
+            catch (System.Exception e) { Faults.Report("the over-fire jets' valve in the cab", null, e); }
             try { Visuals.DriftingValveCab.EnsureFitted(); }
             catch (System.Exception e) { Faults.Report("the drifting valve in the cab", null, e); }
 #if !PUBLIC_RELEASE
@@ -151,6 +153,16 @@ namespace RealisticFiring
                 settings.GiveFiringManual = false;
                 Notify(EquipmentActions.Run(EquipmentActions.Manual));
             }
+            if (settings.GiveFiringChecklists)
+            {
+                settings.GiveFiringChecklists = false;
+                Notify(EquipmentActions.Run(EquipmentActions.Checklists));
+            }
+            if (settings.ShowAddedControls)
+            {
+                settings.ShowAddedControls = false;
+                Notify(Visuals.CabControlSpotlight.Toggle(PlayerManager.Car));
+            }
             if (settings.GiveFiringTablet)
             {
                 settings.GiveFiringTablet = false;
@@ -184,6 +196,8 @@ namespace RealisticFiring
             }
             if (!HudPolicy.Hidden && settings.ToggleOverlayKey.Down())
                 FireOverlay.Step(settings);
+            if (Pressed(settings.ShowControlsKey))
+                Notify(Visuals.CabControlSpotlight.Toggle(PlayerManager.Car));
 #if !PUBLIC_RELEASE
             if (settings.PlumeTestBedEnabled && settings.DevPlumeTestBedKey.Down())
                 PlumeTestBed.Toggle();
@@ -565,6 +579,12 @@ namespace RealisticFiring
         {
             var fire = oil.Model;
             InjectorRig.TryGetTended(oil.Car, out var rig);
+            BoilerWaterRig.TryGet(oil.Car, out var water);
+            var superheaterHot = EngineSuperheater.TryGet(oil.Car, out var sh) && sh.SuperheaterCareActive && sh.Model.Overheating;
+            var warmingTooFast = water != null && water.ThermalShockActive && water.ThermalShock.WarmingTooFast;
+            var glassCheck = water != null && water.HasGlassCocks
+                ? water.GlassChoke.Status(water.ImpuritiesActive, water.FoamingConcentrationNow, oil.BoilerPressure)
+                : GlassCheck.Clear;
             return new OilReading
             {
                 FireOn = fire.FireOn,
@@ -584,7 +604,11 @@ namespace RealisticFiring
                 FiremanActive = oil.Fireman != null && oil.Fireman.Fireman.Mode != FiremanMode.Off,
                 StandNearby = oil.StandReaches,
                 GlassLevel = rig != null ? Visuals.GaugeGlass.Read(rig) : 1f,
+                GlassCheck = glassCheck,
                 Injectors = rig == null ? NoInjectors : rig.Circuits.Select(c => new InjectorReading(c.Flow.State, c.Feed.Value, c.SteamValve != null, c.TenderValveShut)).ToArray(),
+                BoilerWarmingTooFast = warmingTooFast,
+                SuperheaterHot = superheaterHot,
+                DriftingValve = DriftingFittings.Valve(oil.Car),
             };
         }
 
@@ -607,7 +631,7 @@ namespace RealisticFiring
                    $"atomizer {oil.AtomizerValve * 100f:0.#} %: {fire.Atomizing:F1}× the oil's need" + (fire.Drumming > 0f ? $", drumming {fire.Drumming:P0}" : "") +
                    $", {fire.AtomizerSteam:F2} kg/s of steam; " +
                    $"draft {oil.AirFlowIn:F2} kg/s, {fire.ExcessAir:F1}× the air the oil needs, stack {stack}, soot {fire.SootDensity:P0}" +
-                   (ChimneyPlume.TryGet(oil.Car, out var plume) ? $", plume top {plume.PlumeTop:F0} m" : "") + "; " +
+                   (ChimneyPlume.TryGetMaxPlumeTop(oil.Car, out var plumeTop) ? $", plume top {plumeTop:F0} m" : "") + "; " +
                    $"brick {fire.BrickTemperature:F0} C, firebox {fire.Temperature:F0} C, door {oil.DoorOpening:P0}; " +
                    $"oil {fire.OilTemperature:F0} C ({fire.OilTemperature * 9f / 5f + 32f:F0} F), heater {oil.HeaterValve:P0}" +
                    (oil.SteamLineOpening > 0f
@@ -641,9 +665,10 @@ namespace RealisticFiring
         internal static string DescribeWater(BoilerWaterRig rig)
         {
             var water = rig.Water;
-            var quality = Main.Settings.BoilerWaterImpurities
-                ? $"water {water.FoamingConcentration:F0} ppm ({water.Concentration:F0} dissolved, sludge {water.SettledSludge:F2} kg settled), " +
-                  $"foam {water.Foam:P0}, glass {rig.GlassLevel:F2} over {rig.TrueLevel:F2} true, carryover {water.Carryover:P0}"
+            var choke = rig.HasGlassCocks && rig.ImpuritiesActive && rig.GlassChoke.Choke > 0.01f ? $", glass choke {rig.GlassChoke.Choke:P0}" : "";
+            var quality = rig.ImpuritiesActive
+                ? $"water {rig.FoamingConcentrationNow:F0} ppm ({water.Concentration:F0} dissolved, sludge {water.SettledSludge:F2} kg settled), " +
+                  $"foam {rig.FoamNow:P0}, glass {rig.GlassLevel:F2} over {rig.TrueLevel:F2} true{choke}, carryover {water.Carryover:P0}"
                 : "water impurities off";
             var guard = rig.Plug != null
                 ? rig.Plug.Melted ? $", fusible plug MELTED, blowing {rig.PlugVent:F2} kg/s" : $", fusible plug at {rig.Plug.CoreTemperature:F0} C"
@@ -749,6 +774,7 @@ namespace RealisticFiring
                 DrawLabel(notice, NoticeOffset, new Color(1f, 0.85f, 0.5f));
             if (HudPolicy.Hidden)
                 return;
+            Visuals.CabControlSpotlight.Draw();
             if (FiremanRig.TryGetTended(PlayerManager.Car, out var fireman))
                 firemanPanel.Draw(fireman);
 #if !PUBLIC_RELEASE
@@ -765,7 +791,8 @@ namespace RealisticFiring
                 overlay.Draw(firebox, Time.time);
             if (Main.Settings.ShowAimLabel && firebox.HoverAim is DoorAimSample aim && aim.IsLiveAt(Time.time)
                 && (!DoorAimRules.LabelNeedsOpenDoor(aim.Kind) || firebox.DoorOpening >= ShovelNonPhysicalCoal.REQUIRED_DOOR_OPENED_PERCENTAGE_NON_VR))
-                DrawLabel(DoorAimRules.Label(aim.Kind) + " → " + GrateLayout.Describe(aim.Zone), AimLabelOffset, new Color(0.55f, 0.8f, 1f));
+                DrawLabel(DoorAimRules.Label(aim.Kind) + (aim.Kind == DoorAimKind.Shovel && Time.time - Patches.StartupLoad.HoverAt < 0.5f ? Patches.StartupLoad.Hover : null)
+                          + " → " + GrateLayout.Describe(aim.Zone), AimLabelOffset, new Color(0.55f, 0.8f, 1f));
             if (Main.Settings.ShowAimKeypad && firebox.HoverAim is DoorAimSample keypad && keypad.IsLiveAt(Time.time))
                 AimKeypad.Draw(keypad);
         }

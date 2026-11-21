@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.25.0 (2026-11-21)
+
+- **New: a working caboose stove.** Lay firewood and an oiled rag, light the
+  rag with your lighter, and the caboose warms; its doors draw the fire up or
+  damp it down. **Caboose stove** (F8) turns it off.
+- **New: per-locomotive upgrades.** Set **Career upgrade scope** to Per
+  locomotive, and the Upgrades screen lists the S282s and S060s you own: pick
+  one and buy its upgrades for that engine alone.
+- **New: firing checklists** on the tablet's **Check** tab, ticking each step
+  as you go, and on paper in a **Firing Checklists** booklet.
+- **Show added controls** (F8, or CAB on the Check tab) briefly labels the
+  controls the mod adds to the cab. Desktop only.
+- **Fewer throws for a cold start:** while the game's Steam Startup speeds up
+  the fire, each shovelful is bigger, up to 12 kg, and the fireman keeps a
+  thin fire. A full shovelful is now 6 kg by default; saved settings keep
+  theirs.
+- The advice says when ash builds and the grate wants a shake.
+- The gauge glass chokes with dirty water: blow it through, and check the
+  try cocks.
+- **Superheater care:** shutting off on a hot fire with no steam moving wears
+  the elements. Crack the throttle, open the drifting valve, or ease the fire.
+- **Boiler thermal shock** is an option, off by default (F8 → Boiler).
+- VR, not yet tried in a headset: rake with an empty shovel, pick a smaller
+  shovelful with trigger + stick, and hold the trigger for the automatic fire
+  door.
+- Performance improvements and bug fixes.
+
 ## 1.24.3 (2026-11-20)
 
 - **New upgrade: an automatic fire door** ($10,000), for the S282 and S060,

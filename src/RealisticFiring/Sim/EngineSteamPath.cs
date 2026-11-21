@@ -74,25 +74,32 @@ namespace RealisticFiring.Sim
         internal static bool TryFit(string livery, float volume, float capacity, out SteamPathSpec spec)
         {
             spec = null;
-            var lms4F = livery == "em_fowler_4f_44422" || livery == "em_fowler_4f_4027";
-            var upstream = livery == "LocoS282A" || livery == "em_lms_8f_loc_black" || livery == "em_lms_8f_loc_grey"
-                || livery == "S2102-870" || lms4F;
-            var front = livery == "S464-730" || livery == "FEF-3" || livery == "S484-840A" || livery == "A.T.&S.F. 2901-A";
-            if ((!upstream && !front) || !Finite(volume) || volume <= 0 || !Finite(capacity) || capacity <= 0) return false;
-            var pipe = livery == "S2102-870" ? 500 : livery == "LocoS282A" ? 300 : lms4F ? 130 : upstream ? 120
-                : livery == "S464-730" ? 600 : livery == "A.T.&S.F. 2901-A" ? 800 : 500;
-            spec = new SteamPathSpec(upstream ? RegulatorLocation.BeforeSuperheater : RegulatorLocation.AfterSuperheater,
-                pipe, volume, capacity);
-            return true;
+            if (!Finite(volume) || volume <= 0 || !Finite(capacity) || capacity <= 0)
+                return false;
+            if (LocomotiveProfiles.TryGet(livery, out var profile))
+            {
+                var path = profile.SteamPath;
+                if (path.Mode != SteamPathMode.BeforeSuperheater && path.Mode != SteamPathMode.AfterSuperheater)
+                    return false;
+                var regulator = path.Mode == SteamPathMode.BeforeSuperheater
+                    ? RegulatorLocation.BeforeSuperheater
+                    : RegulatorLocation.AfterSuperheater;
+                spec = new SteamPathSpec(regulator, path.PipeVolume, volume, capacity);
+                return true;
+            }
+            if (MakerFitRegistry.TryGetSteamPath(livery, out var makerFront, out var makerPipe))
+            {
+                spec = new SteamPathSpec(makerFront ? RegulatorLocation.AfterSuperheater : RegulatorLocation.BeforeSuperheater,
+                    makerPipe, volume, capacity);
+                return true;
+            }
+            return false;
         }
 
-        private static readonly HashSet<string> SaturatedLiveries = new HashSet<string>
-        {
-            "LocoS060", "Jk3A", "S260N-580A", "S040N-270", "S0440NG-890", "S440NCF-400A",
-        };
-
         /// <summary>Whether <paramref name="livery"/> keeps its native saturated throttle and chest.</summary>
-        internal static bool SaturatedPath(string livery) => livery != null && SaturatedLiveries.Contains(livery);
+        internal static bool SaturatedPath(string livery) =>
+            (LocomotiveProfiles.TryGet(livery, out var profile) && profile.SteamPath.Mode == SteamPathMode.Saturated)
+            || MakerFitRegistry.IsSaturatedPath(livery);
 
         internal static string Attach(TrainCar car, SimulationFlow flow)
         {

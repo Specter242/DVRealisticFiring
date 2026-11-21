@@ -217,6 +217,15 @@ namespace RealisticFiring.Core
 
         /// <summary>The overall level before the soft limit.</summary>
         public float Output = 0.8f;
+
+ public float StaccatoFrom = 15f;
+        public float StaccatoFull = 24f;
+        public float StaccatoDepth = 0.5f;
+        public float StaccatoTime = 0.3f;
+        public float StaccatoDelay = 0.018f;
+
+ public float SupplyFills = 2.8f;
+        public float SupplyEase = 0.05f;
     }
 
     /// <summary>The engine as driven, at one moment.</summary>
@@ -293,6 +302,12 @@ namespace RealisticFiring.Core
 
         // The ring: each source's level, falling no faster than its share of the ring's time, and the held color.
         private double jetSounding, roarSounding, bodySounding, tone;
+        // The beat kept at speed: each release's accent, how fast it dies away, how deep it is now, and the gain that
+        // keeps the mean power.
+        private double accent, accentDecay, accentDepth, accentNorm = 1.0;
+        private int accentWait;
+        // The sound a second the steam pipe can feed: the amplitude's share past SupplyFills, and its target.
+        private double supplied = 1.0, suppliedTarget = 1.0, suppliedStep;
         private readonly double jetRing, roarRing, bodyRing, toneHold;
 
         public ExhaustSynth(ExhaustSpec spec, ExhaustTuning tuning, int sampleRate, int seed)
@@ -318,6 +333,7 @@ namespace RealisticFiring.Core
             }
             var ring = Math.Max(1e-3, this.tuning.RingPerBore * spec.ChimneyDiameter);
             jetRing = Math.Exp(-1.0 / (rate * ring * Math.Max(0.05, this.tuning.RingHighShare)));
+            suppliedStep = 1.0 - Math.Exp(-1.0 / (rate * Math.Max(1e-3, this.tuning.SupplyEase)));
             roarRing = Math.Exp(-1.0 / (rate * ring));
             bodyRing = Math.Exp(-1.0 / (rate * ring * Math.Max(0.05, this.tuning.RingLowShare)));
             toneHold = Math.Exp(-1.0 / (rate * Math.Max(1e-3, this.tuning.ColorHold)));
@@ -416,13 +432,19 @@ namespace RealisticFiring.Core
             var high = lowCoefficient * (lowOut + coloured - lowIn);
             lowIn = coloured;
             lowOut = high;
-            var radiated = top.LowPass(high);
+            if (accentWait > 0 && --accentWait == 0)
+                accent = 1.0;
+            accent *= accentDecay;
+            supplied += (suppliedTarget - supplied) * suppliedStep;
+            var radiated = top.LowPass(high) * ((1.0 + accentDepth * accent) * accentNorm);
 
             // A DC blocker, then a soft limit.
             var y = radiated - dcIn + 0.995 * dcOut;
             dcIn = radiated;
             dcOut = y;
-            return (float)Math.Tanh(tuning.Output * y);
+            // The steam pipe's bound after the soft limit: a slip drives the limit hard, so a bound before it took off
+            // about 1 dB of the 6 asked in game (995, jobs 3056 and 3057).
+            return (float)(Math.Tanh(tuning.Output * y) * supplied);
         }
 
         // The gas's step, every ControlEvery samples: the crank, the faces, the blast pipe, and from them the
@@ -500,6 +522,9 @@ namespace RealisticFiring.Core
 
             // The sources' levels from the flow and the jet's speed as they stand.
             pace = Math.Min(1.0, turnsPerSecond / Math.Max(0.05, tuning.ColorAt));
+            Staccato(turnsPerSecond * faces.Length);
+            var fills = Fills(state);
+            suppliedTarget = tuning.SupplyFills > 0f && fills > tuning.SupplyFills ? tuning.SupplyFills / fills : 1.0;
             coreShare = tuning.CoreSpeedShare * (tuning.StartingColor + (1.0 - tuning.StartingColor) * pace);
             thumpGain = tuning.ThumpLevel * rate / (tuning.FullFlow * 50.0) / (1.0 + turnsPerSecond / Math.Max(0.1, tuning.ThumpKnee));
             pipeKeeps = Math.Sqrt(Math.Max(0.0, 1.0 - tuning.PipeDamping * pace));
@@ -523,6 +548,41 @@ namespace RealisticFiring.Core
                 Colors();
             }
         }
+
+        // The accent each release gets at speed, from StaccatoFrom to StaccatoFull beats a second, eased in; with the
+        // mean of (1 + d·a)² over a beat, a = e^(-t/τ), the gain keeps the power.
+        private void Staccato(double beatsPerSecond)
+        {
+            var reach = Clamp((beatsPerSecond - tuning.StaccatoFrom) / Math.Max(0.1, tuning.StaccatoFull - tuning.StaccatoFrom), 0.0, 1.0);
+            accentDepth = Math.Max(0.0, tuning.StaccatoDepth) * reach * reach * (3.0 - 2.0 * reach);
+            if (accentDepth <= 0.0)
+            {
+                accentNorm = 1.0;
+                return;
+            }
+            var period = 1.0 / beatsPerSecond;
+            var tau = Math.Max(1e-3, tuning.StaccatoTime * period);
+            accentDecay = Math.Exp(-1.0 / (rate * tau));
+            var r = period / tau;
+            var mean = (1.0 - Math.Exp(-r)) / r;
+            var meanSquare = (1.0 - Math.Exp(-2.0 * r)) / (2.0 * r);
+            accentNorm = 1.0 / Math.Sqrt(1.0 + 2.0 * accentDepth * mean + accentDepth * accentDepth * meanSquare);
+        }
+
+        // The steam chest's pressure, bar absolute, as the regulator can feed it: the game's, until the cylinders ask more
+        // than SupplyFills a second, when its gauge pressure falls in proportion.
+        private float Supplied(ExhaustState state)
+        {
+            var chest = Math.Max(1.01f, state.Chest);
+            var fills = Fills(state);
+            if (tuning.SupplyFills <= 0f || fills <= tuning.SupplyFills)
+                return chest;
+            return Math.Max(1.01f, 1f + (chest - 1f) * tuning.SupplyFills / fills);
+        }
+
+        // The cylinder fills a second the engine asks: its turns a second times the stroke admitted.
+        private float Fills(ExhaustState state) =>
+            Math.Abs(state.TurnsPerSecond) * (Math.Max(0.05f, Math.Min(0.9f, state.Cutoff)) + spec.Clearance);
 
         // A source's strength from the flow feeding it, kg/s.
         private double Strength(double feed) => Math.Pow(Math.Max(0.0, feed) / tuning.FullFlow, tuning.FlowPower);
@@ -562,14 +622,16 @@ namespace RealisticFiring.Core
             for (var i = 0; i < beatColor.Length; i++)
                 beatColor[i] = tuning.BandVariation * TextureGaussian();
             var exponent = spec.Superheated ? 1.3 : 1.135;
-            var cycle = new CylinderCycle(events, spec.Clearance, (float)exponent, Math.Max(1.01f, state.Chest), 1f);
+            var chest = Supplied(state);
+            var cycle = new CylinderCycle(events, spec.Clearance, (float)exponent, chest, 1f);
             drift = 0.85 * drift + 0.15 * Gaussian();
             var vary = Math.Exp(tuning.BeatVariation * Gaussian() + tuning.Drift * drift * 2.5);
             var pressure = Math.Max(1.0, cycle.ReleasePressure * vary) * Atmosphere;
             var temperature = spec.Superheated
-                ? (spec.SteamTemperature + 273.15) * Math.Pow(pressure / (Math.Max(1.01, state.Chest) * Atmosphere), (exponent - 1.0) / exponent)
+                ? (spec.SteamTemperature + 273.15) * Math.Pow(pressure / (chest * Atmosphere), (exponent - 1.0) / exponent)
                 : Boiling(pressure / Atmosphere);
             face.Open = true;
+            accentWait = Math.Max(1, (int)(tuning.StaccatoDelay * rate));
             face.Gamma = exponent;
             face.Pressure0 = pressure;
             face.Density0 = pressure / (GasConstant * temperature);

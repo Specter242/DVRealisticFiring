@@ -1,3 +1,4 @@
+using DV.WeatherSystem;
 using RealisticStackEffects.Core;
 using UnityEngine;
 
@@ -9,7 +10,7 @@ namespace RealisticStackEffects
     /// thunder, with the breeze's spells and gusts from slow and quick noise;
     /// and the air's temperature and humidity, which the game has not, as a
     /// day of the season chosen in the settings at the game's hour, damp in
-    /// the rain (<see cref="PlumeClimate"/>), or DV Seasons' temperature
+    /// the rain and fog (<see cref="PlumeClimate"/>), or DV Seasons' temperature
     /// when it runs (<see cref="SeasonsMod"/>). The plume test bed's air and
     /// wind replace them while it sets them. Worked out once a frame; still,
     /// mild air before the weather has loaded.
@@ -24,6 +25,11 @@ namespace RealisticStackEffects
         private static Vector3 wind;
         private static float speed;
         private static float degrees;
+        private static float hour = 12f;
+        private static float rain;
+        private static float fog;
+        private static float inversionStrength;
+        private static float inversionCeiling = float.PositiveInfinity;
         private static PlumeAir air = PlumeAir.Reference;
         private static string source = "no weather yet";
 
@@ -57,6 +63,46 @@ namespace RealisticStackEffects
             }
         }
 
+        /// <summary>Current game clock hour (0 to 24; 12 before weather has loaded).</summary>
+        public static float Hour
+        {
+            get
+            {
+                Update();
+                return hour;
+            }
+        }
+
+        /// <summary>Current rain intensity (0 dry to 1 full rain).</summary>
+        public static float Rain
+        {
+            get
+            {
+                Update();
+                return rain;
+            }
+        }
+
+        /// <summary>Strength of the diurnal thermal inversion layer, 0 (none) to 1 (calm dawn).</summary>
+        public static float InversionStrength
+        {
+            get
+            {
+                Update();
+                return inversionStrength;
+            }
+        }
+
+        /// <summary>Height of the diurnal thermal inversion ceiling above the stack, in m (<see cref="float.PositiveInfinity"/> when none).</summary>
+        public static float InversionCeiling
+        {
+            get
+            {
+                Update();
+                return inversionCeiling;
+            }
+        }
+
         /// <summary>
         /// How much of the day's light there is, 0 at night to 1 by day: the
         /// sun's height, through twilight from 6° below the horizon to 6°
@@ -87,11 +133,34 @@ namespace RealisticStackEffects
         private const float TwilightBelow = 96f;
         private const float TwilightAbove = 84f;
 
+        /// <summary>The live fog factor, 0 in clear air to 1 in dense fog (<see cref="PlumeClimate.FogFromDensity"/>).</summary>
+        public static float Fog
+        {
+            get
+            {
+                Update();
+                return fog;
+            }
+        }
+
         /// <summary>The wind in a few words, for the status log.</summary>
         public static string Describe()
         {
             Update();
-            return (speed > 0.05f ? $"wind {speed:F1} m/s toward {Mathf.Repeat(degrees, 360f):F0}°" : "still air") + $", {air}";
+            var inversion = inversionStrength > 0.05f ? $", inversion {inversionCeiling:F0} m" : "";
+            return (speed > 0.05f ? $"wind {speed:F1} m/s toward {Mathf.Repeat(degrees, 360f):F0}°" : "still air")
+                + (fog > 0.01f ? $", fog {fog * 100f:F0} %" : "")
+                + $", {air}{inversion}";
+        }
+
+        private static float ReadFog(WeatherDriver weather)
+        {
+            if (weather == null)
+                return 0f;
+            var state = weather.CurrentChungusState;
+            if (state.currentLow == null || state.currentHigh == null)
+                return 0f;
+            return PlumeClimate.FogFromDensity(weather.GetLocalFogDensity());
         }
 
         private static void Update()
@@ -102,12 +171,16 @@ namespace RealisticStackEffects
             wind = Vector3.zero;
             speed = 0f;
             var weather = GameWeather.Driver;
+            hour = weather != null ? weather.TimeOfDayHours.CurrentValue : 12f;
+            rain = weather != null ? Mathf.Clamp01(weather.RainValue.CurrentValue) : 0f;
             var sky = weather != null && weather.manager != null ? weather.manager.todSky : null;
             daylight = sky != null ? Mathf.Clamp01((TwilightBelow - sky.SunZenith) / (TwilightBelow - TwilightAbove)) : 1f;
             directLight = sky != null ? Twilight.DirectLight(sky.SunZenith) : 1f;
+            var liveFog = ReadFog(weather);
 #if !PUBLIC_RELEASE
             if (PlumeTestBed.Air is PlumeAir testAir)
             {
+                fog = 0f;
                 air = testAir;
                 source = "the test bed's";
             }
@@ -115,16 +188,19 @@ namespace RealisticStackEffects
 #endif
             if (weather != null && SeasonsMod.TryRead(out var celsius, out var season))
             {
-                air = PlumeClimate.WithTemperature(celsius, weather.TimeOfDayHours.CurrentValue, weather.RainValue.CurrentValue, 0f);
+                fog = liveFog;
+                air = PlumeClimate.WithTemperature(celsius, hour, rain, fog);
                 source = season;
             }
             else if (weather != null)
             {
-                air = PlumeClimate.Air(StackHost.Settings.SmokeSeason, weather.TimeOfDayHours.CurrentValue, weather.RainValue.CurrentValue, 0f);
+                fog = liveFog;
+                air = PlumeClimate.Air(StackHost.Settings.SmokeSeason, hour, rain, fog);
                 source = $"a {StackHost.Settings.SmokeSeason} day (the setting)";
             }
             else
             {
+                fog = 0f;
                 air = PlumeAir.Reference;
                 source = "no weather yet";
             }
@@ -134,17 +210,22 @@ namespace RealisticStackEffects
                 wind = test;
                 speed = test.magnitude;
                 degrees = PlumeTestBed.WindToward;
+                inversionStrength = 0f;
+                inversionCeiling = float.PositiveInfinity;
                 return;
             }
 #endif
-            if (weather == null)
-                return;
-            degrees = weather.WindDirection.CurrentValue;
-            var time = Time.time;
-            speed = PlumeWind.Speed(weather.RainValue.CurrentValue, weather.ThunderValue.CurrentValue,
-                Mathf.PerlinNoise(time / SpellTime, 17.3f), Mathf.PerlinNoise(time / GustTime, 51.7f), 1f);
-            var (x, z) = PlumeWind.Toward(degrees);
-            wind = new Vector3(x, 0f, z) * speed;
+            if (weather != null)
+            {
+                degrees = weather.WindDirection.CurrentValue;
+                var time = Time.time;
+                speed = PlumeWind.Speed(rain, weather.ThunderValue.CurrentValue,
+                    Mathf.PerlinNoise(time / SpellTime, 17.3f), Mathf.PerlinNoise(time / GustTime, 51.7f), StackHost.WindStrength);
+                var (x, z) = PlumeWind.Toward(degrees);
+                wind = new Vector3(x, 0f, z) * speed;
+            }
+            inversionStrength = PlumeWind.InversionStrength(hour, speed, rain);
+            inversionCeiling = PlumeWind.InversionCeiling(hour, speed, rain);
         }
     }
 }

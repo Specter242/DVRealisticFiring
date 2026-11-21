@@ -48,22 +48,6 @@ namespace RealisticFiring.Sim
             public float[] Levels { get; }
         }
 
-        // From the stock cabs (read from the game's resources, 2026-11-14):
-        // the S282's three cocks on a diagonal left of its glass, which spans
-        // 0.63 to 0.96 of the boiler over 2.948 to 3.126 m, at 3.094, 3.018,
-        // and 2.944 m (the bottom one at the glass's foot); the S060's left of
-        // its glass, 0.68 to 0.84 over 2.590 to 2.768 m, at 2.733, 2.679, and
-        // 2.626 m. Each cab's other two loose wheels are its glass's own cocks,
-        // above and below it (the S282's at 3.217 and 2.857 m, the S060's at
-        // 2.860 and 2.499 m).
-        private static readonly Dictionary<string, Fit> ByLivery = new Dictionary<string, Fit>
-        {
-            ["LocoS282A"] = new Fit(new[] { "s282_valve_s_03", "s282_valve_s_02", "s282_valve_s_01", "s282_valve_w_01", "s282_valve_w_02" },
-                new[] { 0.900f, 0.761f, 0.621f, 0.96f, 0.63f }),
-            ["LocoS060"] = new Fit(new[] { "s060_valve_05", "s060_valve_06", "s060_valve_07", "s060_valve_03", "s060_valve_04" },
-                new[] { 0.808f, 0.760f, 0.712f, 0.84f, 0.68f }),
-        };
-
         private static readonly Dictionary<TrainCar, TryCockRig> ByCar = new Dictionary<TrainCar, TryCockRig>();
 
         private readonly Port[] ports;
@@ -82,6 +66,9 @@ namespace RealisticFiring.Sim
 
         public TrainCar Car { get; }
 
+        /// <summary>The boiler water rig these cocks serve.</summary>
+        public BoilerWaterRig Water => water;
+
         /// <summary>Each cock's height on the boiler's level scale, top to bottom.</summary>
         public float[] Levels { get; }
 
@@ -89,7 +76,8 @@ namespace RealisticFiring.Sim
         public string[] Meshes { get; }
 
         /// <summary>Whether engines of <paramref name="livery"/> have try cocks to work.</summary>
-        public static bool Fits(string livery) => livery != null && ByLivery.ContainsKey(livery);
+        public static bool Fits(string livery) =>
+            LocomotiveProfiles.TryGet(livery, out var profile) && profile.TryCocks.HasValue;
 
         public static bool TryGet(TrainCar car, out TryCockRig rig)
         {
@@ -103,7 +91,7 @@ namespace RealisticFiring.Sim
             foreach (var gone in ByCar.Keys.Where(c => c == null).ToList())
                 ByCar.Remove(gone);
             var livery = car != null && car.carLivery != null ? car.carLivery.id : null;
-            if (!ByLivery.TryGetValue(livery ?? "", out var fit) || flow == null)
+            if (!LocomotiveProfiles.TryGet(livery, out var profile) || !(profile.TryCocks is Fit fit) || flow == null)
                 return null;
             var boiler = flow.OrderedSimComps.OfType<Boiler>().FirstOrDefault();
             if (boiler == null || !BoilerWaterRig.TryGet(boiler, out var water))
@@ -131,16 +119,26 @@ namespace RealisticFiring.Sim
         public bool AnyOpen => ports.Any(p => p.Value > 0f);
 
         /// <summary>
-        /// What cock <paramref name="index"/> lets out now, from the boiler's
-        /// readouts (a guest's too, which mirror the host's): the level the
-        /// glass shows, the pressure (absolute), and the water's temperature;
-        /// the foam where the boiler water is kept (the host's).
+        /// What cock <paramref name="index"/> lets out now: the try cocks tap
+        /// the boiler directly and always read the true boiler surface (water,
+        /// swell, and foam, unaffected by a choked gauge glass), on both host
+        /// and multiplayer guests (mirrored via <see cref="ClientMirror"/>).
         /// </summary>
         public TryCockFlow Flow(int index)
         {
-            var foam = Main.Settings.BoilerWaterImpurities && !Net.IsClient ? water.Water.Foam : 0f;
-            return TryCock.Flow(Opening(index), boiler.waterLevelReadOut.Value - Levels[index], foam,
+            var foam = water.FoamNow;
+            var surface = water.HasTrueSurface ? water.TrueSurfaceLevel : boiler.waterLevelReadOut.Value;
+            return TryCock.Flow(Opening(index), surface - Levels[index], foam,
                 boiler.pressureReadOut.Value, boiler.temperatureReadOut.Value);
+        }
+
+        /// <summary>Creates a rig directly on a boiler and five valve ports, for checks outside the game.</summary>
+        internal static TryCockRig Create(BoilerWaterRig water, Boiler boiler, Port[] ports, string livery = "LocoS282A")
+        {
+            var fit = LocomotiveProfiles.For(livery).TryCocks.Value;
+            var rig = new TryCockRig(null, water, boiler, fit, ports);
+            water.TryCocks = rig;
+            return rig;
         }
 
         /// <summary>Everything the cocks let out now, kg/s: boiler water and steam.</summary>

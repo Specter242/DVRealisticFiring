@@ -31,6 +31,17 @@ namespace RealisticStackEffects
             StackHost.Mod = modEntry;
             StackHost.Settings = new HostSettings();
             StackHost.Assets = new HostAssets();
+            StackHost.StackGeometry = (TrainCar car, out StackGeometryHint hint, out string by) =>
+            {
+                var found = Api.StackSources.GeometryFor(car, out by);
+                if (found.HasValue)
+                {
+                    hint = found.Value;
+                    return true;
+                }
+                hint = default;
+                return false;
+            };
 #if !PUBLIC_RELEASE
             // The test bed's tuning only on a development setup (its key bound).
             if (Settings.PlumeTestBedEnabled)
@@ -86,6 +97,8 @@ namespace RealisticStackEffects
             }
 
             public SmokeSeason SmokeSeason => Settings.SmokeSeason;
+            public float SteamVisibility => PlumeSettings.ClampSteamVisibility(Settings.SteamVisibility);
+            public float WindStrength => PlumeSettings.ClampWindStrength(Settings.WindStrength);
             public bool HeatShimmer => Settings.HeatShimmer;
             public bool EngineSteam => Settings.EngineSteam;
             public bool CustomEffects => customEffects;

@@ -11,30 +11,16 @@ namespace RealisticFiring.Visuals
 
         private static readonly CabValve.Seat Default = new CabValve.Seat(new Vector3(-0.15f, 0f, 0f), Vector3.zero);
 
-        private static readonly Dictionary<string, CabValve.Seat> Seats = new Dictionary<string, CabValve.Seat>
-        {
-            ["LocoS282A"] = new CabValve.Seat(new Vector3(0.69f, 2.84f, 0.18f), new Vector3(0f, -40f, 0f), new Vector3(0f, 0f, 0f), 0f, 0f, plateSquare: false, inCar: true),
-            ["LocoS060"] = new CabValve.Seat(new Vector3(0.310f, 3.206f, -1.990f), Vector3.zero, Vector3.zero, 0f, 0f, plateSquare: false, inCar: true),
-        };
-
-        // Cabs whose drifting valve is a copy of their own blower handle, as the jets' valve is.
-        private static readonly HashSet<string> OwnHandle = new HashSet<string> { "LocoS060" };
-
-        internal static readonly CabValve Valve = new CabValve("drifting valve", RootName, "DRIFTING", DriftingFittings.ValveControl, Seats, Default, OwnHandle,
+        internal static readonly CabValve Valve = new CabValve("drifting valve", RootName, "DRIFTING", DriftingFittings.ValveControl,
+            livery => LocomotiveProfiles.For(livery)?.Cab.DriftingValveSeat ?? MakerFitRegistry.TryGetDriftingValveSeat(livery),
+            Default,
+            livery => LocomotiveProfiles.For(livery)?.Cab.DriftingValveOwnHandle == true || MakerFitRegistry.DriftingValveOwnHandle(livery),
             DriftingFittings.Valve,
             (root, car, interior) => root.AddComponent<DriftingHiss>().Init(car, interior),
             byThrottle: true, throttleOffset: new Vector3(0f, -0.25f, 0f));
 
-        private static int fittedVersion = -1;
-
-        /// <summary>Rebuilds the loaded cabs' valves as the drifting valve is bought, or the menu or the host changes it.</summary>
-        public static void EnsureFitted()
-        {
-            if (fittedVersion == Upgrades.Fittings.Version)
-                return;
-            fittedVersion = Upgrades.Fittings.Version;
-            Valve.RebuildLoaded();
-        }
+        /// <summary>Adds or removes the drifting valve in loaded cabs whose fitted state or car GUID changed.</summary>
+        public static void EnsureFitted() => Valve.EnsureFitted();
 
         public static string Attach(TrainCar car, Transform interior) => Valve.Attach(car, interior);
     }

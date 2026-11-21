@@ -27,8 +27,10 @@
     <Reference Include="Assembly-CSharp" HintPath="$(DvManagedDir)/Assembly-CSharp.dll" />
     <Reference Include="DV.Simulation" HintPath="$(DvManagedDir)/DV.Simulation.dll" />
     <Reference Include="DV.Utils" HintPath="$(DvManagedDir)/DV.Utils.dll" />
+    <Reference Include="DV.WeatherSystem" HintPath="$(DvManagedDir)/DV.WeatherSystem.dll" />
     <Reference Include="UnityEngine" HintPath="$(DvManagedDir)/UnityEngine.dll" />
     <Reference Include="UnityEngine.CoreModule" HintPath="$(DvManagedDir)/UnityEngine.CoreModule.dll" />
+    <Reference Include="UnityEngine.ParticleSystemModule" HintPath="$(DvManagedDir)/UnityEngine.ParticleSystemModule.dll" />
   </ItemGroup>
 
 </Project>

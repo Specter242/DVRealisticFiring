@@ -55,7 +55,7 @@ namespace RealisticFiring
             var scale = size.x > 0f && size.y > 0f ? Mathf.Min(size.x / FiringTabletPanel.Width, size.y / FiringTabletPanel.Height) : 2f;
             views[id] = new View
             {
-                Panel = new FiringTabletPanel(region, scale, "comms-tablet-" + id + "-", "FIRING"),
+                Panel = new FiringTabletPanel(region, scale, "comms-tablet-" + id + "-", "FIRING", vr || Visuals.CabControlSpotlight.IsVr()),
                 Tablet = tablet,
                 Mounted = tablet != null ? tablet.GetComponent<GadgetBase>() : null,
                 Item = tablet != null ? tablet.GetComponent<ItemBase>() : null,
@@ -124,6 +124,8 @@ namespace RealisticFiring
                 page = slot;
             else if (page == FiringTabletPanel.FiremanPage)
                 FiringTabletPanel.GiveOrder(car, slot - FiringTabletPanel.Pages);
+            else if (page == FiringTabletPanel.ChecklistPage)
+                v.Panel.HandleChecklistAction(car, slot - FiringTabletPanel.Pages);
             ReadNow(v, car);
         }
 

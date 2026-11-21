@@ -1,11 +1,11 @@
-using System.Collections.Generic;
 using RealisticFiring.Core;
 
 namespace RealisticFiring.Sim
 {
     /// <summary>
     /// The locos fitted with a trailing-truck booster, as their prototypes
-    /// were, and the booster's cab controls.
+    /// were, and the booster's cab controls. Per-locomotive fits live in
+    /// <see cref="LocomotiveProfiles"/>.
     /// </summary>
     internal static class BoosterFit
     {
@@ -40,18 +40,13 @@ namespace RealisticFiring.Sim
             public int DrivingAxles { get; }
         }
 
-        private static readonly Dictionary<string, Fit> Fits = new Dictionary<string, Fit>
-        {
-            // NYC J-3a: a Franklin C-2 on the 51-in rear trailer wheels, whose
-            // axle carries 55,500 lb; three driving axles (official NYC diagram).
-            ["S464-730"] = new Fit(1.2954f, 25174f, 3),
-            ["LocoS282A"] = new Fit(1.0922f, 20412f, 4, upgrade: true),
-        };
-
         public static bool TryGet(string liveryId, out Fit fit)
         {
             fit = null;
-            if (liveryId == null || !Fits.TryGetValue(liveryId, out var found))
+            Fit found;
+            if (LocomotiveProfiles.TryGet(liveryId, out var profile) && profile.Booster != null)
+                found = profile.Booster;
+            else if (!MakerFitRegistry.TryGetBooster(liveryId, out found))
                 return false;
             if (!(found.Upgrade ? Main.Session.S282Booster : Main.Session.FitBoosters))
                 return false;

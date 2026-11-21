@@ -93,11 +93,12 @@ namespace RealisticFiring.Sim
 
         private readonly bool upgrade;
         private int fittedVersion = -1;
+        private string fittedGuid;
         private bool fitted;
 
         /// <summary>
         /// Whether the booster is on the engine now: always, but for the stock
-        /// S282's, an upgrade bought at a career manager (<see cref="Upgrades.Fittings.Booster"/>).
+        /// S282's, an upgrade bought at a career manager (<see cref="Upgrades.Fittings.HasBooster"/>).
         /// Unfitted, it is built but idle, so buying it fits it at once.
         /// </summary>
         public bool Fitted
@@ -106,10 +107,12 @@ namespace RealisticFiring.Sim
             {
                 if (!upgrade)
                     return true;
-                if (fittedVersion != Upgrades.Fittings.Version)
+                var guid = Upgrades.Fittings.CarGuidOf(car);
+                if (fittedVersion != Upgrades.Fittings.Version || fittedGuid != guid)
                 {
                     fittedVersion = Upgrades.Fittings.Version;
-                    fitted = Upgrades.Fittings.Booster;
+                    fittedGuid = guid;
+                    fitted = Upgrades.Fittings.HasBooster(car);
                 }
                 return fitted;
             }

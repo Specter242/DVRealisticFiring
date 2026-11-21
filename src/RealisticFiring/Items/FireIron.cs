@@ -264,7 +264,8 @@ namespace RealisticFiring.Items
             FireStartingItems.IsFuel(path) ? FireStartingItems.Load(path)
             : path == FireIron.PrefabName ? FireIron.Template
             : path == FiringTablet.PrefabName ? FiringTablet.Template
-            : path == FiringManual.PrefabName ? FiringManual.Template : Resources.Load(path);
+            : path == FiringManual.PrefabName ? FiringManual.Template
+            : path == ChecklistBooklet.PrefabName ? ChecklistBooklet.Template : Resources.Load(path);
 
         internal static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, MethodBase original) =>
             Redirect(instructions, original, SkinManagerFireIronLoading.Found ? "Skin Manager's loader" : null);

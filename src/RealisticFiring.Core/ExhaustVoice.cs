@@ -40,17 +40,18 @@ namespace RealisticFiring.Core
         private const double LevelTime = 0.03;
         private const double CabTime = 0.25;
         private const double CabCutoff = 400.0;
-        private const double CabDirect = 0.25;
+        private const double CabDirect = 1.0;
         private const double OutsideEchoes = 0.4;
         private const float Silent = 1e-4f;
         public const double LiftTurns = 1.5;
         public const double MostLift = 10.0;
         private const double LiftPower = 1.5;
         private const double LiftTime = 0.3;
+        private const double LiftDropTime = 0.02;
 
         private readonly ExhaustSynth synth;
         private readonly double rate;
-        private readonly double levelStep, cabStep, liftStep;
+        private readonly double levelStep, cabStep, liftStep, liftDropStep;
         private readonly double b0, b1, b2, a1, a2;
         private readonly ExhaustDrive[] posted = new ExhaustDrive[2];
         private int newest;
@@ -74,6 +75,7 @@ namespace RealisticFiring.Core
             levelStep = 1.0 - Math.Exp(-1.0 / (rate * LevelTime));
             cabStep = 1.0 - Math.Exp(-1.0 / (rate * CabTime));
             liftStep = 1.0 - Math.Exp(-1.0 / (rate * LiftTime));
+            liftDropStep = 1.0 - Math.Exp(-1.0 / (rate * LiftDropTime));
             var w = 2.0 * Math.PI * CabCutoff / rate;
             var alpha = Math.Sin(w) / (2.0 * Math.Sqrt(0.5));
             var a0 = 1.0 + alpha;
@@ -177,7 +179,7 @@ namespace RealisticFiring.Core
                 opening += (target - opening) * levelStep;
                 cabShare += (cabTarget - cabShare) * cabStep;
                 if (lift != liftTarget)
-                    lift = Math.Abs(liftTarget - lift) < 1e-6 ? liftTarget : lift + (liftTarget - lift) * liftStep;
+                    lift = Math.Abs(liftTarget - lift) < 1e-6 ? liftTarget : lift + (liftTarget - lift) * (liftTarget < lift ? liftDropStep : liftStep);
                 var shadowed = (low + CabDirect * x) / (1.0 + CabDirect);
                 var heard = (x + (shadowed - x) * cabShare) * opening * lift * (lineside + (cab - lineside) * cabShare);
                 squares += heard * heard;
