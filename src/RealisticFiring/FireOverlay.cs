@@ -417,6 +417,8 @@ namespace RealisticFiring
             var steam = rig.Circuits.Sum(x => x.Flow.OverflowSteam);
             c.Rows.Add(new Row { Label = "Overflow", Value = water > 0.05f || steam > 0.05f ? $"{water:F1} kg/s water, {steam:F1} steam" : "dry", Level = steam > 0.05f ? AdviceLevel.Watch : (AdviceLevel?)null });
             c.Rows.Add(new Row { Label = "Feed pump", Value = rig.Pump == null ? "none fitted" : Pump(rig.PumpFlow), Level = rig.Pump != null && (rig.PumpFlow.State == FeedPumpState.Racing || rig.PumpFlow.State == FeedPumpState.LostSuction) ? AdviceLevel.Act : (AdviceLevel?)null });
+            if (HandPumpRow(rig) is Row handPump)
+                c.Rows.Add(handPump);
             if (BoilerWaterRig.TryGet(rig.Car, out var waterRig))
             {
                 var impuritiesOn = waterRig.ImpuritiesActive;
@@ -461,6 +463,24 @@ namespace RealisticFiring
                         ? new Row { Label = "Low water", Value = waterRig.Alarm.Sounding ? "ALARM" : "alarm quiet", Level = waterRig.Alarm.Sounding ? AdviceLevel.Act : (AdviceLevel?)null }
                         : new Row { Label = "Low water", Value = "the engine's own" });
             }
+        }
+
+        /// <summary>
+        /// While anyone works the hand pump: its rate, or what stops it (a
+        /// Nexus report, audit 2026-11-21: it seemed to do nothing, its 1.5
+        /// kg/s creeping up the glass); null while nobody does.
+        /// </summary>
+        internal static Row? HandPumpRow(InjectorRig rig)
+        {
+            if (rig == null || !(rig.HandPumping || rig.RemoteHandPumping))
+                return null;
+            var stop = rig.HandPumpStop;
+            return new Row
+            {
+                Label = "Hand pump",
+                Value = HandPump.Row(stop, rig.FillRate, InjectorRig.HandPumpMaxPressure - 1f),
+                Level = stop == HandPumpStop.None ? (AdviceLevel?)null : AdviceLevel.Watch,
+            };
         }
 
         private static string Pump(FeedPumpFlow flow)

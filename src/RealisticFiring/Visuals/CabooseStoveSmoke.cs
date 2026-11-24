@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using RealisticFiring.Sim;
 using RealisticStackEffects;
 using UnityEngine;
@@ -5,23 +6,49 @@ using UnityEngine;
 namespace RealisticFiring.Visuals
 {
     /// <summary>
-    /// Gentle wood-smoke chimney plume rising from the caboose's roof stovepipe.
-    /// Completely independent of locomotive <see cref="ChimneyPlume"/> and
-    /// <c>SteamSmokeParticlePortReader</c>, so it coexists cleanly with
+    /// Light wood smoke rising from the caboose's roof stovepipe while its
+    /// stove burns. Completely independent of locomotive <see cref="ChimneyPlume"/>
+    /// and <c>SteamSmokeParticlePortReader</c>, so it coexists cleanly with
     /// Realistic Stack Effects while still respecting <see cref="WorldParticles"/>
     /// origin shifts and <see cref="PlumeWeather"/> wind and daylight.
     /// </summary>
+    /// <remarks>
+    /// The smoke is drawn with the mod's own chimney smoke shader, lit by the
+    /// game's sun and sky as the locomotives' smoke is, through the injector
+    /// overflow's plain material: wisps from an 8 × 8 flipbook, each particle
+    /// playing one row. It needs that flipbook's tiles and the overflow's
+    /// vertex streams; without them (1.24.3.1012 and before) every particle
+    /// drew the whole sheet, 64 tiny wisps, and the plume read as faint specks.
+    /// Budget: one shared material, one draw per burning caboose, at most
+    /// <see cref="MaxParticles"/> particles (about 36 alive at the most smoke),
+    /// none for a cold stove or past <see cref="MaxVisibleDistance"/>.
+    /// </remarks>
     internal sealed class CabooseStoveSmoke : MonoBehaviour
     {
-        // Stock CarCabooseRed roof exit directly over the stove (-0.63.. -1.25, z ~ 0.65, roof y ~ 3.48).
-        private static readonly Vector3 DefaultChimneyLocal = new Vector3(-0.98f, 3.60f, 0.65f);
+        // The stock CarCabooseRed's stovepipe, part of its interior mesh: about
+        // 0.25 m across, centred at x -1.15, z 0.65, its top at 3.70 m, a third
+        // of a metre over the roof, just ahead of the cupola (2026-11-21, its
+        // mesh and colliders walked in game). The smoke starts at its mouth.
+        private static readonly Vector3 DefaultChimneyLocal = new Vector3(-1.15f, 3.72f, 0.65f);
+        private static readonly Vector3 StockStoveLocal = new Vector3(-0.629f, 1.429f, 0.770f);
         private const float MaxVisibleDistance = 250f;
-        private const int MaxParticles = 160;
+        private const int MaxParticles = 40;
+
+        // Emission and opacity from a faint ember wisp (Smoke01 near 0) to a
+        // smoky shut-down fire (near 1).
+        private const float LeastRate = 1.0f;
+        private const float MostRate = 4.5f;
+        private const float LeastAlpha = 0.30f;
+        private const float MostAlpha = 0.62f;
+
+        // Thin wood smoke scatters bluish; a smoky fire's is a warmer grey.
+        private static readonly Color ThinSmoke = new Color(0.78f, 0.80f, 0.85f);
+        private static readonly Color ThickSmoke = new Color(0.66f, 0.65f, 0.63f);
 
         private CabooseStoveRig rig;
         private ParticleSystem smoke;
         private ParticleSystem.Particle[] buffer;
-        private Material ownMaterial;
+        private bool litByScene;
         private bool originBound;
         private Vector3 chimneyLocal = DefaultChimneyLocal;
         private bool chimneyResolved;
@@ -39,11 +66,6 @@ namespace RealisticFiring.Visuals
             {
                 Destroy(smoke.gameObject);
                 smoke = null;
-            }
-            if (ownMaterial != null)
-            {
-                Destroy(ownMaterial);
-                ownMaterial = null;
             }
             buffer = null;
             originBound = false;
@@ -89,16 +111,19 @@ namespace RealisticFiring.Visuals
                 originBound = WorldParticles.FollowOriginShifts(smoke);
 
             var emission = smoke.emission;
-            emission.rateOverTime = Mathf.Lerp(1.5f, 7.5f, intensity);
+            emission.rateOverTime = Mathf.Lerp(LeastRate, MostRate, intensity);
 
-            // Light wood-smoke grey-blue tinted by daylight so night smoke never glows.
-            var light = Mathf.Lerp(0.18f, 0.88f, PlumeWeather.Daylight);
-            var alpha = Mathf.Lerp(0.14f, 0.34f, intensity);
+            // The chimney smoke shader takes its light from the scene, so it
+            // darkens at dusk itself; the plain fallback glows unless dimmed.
+            var tint = Color.Lerp(ThinSmoke, ThickSmoke, intensity);
+            if (!litByScene)
+                tint *= Mathf.Lerp(0.18f, 0.88f, PlumeWeather.Daylight);
+            var alpha = Mathf.Lerp(LeastAlpha, MostAlpha, intensity);
             var main = smoke.main;
             main.startColor = new ParticleSystem.MinMaxGradient(
-                new Color(0.68f * light, 0.70f * light, 0.74f * light, alpha * 0.8f),
-                new Color(0.80f * light, 0.81f * light, 0.84f * light, alpha));
-            main.startSpeed = new ParticleSystem.MinMaxCurve(0.65f, 1.15f + 0.45f * model.Heat01);
+                new Color(tint.r * 0.94f, tint.g * 0.94f, tint.b * 0.94f, alpha * 0.8f),
+                new Color(tint.r, tint.g, tint.b, alpha));
+            main.startSpeed = new ParticleSystem.MinMaxCurve(0.65f, 1.0f + 0.45f * model.Heat01);
 
             CarryParticles(Time.deltaTime);
         }
@@ -122,14 +147,15 @@ namespace RealisticFiring.Visuals
             holder.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
 
             smoke = holder.AddComponent<ParticleSystem>();
+            smoke.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
             var main = smoke.main;
             main.playOnAwake = true;
             main.loop = true;
             main.simulationSpace = ParticleSystemSimulationSpace.World;
             main.maxParticles = MaxParticles;
-            main.startLifetime = new ParticleSystem.MinMaxCurve(5.5f, 9.0f);
-            main.startSize = new ParticleSystem.MinMaxCurve(0.16f, 0.28f);
-            main.startSpeed = new ParticleSystem.MinMaxCurve(0.7f, 1.2f);
+            main.startLifetime = new ParticleSystem.MinMaxCurve(5f, 8f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.28f, 0.42f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(0.65f, 1.0f);
             main.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
             main.gravityModifier = 0f;
 
@@ -140,15 +166,16 @@ namespace RealisticFiring.Visuals
             var shape = smoke.shape;
             shape.enabled = true;
             shape.shapeType = ParticleSystemShapeType.Cone;
-            shape.angle = 10f;
-            shape.radius = 0.065f;
+            shape.angle = 8f;
+            shape.radius = 0.06f;
 
+            // Narrow at the pipe, spreading to a metre and more as it rises and thins.
             var sizeOverLife = smoke.sizeOverLifetime;
             sizeOverLife.enabled = true;
             sizeOverLife.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(
-                new Keyframe(0f, 0.65f),
-                new Keyframe(0.25f, 1.8f),
-                new Keyframe(1f, 4.6f)));
+                new Keyframe(0f, 0.5f),
+                new Keyframe(0.2f, 1.3f),
+                new Keyframe(1f, 4.0f)));
 
             var colorOverLife = smoke.colorOverLifetime;
             colorOverLife.enabled = true;
@@ -158,21 +185,30 @@ namespace RealisticFiring.Visuals
                 new[]
                 {
                     new GradientAlphaKey(0f, 0f),
-                    new GradientAlphaKey(1f, 0.10f),
-                    new GradientAlphaKey(0.65f, 0.55f),
+                    new GradientAlphaKey(1f, 0.08f),
+                    new GradientAlphaKey(0.7f, 0.45f),
                     new GradientAlphaKey(0f, 1f),
                 });
             colorOverLife.color = new ParticleSystem.MinMaxGradient(grad);
 
             var rotOverLife = smoke.rotationOverLifetime;
             rotOverLife.enabled = true;
-            rotOverLife.z = new ParticleSystem.MinMaxCurve(-0.35f, 0.35f);
+            rotOverLife.z = new ParticleSystem.MinMaxCurve(-0.25f, 0.25f);
+
+            // A gentle waver that builds as the smoke leaves the pipe.
+            var noise = smoke.noise;
+            noise.enabled = true;
+            noise.strength = new ParticleSystem.MinMaxCurve(0.3f, new AnimationCurve(new Keyframe(0f, 0f), new Keyframe(0.3f, 1f), new Keyframe(1f, 1f)));
+            noise.frequency = 0.35f;
+            noise.scrollSpeed = 0.25f;
+            noise.damping = true;
 
             var renderer = holder.GetComponent<ParticleSystemRenderer>();
             renderer.renderMode = ParticleSystemRenderMode.Billboard;
-            renderer.sharedMaterial = SmokeMaterial();
+            renderer.maxParticleSize = 3f;
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             renderer.receiveShadows = false;
+            UseSmokeLook(smoke, renderer);
 
             originBound = WorldParticles.FollowOriginShifts(smoke);
             buffer = new ParticleSystem.Particle[MaxParticles];
@@ -199,12 +235,13 @@ namespace RealisticFiring.Visuals
                 }
             }
 
-            // If a custom caboose placed its Stove elsewhere, align X/Z over it.
+            // If a custom caboose placed its Stove elsewhere, keep the stock pipe's place beside it.
             var cab = GetComponent<CabooseStoveCab>();
             if (cab != null && cab.StoveLocalPosition is Vector3 stovePos)
             {
-                if ((stovePos - new Vector3(-0.629f, 1.429f, 0.770f)).sqrMagnitude > 0.25f)
-                    chimneyLocal = new Vector3(stovePos.x - 0.30f, DefaultChimneyLocal.y, stovePos.z - 0.12f);
+                if ((stovePos - StockStoveLocal).sqrMagnitude > 0.25f)
+                    chimneyLocal = new Vector3(stovePos.x + DefaultChimneyLocal.x - StockStoveLocal.x, DefaultChimneyLocal.y,
+                        stovePos.z + DefaultChimneyLocal.z - StockStoveLocal.z);
             }
         }
 
@@ -225,19 +262,41 @@ namespace RealisticFiring.Visuals
             smoke.SetParticles(buffer, count);
         }
 
-        private Material SmokeMaterial()
+        /// <summary>
+        /// The injector overflow's plain steam material (the chimney smoke
+        /// shader without its rolling puffs) with that system's flipbook tiles,
+        /// each particle one row of wisps, and its vertex streams; the plain
+        /// fallback when the effects bundle is missing.
+        /// </summary>
+        private void UseSmokeLook(ParticleSystem system, ParticleSystemRenderer renderer)
         {
-            // Reuse RF's own smoke material when the FX bundle is present (with six-way/wisp
-            // shader extras switched off, matching PlumeAssets.PlainOverflowSteam).
-            var source = PlumeAssets.OverflowPrefab != null
-                ? PlumeAssets.OverflowPrefab.transform.Find("Steam")?.GetComponent<ParticleSystemRenderer>()?.sharedMaterial
-                : null;
-            if (source != null)
+            var steam = PlumeAssets.OverflowPrefab != null ? PlumeAssets.OverflowPrefab.transform.Find("Steam") : null;
+            var source = steam != null ? steam.GetComponent<ParticleSystemRenderer>() : null;
+            var sourceSystem = steam != null ? steam.GetComponent<ParticleSystem>() : null;
+            if (source == null || source.sharedMaterial == null || sourceSystem == null)
             {
-                ownMaterial = new Material(source) { name = "RF Caboose Wood Smoke" };
-                return ownMaterial;
+                litByScene = false;
+                renderer.sharedMaterial = FallbackMaterial();
+                return;
             }
-            return FallbackMaterial();
+            litByScene = true;
+            renderer.sharedMaterial = source.sharedMaterial;
+            var streams = new List<ParticleSystemVertexStream>();
+            source.GetActiveVertexStreams(streams);
+            renderer.SetActiveVertexStreams(streams);
+
+            var from = sourceSystem.textureSheetAnimation;
+            var sheet = system.textureSheetAnimation;
+            sheet.enabled = from.enabled;
+            if (!from.enabled)
+                return;
+            sheet.mode = ParticleSystemAnimationMode.Grid;
+            sheet.numTilesX = from.numTilesX;
+            sheet.numTilesY = from.numTilesY;
+            sheet.animation = ParticleSystemAnimationType.SingleRow;
+            sheet.rowMode = ParticleSystemAnimationRowMode.Random;
+            sheet.frameOverTime = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 0f, 1f, 1f));
+            sheet.cycleCount = 1;
         }
 
         private static Material FallbackMaterial()

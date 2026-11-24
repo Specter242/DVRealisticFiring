@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.26.0 (2026-11-23)
+
+- The caboose stove's smoke now rises as thin wisps from its stovepipe.
+- The hand pump (hold C) says why it won't pump, and F6's Water page shows
+  its rate while you pump.
+- Fixed the FIREWOOD and RAGS labels on the firewood crates and rag tins
+  showing through everything in front of them.
+- Fixed a pause of about a second and a half the first time the Comms Tablet
+  showed the Firing app.
+
 ## 1.25.1 (2026-11-21)
 
 - Fixed the fireman not working the stoker on stoker engines or the firing

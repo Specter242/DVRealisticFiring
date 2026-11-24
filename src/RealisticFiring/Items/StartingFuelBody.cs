@@ -79,7 +79,8 @@ namespace RealisticFiring.Items
                 if (font == null) continue;
                 var stencil = new GameObject("stencil");
                 stencil.transform.SetParent(holder, false);
-                stencil.transform.localPosition = new Vector3(0f, 0f, -0.001f);
+                // Clear of the plate by enough that, depth-tested, the letters don't sink into it across a yard.
+                stencil.transform.localPosition = new Vector3(0f, 0f, -0.003f);
                 var text = stencil.AddComponent<TextMesh>();
                 text.font = font;
                 text.text = word;
@@ -90,9 +91,33 @@ namespace RealisticFiring.Items
                 text.characterSize = height * 0.62f / (text.fontSize * 0.1f);
                 text.color = StencilBlack;
                 var shown = stencil.GetComponent<MeshRenderer>();
-                shown.sharedMaterial = font.material;
+                shown.sharedMaterial = StencilMaterial(font);
                 shown.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             }
+        }
+
+        private static Material stencilMaterial;
+        private static bool followingAtlas;
+
+        internal static Material StencilMaterial(Font font)
+        {
+            if (stencilMaterial == null)
+            {
+                stencilMaterial = new Material(Canvas.GetDefaultCanvasMaterial()) { name = "RF supply stencil" };
+                stencilMaterial.SetVector("_TextureSampleAdd", new Vector4(1f, 1f, 1f, 0f));
+                stencilMaterial.SetInt("unity_GUIZTestMode", (int)UnityEngine.Rendering.CompareFunction.LessEqual);
+            }
+            if (!followingAtlas)
+            {
+                followingAtlas = true;
+                Font.textureRebuilt += rebuilt =>
+                {
+                    if (stencilMaterial != null && rebuilt == PlumeAssets.PlateFont)
+                        stencilMaterial.mainTexture = rebuilt.material.mainTexture;
+                };
+            }
+            stencilMaterial.mainTexture = font.material.mainTexture;
+            return stencilMaterial;
         }
 
         // The shovel's own material, painted: it renders as the game's items do.

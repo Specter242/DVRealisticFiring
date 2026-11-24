@@ -396,6 +396,8 @@ namespace RealisticFiring.AdapterCheck
             var rig = (InjectorRig)FormatterServices.GetUninitializedObject(typeof(InjectorRig));
             AccessTools.Field(typeof(InjectorRig), "<Car>k__BackingField").SetValue(rig, car);
             AccessTools.Field(typeof(InjectorRig), "<Circuits>k__BackingField").SetValue(rig, new List<InjectorCircuit>());
+            // The Water page asks whether a guest works the hand pump.
+            AccessTools.Field(typeof(InjectorRig), "remotePumpers").SetValue(rig, new HashSet<byte>());
             return rig;
         }
 

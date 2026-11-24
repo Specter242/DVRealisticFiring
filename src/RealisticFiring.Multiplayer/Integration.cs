@@ -700,6 +700,8 @@ namespace RealisticFiring.Multiplayer
                     {
                         rig.RemotePump(sender.PlayerId, true);
                         PumpingBy[sender.PlayerId] = rig;
+                        // Why it does nothing, if it does, as the host's own press is told.
+                        Tell(sender, HandPump.Notice(rig.HandPumpStop, InjectorRig.HandPumpMaxPressure - 1f, rig.OwnTanks));
                     }
                     break;
                 case FireAction.Hydrant:

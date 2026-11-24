@@ -230,10 +230,17 @@ namespace RealisticFiring
 #endif
             }
 
+            // The hand pump works while its key is held; not while paused, typing, or before a game is loaded.
+            var pumpHeld = settings.HandPumpKey.Pressed() && TimeUtil.IsFlowing && !Typing() && PlayerManager.PlayerTransform != null;
+            if (!pumpHeld)
+                pumpTold = false;
             if (InjectorRig.TryGetTended(PlayerManager.Car, out var rig))
-                UpdateFilling(rig, settings);
+                UpdateFilling(rig, pumpHeld);
             else
+            {
                 LetGoOfPump(null);
+                TellPump(pumpHeld ? HandPumpStop.NotAboard : HandPumpStop.None, false);
+            }
             // The water hose is worked from the ground, at its stand's valve:
             // the engine tended, or else the nearest with a hose in.
             var hoseCar = rig == null && PlayerManager.PlayerTransform != null
@@ -319,19 +326,32 @@ namespace RealisticFiring
         // leaving it, or turning to another, lets go (audit 2026-10-10). The
         // shed's water hose fills by its stand's valve; its notices follow
         // the rig's reading, the host's on a client.
-        private void UpdateFilling(InjectorRig rig, Settings settings)
+        private void UpdateFilling(InjectorRig rig, bool pumping)
         {
-            var pumping = settings.HandPumpKey.Pressed() && TimeUtil.IsFlowing && !Typing();
             if (Net.IsClient)
             {
+                // The host tells a guest why their pump does nothing.
                 PumpRemotely(pumping ? rig.Car : null);
                 return;
             }
             LetGoOfPump(rig);
-            if (pumping && !rig.HandPumping && !rig.CanHandPump)
-                Notify($"The hand pump cannot force water in above {Gauge(InjectorRig.HandPumpMaxPressure):F0} bar");
             rig.HandPumping = pumping;
             pumpedRig = pumping ? rig : null;
+            TellPump(pumping ? rig.HandPumpStop : HandPumpStop.None, rig.OwnTanks);
+        }
+
+        // Whether this press of the hand pump's key has been told why it does nothing.
+        private bool pumpTold;
+
+        // Says why the held hand pump puts no water in, once a press (a Nexus
+        // report, audit 2026-11-21: it "just.. Doesn't wanna cooperate", with
+        // only too much pressure ever said).
+        private void TellPump(HandPumpStop stop, bool ownTanks)
+        {
+            if (stop == HandPumpStop.None || pumpTold)
+                return;
+            pumpTold = true;
+            Notify(HandPump.Notice(stop, Gauge(InjectorRig.HandPumpMaxPressure), ownTanks));
         }
 
         private InjectorRig hoseRig;

@@ -287,6 +287,7 @@ namespace RealisticFiring.AdapterCheck
             CheckFiremanOrders();
             CheckFiringTabletStartingItems();
             CommsTabletChecks.Run(Check);
+            FlameGlyphChecks.Run(Check);
             TabletSettingsChecks.Run(Check);
             ProfileRegistryChecks.Run(Check);
             FittingsChecks.Run(Check);
@@ -1186,6 +1187,59 @@ namespace RealisticFiring.AdapterCheck
             Run(sharedRig, 2f);
             Check(stillPumped && !sharedRig.RemoteHandPumping && sharedRig.BoilerVessel.mass <= stoppedMass,
                 "two guests on the hand pump: one letting go leaves the other pumping, and it stops when both have");
+
+            // What a press of the hand pump's key is told, and the Water page's
+            // row while it is held, by the rules its step follows (a Nexus
+            // report, audit 2026-11-21: it seemed to do nothing, only too much
+            // pressure ever said).
+            lever.Value = 0f;
+            var told = NewBoiler(1f, lever);
+            InjectorRig.TryCreate(null, told, out _);
+            InjectorRig.TryGet(told, out var toldRig);
+            var notHeldRow = FireOverlay.HandPumpRow(toldRig);
+            toldRig.HandPumping = true;
+            Run(toldRig, 2f);
+            var pumpingStop = toldRig.HandPumpStop;
+            var pumpingRow = FireOverlay.HandPumpRow(toldRig);
+            (HandPumpStop Stop, string Row, bool Gained) Held(InjectorRig held)
+            {
+                Run(held, 0.1f);
+                var before = held.BoilerVessel.mass;
+                Run(held, 1f);
+                return (held.HandPumpStop, FireOverlay.HandPumpRow(held)?.Value, held.BoilerVessel.mass > before + 0.01f);
+            }
+            tenderWater.Value = 0f;
+            var dry = Held(toldRig);
+            tenderWater.Value = 40000f;
+            told.isBrokenReadOut.Value = 1f;
+            var broken = Held(toldRig);
+            told.isBrokenReadOut.Value = 0f;
+            toldRig.HoseIn = true;
+            toldRig.HoseOpening = 1f;
+            Run(toldRig, 0.1f);
+            var hoseStop = toldRig.HandPumpStop;
+            var hoseRow = FireOverlay.HandPumpRow(toldRig)?.Value;
+            toldRig.HoseIn = false;
+            toldRig.HoseOpening = 0f;
+            var again = Held(toldRig);
+            toldRig.HandPumping = false;
+            var steamed = NewBoiler(12f, lever);
+            InjectorRig.TryCreate(null, steamed, out _);
+            InjectorRig.TryGet(steamed, out var steamedRig);
+            steamedRig.HandPumping = true;
+            var pressed = Held(steamedRig);
+            var pressedLevel = FireOverlay.HandPumpRow(steamedRig)?.Level;
+            steamedRig.HandPumping = false;
+            Check(notHeldRow == null && pumpingStop == HandPumpStop.None && pumpingRow?.Value == $"{InjectorRig.HandPumpRate:F1} kg/s" && pumpingRow?.Level == null
+                  && dry.Stop == HandPumpStop.NoWater && dry.Row == "no water" && !dry.Gained
+                  && broken.Stop == HandPumpStop.BoilerBroken && broken.Row == "boiler broken" && !broken.Gained
+                  && hoseStop == HandPumpStop.HoseFilling && hoseRow == "hose filling"
+                  && again.Stop == HandPumpStop.None && again.Gained
+                  && pressed.Stop == HandPumpStop.Pressure && pressed.Row == "over 3 bar" && !pressed.Gained && pressedLevel == AdviceLevel.Watch
+                  && HandPump.Notice(pressed.Stop, InjectorRig.HandPumpMaxPressure - 1f) == "The hand pump cannot force water in above 3 bar"
+                  && toldRig.OwnTanks,
+                $"held, the hand pump's row reads '{pumpingRow?.Value}', and its stop agrees with its step: dry '{dry.Row}', broken '{broken.Row}', " +
+                $"a hose in '{hoseRow}', at 11 bar '{pressed.Row}', none of them gaining water; not held, no row; with no car, told to fill its tanks");
 
             // A Worthington SA beside the injector, matched to an engine exhausting 8 kg/s.
             var fed = NewBoiler(12f, lever);
