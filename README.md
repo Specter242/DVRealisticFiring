@@ -48,6 +48,9 @@ Download the installable ZIP from [GitHub Releases](https://github.com/Specter24
 Start with the [firing guide](FIRING-GUIDE.md): how to fire well, each engine,
 the stoker, oil, and water, with a quick-reference table. The ZIP carries it as
 `FIRING-GUIDE.html`, which opens in any web browser.
+Building a Custom Car Loader steam locomotive? The [maker-fit format](MAKER-FIT.md)
+is the `realistic-firing.json` you ship with it to set up its firebox, boiler,
+injectors, cab controls and shed hoses.
 See the [changelog](CHANGELOG.md) for version history. Release tags contain
 sanitized source snapshots; older tags describe the behavior of that version.
 
