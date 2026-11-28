@@ -13,6 +13,13 @@ namespace RealisticFiring.Core
 
         /// <summary>Fire dump request, 0 to 1, as the stock dump control gives it.</summary>
         public float Dump;
+
+        /// <summary>
+        /// A hold over the dump point has just become a dump: once per hold,
+        /// on its first tick of <see cref="Dump"/>. It starts that hold's
+        /// <see cref="DumpStroke"/>.
+        /// </summary>
+        public bool DumpBegan;
     }
 
     /// <summary>
@@ -20,7 +27,8 @@ namespace RealisticFiring.Core
     /// loco: rocking it off center and back (or across) shakes the grate once
     /// per rock, a short rock wiggling it and one of at least
     /// <see cref="ShakeStroke"/> shaking it; holding it over past the stock dump point for longer than
-    /// <see cref="HoldTime"/> dumps the fire at the stock rate. Lever values run
+    /// <see cref="HoldTime"/> dumps the fire at the stock rate, as far as one
+    /// hold's <see cref="DumpStroke"/> lets it. Lever values run
     /// 0 to 1 with 0.5 at center, as the stock COAL_DUMP_CONTROL does.
     /// </summary>
     public sealed class GrateLever
@@ -71,16 +79,18 @@ namespace RealisticFiring.Core
                 reach = Math.Max(reach, deviation);
 
             var dump = 0f;
+            var began = false;
             if (side != 0 && deviation > DumpStart)
             {
                 heldOver += dt;
                 if (heldOver > HoldTime)
                 {
+                    began = !dumped;
                     dumped = true;
                     dump = Math.Min(1f, (deviation - DumpStart) / (0.5f - DumpStart));
                 }
             }
-            return new GrateLeverState { Shakes = shakes, Wiggles = wiggles, Dump = dump };
+            return new GrateLeverState { Shakes = shakes, Wiggles = wiggles, Dump = dump, DumpBegan = began };
         }
     }
 }

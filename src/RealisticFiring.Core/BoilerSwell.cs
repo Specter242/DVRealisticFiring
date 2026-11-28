@@ -25,6 +25,13 @@ namespace RealisticFiring.Core
 
         /// <summary>Whether the water is boiling; below boiling it holds no steam.</summary>
         public bool Boiling;
+
+        /// <summary>
+        /// The game's Steam Startup speed-up of the fire now (1 or less: none). It hurries a cold engine's fire
+        /// and the pressure it raises, so the swell takes the heat and the pressure's rise at the real-time pace
+        /// they stand for, as the superheater and thermal shock do.
+        /// </summary>
+        public float StartupMultiplier;
     }
 
  public sealed class BoilerSwell
@@ -61,12 +68,17 @@ namespace RealisticFiring.Core
             var target = 0f;
             if (inputs.Boiling && inputs.LatentHeat > 0f)
             {
+                // Steam Startup runs the fire, and the pressure it raises, many times faster than real time; the
+                // steam held in the water is a level, not a rate, so it follows the real-time pace (2026-11-27,
+                // tracker item 53: at 10 times, a standing S060 showed a fifth of its glass of swell that fell
+                // away as the speed-up ended, read as a blowdown taking that much).
+                var speedup = inputs.StartupMultiplier > 1f && !float.IsInfinity(inputs.StartupMultiplier) ? inputs.StartupMultiplier : 1f;
                 // The steam made in the water, less what cold feed condenses,
                 // against the engine's full steam.
-                var made = Math.Max(0f, inputs.Heat) / inputs.LatentHeat;
+                var made = Math.Max(0f, inputs.Heat) / speedup / inputs.LatentHeat;
                 var condensed = Math.Max(0f, inputs.Fed) / dt * Math.Max(0f, inputs.FeedSubcooling) / inputs.LatentHeat;
                 var steaming = inputs.FullSteam > 0f ? Smoothing.Clamp01((made - condensed) / inputs.FullSteam) : 0f;
-                var flash = Math.Max(-MostFlash, Math.Min(MostFlash, -PressureRate * FlashPerBarPerSecond));
+                var flash = Math.Max(-MostFlash, Math.Min(MostFlash, -PressureRate / speedup * FlashPerBarPerSecond));
                 target = Math.Max(0f, FullSwell * steaming + flash);
             }
             Rise += (target - Rise) * Math.Min(1f, dt / FollowTime);

@@ -235,7 +235,7 @@ namespace RealisticFiring.Items
 
         private float DoorOpening =>
             FireboxRegistry.TryGet(Car, out var coal) ? coal.DoorOpening
-            : RealisticOilFirebox.TryGet(Car, out var oil) ? oil.DoorOpening : 0f;
+            : RealisticOilFirebox.TryGet(Car, out var oil) ? oil.DoorwayOpening : 0f;
 
         /// <summary>Open as the stock shovel needs it to lay coal (60 %, a quarter in VR).</summary>
         internal bool DoorOpenFor(bool vr) => DoorOpening >= (vr ? 0.25f : ShovelNonPhysicalCoal.REQUIRED_DOOR_OPENED_PERCENTAGE_NON_VR);

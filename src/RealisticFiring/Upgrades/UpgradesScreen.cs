@@ -5,6 +5,7 @@ using DV.InventorySystem;
 using DV.ServicePenalty.UI;
 using DV.Utils;
 using RealisticFiring.Core;
+using RealisticFiring.Sim;
 
 namespace RealisticFiring.Upgrades
 {
@@ -38,6 +39,20 @@ namespace RealisticFiring.Upgrades
             /// <summary>Why it isn't fitted though its rule fits it, or null (the jets without the arch).</summary>
             public Func<string> Missing = () => null;
 
+            /// <summary>
+            /// Why it doesn't go on <c>car</c> (null: the fleet) at all, or null: coal
+            /// firing's upgrades on an S282 converted to oil. It is then neither
+            /// sold nor counted for that engine.
+            /// </summary>
+            public Func<TrainCar, string> NotFor = _ => null;
+
+            /// <summary>
+            /// Bought or set fitted but not yet on <c>car</c> (null: the fleet) as it
+            /// was built, or null: the oil conversion, which comes when the game
+            /// next loads. Says so in its standing.
+            /// </summary>
+            public Func<TrainCar, string> PendingFor = _ => null;
+
             public UpgradeRule Rule() => Main.Settings != null ? Fittings.Spec(Id).Rule(Main.Settings) : UpgradeRule.BuyInCareer;
             public bool Bought() => Fittings.IsBought(Id);
             public bool Fitted() => Fittings.IsFitted(Id) && SessionBuilt();
@@ -57,7 +72,7 @@ namespace RealisticFiring.Upgrades
 
             public bool CanBuyFor(TrainCar car)
             {
-                if (Net.IsClient || !Fittings.InCareer || Rule() != UpgradeRule.BuyInCareer)
+                if (Net.IsClient || !Fittings.InCareer || Rule() != UpgradeRule.BuyInCareer || NotFor(car) != null)
                     return false;
                 if (Fittings.IsPerLocomotive && Fittings.CarGuidOf(car) == null)
                     return false;
@@ -75,7 +90,9 @@ namespace RealisticFiring.Upgrades
             public string Value => ValueFor(null);
 
             public string ValueFor(TrainCar car) =>
-                Net.IsClient ? (IsFittedFor(car) ? "fitted" : "not fitted")
+                NotFor(car) != null ? "coal only"
+                : Net.IsClient ? (IsFittedFor(car) ? "fitted" : "not fitted")
+                : PendingFor(car) != null ? "next load"
                 : CanBuyFor(car) ? $"${Price:N0}"
                 : Fittings.InCareer && Rule() == UpgradeRule.BuyInCareer && !IsBoughtFor(car) ? "later"
                 : IsFittedFor(car) ? "fitted" : "not fitted";
@@ -92,15 +109,21 @@ namespace RealisticFiring.Upgrades
                         return fitted ? $"The host's {targetId} has it." : $"The host's {targetId} does not have it; the host buys it.";
                     return fitted ? "The host's engines have it." : "The host's engines do not have it; the host buys it.";
                 }
+                if (NotFor(car) is string notFor)
+                    return notFor + ".";
                 if (WaitingReason(car) is string waiting)
                     return waiting;
+                if (PendingFor(car) is string pending)
+                    return pending;
                 var missing = fitted ? null : Missing();
                 switch (Rule())
                 {
                     case UpgradeRule.AlwaysFitted: return missing == null ? "Fitted: the mod's menu sets it always fitted." : $"Not fitted: {missing}.";
                     case UpgradeRule.NeverFitted: return "Not fitted: the mod's menu sets it never fitted.";
                     default:
-                        return !Fittings.InCareer ? (missing == null ? "Fitted: in sandbox there is nothing to buy." : $"Not fitted: {missing}.")
+                        return !Fittings.InCareer
+                                ? ((UpgradeKeys.Alternatives & Flag) != 0 ? "Not fitted: in sandbox an engine stays as it came, unless the mod's menu sets this always fitted."
+                                    : missing == null ? "Fitted: in sandbox there is nothing to buy." : $"Not fitted: {missing}.")
                             : IsBoughtFor(car) ? (missing == null ? $"Bought: {(perLoco ? targetId : Engines)} has it." : $"Bought, but not fitted: {missing}.")
                             : $"${Price:N0}.";
                 }
@@ -303,7 +326,75 @@ namespace RealisticFiring.Upgrades
             Engines = "every S282",
         };
 
-        internal static readonly Upgrade[] All = { Arch, Jets, AutoFireDoor, Snifting, DriftingValve, ByPass, Stoker, FeedPump, Booster };
+ public const double OilBurnerPrice = 35_000;
+
+        // Coal firing's upgrades on an S282 built or bought to burn oil (null: the fleet's S282s, for the stoker alone).
+        private static string CoalOnly(TrainCar car) =>
+            car != null && (S282OilConversion.IsOil(car) || S282OilConversion.ConvertedNow(car))
+                ? $"Not on an oil burner: {car.ID} burns oil"
+                : null;
+
+        private static string StokerNotFor(TrainCar car) =>
+            car != null ? CoalOnly(car)
+            : Main.Session.S282OilBurner && Fittings.OilBurner ? "Not on an oil burner: the S282s burn oil"
+            : null;
+
+        // The conversion bought (or set fitted) and not yet built: the engine, or any S282 loaded.
+        private static string OilPending(TrainCar car)
+        {
+            if (!Main.Session.S282OilBurner)
+                return null;
+            if (car != null)
+                return S282OilConversion.Pending(car)
+                    ? (S282OilConversion.ConvertedNow(car)
+                        ? $"Bought: {car.ID} is in the shops, and comes out burning oil when the game next loads (save, then load it)."
+                        : $"{car.ID} is in the shops, and comes out burning coal again when the game next loads.")
+                    : null;
+            var spawner = CarSpawner.Instance;
+            var pending = spawner != null && spawner.AllCars != null && spawner.AllCars.Any(S282OilConversion.Pending);
+            return pending
+                ? (Fittings.OilBurner
+                    ? "Bought: the S282s are in the shops, and come out burning oil when the game next loads (save, then load it)."
+                    : "The S282s are in the shops, and come out burning coal again when the game next loads.")
+                : null;
+        }
+
+        internal static readonly Upgrade OilBurner = new Upgrade
+        {
+            Id = UpgradeId.S282OilBurner,
+            Flag = UpgradeMask.S282OilBurner,
+            Name = "S282 oil burner",
+            Price = OilBurnerPrice,
+            Page = "The S282 converted to burn oil, as roads in the oil country converted their coal engines: an oil tank in the tender's coal space, " +
+                   "filled at a fuel pump, and a burner in the firebox fired from the cab. The FIRING VALVE lever feeds the oil, the ATOMIZER valve's steam sprays it, " +
+                   "and the OIL HEATER warms it so it flows; light it with burning waste through the peephole, and scour the flues with sand from the sand box. " +
+                   "The coal fire goes, and with it the stoker, brick arch, over-fire jets, and automatic fire door. " +
+                   "The engines go to the shops: they come out burning oil when the game next loads. Bought once, it is fitted to every S282.",
+            PerLocoPage = "This S282 converted to burn oil: an oil tank in the tender's coal space, filled at a fuel pump, and a burner fired from the cab by the " +
+                          "FIRING VALVE lever, with its ATOMIZER and OIL HEATER valves. The coal fire goes, and with it the stoker, brick arch, over-fire jets, and " +
+                          "automatic fire door. It goes to the shops and comes out burning oil when the game next loads. " +
+                          "Bought for this locomotive, it stays fitted to this locomotive.",
+            SessionBuilt = () => Main.Session.S282OilBurner,
+            Waiting = () => Main.Session.S282OilBurner ? null
+                : Main.Settings != null && !Main.Settings.RealisticOilBurners ? "Needs the mod's realistic oil burners (the mod's menu, then a restart)."
+                : "Restart the game first: the mod's menu had it never fitted when the game started.",
+            Missing = () => Main.Session.S282OilBurner ? null : "the game needs a restart after the mod's menu changed",
+            PendingFor = OilPending,
+            BoughtLine = "Bought. The S282s go to the shops, and come out burning oil when the game next loads: save, then load the game.",
+            BoughtLineForLoco = id => $"Bought. {id} goes to the shops, and comes out burning oil when the game next loads: save, then load the game.",
+            Engines = "every S282",
+        };
+
+        internal static readonly Upgrade[] All = { Arch, Jets, AutoFireDoor, Snifting, DriftingValve, ByPass, Stoker, FeedPump, Booster, OilBurner };
+
+        static UpgradesScreen()
+        {
+            // Coal firing's upgrades go on an S060 still, so only the engine's own page leaves them off.
+            Arch.NotFor = CoalOnly;
+            Jets.NotFor = CoalOnly;
+            AutoFireDoor.NotFor = CoalOnly;
+            Stoker.NotFor = StokerNotFor;
+        }
 
         private DisplayScreenSwitcher kiosk;
         private CareerManagerMainScreen main;
@@ -542,7 +633,7 @@ namespace RealisticFiring.Upgrades
         /// <summary>How many of its upgrades an engine on the list has, as its page would show them fitted.</summary>
         private static string Has(OwnedLocomotive engine, TrainCar car)
         {
-            var mine = All.Where(u => UpgradeKeys.Allows(engine.Livery, u.Flag)).ToList();
+            var mine = All.Where(u => UpgradeKeys.Allows(engine.Livery, u.Flag) && (car == null || u.NotFor(car) == null)).ToList();
             var fitted = car == null ? 0 : mine.Count(u => u.IsFittedFor(car));
             return $"{fitted}/{mine.Count} fitted";
         }

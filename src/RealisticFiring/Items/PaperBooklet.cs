@@ -62,6 +62,8 @@ namespace RealisticFiring.Items
                 renderer.sharedMaterial = material;
             }
             inventory.PreviewPrefab = preview;
+            // Its icon the booklet itself with this cover, rendered as the game drew the catalog's; the cover alone if that fails.
+            ItemIcons.Apply(inventory, preview, ItemIcons.StockView(inventory), prefabName);
             var box = item.GetComponent<BoxCollider>();
             box.size = new Vector3(PageWidth, box.size.y, PageHeight);
             // Copying VehicleCatalog retains the proven portrait desktop/placer/VR anchors.

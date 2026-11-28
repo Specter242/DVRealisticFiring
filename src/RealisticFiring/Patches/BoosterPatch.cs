@@ -3,20 +3,20 @@ using DV.Simulation.Cars;
 using DV.Wheels;
 using HarmonyLib;
 using LocoSim.Definitions;
+using RealisticFiring.Core;
 using RealisticFiring.Sim;
+using UnityEngine;
 
 namespace RealisticFiring.Patches
 {
-    /// <summary>
-    /// Before a loco whose prototype had a trailing-truck booster builds its
-    /// sim graph, fits the booster: its latch and idling valve as saved cab
-    /// controls, and the booster between the main engine's torque and the
-    /// traction, on the main engine's steam chest, the boiler, and the
-    /// reverser; the trailer axle counts as powered only while it is in gear.
-    /// </summary>
-    [HarmonyPatch(typeof(SimController), nameof(SimController.Initialize))]
+ [HarmonyPatch(typeof(SimController), nameof(SimController.Initialize))]
     internal static class BoosterPatch
     {
+        /// <summary>Rearranged S282's Harmony ID (its UMM mod ID).</summary>
+        internal const string RearrangedS282Id = "RearrangedS282";
+
+        [HarmonyAfter(RearrangedS282Id)]
+        [HarmonyPriority(Priority.Low)]
         private static void Prefix(SimController __instance, TrainCar trainCar) =>
             SetupGuard.Run(trainCar, "booster", () => Add(__instance, trainCar));
 
@@ -49,9 +49,16 @@ namespace RealisticFiring.Patches
             booster.TrailerLoad = fit.TrailerLoad;
             booster.DrivingAxles = fit.DrivingAxles;
             booster.PoweredAxlesPortId = wheelslip != null ? wheelslip.numberOfPoweredAxlesPortId : null;
+            // As built: Rearranged sets its count for an arrangement only after the graph is built.
+            var axlesId = BoosterWiring.ComponentOf(booster.PoweredAxlesPortId);
+            var axles = axlesId != null ? graph.executionOrder.OfType<ConfigurablePortDefinition>().FirstOrDefault(d => d != null && d.ID == axlesId) : null;
+            booster.BuiltPoweredAxles = axles != null && axles.value > 0f ? Mathf.RoundToInt(axles.value) : 0;
 
+            // After whatever feeds the traction: the engine on a stock S282,
+            // Rearranged's sum of its engines' torque on its graph.
             var order = graph.executionOrder.ToList();
-            order.Insert(order.IndexOf(engine) + 1, booster);
+            var at = BoosterWiring.InsertAt(order.Select(d => d != null ? d.ID : null).ToList(), drive.fullPortIdOut, engine.ID);
+            order.Insert(at > 0 ? at : order.IndexOf(engine) + 1, booster);
             order.Insert(0, Control(graph, BoosterFit.Latch));
             order.Insert(0, Control(graph, BoosterFit.Idle));
             graph.executionOrder = order.ToArray();

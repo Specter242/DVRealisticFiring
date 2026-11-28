@@ -34,6 +34,7 @@ namespace RealisticFiring.StackEffects
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static void LinkEngineSteam()
         {
+            Visuals.EngineVents.ExternalIdentity = car => StackSources.EngineSteam(car);
             Visuals.EngineVents.External = car =>
             {
                 var steam = StackSources.EngineSteam(car);

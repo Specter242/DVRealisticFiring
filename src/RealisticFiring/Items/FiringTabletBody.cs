@@ -3,7 +3,11 @@ using UnityEngine;
 
 namespace RealisticFiring.Items
 {
-    /// <summary>Shared low-poly shell and inventory art; no third-party meshes or textures.</summary>
+    /// <summary>
+    /// Shared low-poly shell and inventory art; no third-party meshes or
+    /// textures. The icon is rendered from the shell and its screen
+    /// (<see cref="RenderIcon"/>); the drawn one stays if that fails.
+    /// </summary>
     internal static class FiringTabletBody
     {
         private static Material material;
@@ -89,6 +93,65 @@ namespace RealisticFiring.Items
             AccessTools.Field(typeof(InventoryItemSpec), "itemIconSprite").SetValue(spec, icon);
             AccessTools.Field(typeof(InventoryItemSpec), "itemIconSpriteStandard").SetValue(spec, icon);
             AccessTools.Field(typeof(InventoryItemSpec), "itemIconSpriteDropped").SetValue(spec, droppedIcon);
+            RenderIcon(spec);
+        }
+
+        /// <summary>
+        /// Sets the tablet's icon rendered from its own shell and screen,
+        /// the screen showing its Fire page (<see cref="ItemIcons"/>); it keeps
+        /// the drawn icon if that fails.
+        /// </summary>
+        internal static void RenderIcon(InventoryItemSpec spec)
+        {
+            var model = IconModel();
+            try
+            {
+                // The clinometer's own view (the tablet is made from it): its face to the viewer, turned a little.
+                ItemIcons.Apply(spec, model, ItemIcons.StockView(spec), FiringTablet.PrefabName);
+            }
+            finally
+            {
+                DestroyIconModel(model);
+            }
+        }
+
+        /// <summary>The tablet's shell with its screen showing an example Fire page, for an icon; let go with <see cref="DestroyIconModel"/>.</summary>
+        internal static GameObject IconModel()
+        {
+            var model = new GameObject("[firing tablet icon model]") { hideFlags = HideFlags.HideAndDontSave };
+            Build(model.transform);
+            var page = FiringTabletScreen.SamplePage();
+            var display = new GameObject("screen") { hideFlags = HideFlags.HideAndDontSave };
+            display.transform.SetParent(model.transform, false);
+            display.transform.localPosition = new Vector3(0f, 0f, FiringTabletScreen.SurfaceDepth);
+            display.AddComponent<MeshFilter>().sharedMesh = FiringTabletScreen.SurfaceMesh();
+            // A lit screen shows its own light; without a page, a dark glass.
+            var screen = page != null
+                ? new Material(Shader.Find("Unlit/Texture")) { mainTexture = page }
+                : new Material(Shader.Find("Standard")) { color = new Color(0.02f, 0.025f, 0.03f) };
+            screen.name = "RealisticFiring_TabletIconScreen";
+            display.AddComponent<MeshRenderer>().sharedMaterial = screen;
+            return model;
+        }
+
+        /// <summary>Destroys an <see cref="IconModel"/> with its screen's page, material, and mesh.</summary>
+        internal static void DestroyIconModel(GameObject model)
+        {
+            if (model == null)
+                return;
+            var display = model.transform.Find("screen");
+            if (display != null)
+            {
+                var material = display.GetComponent<MeshRenderer>().sharedMaterial;
+                if (material != null)
+                {
+                    if (material.mainTexture != null)
+                        Object.DestroyImmediate(material.mainTexture);
+                    Object.DestroyImmediate(material);
+                }
+                Object.DestroyImmediate(display.GetComponent<MeshFilter>().sharedMesh);
+            }
+            Object.DestroyImmediate(model);
         }
 
         private static Sprite MakeIcon(bool dropped)

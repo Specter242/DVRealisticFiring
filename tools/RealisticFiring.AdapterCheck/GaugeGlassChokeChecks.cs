@@ -171,7 +171,7 @@ namespace RealisticFiring.AdapterCheck
             }
         }
 
-        private static (Boiler Boiler, BoilerWaterRig Water, TryCockRig Cocks, Port[] Ports, Port Blowdown, Port SteamDraw, Port Heat) BuildS282(SimGameParams gameParams)
+        internal static (Boiler Boiler, BoilerWaterRig Water, TryCockRig Cocks, Port[] Ports, Port Blowdown, Port SteamDraw, Port Heat) BuildS282(SimGameParams gameParams)
         {
             var boilerDef = new BoilerDefinition
             {
@@ -210,7 +210,7 @@ namespace RealisticFiring.AdapterCheck
             return (boiler, waterRig, tryCockRig, ports, blowdown, steamDraw, heat);
         }
 
-        private static void StepBoiler(Boiler boiler, BoilerWaterRig rig, float seconds)
+        internal static void StepBoiler(Boiler boiler, BoilerWaterRig rig, float seconds)
         {
             const float dt = 0.1f;
             var simulateBlowdown = AccessTools.Method(typeof(Boiler), "SimulateBlowdown");

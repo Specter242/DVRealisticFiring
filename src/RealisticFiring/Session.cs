@@ -25,6 +25,13 @@ namespace RealisticFiring
         /// <summary>Whether the stock S282 is built with the booster upgrade: unless it is never fitted. Whether it works is <see cref="Upgrades.Fittings.Booster"/>.</summary>
         public bool S282Booster { get; private set; }
         public bool UnlistedEngines { get; private set; }
+        /// <summary>
+        /// Whether an S282 can be built as an oil burner: with the realistic
+        /// oil burners on, unless its conversion is never fitted. Whether one
+        /// is converted is <see cref="Sim.S282OilConversion.IsOil"/>, decided as
+        /// it is built.
+        /// </summary>
+        public bool S282OilBurner { get; private set; }
 
         public static Session From(Settings settings) => new Session
         {
@@ -42,6 +49,7 @@ namespace RealisticFiring
             S282Booster = settings.S282Booster != Upgrades.UpgradeRule.NeverFitted,
             S282FeedPump = settings.RealisticInjectors && settings.S282FeedPump != Upgrades.UpgradeRule.NeverFitted,
             UnlistedEngines = settings.UnlistedLocomotives,
+            S282OilBurner = settings.RealisticOilBurners && settings.S282OilBurner != Upgrades.UpgradeRule.NeverFitted,
         };
     }
 }

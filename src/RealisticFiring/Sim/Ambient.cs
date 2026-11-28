@@ -30,7 +30,7 @@ namespace RealisticFiring.Sim
                 if (now - readAt >= ReadEvery)
                 {
                     readAt = now;
-                    seasons = SeasonsMod.TryRead(out var celsius, out _) ? celsius : (float?)null;
+                    seasons = SeasonsMod.TryRead(out var celsius) ? celsius : (float?)null;
                 }
                 return seasons;
             }

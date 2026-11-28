@@ -144,6 +144,8 @@ namespace RealisticFiring.Items
             inventory.PreviewBounds = StartingFuelBody.Bounds(kind);
             StartingFuelBody.SetIcon(inventory, kind);
             inventory.PreviewPrefab = StartingFuelBody.Build(holder.transform, kind, 0).gameObject;
+            // Its icon rendered from that body; the drawn one if that fails.
+            ItemIcons.Apply(inventory, inventory.PreviewPrefab, StartingFuelBody.IconView(kind, inventory), copy.name);
             if (copy.GetComponent<ItemSaveData>() == null) copy.AddComponent<ItemSaveData>();
             var fuel = copy.AddComponent<StartingFuelItem>(); fuel.Kind = kind;
             if (kind == StartingFuelKind.Rag)

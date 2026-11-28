@@ -1,3 +1,4 @@
+using DV.Simulation.Cars;
 using HarmonyLib;
 using LocoSim.Implementations;
 using Newtonsoft.Json.Linq;
@@ -95,23 +96,62 @@ namespace RealisticFiring.Patches
         }
     }
 
-    /// <summary>Saves the water beside the stock boiler's keys, which the stock load ignores.</summary>
-    [HarmonyPatch(typeof(Boiler), nameof(Boiler.GetSaveStateData))]
-    internal static class BoilerSavePatch
-    {
-        private static void Postfix(Boiler __instance, JObject __result)
-        {
-            if (BoilerWaterRig.TryGet(__instance, out var rig))
-                rig.Save(__result);
-        }
-    }
-
+    /// <summary>
+    /// The stock boiler's load. A save by 1.26.0 or earlier keeps the water
+    /// beside the stock boiler's keys (<c>rfSolids</c> and the rest), read
+    /// here; a save without them starts the water fresh, until the car's own
+    /// entry (<see cref="BoilerWaterSavePatch"/>) is read after it.
+    /// </summary>
     [HarmonyPatch(typeof(Boiler), nameof(Boiler.SetSaveStateData))]
     internal static class BoilerLoadPatch
     {
         private static void Postfix(Boiler __instance, JObject savedData)
         {
             BoilerWaterRig.OnLoaded(__instance, savedData);
+        }
+    }
+
+    /// <summary>
+    /// Saves each boiler's water in the car's own save, under
+    /// <see cref="BoilerWaterRig.CarSaveKey"/>, not in the stock boiler's save
+    /// object: other mods read that object as the game's alone (JimTaplin's
+    /// Rearranged S282 3.0.0 refused a boiler with more than its four stock
+    /// fields when syncing a locomotive in multiplayer). The game ignores the
+    /// unknown key, so removing the mod leaves saves readable.
+    /// </summary>
+    [HarmonyPatch(typeof(SimCarStateSave), nameof(SimCarStateSave.GetStateSaveData))]
+    internal static class BoilerWaterSavePatch
+    {
+        internal static readonly AccessTools.FieldRef<SimCarStateSave, SimulationFlow> Flow =
+            AccessTools.FieldRefAccess<SimCarStateSave, SimulationFlow>("simFlow");
+
+        private static void Postfix(SimCarStateSave __instance, JObject __result)
+        {
+            try
+            {
+                BoilerWaterRig.SaveCar(Flow(__instance), __result);
+            }
+            catch (System.Exception e)
+            {
+                Faults.Report("saving the boiler water", __instance != null ? __instance.GetComponent<TrainCar>() : null, e);
+            }
+        }
+    }
+
+    /// <summary>After the stock car's load, and so after its boilers': the water as the car saved it.</summary>
+    [HarmonyPatch(typeof(SimCarStateSave), nameof(SimCarStateSave.SetStateSaveData))]
+    internal static class BoilerWaterLoadPatch
+    {
+        private static void Postfix(SimCarStateSave __instance, JObject data)
+        {
+            try
+            {
+                BoilerWaterRig.LoadCar(BoilerWaterSavePatch.Flow(__instance), data);
+            }
+            catch (System.Exception e)
+            {
+                Faults.Report("loading the boiler water", __instance != null ? __instance.GetComponent<TrainCar>() : null, e);
+            }
         }
     }
 }

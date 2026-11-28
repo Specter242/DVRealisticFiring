@@ -289,13 +289,23 @@ namespace RealisticFiring.Visuals
         private bool DrawnWithTheEngines()
         {
             var car = rig.Car;
-            if (car == null || !EngineVents.TryGet(car, out var steam, out var add))
+            if (car == null || !EngineVents.TryGetIdentity(car, out var steam))
             {
                 drawnWith = null;
                 return false;
             }
-            if (ReferenceEquals(drawnWith, steam))
-                return true;
+            return ReferenceEquals(drawnWith, steam) || AddToEngineSteam(car);
+        }
+
+        // Apart from the check above, which runs every frame: the strength's
+        // closure is made only when the source is added.
+        private bool AddToEngineSteam(TrainCar car)
+        {
+            if (!EngineVents.TryGet(car, out var steam, out var add))
+            {
+                drawnWith = null;
+                return false;
+            }
             drawnWith = steam;
             var full = RealisticStackEffects.Core.VentSpec.For(RealisticStackEffects.Core.VentKind.Overflow).Flow;
             return add($"injector overflow {(side < 0f ? "L" : "R")}", RealisticStackEffects.Core.VentKind.Overflow,

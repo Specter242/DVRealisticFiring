@@ -19,7 +19,9 @@ namespace RealisticFiring.Visuals
             livery => LocomotiveProfiles.For(livery)?.Cab.JetsValveSeat ?? MakerFitRegistry.TryGetJetsSeat(livery),
             Default,
             livery => LocomotiveProfiles.For(livery)?.Cab.JetsValveOwnHandle == true || MakerFitRegistry.JetsOwnHandle(livery),
-            car => FireboxRegistry.TryGet(car, out var firebox) && firebox.Character.Jets != null && (firebox.Character.JetsAsBuilt || Upgrades.Fittings.HasJets(car)),
+            // An S282 converted to oil burns its smoke at the burner: no over-fire jets (S282OilCab).
+            car => FireboxRegistry.TryGet(car, out var firebox) && firebox.Character.Jets != null && (firebox.Character.JetsAsBuilt || Upgrades.Fittings.HasJets(car))
+                   && !S282OilCab.IsConverted(car),
             (root, car, interior) =>
             {
                 if (FireboxRegistry.TryGet(car, out var firebox))

@@ -26,7 +26,7 @@ namespace RealisticFiring.AdapterCheck
     {
         private static readonly string[] Chimney = { "SmokeQuality", "SmokeSeason", "SteamVisibility", "WindStrength", "HeatShimmer", "RealisticSmoke", "CustomSmokeEffects", "EngineSteam" };
 
-        private static readonly string[] UpgradeRules = { "BrickArch", "OverFireJets", "AutomaticFireDoor", "SniftingValves", "DriftingValve", "ByPassValves", "S282Stoker", "S282FeedPump", "S282Booster" };
+        private static readonly string[] UpgradeRules = { "BrickArch", "OverFireJets", "AutomaticFireDoor", "SniftingValves", "DriftingValve", "ByPassValves", "S282Stoker", "S282FeedPump", "S282Booster", "S282OilBurner" };
 
         private static readonly string[] OneTime = { "GiveFireIron", "GiveFiringTablet", "GiveFiringManual", "GiveFiringChecklists", "GiveWoodCrate", "GiveRagTin", "ShowAddedControls", "RenewBoilerNow" };
 

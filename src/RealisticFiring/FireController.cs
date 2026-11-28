@@ -85,6 +85,19 @@ namespace RealisticFiring
                     Main.Mod.Logger.LogException("The under-engine dump failed and is off", e);
                 }
             }
+            if (Main.Settings.DumpItemIcons && PlayerManager.PlayerTransform != null)
+            {
+                Main.Settings.DumpItemIcons = false;
+                try
+                {
+                    var folder = System.IO.Path.Combine(Main.Mod.Path, "icon-dump");
+                    Notify($"{ItemIconDump.Dump(folder)} item icons written to {folder}");
+                }
+                catch (System.Exception e)
+                {
+                    Main.Mod.Logger.LogException("The item icon dump failed", e);
+                }
+            }
 #endif
             // Once in a game: some of the mod's patches failed to apply.
             if (!toldFailedPatches && Main.FailedPatches.Count > 0 && PlayerManager.PlayerTransform != null)
@@ -108,6 +121,7 @@ namespace RealisticFiring
                 FirstSteps();
             }
             catch (System.Exception e) { Faults.Report("the mod's keys", null, e); }
+            useGUILayout = NeedsGuiLayout;
             try { Sim.AutoFireDoorRig.Tick(); }
             catch (System.Exception e) { Faults.Report("the automatic fire door", null, e); }
             try { Visuals.StokerCab.EnsureBuilt(); }
@@ -136,6 +150,10 @@ namespace RealisticFiring
             catch (System.Exception e) { Faults.Report("the shed stands", null, e); }
             try { Visuals.OilBurnerCab.EnsureBuilt(); }
             catch (System.Exception e) { Faults.Report("the oil burner's cab controls", null, e); }
+            try { Visuals.S282OilTender.EnsureFitted(); }
+            catch (System.Exception e) { Faults.Report("the S282's oil tender", null, e); }
+            try { Visuals.S282OilCab.EnsureFitted(); }
+            catch (System.Exception e) { Faults.Report("the S282's oil burner cab", null, e); }
             try { Visuals.OilFlareback.Update(); }
             catch (System.Exception e) { Faults.Report("the oil flareback", null, e); }
             try { Visuals.JetBlowback.Update(); }
@@ -661,7 +679,7 @@ namespace RealisticFiring
                    (fire.Vapor > 0.01f || fire.PooledOil > 0.01f
                        ? $"; vapor {fire.Vapor:F2} kg, pooled oil {fire.PooledOil:F2} kg" + (fire.Vapor + fire.PooledOil > OilFire.SafeToLight ? " (too much to light: the blower clears vapor, pooled oil drains)" : " (lights safely)")
                        : "") +
-                   $"; flue sand on the shovel {Visuals.FlueSandBox.Loaded:F1} kg";
+                   $"; flue sand in its scoop {(Items.SandScoop.Of(oil.Car) is Items.SandScoopUse scoop ? scoop.Load : 0f):F1} kg";
         }
 
         /// <summary>The injector and boiler filling, for the status log and overlay.</summary>
@@ -767,6 +785,16 @@ namespace RealisticFiring
                     return flow.InjectorTemperature > flow.RestartLimit ? $"injector off, hot ({heat})" : "injector off";
             }
         }
+
+        // Unity's layout pass allocates for every script with an OnGUI, every
+        // frame. Only the overlay and the fireman's open card are windows, which
+        // need it; the notices and the fireman's status line draw directly.
+#if PUBLIC_RELEASE
+        private bool NeedsGuiLayout => Main.Settings.ShowOverlay || firemanPanel.Open;
+#else
+        // The development benches use GUILayout.
+        private bool NeedsGuiLayout => true;
+#endif
 
         private void OnGUI()
         {

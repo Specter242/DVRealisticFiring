@@ -32,6 +32,12 @@ namespace RealisticFiring.Sim
         /// <summary>The port holding the powered axle count, for the slip limit.</summary>
         public string PoweredAxlesPortId;
 
+        /// <summary>
+        /// The loco's configured powered-axle count as it was built, before any
+        /// other mod rearranged its wheels; 0 when not known (then the drivers).
+        /// </summary>
+        public int BuiltPoweredAxles;
+
         public readonly PortDefinition TorqueOut = new PortDefinition(PortType.OUT, PortValueType.TORQUE, "TORQUE_OUT");
         public readonly PortReferenceDefinition MainTorque = new PortReferenceDefinition(PortValueType.TORQUE, "MAIN_TORQUE");
         public readonly PortReferenceDefinition Latch = new PortReferenceDefinition(PortValueType.CONTROL, "LATCH", writeAllowed: true);
@@ -156,16 +162,16 @@ namespace RealisticFiring.Sim
                 torqueOut.Value = main;
                 return;
             }
-            if (!Fitted)
+            if (!Fitted || !ArrangementSuits)
             {
-                // Not bought: the main engine's torque straight through, the
-                // latch held down, no steam, and only the drivers powered.
+                // Not bought, or on a wheel arrangement it wasn't built for:
+                // the main engine's torque straight through, the latch held
+                // down, no steam, and its axle out of the powered count.
                 torqueOut.Value = main;
                 if (latch.Value > 0f)
                     latch.Value = 0f;
                 Flow = default;
-                if (poweredAxles != null && !Mathf.Approximately(poweredAxles.Value, def.DrivingAxles))
-                    poweredAxles.Value = def.DrivingAxles;
+                SetTrailerAxle(false);
                 return;
             }
 
@@ -194,12 +200,7 @@ namespace RealisticFiring.Sim
 #endif
 
             torqueOut.Value = main + flow.Force * wheelRadius;
-            if (poweredAxles != null)
-            {
-                var axles = def.DrivingAxles + (Model.InGear ? 1 : 0);
-                if (!Mathf.Approximately(poweredAxles.Value, axles))
-                    poweredAxles.Value = axles;
-            }
+            SetTrailerAxle(Model.InGear);
 
             pendingSteam += flow.SteamUsed * delta;
             var vessel = InjectorRig.VesselOf(boiler);
@@ -208,6 +209,52 @@ namespace RealisticFiring.Sim
                 vessel.RemoveSteam(Mathf.Min(pendingSteam, vessel.mass));
                 pendingSteam = 0f;
             }
+        }
+
+        /// <summary>
+        /// Whether the loco still has the powered axles it was built with, the
+        /// drivers the booster was fitted behind. JimTaplin's Rearranged S282 changes the S282's wheel
+        /// arrangement and sets its powered-axle count to suit; on another
+        /// count (an articulated engine, a Pacific, a 4-12-2) the booster stays
+        /// idle, as unfitted, and leaves the count as Rearranged set it.
+        /// </summary>
+        public bool ArrangementSuits
+        {
+            get
+            {
+                var built = def.BuiltPoweredAxles > 0 ? def.BuiltPoweredAxles : def.DrivingAxles;
+                if (poweredAxles == null || built <= 0)
+                    return true;
+                var suits = Mathf.Approximately(trailerAxle.Own(poweredAxles.Value, Configured), built);
+                if (suits != suitedLast)
+                {
+                    suitedLast = suits;
+                    Main.Mod?.Logger.Log(suits
+                        ? $"{car?.ID}: booster back in use: {built} powered axles again"
+                        : $"{car?.ID}: booster idle: the engine now has {trailerAxle.Own(poweredAxles.Value, Configured):F0} powered axles, not the {built} it was built with");
+                }
+                return suits;
+            }
+        }
+
+        private readonly TrailerAxle trailerAxle = new TrailerAxle();
+        private bool suitedLast = true;
+
+        // The loco's configured powered-axle count: the stock port's
+        // definition, which Rearranged sets with the port for each arrangement.
+        private ConfigurablePortDefinition poweredAxlesDefinition;
+
+        private float? Configured => poweredAxlesDefinition != null ? poweredAxlesDefinition.value : (float?)null;
+
+        // One axle more while in gear, on the count the loco has, and taken
+        // off again after: never an absolute count over another mod's.
+        private void SetTrailerAxle(bool inGear)
+        {
+            if (poweredAxles == null)
+                return;
+            var next = trailerAxle.Next(poweredAxles.Value, inGear, Configured);
+            if (next.HasValue)
+                poweredAxles.Value = next.Value;
         }
 
         private void Resolve()
@@ -221,9 +268,14 @@ namespace RealisticFiring.Sim
             boiler = flow != null ? flow.OrderedSimComps.OfType<Boiler>().FirstOrDefault() : null;
             if (flow != null && !string.IsNullOrEmpty(def.PoweredAxlesPortId))
                 flow.TryGetPort(def.PoweredAxlesPortId, out poweredAxles);
+            var axlesId = BoosterWiring.ComponentOf(def.PoweredAxlesPortId);
+            var graph = car.SimController != null ? car.SimController.connectionsDefinition : null;
+            poweredAxlesDefinition = poweredAxles != null && axlesId != null && graph != null && graph.executionOrder != null
+                ? graph.executionOrder.OfType<ConfigurablePortDefinition>().FirstOrDefault(d => d != null && d.ID == axlesId)
+                : null;
             Main.Mod.Logger.Log($"{car.ID}: booster '{id}' on the trailer axle: {Model.Spec.StartingPull(Model.Spec.MaxInletPressure) / 4.44822f:F0} lb at " +
                                 $"{Model.Spec.MaxInletPressure:F1} bar, axle {def.TrailerLoad:F0} kg, " +
-                                $"{(poweredAxles != null ? $"powered axles {def.DrivingAxles} + 1 in gear" : "no powered-axle port")}, " +
+                                $"{(poweredAxles != null ? $"powered axles {def.DrivingAxles} + 1 in gear ({(poweredAxlesDefinition != null ? $"configured {poweredAxlesDefinition.value:F0}" : "no configured count")})" : "no powered-axle port")}, " +
                                 $"steam {(boiler != null ? "from the boiler" : "nowhere: no boiler found")}");
         }
     }

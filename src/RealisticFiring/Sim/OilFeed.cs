@@ -16,7 +16,8 @@ namespace RealisticFiring.Sim
     /// into the firebox), so each mod keeps its fuel economy. The atomizer's
     /// and heater's steam goes through the stoker's steam read-out where the
     /// loco wires it into the boiler's consumption, and straight from the
-    /// boiler otherwise.
+    /// boiler otherwise. With no tender ports (an S282 converted to oil,
+    /// <see cref="S282OilConversion"/>), the oil is the tender's coal pile's.
     /// </summary>
     internal sealed class OilFeed : SimComponent
     {
@@ -42,6 +43,12 @@ namespace RealisticFiring.Sim
         private Boiler boiler;
         private bool resolved;
         private float pendingSteam;
+
+        // A tender pile holds tonnes, where a float steps by a gram or so; the
+        // feed's few grams a tick are taken from it in lots of this size, in
+        // tender units.
+        private const float PileLot = 0.05f;
+        private float pendingPile;
 
         public OilFeed(StokerDefinitionValues def, TrainCar car, float tenderPerFireboxKg, bool steamWired)
             : base(def.Id)
@@ -81,7 +88,20 @@ namespace RealisticFiring.Sim
         public float FiringValve => firebox != null ? firebox.Stop.Limit(control.Value) : Mathf.Clamp01(control.Value);
 
         /// <summary>Fuel the tender can give, in firebox kg.</summary>
-        public float TenderFuel => Mathf.Max(0f, coalAmount.Value) / (multiplier * Modifier);
+        public float TenderFuel
+        {
+            get
+            {
+                if (coalAmount.IsConnected)
+                    return Mathf.Max(0f, coalAmount.Value) / (multiplier * Modifier);
+                // The pile's own reading takes the game's consumption modifier off.
+                var pile = S282OilConversion.TenderPile(car);
+                return pile != null ? Mathf.Max(0f, pile.CoalAvailable() - pendingPile) / multiplier : 0f;
+            }
+        }
+
+        /// <summary>Whether the oil comes from the tender's coal pile (no tender ports on the engine).</summary>
+        public bool FromPile => !coalAmount.IsConnected;
 
         private float Modifier
         {
@@ -105,9 +125,23 @@ namespace RealisticFiring.Sim
         /// <summary>Takes <paramref name="fireboxKg"/> of oil from the tender, and the burner's steam.</summary>
         public void Draw(float fireboxKg, float steamPerSecond, float delta)
         {
-            // Every tick, nothing included, as CCL's stoker writes it: a fuel
-            // container takes and resets it, a tender's forwarded port is read.
-            coalConsume.Value = Mathf.Max(0f, fireboxKg) * multiplier * Modifier;
+            if (FromPile)
+            {
+                // The pile, as the shovel takes from it; Multiplayer carries its amount.
+                pendingPile += Mathf.Max(0f, fireboxKg) * multiplier;
+                var pile = pendingPile >= PileLot ? S282OilConversion.TenderPile(car) : null;
+                if (pile != null)
+                {
+                    pile.TryRemoveCoal(pendingPile);
+                    pendingPile = 0f;
+                }
+            }
+            else
+            {
+                // Every tick, nothing included, as CCL's stoker writes it: a fuel
+                // container takes and resets it, a tender's forwarded port is read.
+                coalConsume.Value = Mathf.Max(0f, fireboxKg) * multiplier * Modifier;
+            }
             steamConsumption.Value = steamPerSecond;
             if (steamWired || !(delta > 0f))
                 return;

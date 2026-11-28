@@ -128,7 +128,9 @@ namespace RealisticFiring.Patches
                 if (__instance.simFlow.TryGetPort(RealisticFirebox.AshpanControl.PortId, out var ashpanPort, canBeNullOrEmpty: true))
                 {
                     firebox.AttachAshpanPort(ashpanPort);
-                    Visuals.AshpanLever.Attach(trainCar, firebox, ashpanPort);
+                    // An S282 converted to oil has a firepan, not an ashpan to dump (S282OilCab).
+                    if (!Visuals.S282OilCab.IsConverted(trainCar))
+                        Visuals.AshpanLever.Attach(trainCar, firebox, ashpanPort);
                 }
             });
             SetupGuard.Run(trainCar, "ashpan's glow", () => Visuals.AshpanGlow.Attach(trainCar, firebox));

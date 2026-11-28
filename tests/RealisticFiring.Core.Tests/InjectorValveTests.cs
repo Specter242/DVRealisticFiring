@@ -157,4 +157,37 @@ namespace RealisticFiring.Core.Tests;
         Assert.True(low.Overflow > 0f);
         Assert.Equal(0f, low.OverflowSteam);
     }
+
+    // A VR hand sets the steam valve anywhere (tracker #48): let go, it
+    // settles at Off, Prime, or Feed, whichever the injector reads it as.
+    [Theory]
+    [InlineData(0f, Off)]
+    [InlineData(0.2f, Off)]
+    [InlineData(0.249f, Off)]
+    [InlineData(InjectorSpec.SteamPrimeFrom, Prime)]
+    [InlineData(0.3f, Prime)]
+    [InlineData(Prime, Prime)]
+    [InlineData(0.7f, Prime)]
+    [InlineData(0.749f, Prime)]
+    [InlineData(InjectorSpec.SteamFeedFrom, Feed)]
+    [InlineData(0.9f, Feed)]
+    [InlineData(Feed, Feed)]
+    public void AHandSetSteamValveSettlesAtTheNotchItReadsAs(float hand, float notch) =>
+        Assert.Equal(notch, InjectorSpec.SteamNotch(hand));
+
+    [Fact]
+    public void AHandSetSteamValveWorksTheInjectorAsItsNotchDoes()
+    {
+        for (var hand = 0f; hand <= 1f; hand += 0.01f)
+        {
+            // Primed, then held where the hand left it: as at its notch.
+            var held = NonLifter();
+            var atNotch = NonLifter();
+            var heldFlow = Run(held, hand, 0.6f, 3f);
+            var notchFlow = Run(atNotch, InjectorSpec.SteamNotch(hand), 0.6f, 3f);
+            Assert.Equal(notchFlow.State, heldFlow.State);
+            Assert.Equal(notchFlow.WaterIn, heldFlow.WaterIn, 4);
+            Assert.Equal(InjectorSpec.SteamNotch(hand), InjectorSpec.SteamNotch(InjectorSpec.SteamNotch(hand)));
+        }
+    }
 }

@@ -33,7 +33,8 @@ namespace RealisticFiring
             Vector2? Point(float across, float up)
             {
                 var local = new Vector3(Mathf.Lerp(box.min.x, box.max.x, across), Mathf.Lerp(box.min.y, box.max.y, up), box.min.z);
-                var screen = camera.WorldToScreenPoint(aim.Car.TransformPoint(local));
+                // As the picture was drawn, so a camera mod's shake carries the keypad with the door (RenderedView).
+                var screen = RenderedView.WorldToScreenPoint(camera, aim.Car.TransformPoint(local));
                 return screen.z > 0f ? new Vector2(screen.x, Screen.height - screen.y) : (Vector2?)null;
             }
 

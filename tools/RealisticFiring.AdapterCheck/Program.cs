@@ -147,6 +147,22 @@ namespace RealisticFiring.AdapterCheck
             Check(grate.Model.CoalDumped - dumpedBeforeHold > 5f,
                 $"holding the dump lever over dumps the fire ({grate.Model.CoalDumped - dumpedBeforeHold:F1} kg dumped)");
 
+            // A lever value stuck over the dump point (a multiplayer desync) drops one hold's share, not the fire.
+            Run(grate, 2f);
+            var coalBeforeStuck = grate.Model.CoalMass;
+            lever.Value = 1f;
+            Run(grate, 60f);
+            var coalAfterStuck = grate.Model.CoalMass;
+            Check(coalAfterStuck > 0.6f * coalBeforeStuck && P(grate, "COAL_DUMP_FLOW_NORMALIZED").Value == 0f,
+                $"a dump lever stuck over for a minute takes one hold's share ({coalBeforeStuck:F1} -> {coalAfterStuck:F1} kg) and stops");
+            lever.Value = 0.5f;
+            Run(grate, 1f);
+            lever.Value = 1f;
+            Run(grate, 4f);
+            lever.Value = 0.5f;
+            Check(grate.Model.CoalMass < coalAfterStuck - 5f,
+                $"back through center, the next hold dumps again ({coalAfterStuck:F1} -> {grate.Model.CoalMass:F1} kg)");
+
             var save = mine.GetSaveStateData();
             Check(save.Value<bool>("fireOn") && save["coalMass"] != null && save["coalEnvDmg"] != null && save["rfZones"] is JArray
                   && save["rfFireman"] == null && save["rfStarters"] is JArray,
@@ -228,6 +244,7 @@ namespace RealisticFiring.AdapterCheck
             CheckJk3Firebox(gameParams);
             CheckBoilerWater();
             GaugeGlassChokeChecks.Run(gameParams, Check);
+            RearrangedS282Checks.Run(gameParams, Check);
             CheckServiceGrace();
             CheckSniftingValves();
             CheckAutoFireDoor();
@@ -245,7 +262,9 @@ namespace RealisticFiring.AdapterCheck
             InjectorAudioChecks.Run(Check);
             CheckOilBurner(gameParams);
             TenderSandChecks.Run(Check);
+            S282OilTenderChecks.Run(Check);
             StartingSupplyChecks.Run(Check);
+            ThrowAimChecks.Run(Check);
             CheckClientMirror(gameParams, def);
             CheckBooster();
             CheckCylinders(gameParams);
@@ -4931,6 +4950,66 @@ namespace RealisticFiring.AdapterCheck
                 .Any(i => i.operand is System.Reflection.MethodInfo m && m.Name == "GetComponents" && m.IsGenericMethod
                           && m.GetGenericArguments()[0].Name == "AHandPoseSnapper");
             Check(strips && guides, "a cloned injector lever drops its source's VR hand guides");
+
+            // The three-notch injector steam valves are left unnotched for a
+            // VR hand (tracker #48: the stepped joint's spring held the hand
+            // at Off, then flung the handle to Feed), on every engine that
+            // has them, and kept notched for the mouse.
+            var hand = typeof(RealisticFiring.Visuals.SpringFollowsHand);
+            Check(PatchProcessor.GetOriginalInstructions(hand.GetProperty("HandsTurnByForce", hidden).GetGetMethod(true))
+                      .Any(i => i.operand is System.Reflection.MethodInfo m && m.DeclaringType == typeof(VRManager) && m.Name == nameof(VRManager.IsVREnabled)),
+                "steam valves are left unnotched only when the game runs in VR");
+            var vrRotary = (DV.CabControls.Spec.Rotary)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(DV.CabControls.Spec.Rotary));
+            var vrLever = (DV.CabControls.Spec.Lever)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(DV.CabControls.Spec.Lever));
+            vrRotary.useSteppedJoint = true; vrRotary.notches = 3; vrRotary.scrollWheelUseSpringRotation = true;
+            vrLever.useSteppedJoint = true; vrLever.steppedValueUpdate = true; vrLever.notches = 3;
+            RealisticFiring.Visuals.SpringFollowsHand.Unnotch(vrRotary);
+            RealisticFiring.Visuals.SpringFollowsHand.Unnotch(vrLever);
+            Check(!vrRotary.useSteppedJoint && vrRotary.notches == 3 && vrRotary.scrollWheelUseSpringRotation
+                  && !vrLever.useSteppedJoint && !vrLever.steppedValueUpdate && vrLever.notches == 3,
+                "a steam valve left unnotched for a VR hand keeps its three notches for its names and its wheel");
+            bool CallsAny(System.Reflection.MethodBase method, string name) => PatchProcessor.GetOriginalInstructions(method)
+                .Any(i => i.operand is System.Reflection.MethodInfo m && m.DeclaringType == hand && m.Name == name);
+            int CountCalls(System.Reflection.MethodBase method, string name) => PatchProcessor.GetOriginalInstructions(method)
+                .Count(i => i.operand is System.Reflection.MethodInfo m && m.DeclaringType == hand && m.Name == name);
+            var steamCab = typeof(RealisticFiring.Visuals.InjectorSteamCab);
+            var notchHandles = steamCab.GetMethod("NotchSteamHandles", BindingFlags.Public | BindingFlags.Static);
+            var attach = steamCab.GetMethod("Attach", BindingFlags.Public | BindingFlags.Static);
+            var build = steamCab.GetMethod("Build", hidden);
+            Check(CountCalls(notchHandles, "Unnotch") == 2 && CallsAny(notchHandles, "get_HandsTurnByForce"),
+                "an engine's own injector steam handles (the 8F's and 4F's), wheel or lever, are left unnotched for a VR hand");
+            Check(CallsAny(attach, "HoldNotched") && CallsAny(attach, "get_HandsTurnByForce"),
+                "an engine's own injector steam handles follow a VR hand and settle at their notch when let go");
+            var buildWakes = PatchProcessor.GetOriginalInstructions(build)
+                .Any(i => i.operand is System.Reflection.MethodInfo m && m.Name == "SetActive");
+            Check(CallsAny(build, "Unnotch") && CallsAny(build, "HoldNotched") && buildWakes,
+                "every other engine's added injector steam lever is left unnotched for a VR hand, set up before it wakes");
+            var holdNotched = hand.GetMethod("HoldNotched", hidden);
+            var setsScroll = PatchProcessor.GetOriginalInstructions(holdNotched)
+                .Where(i => i.operand is FieldInfo f && f.DeclaringType == typeof(NotchScroll)).Select(i => ((FieldInfo)i.operand).Name).ToList();
+            Check(setsScroll.Contains(nameof(NotchScroll.ContinuousValue)) && setsScroll.Contains(nameof(NotchScroll.DirectionalPresets))
+                  && PatchProcessor.GetOriginalInstructions(holdNotched).Any(i => i.operand is FieldInfo f && f.Name == "Settle"),
+                "a VR-held steam valve turns notch to notch by its wheel, keeps its setting, and settles when let go");
+            var rotaryPrefix = typeof(NotchScroll).Assembly.GetType("RealisticFiring.Patches.NotchScrollPatch")
+                ?.GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static);
+            Check(rotaryPrefix != null && PatchProcessor.GetOriginalInstructions(rotaryPrefix)
+                      .Any(i => i.operand is FieldInfo f && f.Name == nameof(NotchScroll.ContinuousValue)),
+                "an unnotched steam wheel's scroll release keeps its setting rather than returning to its start");
+            // The game's reasons: a lever decides at waking whether it reads its
+            // angle, and an unstepped rotary's scroll release returns it to its start.
+            var leverWakes = PatchProcessor.GetOriginalInstructions(AccessTools.Method(typeof(DV.CabControls.LeverBase), "OnEnable"))
+                .Where(i => i.operand is FieldInfo f).Select(i => ((FieldInfo)i.operand).Name).ToList();
+            Check(leverWakes.Contains("useSteppedJoint") && leverWakes.Contains("steppedValueUpdate"),
+                "the game's lever reads whether it steps as it wakes (so the added steam lever is set up switched off)");
+            var rotaryRelease = PatchProcessor.GetOriginalInstructions(AccessTools.Method(typeof(DV.CabControls.RotaryBase), "Scroll"))
+                .Where(i => i.operand is FieldInfo f).Select(i => ((FieldInfo)i.operand).Name).ToList();
+            Check(rotaryRelease.Contains("useSteppedJoint") && rotaryRelease.Contains("jointStartingPos"),
+                "the game's unstepped rotary returns to its start on scroll release (so the patch keeps a VR-held valve's setting)");
+            var settled = true;
+            for (var v = 0f; v <= 1.0001f; v += 0.01f)
+                settled &= InjectorValves.Position(RealisticFiring.Core.InjectorSpec.SteamNotch(v)) == InjectorValves.Position(v)
+                           && InjectorValves.Notches[UnityEngine.Mathf.RoundToInt(2f * RealisticFiring.Core.InjectorSpec.SteamNotch(v))] == InjectorValves.Position(v);
+            Check(settled, "a VR-held steam valve settles at the notch its hover and the injector already read it as");
 
             // Wood and rags in VR (SeanJAnimations and Blaze221, Nexus,
             // 2026-11-12), by the game's own rule (ItemVRTK.Setup): an item is

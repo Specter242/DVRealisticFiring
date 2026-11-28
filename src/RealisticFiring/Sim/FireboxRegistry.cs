@@ -26,9 +26,22 @@ namespace RealisticFiring.Sim
             livery != null && !LeftStock.IsExcluded(livery, carType)
             && (BuiltInLiveries.Contains(livery) || MakerFitRegistry.IsCoalLivery(livery));
 
+        /// <summary>Fills <paramref name="into"/> with <see cref="All"/>, for callers that run every frame.</summary>
+        public static void CopyTo(List<RealisticFirebox> into)
+        {
+            into.Clear();
+            foreach (var pair in Fireboxes)
+            {
+                if (pair.Key != null)
+                    into.Add(pair.Value);
+            }
+        }
+
         public static bool IsSupported(TrainCar car) =>
             car != null && car.carLivery != null && !LeftStock.IsExcluded(car)
-            && IsSupported(car.carLivery.id, car.carLivery.parentType != null ? car.carLivery.parentType.id : null);
+            && IsSupported(car.carLivery.id, car.carLivery.parentType != null ? car.carLivery.parentType.id : null)
+            // An S282 converted to oil burns no coal: none of coal firing's fittings go on it.
+            && !S282OilConversion.IsOil(car);
 
         public static void Register(RealisticFirebox firebox)
         {

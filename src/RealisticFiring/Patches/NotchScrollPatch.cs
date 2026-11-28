@@ -11,8 +11,12 @@ namespace RealisticFiring.Patches
         private static bool Prefix(RotaryBase __instance, ScrollAction action)
         {
             var gate = __instance.GetComponent<NotchScroll>();
-            if (gate == null || action == ScrollAction.Release)
+            if (gate == null)
                 return true;
+            // An unstepped native rotary returns to its starting position on
+            // release; one left unnotched for a VR hand keeps its setting.
+            if (action == ScrollAction.Release)
+                return !gate.ContinuousValue;
             var spec = __instance.GetComponent<Rotary>();
             if (!gate.Take() || spec == null || spec.notches < 2 || __instance.IsGrabbed() || !__instance.InteractionAllowed)
                 return false;

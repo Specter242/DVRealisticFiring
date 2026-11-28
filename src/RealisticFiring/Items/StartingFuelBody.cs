@@ -345,6 +345,15 @@ namespace RealisticFiring.Items
 
         // --- Icons ---
 
+        /// <summary>
+        /// The view each body's rendered icon is seen from (<see cref="ItemIcons"/>):
+        /// a split, crate or tin from above and the side, the crate's and
+        /// tin's plates showing; a rag in the shovel's view, spread out.
+        /// Chosen in game among four each (job 3389).
+        /// </summary>
+        internal static Quaternion IconView(StartingFuelKind kind, InventoryItemSpec spec) =>
+            kind == StartingFuelKind.Rag ? ItemIcons.StockView(spec) : Quaternion.Euler(25f, 35f, 0f);
+
         internal static void SetIcon(InventoryItemSpec spec, StartingFuelKind kind)
         {
             var texture = PlumeAssets.StartingFuelIcon(kind == StartingFuelKind.Wood ? "starting_wood_icon" : kind == StartingFuelKind.Rag ? "starting_rag_icon"

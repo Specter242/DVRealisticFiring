@@ -116,7 +116,19 @@ namespace RealisticFiring.Sim
         public float Opening(int index) => Smoothing.Clamp01(Smoothing.Finite(ports[index].Value));
 
         /// <summary>Whether any cock is open.</summary>
-        public bool AnyOpen => ports.Any(p => p.Value > 0f);
+        public bool AnyOpen
+        {
+            get
+            {
+                // Read every tick: no enumerator.
+                for (var i = 0; i < ports.Length; i++)
+                {
+                    if (ports[i].Value > 0f)
+                        return true;
+                }
+                return false;
+            }
+        }
 
         /// <summary>
         /// What cock <paramref name="index"/> lets out now: the try cocks tap

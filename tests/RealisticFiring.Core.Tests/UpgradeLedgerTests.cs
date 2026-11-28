@@ -20,8 +20,27 @@ public class UpgradeLedgerTests
         Assert.False(ledger.HasAnyBought);
         Assert.Equal(UpgradeMask.None, ledger.Resolve(UpgradeRulesSet.Default, UpgradeScope.FleetWide, inCareer: true, LocoA));
         Assert.Equal(UpgradeMask.None, ledger.Resolve(UpgradeRulesSet.Default, UpgradeScope.PerLocomotive, inCareer: true, LocoA));
-        Assert.Equal(UpgradeMask.All, ledger.Resolve(UpgradeRulesSet.Default, UpgradeScope.FleetWide, inCareer: false, LocoA));
-        Assert.Equal(UpgradeMask.All, ledger.Resolve(UpgradeRulesSet.Default, UpgradeScope.PerLocomotive, inCareer: false, LocoA));
+        // Sandbox: every improvement, and the engine as it came (no oil conversion).
+        Assert.Equal(UpgradeMask.All & ~UpgradeKeys.Alternatives, ledger.Resolve(UpgradeRulesSet.Default, UpgradeScope.FleetWide, inCareer: false, LocoA));
+        Assert.Equal(UpgradeMask.All & ~UpgradeKeys.Alternatives, ledger.Resolve(UpgradeRulesSet.Default, UpgradeScope.PerLocomotive, inCareer: false, LocoA));
+    }
+
+    [Fact]
+    public void OilConversionIsAnAlternativeLeftOffInSandboxUntilBoughtOrAlwaysFitted()
+    {
+        var ledger = new UpgradeLedger();
+        Assert.False(ledger.IsFitted(UpgradeMask.S282OilBurner, UpgradeRulesSet.Default, UpgradeScope.FleetWide, inCareer: false, LocoA));
+        Assert.False(ledger.IsFitted(UpgradeMask.S282OilBurner, UpgradeRulesSet.Default, UpgradeScope.FleetWide, inCareer: true, LocoA));
+        Assert.True(ledger.Buy(UpgradeMask.S282OilBurner, UpgradeScope.PerLocomotive, LocoA));
+        Assert.True(ledger.IsFitted(UpgradeMask.S282OilBurner, UpgradeRulesSet.Default, UpgradeScope.PerLocomotive, inCareer: true, LocoA));
+        Assert.False(ledger.IsFitted(UpgradeMask.S282OilBurner, UpgradeRulesSet.Default, UpgradeScope.PerLocomotive, inCareer: true, LocoB));
+        var always = new UpgradeRulesSet(
+            FittingRule.BuyInCareer, FittingRule.BuyInCareer, FittingRule.BuyInCareer, FittingRule.BuyInCareer, FittingRule.BuyInCareer,
+            FittingRule.BuyInCareer, FittingRule.BuyInCareer, FittingRule.BuyInCareer, FittingRule.BuyInCareer, s282OilBurner: FittingRule.AlwaysFitted);
+        Assert.True(ledger.IsFitted(UpgradeMask.S282OilBurner, always, UpgradeScope.FleetWide, inCareer: false, LocoB));
+        Assert.Equal(UpgradeMask.S282OilBurner, UpgradeKeys.Alternatives);
+        Assert.True(UpgradeKeys.Allows("LocoS282A", UpgradeMask.S282OilBurner));
+        Assert.False(UpgradeKeys.Allows("LocoS060", UpgradeMask.S282OilBurner));
     }
 
     [Fact]
@@ -212,7 +231,7 @@ public class UpgradeLedgerTests
     public void LiveryEligibilityAndUpgradeCountsMatchStockEngines()
     {
         Assert.Equal(UpgradeMask.All, UpgradeKeys.AllowedForLivery("LocoS282A"));
-        Assert.Equal(9, UpgradeKeys.Count(UpgradeKeys.AllowedForLivery("LocoS282A")));
+        Assert.Equal(10, UpgradeKeys.Count(UpgradeKeys.AllowedForLivery("LocoS282A")));
 
         var s060 = UpgradeKeys.AllowedForLivery("LocoS060");
         Assert.Equal(6, UpgradeKeys.Count(s060));

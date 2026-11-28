@@ -230,6 +230,24 @@ namespace RealisticFiring.Visuals
 
         private static void CollectOilBurner(Transform interior, List<Marker> results)
         {
+            // An S282 converted to oil: its own burner's controls, drawn with its cab.
+            var s282 = interior.Find(S282OilCab.RootName);
+            if (s282 != null)
+            {
+                var marks = new[]
+                {
+                    (S282OilConversion.FiringValve.Id, "FIRING VALVE", "oil to the burner"),
+                    (S282OilCab.AtomizerName, "ATOMIZER", "steam to break up oil"),
+                    (S282OilCab.HeaterName, "OIL HEATER", "warm oil to 45–80 °C"),
+                    ("flue sand box", "SAND BOX", "flue sand, through the peephole"),
+                };
+                foreach (var (name, label, detail) in marks)
+                {
+                    var found = FindChild(s282, name);
+                    if (found != null)
+                        results.Add(new Marker { Label = label, Detail = detail, Target = found });
+                }
+            }
             var root = interior.Find("[RealisticFiring oil burner valves]");
             if (root == null)
                 return;
@@ -291,7 +309,7 @@ namespace RealisticFiring.Visuals
             if (sand == null)
                 sand = FindChild(tender.transform, TenderFlueSandBox.RootName);
             if (sand != null)
-                results.Add(new Marker { Label = "FLUE SAND", Detail = "open lid, load shovel for peep hole", Target = sand });
+                results.Add(new Marker { Label = "FLUE SAND", Detail = "open lid, fill the sand scoop for the peep hole", Target = sand });
         }
 
         private static Transform FindChild(Transform parent, string name)
@@ -382,10 +400,10 @@ namespace RealisticFiring.Visuals
                 if (m.Target == null || !m.Target.gameObject.activeInHierarchy)
                     continue;
                 var world = m.Target.position + m.WorldOffset;
-                var dist = Vector3.Distance(camera.transform.position, world);
+                var dist = Vector3.Distance(RenderedView.Eye(camera), world);
                 if (dist > MaxDistance)
                     continue;
-                var sp = camera.WorldToScreenPoint(world);
+                var sp = RenderedView.WorldToScreenPoint(camera, world);
                 if (sp.z <= 0.05f)
                     continue;
                 var gx = sp.x / k;

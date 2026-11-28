@@ -110,10 +110,17 @@ namespace RealisticFiring.Visuals
                     .ToList();
                 if (feeders.Count == 0)
                     notes.Add($"no cab control works '{circuit.Control.id}'");
-                // The cab's own handle as the steam valve: a notch a wheel click.
+                // The cab's own handle as the steam valve: a notch a wheel click;
+                // for a VR hand, left unnotched (NotchSteamHandles), held where
+                // the hand turns it and settled at its notch when let go.
                 if (circuit.OwnLeverIsSteam)
-                    foreach (var feeder in feeders.Where(f => f.GetComponent<Patches.NotchScroll>() == null))
-                        feeder.gameObject.AddComponent<Patches.NotchScroll>();
+                    foreach (var feeder in feeders)
+                    {
+                        if (SpringFollowsHand.HandsTurnByForce)
+                            SpringFollowsHand.HoldNotched(feeder.gameObject, InjectorSpec.SteamNotch);
+                        else if (feeder.GetComponent<Patches.NotchScroll>() == null)
+                            feeder.gameObject.AddComponent<Patches.NotchScroll>();
+                    }
                 foreach (var feeder in feeders)
                     notes.Add(circuit.OwnLeverIsSteam
                         ? BuildCabRegulator(regulators, car, interior, root, feeder, circuit, valve) ?? BuildWater(car, interior, root, feeder, circuit, valve)
@@ -154,6 +161,7 @@ namespace RealisticFiring.Visuals
             if (prefab == null || steam == null || steam.Count == 0 || !Notched.Add(prefab))
                 return null;
             var notched = new List<string>();
+            var byHand = SpringFollowsHand.HandsTurnByForce;
             foreach (var feeder in prefab.GetComponentsInChildren<InteractablePortFeeder>(true).Where(f => steam.Contains(f.portId)))
             {
                 var rotary = feeder.GetComponent<DV.CabControls.Spec.Rotary>();
@@ -164,18 +172,24 @@ namespace RealisticFiring.Visuals
                     rotary.notches = InjectorValves.Notches.Length;
                     rotary.scrollWheelUseSpringRotation = true;
                     rotary.scrollWheelHoverScroll = rotary.scrollWheelHoverScroll < 0f ? -1f : 1f;
+                    if (byHand)
+                        SpringFollowsHand.Unnotch(rotary);
                 }
                 else if (lever != null)
                 {
                     lever.useSteppedJoint = true;
                     lever.steppedValueUpdate = true;
                     lever.notches = InjectorValves.Notches.Length;
+                    if (byHand)
+                        SpringFollowsHand.Unnotch(lever);
                 }
                 else
                     continue;
                 notched.Add(feeder.name);
             }
-            return notched.Count == 0 ? "no injector steam handles to step" : $"injector steam handles step {string.Join(", ", InjectorValves.Notches)}: {string.Join(", ", notched)}";
+            return notched.Count == 0 ? "no injector steam handles to step"
+                : $"injector steam handles {(byHand ? "read" : "step")} {string.Join(", ", InjectorValves.Notches)}" +
+                  $"{(byHand ? " (unstepped for VR hands)" : "")}: {string.Join(", ", notched)}";
         }
 
         // Engines whose cab model has a second injector wheel with nothing
@@ -303,7 +317,18 @@ namespace RealisticFiring.Visuals
             if (source.Holder == null)
                 return $"no lever to copy beside '{feeder.name}'";
 
-            var holder = Object.Instantiate(source.Holder.gameObject, root, false).transform;
+            // For a VR hand the lever is left unnotched (SpringFollowsHand), so
+            // it is copied switched off, to wake once set up: a lever reads
+            // whether it steps as it wakes.
+            var byHand = SpringFollowsHand.HandsTurnByForce;
+            Transform waking = null;
+            if (byHand)
+            {
+                waking = new GameObject(valve.Id).transform;
+                waking.gameObject.SetActive(false);
+                waking.SetParent(root, false);
+            }
+            var holder = Object.Instantiate(source.Holder.gameObject, waking != null ? waking : root, false).transform;
             holder.name = valve.Id;
             var control = holder.Find(source.Control.name);
             holder.rotation = facing;
@@ -371,12 +396,17 @@ namespace RealisticFiring.Visuals
                 spec.useSteppedJoint = true;
                 spec.steppedValueUpdate = true;
                 spec.scrollWheelHoverScroll = 1f;
+                if (byHand)
+                {
+                    SpringFollowsHand.Unnotch(spec);
+                    SpringFollowsHand.HoldNotched(control.gameObject, InjectorSpec.SteamNotch);
+                }
             }
             control.gameObject.AddComponent<DV.HUD.NotchedControlCustomNames>().customNames = InjectorValves.Notches;
             var cloneFeeder = control.GetComponent<InteractablePortFeeder>();
             if (cloneFeeder == null)
             {
-                Object.Destroy(holder.gameObject);
+                Object.Destroy(waking != null ? waking.gameObject : holder.gameObject);
                 return $"the copied lever beside '{feeder.name}' has no feeder";
             }
             cloneFeeder.portId = valve.PortId;
@@ -384,6 +414,8 @@ namespace RealisticFiring.Visuals
             control.gameObject.AddComponent<HoverName>().Source = () => SteamHover(circuit, valve);
             if (feeder.GetComponent<HoverName>() == null)
                 feeder.gameObject.AddComponent<HoverName>().Source = () => WaterHover(circuit);
+            if (waking != null)
+                waking.gameObject.SetActive(true);
 
             var bottom = Reach(holder, -upOnFace);
             var plateAt = holder.position - upOnFace * (bottom + PlateGap) - normal * (Back(holder, -normal) - PlateProud);

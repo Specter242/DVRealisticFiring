@@ -253,6 +253,9 @@ namespace RealisticFiring
             s.S282Booster = Choice("S282 booster", s.S282Booster, UpgradeChoices,
                 "A Franklin trailing-truck booster for the S282, worked from the cab by the reverser, for starting and slow climbing. " +
                 "Buy it in a career at a career manager's Upgrades screen. Changing to or from Never fitted takes a restart.");
+            s.S282OilBurner = Choice("S282 oil burner", s.S282OilBurner, UpgradeChoices,
+                "The S282 converted to burn oil: an oil tank in the tender's coal space and an oil burner fired from the cab, in place of the coal fire and the stoker. " +
+                "Buy it in a career at a career manager's Upgrades screen; in sandbox, Always fitted converts every S282. It takes effect when the game next loads.");
             End();
         }
 

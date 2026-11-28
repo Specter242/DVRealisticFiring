@@ -105,7 +105,10 @@ namespace RealisticFiring.Items
         {
             if (!register.isActiveAndEnabled || BuyButton(register) == null)
                 return;
-            var heard = AccessTools.MethodDelegate<Action>(AccessTools.Method(typeof(CashRegisterWithModules), "OnUnitsToBuyChanged"), register);
+            // Delegate.CreateDelegate, not AccessTools.MethodDelegate: built against Unity Mod Manager 0.32's Harmony, that
+            // call binds to an overload older Harmony lacks, and on UMM 0.28.2 (Harmony 2.3.1.1) it threw
+            // MissingMethodException, so no shop stocked the iron, booklet, or tablet (Scag1573, 2026-11-24).
+            var heard = (Action)Delegate.CreateDelegate(typeof(Action), register, AccessTools.Method(typeof(CashRegisterWithModules), "OnUnitsToBuyChanged"));
             tag.OnUnitsToBuyChanged -= heard;
             tag.OnUnitsToBuyChanged += heard;
         }

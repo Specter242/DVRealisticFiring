@@ -86,6 +86,9 @@ namespace RealisticFiring.Multiplayer
         /// <summary>When <see cref="PerLocomotive"/> is true: each spawned upgradable locomotive's network ID and effective upgrade mask.</summary>
         public (ushort Car, ushort Mask)[] CarFittings = new (ushort, ushort)[0];
 
+        /// <summary>Whether the host's S282s are converted to oil (fleet-wide); written last, so an older reader stops before it.</summary>
+        public bool OilBurner;
+
         public void Serialize(BinaryWriter writer)
         {
             writer.Write(Arch);
@@ -107,6 +110,7 @@ namespace RealisticFiring.Multiplayer
                 writer.Write(CarFittings[i].Car);
                 writer.Write(CarFittings[i].Mask);
             }
+            writer.Write(OilBurner);
         }
 
         public void Deserialize(BinaryReader reader)
@@ -141,6 +145,7 @@ namespace RealisticFiring.Multiplayer
             {
                 CarFittings = new (ushort, ushort)[0];
             }
+            OilBurner = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
         }
     }
 

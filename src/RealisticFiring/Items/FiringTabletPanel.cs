@@ -285,6 +285,31 @@ namespace RealisticFiring.Items
             UpdateAim();
         }
 
+        /// <summary>
+        /// Lays out the Fire page with an example reading of a good coal fire
+        /// under way, for the tablet's inventory icon (<see cref="FiringTabletBody"/>):
+        /// its dials, the grate's glowing zones, and its rows.
+        /// </summary>
+        internal void ShowSample()
+        {
+            var card = new FireOverlay.Card { Loco = "S282" };
+            card.Gauges[0] = new FireOverlay.Gauge { Key = "fire", Label = "FIRE", Value = 0.74f, Band0 = 0.4f, Band1 = 0.9f, Text = "bright 74%", Level = AdviceLevel.Ok };
+            card.Gauges[1] = new FireOverlay.Gauge { Key = "draft", Label = "DRAFT", Value = 0.5f, Band0 = 0.36f, Band1 = 0.64f, Text = "right 125%", Level = AdviceLevel.Ok,
+                Smoke = new Color(0.78f, 0.78f, 0.76f) };
+            card.Gauges[2] = new FireOverlay.Gauge { Key = "glass", Label = "GLASS", Value = 0.62f, Band0 = 0.4f, Band1 = 0.75f, Text = "62%", Level = AdviceLevel.Ok };
+            card.Gauges[3] = new FireOverlay.Gauge { Key = "boiler", Label = "BOILER", Value = 0.88f, Band0 = 0.85f / 1.1f, Band1 = 1f / 1.1f, Text = "13.4 bar", Level = AdviceLevel.Ok };
+            card.ZoneCoal = new[] { 21f, 24f, 22f, 26f, 28f, 25f, 30f, 32f, 29f };
+            card.ZoneGlow = new[] { 0.62f, 0.7f, 0.66f, 0.78f, 0.86f, 0.8f, 0.9f, 0.95f, 0.88f };
+            card.ZoneClinker = new float[9];
+            card.Rows.Add(new FireOverlay.Row { Label = "Door", Value = "0%" });
+            card.Rows.Add(new FireOverlay.Row { Label = "Ashpan", Value = "12%", Meter = 0.12f, Level = AdviceLevel.Ok });
+            card.Rows.Add(new FireOverlay.Row { Label = "Clinker", Value = "0.4 kg", Level = AdviceLevel.Ok });
+            card.Rows.Add(new FireOverlay.Row { Label = "In the box", Value = "237 kg" });
+            card.Rows.Add(new FireOverlay.Row { Label = "Firebox", Value = "1180 °C" });
+            card.Advice = new Advice(AdviceLevel.Ok, "A good fire: fire little and often, to the back corners.");
+            Show(card, 0, null, null, false);
+        }
+
         private void Show(FireOverlay.Card card, int page, FiremanRig fireman, Checklist checklist, bool mounted)
         {
             var hasData = card != null;

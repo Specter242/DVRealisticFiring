@@ -149,6 +149,7 @@ namespace RealisticFiring.Visuals
                 labels++;
             if (StokerCab.PlaceLabel(sourceControl, sourceLabel, idle, frame, new Vector3(IdleAt.x, IdleAt.y - LabelDrop, Wall - PlateOnWall), "IDLING VALVE"))
                 labels++;
+            var plates = BringPlatesOut(car, frame);
             var gauge = StokerGauges.BuildOne(frame, cabPrefab, GaugeAt, "BOOSTER\nbar", 25f, 5f, () => booster.Flow.InletPressure);
 
             root.SetActive(true);
@@ -156,7 +157,7 @@ namespace RealisticFiring.Visuals
             BoosterSounds.Attach(car, booster, frame);
             var local = car.transform.InverseTransformPoint(frame.position);
             return $"booster controls on the {(side < 0f ? "left" : "right")} wall at ({local.x:F2}, {local.y:F2}, {local.z:F2}) m in the car frame, {where}, " +
-                   $"latch {(latch != null ? "placed" : "missing")}, idling valve's body {(Wall - bodyFront) * 100f:F1} cm, {labels} labels, {gauge.Count} gauge";
+                   $"latch {(latch != null ? "placed" : "missing")}, idling valve's body {(Wall - bodyFront) * 100f:F1} cm, {labels} labels{plates}, {gauge.Count} gauge";
         }
 
         private static readonly Dictionary<TrainCar, Transform> Interiors = new Dictionary<TrainCar, Transform>();
@@ -247,6 +248,32 @@ namespace RealisticFiring.Visuals
             }
         }
 
+        // The plates lie flat on the wall's surface. Where the cluster is pinned in the car's frame, the wall at a
+        // plate's height can stand a few millimeters in front of the cluster's own plane: on the S282 both plates sat
+        // about 5 mm inside the wall, unseen (job 3269), while the levers and wheel, standing out, showed. Each plate
+        // looks for the wall in front of it and comes out onto it; it never goes further in. Returns a note for the
+        // log.
+        private static string BringPlatesOut(TrainCar car, Transform frame)
+        {
+            const float Look = 0.1f;
+            var moved = 0;
+            foreach (Transform child in frame)
+            {
+                if (!child.name.StartsWith("label "))
+                    continue;
+                var at = frame.InverseTransformPoint(child.position);
+                var from = frame.TransformPoint(new Vector3(at.x, at.y, at.z - Look));
+                if (!CabRay.TryHit(car, from, frame.forward, Look + 0.05f, out var distance, out _))
+                    continue;
+                var surface = at.z - Look + distance;
+                if (surface - PlateOnWall >= at.z)
+                    continue;
+                child.position = frame.TransformPoint(new Vector3(at.x, at.y, surface - PlateOnWall));
+                moved++;
+            }
+            return moved > 0 ? $" ({moved} brought out onto the wall)" : "";
+        }
+
         // The latch: the S282's sander lever with two notches, Down and Up.
         private static Transform PlaceLatch(Transform source, Transform frame, Port port, RealisticBooster booster)
         {
@@ -263,6 +290,13 @@ namespace RealisticFiring.Visuals
             var spec = control.GetComponent<DV.CabControls.Spec.Lever>();
             if (spec != null)
             {
+                // The sander lever rests upright at its first notch and swings back along the wall, so "Down" stood
+                // upright and "Up" leaned back (insertname52, Nexus, 2026-11-22: "the booster latch is facing up but
+                // the lable says its down"; job 3266). Turned back about its own hinge by its whole swing, Up is the
+                // upright pose and Down leans forward and low, so raising the latch lifts the handle. Before the
+                // control spawns, so its hinge takes this as its rest.
+                var swing = (spec.jointLimitMax - spec.jointLimitMin) * (spec.invertDirection ? -1f : 1f);
+                holder.RotateAround(control.position, control.TransformDirection(spec.jointAxis), -swing);
                 spec.notches = LatchNotches.Length;
                 spec.useSteppedJoint = true;
                 spec.steppedValueUpdate = true;

@@ -55,6 +55,9 @@ namespace RealisticFiring.Visuals
             foreach (var firebox in RealisticOilFirebox.All)
             {
                 var car = firebox.Car;
+                // An S282 converted to oil has its own burner's controls, drawn with its cab (S282OilCab).
+                if (S282OilConversion.IsOil(car))
+                    continue;
                 // The tender's external controls can reload independently of
                 // the cab, or arrive later after coupling. Always retry them.
                 TenderFlueSandBox.EnsureBuilt(car);
@@ -262,8 +265,6 @@ namespace RealisticFiring.Visuals
         // side (left), unless moved. Returns a note for the log.
         private static string PlaceSandBox(TrainCar car, Transform parent, Transform interior)
         {
-            if (TenderFlueSandBox.UsesTender(car.carLivery.id))
-                return "flue sand uses the tender's existing sandbox";
             var doorPort = car.SimController != null && car.SimController.firebox != null ? car.SimController.firebox.fireboxDoorPortId : null;
             var door = doorPort != null
                 ? interior.GetComponentsInChildren<InteractablePortFeeder>(true).FirstOrDefault(f => f.portId == doorPort)
@@ -274,14 +275,33 @@ namespace RealisticFiring.Visuals
             var above = near + frame.right * offset.x + frame.forward * offset.y;
             if (!StokerCab.TryFindFloor(car, above, out var floor))
                 floor = above - frame.up * 1.2f;
+            if (TenderFlueSandBox.UsesTender(car.carLivery.id))
+            {
+                // The scoop on the floor where a box would stand, its spout short of the backhead.
+                PlaceSandScoop(car, parent, floor - frame.forward * ScoopBackOfBox);
+                return "flue sand uses the tender's existing sandbox; the sand scoop on the floor by the fire door";
+            }
             var box = FlueSandBox.Build(car, parent, floor);
             if (box == null)
                 return "no sand box (no sand on the loco)";
+            // The scoop on the floor beside the box, toward the middle of the cab.
+            PlaceSandScoop(car, parent, floor + frame.right * ScoopBesideBox - frame.forward * ScoopBackOfBox);
             var local = frame.InverseTransformPoint(floor);
-            return $"a flue sand box on the floor at ({local.x:F2}, {local.y:F2}, {local.z:F2}) m";
+            return $"a flue sand box on the floor at ({local.x:F2}, {local.y:F2}, {local.z:F2}) m, the sand scoop beside it";
         }
 
-        private static string FiringHover(RealisticOilFirebox firebox)
+        private const float ScoopBesideBox = 0.36f;
+        private const float ScoopBackOfBox = 0.5f;
+
+        private static void PlaceSandScoop(TrainCar car, Transform parent, Vector3 spot)
+        {
+            var frame = car.transform;
+            if (!StokerCab.TryFindFloor(car, spot + frame.up * 0.3f, out var floor))
+                floor = spot;
+            Items.SandScoopRest.Add(parent.gameObject, car, floor + frame.up * 0.05f, frame.rotation);
+        }
+
+        internal static string FiringHover(RealisticOilFirebox firebox)
         {
             var fire = firebox.Model;
             return $"Firing valve: {(firebox.Feed != null ? firebox.Feed.FiringValve : 0f):P0}" +
@@ -289,14 +309,14 @@ namespace RealisticFiring.Visuals
                    $", oil {fire.FeedRate:F2} kg/s" + (fire.FireOn ? "" : " (fire out)");
         }
 
-        private static string AtomizerHover(RealisticOilFirebox firebox)
+        internal static string AtomizerHover(RealisticOilFirebox firebox)
         {
             var fire = firebox.Model;
             var state = fire.FeedRate <= 0f ? "" : fire.Atomizing < 0.8f ? ", too little: it smokes" : fire.Drumming > 0f ? ", too much: it drums" : "";
             return $"Atomizer: {firebox.AtomizerValve * 100f:0.#} %{state}";
         }
 
-        private static string HeaterHover(RealisticOilFirebox firebox)
+        internal static string HeaterHover(RealisticOilFirebox firebox)
         {
             var oil = firebox.Model.OilTemperature;
             var state = oil < OilFire.WarmOil - 5f ? "cold" : oil > OilFire.HotOil ? "too hot" : "warm";

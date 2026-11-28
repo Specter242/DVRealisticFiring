@@ -123,6 +123,33 @@ public class BoilerSteelAndSwellTests
     }
 
     [Fact]
+    public void Steam_startup_swells_it_no_more_than_the_real_time_fire_it_stands_for()
+    {
+        // A standing engine raising steam under the game's Steam Startup at ten times: the fire's heat and the
+        // pressure's rise are ten times the real-time pace (tracker item 53, the S060 in game: 8 MW, 0.1 bar/s).
+        float After(float heat, float barPerSecond, float startup)
+        {
+            var swell = new BoilerSwell();
+            var pressure = 8f;
+            for (var t = 0f; t < 30f; t += Dt)
+            {
+                swell.Step(Dt, Steaming(heat, pressure) with { StartupMultiplier = startup });
+                pressure += barPerSecond * Dt;
+            }
+            return swell.Rise;
+        }
+        var realTime = After(0.8e6f, 0.01f, 1f);
+        var hurried = After(8e6f, 0.1f, 10f);
+        Assert.Equal(realTime, hurried, 3);
+        // Read as ten times the steaming, it stood about ten times as high, less the shrink of the hurried rise
+        // (in game the S060's held about 0.03 of the boiler, up to a fifth of its glass).
+        Assert.True(hurried < 0.2f * BoilerSwell.FullSwell, $"hurried {hurried:F4}");
+        // No speed-up, or a bad reading, leaves the swell as it was.
+        Assert.Equal(After(8e6f, 0.1f, 1f), After(8e6f, 0.1f, 0f), 6);
+        Assert.Equal(After(8e6f, 0.1f, 1f), After(8e6f, 0.1f, float.NaN), 6);
+    }
+
+    [Fact]
     public void Cold_feed_shrinks_it_and_cold_water_holds_no_steam()
     {
         var dry = new BoilerSwell();

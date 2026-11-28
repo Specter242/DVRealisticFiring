@@ -112,8 +112,9 @@ namespace RealisticFiring.Sim
             var workingValve = 0f;
             var total = default(InjectorFlow);
             var feedEnthalpy = 0f;
-            foreach (var circuit in Circuits)
+            for (var i = 0; i < Circuits.Count; i++)
             {
+                var circuit = Circuits[i];
                 circuit.Injector.Spec.TechniqueAndHeat = Main.Settings.InjectorTechniqueAndHeat;
                 // A shut injector cools to the air's temperature.
                 circuit.Injector.Spec.AmbientTemperature = Ambient.Air;

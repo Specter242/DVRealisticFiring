@@ -405,7 +405,7 @@ namespace RealisticFiring.AdapterCheck
                 var has = AccessTools.Method(typeof(UpgradesScreen), "Has");
                 var a = (string)has.Invoke(null, new object[] { new OwnedLocomotive("guid-loco-a", "S282-042", "LocoS282A"), s282 });
                 var b = (string)has.Invoke(null, new object[] { new OwnedLocomotive("guid-loco-b", "S060-012", "LocoS060"), s060 });
-                check(a == "3/9 fitted" && b == "1/6 fitted",
+                check(a == "3/10 fitted" && b == "1/6 fitted",
                     $"the owned list shows each engine's upgrades fitted of those it can take (S282 {a}, S060 {b})");
             }
             finally

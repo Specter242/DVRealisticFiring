@@ -13,8 +13,8 @@ namespace RealisticFiring.Visuals
 {
  internal sealed class FlueSandBox : MonoBehaviour
     {
-        // A load of sand on the shovel, in kg: "about a quart at a time" (K02 p. 46).
-        public const float Shovelful = 1.5f;
+        // A scoopful of sand, in kg: "about a quart at a time" (K02 p. 46).
+        public const float Scoopful = 1.5f;
 
         private static readonly Color Crate = new Color(0.18f, 0.17f, 0.16f);
         internal static readonly Color Sand = new Color(0.74f, 0.64f, 0.45f);
@@ -30,9 +30,6 @@ namespace RealisticFiring.Visuals
         private static Material sandMaterial;
         private static Material plainCrate;
 
-        /// <summary>Sand on the player's shovel, in kg (pile units).</summary>
-        public static float Loaded { get; private set; }
-
         private ResourceContainer sand;
         private SimulationFlow boundFlow;
         private bool usesTender;
@@ -42,14 +39,6 @@ namespace RealisticFiring.Visuals
         private Mesh surfaceMesh;
 
         public TrainCar Car { get; private set; }
-
-        /// <summary>Takes up to <paramref name="kg"/> of loaded sand as it goes into a firebox; returns what was sand.</summary>
-        public static float TakeLoaded(float kg)
-        {
-            var taken = Mathf.Min(Loaded, Mathf.Max(0f, kg));
-            Loaded -= taken;
-            return taken;
-        }
 
         /// <summary>
         /// Builds the box on the floor at <paramref name="floor"/>, under
@@ -76,6 +65,27 @@ namespace RealisticFiring.Visuals
             Part(root.transform, "back", new Vector3(0f, Size.y / 2f, (Wall - Size.z) / 2f), new Vector3(Size.x - 2f * Wall, Size.y, Wall), plate);
             box.SandSurface(new Vector3(0f, Size.y - SandBelowRim, 0f), new Vector2(Size.x - 2f * Wall, Size.z - 2f * Wall));
             box.BuildPickup(new Vector3(0f, Size.y / 2f, 0f), Size);
+            root.SetActive(true);
+            return box;
+        }
+
+ internal static FlueSandBox BuildOnModel(TrainCar car, Transform parent, Vector3 center, Vector3 size, float sandBelowRim, Material litBasis)
+        {
+            var root = new GameObject("flue sand box");
+            root.SetActive(false);
+            root.transform.SetParent(parent, false);
+            root.transform.localPosition = center;
+            root.transform.localRotation = Quaternion.identity;
+            var box = root.AddComponent<FlueSandBox>();
+            if (!box.BindEngine(car))
+            {
+                Object.Destroy(root);
+                return null;
+            }
+            // The sand in it, under its open rim, as the mod's own sand box shows it.
+            box.SandSurface(new Vector3(0f, size.y / 2f - sandBelowRim, 0f), new Vector2(size.x - 2f * Wall, size.z - 2f * Wall),
+                LitSandMaterial(litBasis));
+            box.BuildPickup(Vector3.zero, size + new Vector3(0.02f, 0.04f, 0.02f));
             root.SetActive(true);
             return box;
         }
@@ -128,12 +138,12 @@ namespace RealisticFiring.Visuals
             RedirectTarget(interactable.AddComponent<ItemUseRedirect>()) = use;
             use.targetColliders = new Collider[] { trigger, useTrigger };
             pickupColliders = use.targetColliders;
-            var pile = gameObject.AddComponent<ShovelCoalPile>();
-            pile.isInfinite = true;
-            // Infinite piles report their own chunk mass; the standard shovel
-            // holds three chunks (more for the bigger shovels).
-            pile.coalChunkMass = Shovelful / 3f;
-            gameObject.AddComponent<HoverName>().Source = () => $"Flue sand: {Available:F0} kg (load a quart on the shovel, throw it in under a hard pull)";
+            // Where the scoop's working animation takes its spout: into the sand, tipped down.
+            var pose = new GameObject("[animation_pose_target]").transform;
+            pose.SetParent(transform, false);
+            pose.localPosition = center + new Vector3(0f, size.y * 0.3f, 0f);
+            pose.localRotation = Quaternion.Euler(35f, 0f, 0f);
+            gameObject.AddComponent<HoverName>().Source = () => $"Flue sand: {Available:F0} kg (fill the sand scoop here, a quart at a time; throw it in through the peephole under a hard pull)";
         }
 
         internal bool BindEngine(TrainCar engine)
@@ -227,12 +237,12 @@ namespace RealisticFiring.Visuals
         private static (int Pile, int Use)? pileLayers;
 
         /// <summary>
-        /// A shovel target into an oil burner's firebox, built as the sand box
-        /// is (the stock coal targets' way: a target with the coal-target mark
-        /// on the cab's layer, and an interactable child redirecting to it),
-        /// for a box of <paramref name="size"/> m at a pose. The oil-fired mods'
-        /// own targets sit on the default layer, which the shovel's click does
-        /// not see. Thrown in through the open door, the shovel's load is sand.
+        /// The sand scoop's target into an oil burner's firebox
+        /// (<see cref="FlueSandTarget"/>), built as the sand box is (the stock
+        /// coal targets' way: a target on the cab's layer, and an interactable
+        /// child redirecting to it, which the item-use click sees), for a box
+        /// of <paramref name="size"/> m at a pose, its +z into the firebox. The
+        /// scoop's working animation takes its spout to the box's far face.
         /// </summary>
         public static GameObject BuildFireboxTarget(Transform parent, Vector3 center, Quaternion rotation, Vector3 size)
         {
@@ -244,8 +254,11 @@ namespace RealisticFiring.Visuals
             var trigger = target.AddComponent<BoxCollider>();
             trigger.isTrigger = true;
             trigger.size = size;
-            target.AddComponent<NonPhysicsCoalTarget>();
+            target.AddComponent<FlueSandTarget>();
             var use = target.AddComponent<ItemUseTarget>();
+            var pose = new GameObject("[animation_pose_target]").transform;
+            pose.SetParent(target.transform, false);
+            pose.localPosition = new Vector3(0f, 0f, size.z / 2f - 0.01f);
             var interactable = new GameObject("interactable");
             interactable.layer = useLayer;
             interactable.transform.SetParent(target.transform, false);
@@ -286,7 +299,7 @@ namespace RealisticFiring.Visuals
 
         // The sand: a flat bed of fine grains, drawn with the fire bed's shader
         // as all ash in the sand's color; flat-colored without the effects.
-        private void SandSurface(Vector3 at, Vector2 size)
+        private void SandSurface(Vector3 at, Vector2 size, Material material = null)
         {
             var sheet = new GameObject("sand").transform;
             sheet.SetParent(transform, false);
@@ -305,7 +318,70 @@ namespace RealisticFiring.Visuals
             mesh.RecalculateNormals();
             mesh.RecalculateTangents();
             sheet.gameObject.AddComponent<MeshFilter>().sharedMesh = mesh;
-            sheet.gameObject.AddComponent<MeshRenderer>().sharedMaterial = SandMaterial();
+            sheet.gameObject.AddComponent<MeshRenderer>().sharedMaterial = material != null ? material : SandMaterial();
+        }
+
+        private static Material litSand;
+        private static Texture2D sandGrains;
+
+        // Sand drawn with a lit material (a copy of <paramref name="basis"/>, Standard-like): fine grains, matte.
+        internal static Material LitSandMaterial(Material basis)
+        {
+            if (litSand != null)
+                return litSand;
+            if (basis == null)
+                return null;
+            litSand = new Material(basis) { name = "RealisticFiring flue sand (lit)" };
+            void Texture(string name, Texture value)
+            {
+                if (litSand.HasProperty(name))
+                {
+                    litSand.SetTexture(name, value);
+                    litSand.SetTextureScale(name, Vector2.one);
+                    litSand.SetTextureOffset(name, Vector2.zero);
+                }
+            }
+            Texture("_MainTex", SandGrains());
+            Texture("_BumpMap", null);
+            Texture("_MetallicGlossMap", null);
+            Texture("_OcclusionMap", null);
+            Texture("_DetailAlbedoMap", null);
+            Texture("_DetailNormalMap", null);
+            Texture("_EmissionMap", null);
+            litSand.DisableKeyword("_NORMALMAP");
+            litSand.DisableKeyword("_METALLICGLOSSMAP");
+            litSand.DisableKeyword("_DETAIL_MULX2");
+            litSand.DisableKeyword("_EMISSION");
+            if (litSand.HasProperty("_Color"))
+                litSand.SetColor("_Color", Color.white);
+            if (litSand.HasProperty("_Metallic"))
+                litSand.SetFloat("_Metallic", 0f);
+            if (litSand.HasProperty("_Glossiness"))
+                litSand.SetFloat("_Glossiness", 0.04f);
+            if (litSand.HasProperty("_EmissionColor"))
+                litSand.SetColor("_EmissionColor", Color.black);
+            return litSand;
+        }
+
+        // Dry sand's face: grains a texel or two across in the sand's color, a few darker and paler.
+        private static Texture2D SandGrains()
+        {
+            if (sandGrains != null)
+                return sandGrains;
+            const int n = 256;
+            var random = new System.Random(282);
+            var pixels = new Color32[n * n];
+            for (var i = 0; i < pixels.Length; i++)
+            {
+                var grain = (float)random.NextDouble();
+                var tone = 0.86f + 0.22f * grain + (grain > 0.97f ? -0.35f : 0f);
+                var tint = (float)random.NextDouble() * 0.06f - 0.03f;
+                pixels[i] = new Color(Mathf.Clamp01(Sand.r * tone + tint), Mathf.Clamp01(Sand.g * tone), Mathf.Clamp01(Sand.b * tone - tint), 1f);
+            }
+            sandGrains = new Texture2D(n, n, TextureFormat.RGBA32, true) { name = "RealisticFiring flue sand grains", wrapMode = TextureWrapMode.Repeat };
+            sandGrains.SetPixels32(pixels);
+            sandGrains.Apply(true, true);
+            return sandGrains;
         }
 
         private static Material SandMaterial()
@@ -331,151 +407,40 @@ namespace RealisticFiring.Visuals
 
         public float Available => Accessible ? Mathf.Max(0f, sand.amountReadOut.Value) : 0f;
 
-        public float Take(float kg)
+        /// <summary>Takes up to <paramref name="kg"/> of the loco's sand onto the scoop; returns what it took.</summary>
+        public float Scoop(float kg)
         {
             var taken = Mathf.Min(Available, Mathf.Max(0f, kg));
             if (taken > 0f && sand != null)
                 sand.consumeExtIn.Value = taken;
-            Loaded += taken;
             return taken;
         }
 
-        public float PutBack(float kg)
-        {
-            if (!Accessible)
-                return 0f;
-            var back = Mathf.Min(Mathf.Min(Loaded, Mathf.Max(0f, kg)), Mathf.Max(0f, sand.capacity - sand.amountReadOut.Value));
-            Loaded -= back;
-            if (back > 0f && sand != null)
-                sand.refillExtIn.Value = back;
-            return back;
-        }
+        /// <summary>Why there is no sand to scoop, for the hover.</summary>
+        public string Why => !SupplyConnected ? "Couple the tender to the engine for its sand"
+            : !Accessible ? "Open the sandbox lid"
+            : "No sand left: fill the engine's sandboxes at a sand tower";
     }
 
     /// <summary>
-    /// On an oil burner, sand goes in through the open peep hole with the door
-    /// shut: to the stock shovel the door is as open as it needs while the
-    /// shovel carries sand and the peep hole is open.
+    /// An oil burner's firebox target for flue sand: the sand scoop full of
+    /// sand, used here with the peephole open (or the door), throws it in
+    /// (<see cref="Items.SandScoopUse"/>). Built in front of the peephole
+    /// and where the cab's own coal targets were (<see cref="FlueSandBox.BuildFireboxTarget"/>).
     /// </summary>
-    [HarmonyPatch(typeof(ShovelNonPhysicalCoal), "IsFireboxDoorOpen")]
-    internal static class SandThroughPeepHolePatch
+    internal sealed class FlueSandTarget : MonoBehaviour
     {
-        private static void Postfix(FireboxSimController fireboxController, ref bool __result)
-        {
-            if (__result || !(FlueSandBox.Loaded > 0f) || fireboxController == null)
-                return;
-            var car = TrainCar.Resolve(fireboxController.gameObject);
-            if (RealisticOilFirebox.TryGet(car, out var oil) && oil.PeepHole >= 0.5f)
-                __result = true;
-        }
-    }
+        // The peephole open this far takes the scoop's spout.
+        private const float PeepOpen = 0.5f;
 
-    /// <summary>The sand box's sand, as a coal pile's coal to the shovel.</summary>
-    [HarmonyPatch(typeof(ShovelCoalPile), nameof(ShovelCoalPile.TryRemoveCoal))]
-    internal static class FlueSandTakePatch
-    {
-        private static bool Prefix(ShovelCoalPile __instance, float coalAmount, ref float __result)
-        {
-            if (!__instance.TryGetComponent<FlueSandBox>(out var box))
-                return true;
-            __result = box.Take(coalAmount);
-            return false;
-        }
-    }
+        private TrainCar car;
 
-    [HarmonyPatch(typeof(ShovelCoalPile), nameof(ShovelCoalPile.TryAddCoal))]
-    internal static class FlueSandPutBackPatch
-    {
-        private static bool Prefix(ShovelCoalPile __instance, float coalAmount, ref float __result)
-        {
-            if (!__instance.TryGetComponent<FlueSandBox>(out var box))
-                return true;
-            __result = box.PutBack(coalAmount);
-            return false;
-        }
-    }
+        internal TrainCar Car => car != null ? car : car = TrainCar.Resolve(gameObject);
 
-    /// <summary>
-    /// A shovel carrying flue sand shows it: the game draws a load as coal
-    /// lumps on the blade, switched on and off as it fills and empties, and
-    /// while the load is sand they wear the sand box's sand color.
-    /// </summary>
-    [HarmonyPatch(typeof(ShovelNonPhysicalCoal), "UpdateLoadedCoal")]
-    internal static class SandOnShovelPatch
-    {
-        private static readonly AccessTools.FieldRef<ShovelNonPhysicalCoal, GameObject[]> Loads =
-            AccessTools.FieldRefAccess<ShovelNonPhysicalCoal, GameObject[]>("loadedCoalVisuals");
+        internal bool TryGetFirebox(out RealisticOilFirebox oil) => RealisticOilFirebox.TryGet(Car, out oil);
 
-        private static void Postfix(ShovelNonPhysicalCoal __instance)
-        {
-            var loads = Loads(__instance);
-            if (loads == null || loads.Length == 0)
-                return;
-            var look = __instance.GetComponent<ShovelSandLook>() ?? __instance.gameObject.AddComponent<ShovelSandLook>();
-            look.Show(loads, FlueSandBox.Loaded > 0f);
-        }
-    }
-
-    /// <summary>A shovel's load lumps in coal's materials or sand's.</summary>
-    internal sealed class ShovelSandLook : MonoBehaviour
-    {
-        // Sand's version of each coal material the lumps wear, made once.
-        private static readonly Dictionary<Material, Material> SandOf = new Dictionary<Material, Material>();
-
-        private readonly Dictionary<Renderer, Material[]> coal = new Dictionary<Renderer, Material[]>();
-        private bool sand;
-
-        public void Show(GameObject[] loads, bool asSand)
-        {
-            if (asSand == sand && coal.Count > 0)
-                return;
-            sand = asSand;
-            foreach (var load in loads)
-            {
-                if (load == null)
-                    continue;
-                foreach (var renderer in load.GetComponentsInChildren<Renderer>(true))
-                {
-                    if (!coal.TryGetValue(renderer, out var own))
-                        coal[renderer] = own = renderer.sharedMaterials;
-                    renderer.sharedMaterials = asSand ? own.Select(Sanded).ToArray() : own;
-                }
-            }
-        }
-
-        // The coal's material made sand: its lumps' shape and relief kept,
-        // their color the box's sand, dull.
-        private static Material Sanded(Material material)
-        {
-            if (material == null)
-                return null;
-            if (SandOf.TryGetValue(material, out var sanded) && sanded != null)
-                return sanded;
-            sanded = new Material(material) { name = material.name + " (flue sand)" };
-            if (sanded.HasProperty("_MainTex"))
-                sanded.SetTexture("_MainTex", null);
-            if (sanded.HasProperty("_Color"))
-                sanded.SetColor("_Color", FlueSandBox.Sand);
-            if (sanded.HasProperty("_Glossiness"))
-                sanded.SetFloat("_Glossiness", 0.05f);
-            if (sanded.HasProperty("_Metallic"))
-                sanded.SetFloat("_Metallic", 0f);
-            if (sanded.HasProperty("_EmissionColor"))
-                sanded.SetColor("_EmissionColor", Color.black);
-            SandOf[material] = sanded;
-            return sanded;
-        }
-    }
-
-    [HarmonyPatch(typeof(ShovelCoalPile), nameof(ShovelCoalPile.CoalAvailable))]
-    internal static class FlueSandAvailablePatch
-    {
-        private static bool Prefix(ShovelCoalPile __instance, ref float __result)
-        {
-            if (!__instance.TryGetComponent<FlueSandBox>(out var box))
-                return true;
-            __result = box.Available;
-            return false;
-        }
+        /// <summary>Whether sand goes in: the peephole open, or the fire door open as far as for a shovel.</summary>
+        internal static bool IsOpen(RealisticOilFirebox oil) =>
+            oil != null && (oil.PeepHole >= PeepOpen || oil.DoorOpening >= ShovelNonPhysicalCoal.REQUIRED_DOOR_OPENED_PERCENTAGE_NON_VR);
     }
 }

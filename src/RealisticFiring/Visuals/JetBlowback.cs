@@ -31,12 +31,17 @@ namespace RealisticFiring.Visuals
         }
 
         private static readonly Dictionary<RealisticFirebox, Door> Doors = new Dictionary<RealisticFirebox, Door>();
+        // Kept between frames so that a frame with nothing blowing allocates nothing.
+        private static readonly List<RealisticFirebox> Fires = new List<RealisticFirebox>();
+        private static readonly List<RealisticFirebox> Gone = new List<RealisticFirebox>();
 
         /// <summary>Plays each engine's blowback this frame.</summary>
         public static void Update()
         {
-            foreach (var firebox in FireboxRegistry.All)
+            FireboxRegistry.CopyTo(Fires);
+            for (var i = 0; i < Fires.Count; i++)
             {
+                var firebox = Fires[i];
                 var car = firebox.Car;
                 if (car == null)
                     continue;
@@ -73,8 +78,15 @@ namespace RealisticFiring.Visuals
                 door.Next = Shortest * Full / Mathf.Clamp(blowback, Least, Full);
                 Burst(door.Reader);
             }
-            foreach (var gone in Doors.Keys.Where(f => f == null || f.Car == null).ToList())
-                Doors.Remove(gone);
+            Fires.Clear();
+            foreach (var pair in Doors)
+            {
+                if (pair.Key == null || pair.Key.Car == null)
+                    Gone.Add(pair.Key);
+            }
+            for (var i = 0; i < Gone.Count; i++)
+                Doors.Remove(Gone[i]);
+            Gone.Clear();
         }
 
         private static void Burst(BlowbackParticlePortReader reader)

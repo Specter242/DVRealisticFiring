@@ -77,6 +77,16 @@ namespace RealisticFiring.Core
         public const float SteamFeedFrom = 0.75f;
         public const float SteamPrime = 0.5f;
 
+        /// <summary>
+        /// The notch a steam valve set anywhere by hand reads as, as that
+        /// notch's value: 0, <see cref="SteamPrime"/>, or 1. A VR hand turns
+        /// the valve freely and leaves it there (tracker #48); it settles
+        /// where the injector already reads it, so every player's cab shows
+        /// the same notch.
+        /// </summary>
+        public static float SteamNotch(float value) =>
+            value < SteamPrimeFrom ? 0f : value < SteamFeedFrom ? SteamPrime : 1f;
+
         public InjectorSpec(float maxDelivery, float ratedPressure)
         {
             if (maxDelivery <= 0f)

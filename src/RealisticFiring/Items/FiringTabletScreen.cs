@@ -185,14 +185,7 @@ namespace RealisticFiring.Items
             var display = new GameObject("[tablet display surface]");
             display.transform.SetParent(transform, false);
             display.transform.localPosition = new Vector3(0f, 0f, SurfaceZ);
-            var w = Width * PixelSize * 0.5f;
-            var h = Height * PixelSize * 0.5f;
-            screenMesh = new Mesh { name = "RealisticFiring_TabletScreen" };
-            screenMesh.vertices = new[] { new Vector3(-w, -h, 0), new Vector3(-w, h, 0), new Vector3(w, h, 0), new Vector3(w, -h, 0) };
-            screenMesh.uv = new[] { Vector2.zero, Vector2.up, Vector2.one, Vector2.right };
-            screenMesh.triangles = new[] { 0, 1, 2, 0, 2, 3 };
-            screenMesh.RecalculateBounds();
-            screenMesh.UploadMeshData(true);
+            screenMesh = SurfaceMesh();
             display.AddComponent<MeshFilter>().sharedMesh = screenMesh;
             screenMaterial = new Material(Shader.Find("Unlit/Texture")) { name = "RealisticFiring_TabletDisplay" };
             surface = display.AddComponent<MeshRenderer>();
@@ -200,6 +193,85 @@ namespace RealisticFiring.Items
             surface.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             surface.receiveShadows = false;
             surface.enabled = false;
+        }
+
+        /// <summary>The display's quad, facing out of the tablet's front (-z), at the panel's size.</summary>
+        internal static Mesh SurfaceMesh()
+        {
+            var w = Width * PixelSize * 0.5f;
+            var h = Height * PixelSize * 0.5f;
+            var mesh = new Mesh { name = "RealisticFiring_TabletScreen" };
+            mesh.vertices = new[] { new Vector3(-w, -h, 0), new Vector3(-w, h, 0), new Vector3(w, h, 0), new Vector3(w, -h, 0) };
+            mesh.uv = new[] { Vector2.zero, Vector2.up, Vector2.one, Vector2.right };
+            mesh.triangles = new[] { 0, 1, 2, 0, 2, 3 };
+            mesh.RecalculateBounds();
+            mesh.UploadMeshData(true);
+            return mesh;
+        }
+
+        /// <summary>Where the display's surface lies in the tablet's frame, m along z.</summary>
+        internal static float SurfaceDepth => SurfaceZ;
+
+        /// <summary>
+        /// The Fire page with an example reading (<see cref="FiringTabletPanel.ShowSample"/>),
+        /// rendered once through the screens' own camera and canvas, for the
+        /// tablet's inventory icon; mipmapped, not readable. Null if it could
+        /// not be drawn (logged).
+        /// </summary>
+        internal static Texture2D SamplePage()
+        {
+            GameObject screen = null;
+            FiringTabletPanel panel = null;
+            RenderTexture target = null;
+            var acquired = false;
+            var previous = RenderTexture.active;
+            try
+            {
+                var host = TabletScreenRenderer.Acquire();
+                acquired = true;
+                screen = new GameObject("[firing tablet icon screen]", typeof(RectTransform), typeof(Canvas));
+                var canvas = screen.GetComponent<Canvas>();
+                canvas.renderMode = RenderMode.WorldSpace;
+                screen.transform.SetParent(host, false);
+                screen.transform.localPosition = Vector3.forward;
+                screen.transform.localScale = Vector3.one * PixelSize;
+                screen.layer = TabletScreenRenderer.Layer;
+                canvas.worldCamera = TabletScreenRenderer.Camera;
+                var scaler = screen.AddComponent<CanvasScaler>();
+                scaler.dynamicPixelsPerUnit = 2f;
+                scaler.referencePixelsPerUnit = FiringTabletPanel.ReferencePixelsPerUnit;
+                var root = screen.GetComponent<RectTransform>();
+                root.sizeDelta = new Vector2(Width, Height);
+                panel = new FiringTabletPanel(root, 1f, "tablet-icon-", "FIRING TABLET");
+                panel.ShowSample();
+                target = RenderTexture.GetTemporary(Width * 2, Height * 2, 0, RenderTextureFormat.ARGB32);
+                var camera = TabletScreenRenderer.Camera;
+                camera.targetTexture = target;
+                Canvas.ForceUpdateCanvases();
+                camera.Render();
+                camera.targetTexture = null;
+                var page = new Texture2D(Width * 2, Height * 2, TextureFormat.RGBA32, true)
+                {
+                    name = "RealisticFiring_TabletIconPage", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear,
+                };
+                RenderTexture.active = target;
+                page.ReadPixels(new Rect(0, 0, target.width, target.height), 0, 0, true);
+                page.Apply(true, true);
+                return page;
+            }
+            catch (System.Exception error)
+            {
+                Main.Mod?.Logger.Warning("The firing tablet's icon could not draw its screen: " + error.Message);
+                return null;
+            }
+            finally
+            {
+                RenderTexture.active = previous;
+                if (target != null) RenderTexture.ReleaseTemporary(target);
+                panel?.Release();
+                if (screen != null) Object.DestroyImmediate(screen);
+                if (acquired) TabletScreenRenderer.Release();
+            }
         }
 
         private void LateUpdate()

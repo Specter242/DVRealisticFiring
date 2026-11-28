@@ -109,6 +109,9 @@ namespace RealisticFiring.Sim
         private readonly Boiler boiler;
         private readonly ReciprocatingSteamEngine engine;
         private WaterPressureVessel knownVessel;
+        // The boiler's volume, L, when knownVessel was taken up: another mod
+        // resizing the boiler changes it, the game's resets never do.
+        private float knownVolume;
         private float massAtTick;
         private float fed;
         private float blown;
@@ -145,6 +148,7 @@ namespace RealisticFiring.Sim
             else if (guard == Guard.LowWaterAlarm)
                 Alarm = new LowWaterAlarm();
             knownVessel = vessel;
+            knownVolume = TotalVolume(boiler);
             TrueLevel = boiler.waterLevelReadOut.Value;
             TrueSurfaceLevel = TrueLevel;
             wasOn = Main.Settings.BoilerWaterImpurities;
@@ -385,6 +389,7 @@ namespace RealisticFiring.Sim
             var vessel = Vessel(boiler);
             var renewed = vessel != knownVessel;
             knownVessel = vessel;
+            knownVolume = TotalVolume(boiler);
             Water.Washout(vessel != null ? vessel.mass : 0f);
             Fouling.Washout();
             GlassChoke.Reset();
@@ -423,7 +428,7 @@ namespace RealisticFiring.Sim
         {
             WatchRepairs();
             var vessel = Vessel(boiler);
-            if (vessel != knownVessel)
+            if (vessel != knownVessel && !TakeUpResized(vessel))
             {
                 knownVessel = vessel;
                 Washout();
@@ -452,6 +457,31 @@ namespace RealisticFiring.Sim
             }
             ChargeWear(delta);
             massAtTick = vessel != null ? vessel.mass : 0f;
+        }
+
+        /// <summary>
+        /// Takes up a boiler another mod resized (JimTaplin's Rearranged S282,
+        /// for a new wheel arrangement): a new volume holding the old water at
+        /// its pressure, temperature, and share of the boiler. It is the same
+        /// water, not a washout: its solids and sludge stand at their
+        /// concentration, the scale at its thickness, and the plug, the
+        /// glass's choke, the steel, and the tubes' strain are kept. Returns
+        /// false for a boiler the game made anew, which is washed out.
+        /// </summary>
+        private bool TakeUpResized(WaterPressureVessel vessel)
+        {
+            var old = knownVessel;
+            var volume = TotalVolume(boiler);
+            if (old == null || vessel == null
+                || !BoilerResize.CarriesWater(old.mass, knownVolume, old.waterTemp, vessel.mass, volume, vessel.waterTemp))
+                return false;
+            var carried = BoilerResize.Carried(old.mass, vessel.mass);
+            Water.Restore(Water.Solids * carried, Water.SettledSludge * carried, Water.SuspendedSludge * carried, vessel.mass);
+            Fouling.Restore(Fouling.ScaleMass * volume / Mathf.Max(1f, knownVolume), Fouling.SootLoss);
+            Log($"boiler resized from {knownVolume:F0} to {volume:F0} L, {old.mass:F0} to {vessel.mass:F0} kg of the same water: no washout");
+            knownVessel = vessel;
+            knownVolume = volume;
+            return true;
         }
 
         private float StartupBoost() =>
@@ -879,6 +909,7 @@ namespace RealisticFiring.Sim
                 FeedSubcooling = Mathf.Max(0f, boilingWater - SteamTables.WaterSpecificEnthalpyByTemp(feedTemperature)) * 1000f,
                 Pressure = pressure,
                 Boiling = vessel.mass > 0f && !BelowBoilingNow,
+                StartupMultiplier = StartupBoost(),
             });
         }
 
@@ -939,6 +970,7 @@ namespace RealisticFiring.Sim
                 firebox.PlugDrowning = drowning;
         }
 
+        /// <summary>Writes the water's state into <paramref name="data"/>, the boiler's entry in the car's save (<see cref="SaveCar"/>).</summary>
         public void Save(JObject data)
         {
             if (data == null)
@@ -972,11 +1004,12 @@ namespace RealisticFiring.Sim
             }
         }
 
-        /// <summary>After the stock boiler has loaded its save.</summary>
+        /// <summary>After the stock boiler has loaded its save: from the car's entry, or the boiler's own object in a save by 1.26.0 or earlier.</summary>
         public void Load(JObject data)
         {
             var vessel = Vessel(boiler);
             knownVessel = vessel;
+            knownVolume = TotalVolume(boiler);
             var mass = vessel != null ? vessel.mass : 0f;
             var solids = data.GetFloat(SolidsKey);
             if (solids.HasValue)
@@ -1005,6 +1038,47 @@ namespace RealisticFiring.Sim
                 GlassChoke.Restore(choke.Value, data.GetFloat(GlassColumnKey) ?? float.NaN, data.GetFloat(GlassBlowAgeKey) ?? 0f);
             else
                 GlassChoke.Reset();
+        }
+
+        /// <summary>
+        /// The car's save key for its boilers' water: an object holding each
+        /// boiler's, by the boiler's component ID, in the keys a save from
+        /// 1.26.0 and earlier kept in the boiler's own save object.
+        /// </summary>
+        public const string CarSaveKey = "rfBoilerWater";
+
+        /// <summary>Writes the water of each boiler in <paramref name="flow"/> with a rig into the car's save <paramref name="carData"/>.</summary>
+        public static void SaveCar(SimulationFlow flow, JObject carData)
+        {
+            if (flow == null || flow.OrderedSimComps == null || carData == null)
+                return;
+            JObject boilers = null;
+            foreach (var boiler in flow.OrderedSimComps.OfType<Boiler>())
+            {
+                if (boiler == null || boiler.id == null || !TryGet(boiler, out var rig))
+                    continue;
+                var state = new JObject();
+                rig.Save(state);
+                (boilers ?? (boilers = new JObject()))[boiler.id] = state;
+            }
+            if (boilers != null)
+                carData[CarSaveKey] = boilers;
+        }
+
+        /// <summary>
+        /// Reads the car's own entry, after the stock boilers have loaded (and
+        /// with them any water saved by 1.26.0 or earlier, which it overrides). A car
+        /// saved without it keeps what the boilers' load gave.
+        /// </summary>
+        public static void LoadCar(SimulationFlow flow, JObject carData)
+        {
+            if (flow == null || flow.OrderedSimComps == null || !(carData?[CarSaveKey] is JObject boilers))
+                return;
+            foreach (var boiler in flow.OrderedSimComps.OfType<Boiler>())
+            {
+                if (boiler != null && boiler.id != null && boilers[boiler.id] is JObject state)
+                    OnLoaded(boiler, state);
+            }
         }
 
         /// <summary>Called on every stock boiler save load: applies ours now, or once the rig is made.</summary>

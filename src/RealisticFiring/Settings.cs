@@ -314,6 +314,13 @@ namespace RealisticFiring
             "manager's Upgrades screen. Changing to or from Never fitted takes a restart.")]
         public Upgrades.UpgradeRule S282Booster = Upgrades.UpgradeRule.BuyInCareer;
 
+        [Draw("S282 oil burner", DrawType.ToggleGroup, Tooltip =
+            "The S282 converted to burn oil: an oil tank in the tender's coal space and an\n" +
+            "oil burner fired from the cab, in place of the coal fire and the stoker. Buy it\n" +
+            "in a career at a career manager's Upgrades screen; in sandbox, Always fitted\n" +
+            "converts every S282. It takes effect when the game next loads.")]
+        public Upgrades.UpgradeRule S282OilBurner = Upgrades.UpgradeRule.BuyInCareer;
+
         [Header("Sound")]
 #if !PUBLIC_RELEASE
         [Draw("Realistic chuffs", Tooltip =
@@ -460,6 +467,10 @@ namespace RealisticFiring
 
         // With DumpUnderEngine: hide each of those drawings in turn, named on the screen, to find which draws a fault.
         public bool ProbeUnderEngine;
+
+        // Once a game is loaded, write the inventory icons, the mod's and some stock ones, to icon-dump/ in the mod's
+        // folder, then turn off (Diagnostics.ItemIconDump).
+        public bool DumpItemIcons;
 #endif
 
 #if !PUBLIC_RELEASE

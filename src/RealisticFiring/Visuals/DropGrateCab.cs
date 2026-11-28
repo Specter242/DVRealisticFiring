@@ -74,7 +74,8 @@ namespace RealisticFiring.Visuals
         /// <summary>Builds the lever in a loaded cab. Returns a sentence for the log, or null when not wanted.</summary>
         public static string Attach(TrainCar car, Transform interior)
         {
-            if (car == null || interior == null || interior.Find(RootName) != null || !FireboxRegistry.TryGet(car, out var firebox))
+            // An S282 converted to oil has no grate to drop (S282OilCab).
+            if (car == null || interior == null || interior.Find(RootName) != null || S282OilCab.IsConverted(car) || !FireboxRegistry.TryGet(car, out var firebox))
                 return null;
             var controller = car.SimController;
             var flow = controller != null ? controller.SimulationFlow : null;

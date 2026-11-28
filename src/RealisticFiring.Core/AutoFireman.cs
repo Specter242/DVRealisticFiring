@@ -632,9 +632,11 @@ namespace RealisticFiring.Core
         private static FiremanNotice Notices(FireModel fire, FiremanReadings r)
         {
             var notices = WaterNotices(r);
-            foreach (var zone in fire.Zones)
+            // By index: this runs every step, and a foreach here allocates an enumerator.
+            var zones = fire.Zones;
+            for (var i = 0; i < zones.Count; i++)
             {
-                if (zone.Clinker > CleanClinkerShare * fire.ReferenceZoneMass)
+                if (zones[i].Clinker > CleanClinkerShare * fire.ReferenceZoneMass)
                 {
                     notices |= FiremanNotice.CleanFire;
                     break;

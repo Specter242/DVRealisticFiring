@@ -592,6 +592,90 @@ namespace RealisticFiring.Visuals
                 : new[] { start, start + 2, start + 1, start, start + 3, start + 2 });
         }
 
+        /// <summary>
+        /// The arch's firebrick for other brickwork (the S282 oil burner's
+        /// firepan, <see cref="S282OilCab"/>), on <paramref name="basis"/> (the
+        /// cab's own lit material): its texture and relief, dull and not metal,
+        /// glowing by its heat (<see cref="SetHeat"/>). The arch's own shader is
+        /// lit only by the coal fire's light, which an oil fire doesn't set
+        /// (in game the firepan drew black); this takes the box's lights.
+        /// </summary>
+        internal static Material FirebrickMaterial(Material basis)
+        {
+            if (basis == null)
+                return null;
+            BrickTextures();
+            var material = new Material(basis) { name = "RealisticFiring firebrick" };
+            void Texture(string name, Texture value)
+            {
+                if (material.HasProperty(name))
+                {
+                    material.SetTexture(name, value);
+                    material.SetTextureScale(name, Vector2.one);
+                    material.SetTextureOffset(name, Vector2.zero);
+                }
+            }
+            Texture("_MainTex", brickTexture);
+            Texture("_BumpMap", brickRelief);
+            Texture("_MetallicGlossMap", null);
+            Texture("_OcclusionMap", null);
+            Texture("_DetailAlbedoMap", null);
+            Texture("_DetailNormalMap", null);
+            Texture("_EmissionMap", brickTexture);
+            material.DisableKeyword("_METALLICGLOSSMAP");
+            material.DisableKeyword("_DETAIL_MULX2");
+            material.EnableKeyword("_NORMALMAP");
+            material.EnableKeyword("_EMISSION");
+            if (material.HasProperty("_Color"))
+                material.SetColor("_Color", new Color(Brick.r * ArchAlbedo * 0.7f, Brick.g * ArchAlbedo * 0.7f, Brick.b * ArchAlbedo * 0.7f, 1f));
+            if (material.HasProperty("_Metallic"))
+                material.SetFloat("_Metallic", 0f);
+            if (material.HasProperty("_Glossiness"))
+                material.SetFloat("_Glossiness", 0.12f);
+            if (material.HasProperty("_EmissionColor"))
+                material.SetColor("_EmissionColor", Color.black);
+            return material;
+        }
+
+        private static Material matteFirebrick;
+
+        /// <summary>
+        /// Firebrick in a Lambert material, with no highlight: for surfaces the
+        /// fire's light runs along toward the eye, as down a sight hole, where
+        /// a Standard material reflects it at the grazing angle whatever its
+        /// gloss. Lit by the fire's own light; it does not glow of itself.
+        /// </summary>
+        internal static Material MatteFirebrick()
+        {
+            if (matteFirebrick != null)
+                return matteFirebrick;
+            var lambert = Shader.Find("Legacy Shaders/Diffuse");
+            if (lambert == null)
+                return null;
+            BrickTextures();
+            matteFirebrick = new Material(lambert) { name = "RealisticFiring firebrick (matte)", color = new Color(Brick.r * 0.85f, Brick.g * 0.85f, Brick.b * 0.85f, 1f) };
+            matteFirebrick.mainTexture = brickTexture;
+            return matteFirebrick;
+        }
+
+        /// <summary>Sets <paramref name="material"/>'s (a <see cref="FirebrickMaterial"/>) glow: its bricks' heat, 0 cold to 1 white hot.</summary>
+        internal static void SetHeat(Material material, float heat)
+        {
+            if (material == null || !material.HasProperty("_EmissionColor"))
+                return;
+            material.SetColor("_EmissionColor", HeatColor(heat));
+        }
+
+        /// <summary>The bricks' glow at <paramref name="heat"/>, 0 cold to 1 white hot (<see cref="SetHeat"/>).</summary>
+        internal static Color HeatColor(float heat)
+        {
+            heat = Mathf.Clamp01(heat);
+            var color = heat < 0.5f
+                ? Color.Lerp(new Color(0.45f, 0.05f, 0.01f), new Color(0.95f, 0.32f, 0.05f), heat / 0.5f)
+                : Color.Lerp(new Color(0.95f, 0.32f, 0.05f), new Color(1f, 0.48f, 0.12f), (heat - 0.5f) / 0.5f);
+            return color * (1.1f * heat * heat);
+        }
+
         private static Texture2D brickTexture;
         private static Texture2D brickRelief;
         // The firebrick's texture, tiles a metre: 256 texels to 62 cm.

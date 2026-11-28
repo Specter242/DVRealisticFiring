@@ -135,7 +135,7 @@ namespace RealisticStackEffects
                 workingDensity = shadowDensity;
                 busy = true;
                 nextUpdate = Time.time + UpdateEvery;
-                ThreadPool.QueueUserWorkItem(_ => Work());
+                ThreadPool.QueueUserWorkItem(work ?? (work = _ => Work()));
             }
             Gathering = false;
 
@@ -227,6 +227,8 @@ namespace RealisticStackEffects
                     return null;
             }
         }
+
+        private WaitCallback work;
 
         private void Work()
         {

@@ -143,6 +143,11 @@ namespace RealisticFiring
         {
             SeedNative(car);
             var livery = car != null && car.carLivery != null ? car.carLivery.id : null;
+            // An S282 converted to oil: its fire door blanked by a plate, the peephole the way in (S282OilCab).
+            if (livery != null && Sim.S282OilConversion.IsOil(car) && Visuals.S282OilTender.Data?.Peephole is Visuals.S282OilTenderData.PeepholeShape peep
+                && TryFitted(livery, out var door))
+                return new FireholeOpening(new Vector3(peep.Middle[0] - peep.Radius, peep.Middle[1] - peep.Radius, door.Plane),
+                    new Vector3(peep.Middle[0] + peep.Radius, peep.Middle[1] + peep.Radius, door.Plane));
             if (livery != null && TryFitted(livery, out var fitted))
                 return new FireholeOpening(new Vector3(fitted.Middle - fitted.Width / 2f, fitted.Foot, fitted.Plane),
                     new Vector3(fitted.Middle + fitted.Width / 2f, fitted.Foot + fitted.Height, fitted.Plane));

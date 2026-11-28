@@ -103,4 +103,28 @@ public class GrateLeverTests
 
         Assert.Equal(0f, Move(lever, 0.65f, 5f).maxDump);
     }
+
+    [Fact]
+    public void EachHoldBeginsItsDumpOnce()
+    {
+        // The start of each hold's DumpStroke: once per hold, again only after center.
+        var lever = new GrateLever();
+        var began = 0;
+        void Hold(float value, float seconds)
+        {
+            for (var t = 0f; t < seconds; t += Dt)
+                began += lever.Update(value, Dt).DumpBegan ? 1 : 0;
+        }
+
+        Hold(0f, 5f);
+        Assert.Equal(1, began);
+        Hold(0.3f, 1f);
+        Hold(0f, 3f);
+        Assert.Equal(1, began);
+        Hold(0.5f, 0.2f);
+        Hold(0f, 3f);
+        Assert.Equal(2, began);
+        Hold(1f, 3f);
+        Assert.Equal(3, began);
+    }
 }

@@ -35,9 +35,14 @@ namespace RealisticFiring.Sim
         public static bool TakesStockSteam(ReciprocatingSteamEngine engine) =>
             engine != null && StockSteamEngines.TryGetValue(engine, out _);
 
+        private readonly ReciprocatingSteamEngine engine;
+        private SteamCylinders model;
+        private float bore, stroke, maxFlow;
+
         private EngineCylinders(ReciprocatingSteamEngine engine)
         {
-            Model = new SteamCylinders(Spec, engine.cylinderBore, engine.pistonStroke, engine.throttleMaxFlow);
+            this.engine = engine;
+            Build();
         }
 
         public static bool Enabled => Main.Settings != null && Main.Settings.RealisticCylinders;
@@ -45,7 +50,28 @@ namespace RealisticFiring.Sim
         /// <summary>Whether the model works <paramref name="engine"/>: the setting is on and its loco is not left stock.</summary>
         public static bool Works(ReciprocatingSteamEngine engine) => Enabled && engine != null && !LeftStock.Kept(engine);
 
-        public SteamCylinders Model { get; }
+ public SteamCylinders Model
+        {
+            get
+            {
+                if (engine.cylinderBore != bore || engine.pistonStroke != stroke || engine.throttleMaxFlow != maxFlow)
+                {
+                    var before = model;
+                    Build();
+                    model.WallCondensation = before.WallCondensation;
+                    Main.Mod?.Logger.Log($"{engine.id}: cylinders now {bore * 1000f:F0} mm by {stroke * 1000f:F0} mm, throttle {maxFlow:F2} kg/s");
+                }
+                return model;
+            }
+        }
+
+        private void Build()
+        {
+            bore = engine.cylinderBore;
+            stroke = engine.pistonStroke;
+            maxFlow = engine.throttleMaxFlow;
+            model = new SteamCylinders(Spec, bore, stroke, maxFlow);
+        }
 
         /// <summary>This tick's indicator diagram at the pressure acting on the pistons.</summary>
         public CylinderCycle Cycle { get; internal set; }

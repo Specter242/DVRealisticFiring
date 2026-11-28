@@ -27,7 +27,7 @@ namespace RealisticFiring.AdapterCheck
                 "the 2901 sand fits inside its existing tender hatch, 2.5 cm below the lid and 4 cm clear of its rim");
             var up = TenderFlueSandBox.PickupRotation * Vector3.up;
             check((up - Vector3.forward).sqrMagnitude < 1e-10f,
-                "the shovel pickup faces up through the tender hatch in the maker's rotated anchor frame");
+                "the scoop pickup faces up through the tender hatch in the maker's rotated anchor frame");
             check(!TenderFlueSandBox.TryLayout(new Bounds(Vector3.zero, new Vector3(4f, 4f, 4f)), position,
                     rotation, scale, out _, out _)
                 && !TenderFlueSandBox.TryLayout(bounds, new Vector3(float.NaN, 0f, 0f), rotation, scale, out _, out _),
@@ -46,7 +46,7 @@ namespace RealisticFiring.AdapterCheck
             check(!hookup.Exists(i => i.Calls(AccessTools.Method(typeof(FlueSandBox), "SandSurface"))
                     || i.Calls(AccessTools.Method(typeof(FlueSandBox), "SandMaterial"))
                     || i.Calls(AccessTools.Method(typeof(FlueSandBox), "Part"))),
-                "the tender hookup adds only shovel controls, keeping the maker's sand surface and materials");
+                "the tender hookup adds only the scoop's pickup, keeping the maker's sand surface and materials");
 
             // Exercise the real pickup's resource operations without native
             // GameObjects. A missing carrier is the closed/stale target case.
@@ -57,32 +57,19 @@ namespace RealisticFiring.AdapterCheck
             var box = (FlueSandBox)FormatterServices.GetUninitializedObject(typeof(FlueSandBox));
             AccessTools.Field(typeof(FlueSandBox), "sand").SetValue(box, supply);
             var tenderMode = AccessTools.Field(typeof(FlueSandBox), "usesTender");
-            FlueSandBox.TakeLoaded(float.MaxValue);
-            try
-            {
-                var first = box.Take(FlueSandBox.Shovelful);
-                var last = box.Take(FlueSandBox.Shovelful);
-                check(first == 1.5f && last == 0.5f && box.Available == 0f && FlueSandBox.Loaded == 2f,
-                    "flue sand uses the existing resource, retains a 1.5 kg shovel load, and cannot overdraw it");
-                tenderMode.SetValue(box, true);
-                check(box.Take(1f) == 0f && box.PutBack(1f) == 0f && FlueSandBox.Loaded == 2f
-                    && supply.amountReadOut.Value == 0f,
-                    "a stale tender target cannot take or return sand after losing its source");
-                tenderMode.SetValue(box, false);
-                supply.refillExtIn.Value = 9f;
-                var returned = box.PutBack(2f);
-                check(returned == 1f && supply.amountReadOut.Value == 10f && FlueSandBox.Loaded == 1f,
-                    "returning sand to a full supply leaves any excess on the shovel");
-                var saved = supply.GetSaveStateData();
-                supply.consumeExtIn.Value = 10f;
-                supply.SetSaveStateData(saved);
-                check(supply.amountReadOut.Value == 10f, "the tender pickup keeps the maker's existing sand save data");
-            }
-            finally
-            {
-                FlueSandBox.TakeLoaded(float.MaxValue);
-                // No native shovel is involved; all other checks start empty.
-            }
+            var first = box.Scoop(FlueSandBox.Scoopful);
+            var last = box.Scoop(FlueSandBox.Scoopful);
+            check(first == 1.5f && last == 0.5f && box.Available == 0f && supply.amountReadOut.Value == 0f,
+                "the sand scoop takes a 1.5 kg quart from the existing resource and cannot overdraw it");
+            supply.refillExtIn.Value = 4f;
+            tenderMode.SetValue(box, true);
+            check(box.Scoop(1f) == 0f && supply.amountReadOut.Value == 4f && box.Why == "Couple the tender to the engine for its sand",
+                "a stale tender target gives the scoop no sand after losing its source, and says why");
+            tenderMode.SetValue(box, false);
+            var saved = supply.GetSaveStateData();
+            supply.consumeExtIn.Value = 4f;
+            supply.SetSaveStateData(saved);
+            check(supply.amountReadOut.Value == 4f, "the tender pickup keeps the maker's existing sand save data");
         }
 
         private static PortDefinition Port(string id, PortType type) => new PortDefinition(type, PortValueType.GENERIC, id);

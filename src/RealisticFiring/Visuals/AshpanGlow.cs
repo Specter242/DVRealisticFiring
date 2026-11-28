@@ -95,9 +95,13 @@ namespace RealisticFiring.Visuals
             // Hot fire, clear grates: dead ash and clinker hide the glow.
             var hot = model.FireOn ? Mathf.Clamp01((model.Temperature - 400f) / 800f) : 0f;
             var choked = 0f;
-            foreach (var zone in model.Zones)
+            var zones = model.Zones;
+            for (var i = 0; i < zones.Count; i++)
+            {
+                var zone = zones[i];
                 choked += Mathf.Clamp01(1.5f * (zone.Ash + zone.Clinker) / (zone.Ash + zone.Clinker + zone.Coal + 0.1f));
-            choked /= model.Zones.Count;
+            }
+            choked /= zones.Count;
             var flicker = 0.85f + 0.3f * Mathf.PerlinNoise(Time.time * 1.3f, seed);
             var intensity = brightness * (SteadyIntensity * hot * (1f - choked) + flare) * flicker;
             glow.intensity = intensity;

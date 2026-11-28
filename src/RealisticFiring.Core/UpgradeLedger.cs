@@ -44,7 +44,9 @@ namespace RealisticFiring.Core
         S282Stoker = 1 << 6,
         S282FeedPump = 1 << 7,
         S282Booster = 1 << 8,
-        All = BrickArch | OverFireJets | AutomaticFireDoor | SniftingValves | DriftingValve | ByPassValves | S282Stoker | S282FeedPump | S282Booster,
+        S282OilBurner = 1 << 9,
+        All = BrickArch | OverFireJets | AutomaticFireDoor | SniftingValves | DriftingValve | ByPassValves | S282Stoker | S282FeedPump | S282Booster
+              | S282OilBurner,
     }
 
     /// <summary>Canonical save keys and livery eligibility for career upgrades.</summary>
@@ -59,6 +61,7 @@ namespace RealisticFiring.Core
         public const string DriftingValve = "driftingValve";
         public const string ByPassValves = "byPassValves";
         public const string AutomaticFireDoor = "automaticFireDoor";
+        public const string S282OilBurner = "s282OilBurner";
         public const string Locomotives = "locomotives";
 
         public static readonly (UpgradeMask Flag, string Key)[] All =
@@ -72,7 +75,23 @@ namespace RealisticFiring.Core
             (UpgradeMask.DriftingValve, DriftingValve),
             (UpgradeMask.ByPassValves, ByPassValves),
             (UpgradeMask.AutomaticFireDoor, AutomaticFireDoor),
+            (UpgradeMask.S282OilBurner, S282OilBurner),
         };
+
+        /// <summary>
+        /// Upgrades that change what an engine is rather than improve it: the
+        /// S282's conversion to oil. Under Buy in career they are fitted only
+        /// once bought, in sandbox too, so an engine keeps the way it came
+        /// unless the rule is Always fitted.
+        /// </summary>
+        public const UpgradeMask Alternatives = UpgradeMask.S282OilBurner;
+
+        /// <summary>
+        /// Coal firing's upgrades, which an engine converted to oil does without
+        /// (the stoker, the arch, the jets, and the automatic fire door).
+        /// </summary>
+        public const UpgradeMask CoalOnly =
+            UpgradeMask.S282Stoker | UpgradeMask.BrickArch | UpgradeMask.OverFireJets | UpgradeMask.AutomaticFireDoor;
 
         /// <summary>Upgrades shared by both the stock S282 and S060.</summary>
         public const UpgradeMask StockSteamShared =
@@ -110,7 +129,7 @@ namespace RealisticFiring.Core
         }
     }
 
-    /// <summary>The nine per-upgrade rules from settings.</summary>
+    /// <summary>The per-upgrade rules from settings.</summary>
     public readonly struct UpgradeRulesSet
     {
         public static readonly UpgradeRulesSet Default = new UpgradeRulesSet(
@@ -127,7 +146,8 @@ namespace RealisticFiring.Core
             FittingRule byPassValves,
             FittingRule s282Stoker,
             FittingRule s282FeedPump,
-            FittingRule s282Booster)
+            FittingRule s282Booster,
+            FittingRule s282OilBurner = FittingRule.BuyInCareer)
         {
             BrickArch = brickArch;
             OverFireJets = overFireJets;
@@ -138,6 +158,7 @@ namespace RealisticFiring.Core
             S282Stoker = s282Stoker;
             S282FeedPump = s282FeedPump;
             S282Booster = s282Booster;
+            S282OilBurner = s282OilBurner;
         }
 
         public FittingRule BrickArch { get; }
@@ -149,6 +170,7 @@ namespace RealisticFiring.Core
         public FittingRule S282Stoker { get; }
         public FittingRule S282FeedPump { get; }
         public FittingRule S282Booster { get; }
+        public FittingRule S282OilBurner { get; }
 
         public FittingRule RuleFor(UpgradeMask upgrade)
         {
@@ -163,6 +185,7 @@ namespace RealisticFiring.Core
                 case UpgradeMask.S282Stoker: return S282Stoker;
                 case UpgradeMask.S282FeedPump: return S282FeedPump;
                 case UpgradeMask.S282Booster: return S282Booster;
+                case UpgradeMask.S282OilBurner: return S282OilBurner;
                 default: return FittingRule.BuyInCareer;
             }
         }
@@ -256,7 +279,14 @@ namespace RealisticFiring.Core
         }
 
         /// <summary>Evaluates a single fitting rule without cross-upgrade prerequisites.</summary>
-        public static bool Allowed(FittingRule rule, bool inCareer, bool bought)
+        public static bool Allowed(FittingRule rule, bool inCareer, bool bought) => Allowed(rule, inCareer, bought, alternative: false);
+
+        /// <summary>
+        /// Evaluates a single fitting rule; an <paramref name="alternative"/>
+        /// (<see cref="UpgradeKeys.Alternatives"/>) under Buy in career is fitted
+        /// only once bought, in sandbox as in a career.
+        /// </summary>
+        public static bool Allowed(FittingRule rule, bool inCareer, bool bought, bool alternative)
         {
             switch (rule)
             {
@@ -265,7 +295,7 @@ namespace RealisticFiring.Core
                 case FittingRule.NeverFitted:
                     return false;
                 default:
-                    return !inCareer || bought;
+                    return alternative ? inCareer && bought : !inCareer || bought;
             }
         }
 
@@ -285,7 +315,7 @@ namespace RealisticFiring.Core
             var resolved = UpgradeMask.None;
             foreach (var (flag, _) in UpgradeKeys.All)
             {
-                if (Allowed(rules.RuleFor(flag), inCareer, (bought & flag) == flag))
+                if (Allowed(rules.RuleFor(flag), inCareer, (bought & flag) == flag, (UpgradeKeys.Alternatives & flag) != 0))
                     resolved |= flag;
             }
             return EnforcePrerequisites(resolved);

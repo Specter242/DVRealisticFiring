@@ -155,6 +155,10 @@ namespace RealisticFiring.Sim
         internal static void BeginTick(ReciprocatingSteamEngine engine, float delta = 0)
         {
             if (!TryGet(engine, out var path)) { BleedSaturated(engine, delta); return; }
+            if ((engine.steamChestVolume != path.Model.Spec.ChestVolume || engine.throttleMaxFlow != path.Model.Spec.MaxFlow)
+                && engine.steamChestVolume > 0 && engine.throttleMaxFlow > 0
+                && !float.IsInfinity(engine.steamChestVolume) && !float.IsInfinity(engine.throttleMaxFlow))
+                path = path.Refit();
             if (!EngineCylinders.Works(engine))
             {
                 if (path.active && path.initialized)
@@ -213,6 +217,23 @@ namespace RealisticFiring.Sim
             }
             path.AdvanceIdle(delta);
             path.Show();
+        }
+
+        /// <summary>
+        /// The path for the engine's chest and throttle as they are now, when
+        /// another mod changed them (JimTaplin's Rearranged S282 sizes an
+        /// articulated S282's engines alike): the same pipe, its steam kept as
+        /// a saved path's is, the chest's share vented if it shrank.
+        /// </summary>
+        internal EngineSteamPath Refit()
+        {
+            var spec = new SteamPathSpec(Model.Spec.Regulator, Model.Spec.PipeVolume, engine.steamChestVolume, engine.throttleMaxFlow);
+            var refit = Attach(engine, spec);
+            foreach (var car in AllCars().ToList())
+                if (Cars.TryGetValue(car, out var known) && known == this) { Cars.Remove(car); Cars.Add(car, refit); }
+            Main.Mod?.Logger.Log($"{engine.id}: throttle characteristic refitted: {spec.PipeVolume:F0} L circuit + {spec.ChestVolume:F0} L chest, {spec.MaxFlow:F2} kg/s"
+                                 + (refit.initialized || refit.parked ? ", its steam kept" : ", started from the chest"));
+            return refit;
         }
 
         internal void AdvanceIdle(double seconds)

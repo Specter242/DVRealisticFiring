@@ -54,7 +54,7 @@ namespace RealisticFiring.Visuals
             }
             var box = FlueSandBox.BuildInTender(engine, tender, anchor, control, center, size);
             if (box != null)
-                Main.Mod?.Logger.Log($"{engine.ID}: flue sand inside the tender's existing sandbox; open its lid to load the shovel");
+                Main.Mod?.Logger.Log($"{engine.ID}: flue sand inside the tender's existing sandbox; open its lid to fill the sand scoop");
         }
 
         private static bool Matches(TrainCar tender, TrainCar engine) => tender != null

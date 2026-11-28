@@ -100,6 +100,7 @@ namespace RealisticFiring.Sim
             : base(fDef.ID)
         {
             Car = car;
+            blankedDoor = S282OilConversion.IsOil(car);
             startupMaxPressure = fDef.startupMaxPressure;
             Model = new OilFire(new FireboxParameters(
                 fDef.maxCoalCapacity,
@@ -172,8 +173,21 @@ namespace RealisticFiring.Sim
         /// <summary>The flareback on the last tick, 0 none to 1 the worst; the effects take it.</summary>
         public float PendingFlareback { get; set; }
 
-        /// <summary>The fire door's opening, 0 to 1.</summary>
-        public float DoorOpening => doorPort != null ? Mathf.Clamp01(doorPort.Value) : 0f;
+        /// <summary>
+        /// The fire door's opening, 0 to 1, as its air reaches the fire. An S282
+        /// converted to oil has its fire door blanked (S282OilCab): its only
+        /// opening is the peephole, whose bore is this share of the stock door's.
+        /// </summary>
+        public float DoorOpening => blankedDoor ? PeepHole * PeepHoleShare : doorPort != null ? Mathf.Clamp01(doorPort.Value) : 0f;
+
+        /// <summary>The peephole's 84 mm bore against the stock S282's fire door, 0.57 by 0.49 m.</summary>
+        internal const float PeepHoleShare = 0.02f;
+
+        /// <summary>How far the way in is open for what is thrown in (waste, sand): the fire door, or on a blanked door the peephole.</summary>
+        public float DoorwayOpening => blankedDoor ? PeepHole : DoorOpening;
+
+        // The S282 converted to oil: its fire door blanked, the peephole the only way in.
+        private readonly bool blankedDoor;
 
         public float AtomizerValve => atomizerPort != null ? Mathf.Clamp01(atomizerPort.Value) : OilBurnerFit.Atomizer.Default;
 
@@ -227,30 +241,18 @@ namespace RealisticFiring.Sim
         /// <summary>Sand thrown in on the last delivery, in kg, for the log and effects.</summary>
         public float LastSand { get; private set; }
 
-        // A shovelful through the door: sand from the flue sand box scours
-        // the flues; coal (from another loco's pile, another mod) has nowhere
-        // to go in an oil firebox and is lost.
+        // A shovelful through the door: coal (from another loco's pile, another
+        // mod) has nowhere to go in an oil firebox and is lost. Flue sand goes
+        // in by the sand scoop (Items.SandScoopUse), not the shovel.
         private void OnShovelDelivered(float delivered)
         {
-            if (delivered == 0f)
-                return;
-            coalControlExtIn.Value = 0f;
-            if (delivered < 0f)
-                return;
-            var controller = Car != null && Car.SimController != null ? Car.SimController.firebox : null;
-            var multiplier = controller != null && controller.coalConsumptionMultiplier > 0f ? controller.coalConsumptionMultiplier : 1f;
-            var sand = Visuals.FlueSandBox.TakeLoaded(delivered * multiplier);
-            if (!(sand > 0f))
-                return;
-            ThrowSand(sand);
+            if (delivered != 0f)
+                coalControlExtIn.Value = 0f;
         }
 
-        /// <summary>On a multiplayer client: a shovel's load thrown in, sand to the host, coal lost.</summary>
+        /// <summary>On a multiplayer client: a shovel's load thrown in, which an oil fire loses.</summary>
         public void DeliverFromClient(float pileMass)
         {
-            var sand = Visuals.FlueSandBox.TakeLoaded(pileMass);
-            if (sand > 0f)
-                ThrowSand(sand);
         }
 
         /// <summary>Throws <paramref name="sand"/> kg of the loco's sand into the firebox, through the host in multiplayer.</summary>
@@ -438,6 +440,17 @@ namespace RealisticFiring.Sim
         public override void SetSaveStateData(JObject savedData)
         {
             SmokeFees.Restore(savedData);
+            if (S282OilConversion.IsOil(Car) && savedData.GetFloat(BrickSaveKey) == null)
+            {
+                // An S282 saved burning coal, out of the shops converted: its
+                // coal is gone, the fire out, the brick and oil cold. Its saved
+                // coal would otherwise lie in the pan as oil, to flare back.
+                Model.Restore(false, OilFire.ColdBrick, OilFire.AmbientTemperature, 0f, 0f, 0f);
+                restored = true;
+                fireOnReadOut.Value = 0f;
+                Main.Mod?.Logger.Log($"{Car?.ID}: saved as a coal engine, out of the shops converted to oil: fire out, brick and oil cold");
+                return;
+            }
             var fireOn = savedData.GetBool(RealisticFirebox.FireOnSaveKey) == true;
             // The stock coal-mass key carries the pooled oil; with the vapor,
             // it keeps the flareback a reload would otherwise clear.

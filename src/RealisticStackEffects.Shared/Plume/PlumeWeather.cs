@@ -31,7 +31,9 @@ namespace RealisticStackEffects
         private static float inversionStrength;
         private static float inversionCeiling = float.PositiveInfinity;
         private static PlumeAir air = PlumeAir.Reference;
-        private static string source = "no weather yet";
+        private static AirFrom airFrom = AirFrom.Nothing;
+
+        private enum AirFrom { Nothing, TestBed, Seasons, Setting }
 
         /// <summary>Where the air comes from: the test bed, DV Seasons, or the season setting.</summary>
         public static string Source
@@ -39,7 +41,18 @@ namespace RealisticStackEffects
             get
             {
                 Update();
-                return source;
+                // Made when asked for: the air is read every frame, this rarely.
+                switch (airFrom)
+                {
+                    case AirFrom.TestBed:
+                        return "the test bed's";
+                    case AirFrom.Seasons:
+                        return SeasonsMod.TryRead(out _, out var season) ? season : "no weather yet";
+                    case AirFrom.Setting:
+                        return $"a {StackHost.Settings.SmokeSeason} day (the setting)";
+                    default:
+                        return "no weather yet";
+                }
             }
         }
 
@@ -182,27 +195,27 @@ namespace RealisticStackEffects
             {
                 fog = 0f;
                 air = testAir;
-                source = "the test bed's";
+                airFrom = AirFrom.TestBed;
             }
             else
 #endif
-            if (weather != null && SeasonsMod.TryRead(out var celsius, out var season))
+            if (weather != null && SeasonsMod.TryRead(out var celsius))
             {
                 fog = liveFog;
                 air = PlumeClimate.WithTemperature(celsius, hour, rain, fog);
-                source = season;
+                airFrom = AirFrom.Seasons;
             }
             else if (weather != null)
             {
                 fog = liveFog;
                 air = PlumeClimate.Air(StackHost.Settings.SmokeSeason, hour, rain, fog);
-                source = $"a {StackHost.Settings.SmokeSeason} day (the setting)";
+                airFrom = AirFrom.Setting;
             }
             else
             {
                 fog = 0f;
                 air = PlumeAir.Reference;
-                source = "no weather yet";
+                airFrom = AirFrom.Nothing;
             }
 #if !PUBLIC_RELEASE
             if (PlumeTestBed.Wind is Vector3 test)

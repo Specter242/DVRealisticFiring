@@ -25,7 +25,7 @@ namespace RealisticFiring.Visuals
         private static readonly AccessTools.FieldRef<ChuffClipsSimReader, Port> CocksPort = AccessTools.FieldRefAccess<ChuffClipsSimReader, Port>("cylinderCockControlPort");
         private static readonly AccessTools.FieldRef<ChuffClipsSimReader, Port> AshPort = AccessTools.FieldRefAccess<ChuffClipsSimReader, Port>("ashesInPipesPort");
         private static readonly AccessTools.FieldRef<ChuffClipsSimReader.ChuffLoop, bool> LoopActive = AccessTools.FieldRefAccess<ChuffClipsSimReader.ChuffLoop, bool>("isActive");
-        private static readonly Action<ChuffClipsSimReader> UpdateLoops = AccessTools.MethodDelegate<Action<ChuffClipsSimReader>>(AccessTools.Method(typeof(ChuffClipsSimReader), "UpdateLoops"));
+        private static readonly Action<ChuffClipsSimReader> UpdateLoops = (Action<ChuffClipsSimReader>)Delegate.CreateDelegate(typeof(Action<ChuffClipsSimReader>), AccessTools.Method(typeof(ChuffClipsSimReader), "UpdateLoops"));
 
         // The game brings its single beats in over the first beat a second;
         // that rise is kept, and the fall is Voice.BeatShare's.

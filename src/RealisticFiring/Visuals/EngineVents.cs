@@ -18,6 +18,49 @@ namespace RealisticFiring.Visuals
         public static Func<TrainCar, (object Identity, Adder Add)?> External;
 
         /// <summary>
+        /// What <see cref="External"/> would name as the steam around a car,
+        /// without making the means to add to it; null for none.
+        /// </summary>
+        public static Func<TrainCar, object> ExternalIdentity;
+
+        /// <summary>
+        /// <see cref="TryGet"/>'s identity alone, for callers that look every
+        /// frame: nothing is allocated.
+        /// </summary>
+        public static bool TryGetIdentity(TrainCar car, out object identity)
+        {
+            identity = null;
+            if (car == null)
+                return false;
+            if (ChimneyPlume.TryGet(car, out var plume) && plume.Vents != null)
+            {
+                identity = plume.Vents;
+                return true;
+            }
+            var external = ExternalIdentity;
+            if (external == null)
+                return false;
+            try
+            {
+                identity = external(car);
+            }
+            catch (Exception e)
+            {
+                Abandon(car, e);
+                return false;
+            }
+            return identity != null;
+        }
+
+        // A contract that changed under the add-on: left alone from here on.
+        private static void Abandon(TrainCar car, Exception e)
+        {
+            External = null;
+            ExternalIdentity = null;
+            Faults.Report("Realistic Stack Effects' steam around the engine", car, e);
+        }
+
+        /// <summary>
         /// The steam around <paramref name="car"/> now: its
         /// <paramref name="identity"/>, which changes when the engine's steam
         /// is made again (its sources are then to be added again), and how
@@ -50,9 +93,7 @@ namespace RealisticFiring.Visuals
             }
             catch (Exception e)
             {
-                // A contract that changed under the add-on: left alone from here on.
-                External = null;
-                Faults.Report("Realistic Stack Effects' steam around the engine", car, e);
+                Abandon(car, e);
                 return false;
             }
             if (!(found is (object Identity, Adder Add) there) || there.Identity == null || there.Add == null)

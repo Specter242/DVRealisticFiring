@@ -357,7 +357,7 @@ namespace RealisticFiring.Core
             if (oil.StackSmoke < HazeStack)
                 return new Advice(AdviceLevel.Watch, "Clear stack: too much air, wasting heat. Ease the damper or blower, or give her more oil.");
             if (oil.FlueSoot > SootedFlues)
-                return new Advice(AdviceLevel.Watch, "Flues are sooting: at speed, load the shovel at the sand box and throw it through the peep hole.");
+                return new Advice(AdviceLevel.Watch, "Flues are sooting: at speed, fill the sand scoop at the sand box and throw it in through the peep hole.");
             if (oil.GlassCheck == GlassCheck.Due && canBlowGlass)
                 return new Advice(AdviceLevel.Watch, "Dirty water and the glass hasn't been blown through lately: crack its bottom cock to see it's free.");
             return new Advice(AdviceLevel.Ok, "Light haze at the stack: she's burning right.");

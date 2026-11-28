@@ -30,17 +30,40 @@ namespace RealisticStackEffects
         private static PropertyInfo transition;
         private static PropertyInfo snow;
 
+        /// <summary>DV Seasons' temperature now, for callers that read it every frame: no text is made.</summary>
+        public static bool TryRead(out float celsius) => TryReadState(out _, out celsius);
+
         /// <summary>DV Seasons' state now: false when it is not running or has no state yet.</summary>
         public static bool TryRead(out float celsius, out string season)
         {
-            celsius = 0f;
             season = null;
+            if (!TryReadState(out var state, out celsius))
+                return false;
+            try
+            {
+                var shift = transition != null ? (float)transition.GetValue(state, null) : 0f;
+                season = $"DV Seasons: {current?.GetValue(state, null)}" +
+                         (shift > 0.01f ? $" turning {next?.GetValue(state, null)} ({shift:P0})" : "") +
+                         (snow != null ? $", snow {(float)snow.GetValue(state, null):P0}" : "");
+                return true;
+            }
+            catch (Exception e)
+            {
+                Lost(e);
+                return false;
+            }
+        }
+
+        private static bool TryReadState(out object state, out float celsius)
+        {
+            state = null;
+            celsius = 0f;
             if (!Find())
                 return false;
             try
             {
                 var owner = runtime.GetValue(null);
-                var state = owner != null ? currentState.GetValue(owner, null) : null;
+                state = owner != null ? currentState.GetValue(owner, null) : null;
                 if (state == null)
                     return false;
                 if (temperature == null)
@@ -57,21 +80,22 @@ namespace RealisticStackEffects
                 celsius = (float)temperature.GetValue(state, null);
                 if (float.IsNaN(celsius) || float.IsInfinity(celsius))
                     return false;
-                var shift = transition != null ? (float)transition.GetValue(state, null) : 0f;
-                season = $"DV Seasons: {current?.GetValue(state, null)}" +
-                         (shift > 0.01f ? $" turning {next?.GetValue(state, null)} ({shift:P0})" : "") +
-                         (snow != null ? $", snow {(float)snow.GetValue(state, null):P0}" : "");
                 return true;
             }
             catch (Exception e)
             {
-                // Its layout changed: stop asking, and say so once.
-                found = false;
-                runtime = null;
-                nextLook = float.PositiveInfinity;
-                StackHost.Mod?.Logger.Warning($"DV Seasons' state could not be read ({e.GetType().Name}: {e.Message}); the chimney's steam takes its air from the season setting");
+                Lost(e);
                 return false;
             }
+        }
+
+        // Its layout changed: stop asking, and say so once.
+        private static void Lost(Exception e)
+        {
+            found = false;
+            runtime = null;
+            nextLook = float.PositiveInfinity;
+            StackHost.Mod?.Logger.Warning($"DV Seasons' state could not be read ({e.GetType().Name}: {e.Message}); the chimney's steam takes its air from the season setting");
         }
 
         /// <summary>DV Seasons' runtime field on its <paramref name="main"/> type and the runtime's current state property; nulls when not there.</summary>

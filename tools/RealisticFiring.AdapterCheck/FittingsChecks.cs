@@ -26,6 +26,7 @@ namespace RealisticFiring.AdapterCheck
             (UpgradeId.DriftingValve, "driftingValve", "DriftingValveFromHost"),
             (UpgradeId.ByPassValves, "byPassValves", "ByPassFromHost"),
             (UpgradeId.AutomaticFireDoor, "automaticFireDoor", "AutoFireDoorFromHost"),
+            (UpgradeId.S282OilBurner, "s282OilBurner", "OilBurnerFromHost"),
         };
 
         internal static void Run(Action<bool, string> check)
@@ -108,13 +109,24 @@ namespace RealisticFiring.AdapterCheck
                         allFieldRouted = false;
                 }
                 check(allFieldRouted,
-                    "Fittings.GetHostOverride/SetHostOverride route directly through the 9 public static *FromHost fields");
+                    $"Fittings.GetHostOverride/SetHostOverride route directly through the {ExpectedSpecs.Length} public static *FromHost fields");
 
                 // Career BuyInCareer requires purchase; sandbox fits unless NeverFitted.
                 check(!Fittings.EvaluateFitted(UpgradeId.BrickArch, settings, () => true, noneBought.Contains)
                       && Fittings.EvaluateFitted(UpgradeId.BrickArch, settings, () => true, archOnly.Contains)
                       && Fittings.EvaluateFitted(UpgradeId.BrickArch, settings, () => false, noneBought.Contains),
                     "BuyInCareer requires purchase in career and fits automatically in sandbox");
+
+                // The oil conversion changes what an engine is: Buy in career leaves sandbox S282s burning coal.
+                var oilBought = new HashSet<UpgradeId> { UpgradeId.S282OilBurner };
+                check(!Fittings.EvaluateFitted(UpgradeId.S282OilBurner, settings, () => false, noneBought.Contains)
+                      && !Fittings.EvaluateFitted(UpgradeId.S282OilBurner, settings, () => true, noneBought.Contains)
+                      && Fittings.EvaluateFitted(UpgradeId.S282OilBurner, settings, () => true, oilBought.Contains),
+                    "the S282's oil conversion under Buy in career is fitted only once bought, in sandbox too");
+                settings.S282OilBurner = UpgradeRule.AlwaysFitted;
+                check(Fittings.EvaluateFitted(UpgradeId.S282OilBurner, settings, () => false, noneBought.Contains),
+                    "Always fitted converts every S282, in sandbox too");
+                settings.S282OilBurner = UpgradeRule.BuyInCareer;
 
                 // InCareer is evaluated lazily: only in the BuyInCareer branch with no host override.
                 var careerCalls = 0;

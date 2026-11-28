@@ -117,9 +117,10 @@ namespace RealisticFiring.Patches
     /// <summary>
     /// Records where the player points a shovel into a realistic firebox,
     /// along the same cursor ray the game uses to pick the target, by the
-    /// keypad or the grate (<see cref="FireboxAim"/>). Clicking
-    /// ends the hover, so the last sample is the aim: of the throw with a
-    /// loaded shovel, or of the rake with an empty one.
+    /// keypad or the grate (<see cref="FireboxAim"/>), for the label, the
+    /// keypad, the bed and the overlay. A throw or rake takes its aim at its
+    /// click (<see cref="ShovelUseAim"/>); this last sample is only its
+    /// fallback.
     /// </summary>
     [HarmonyPatch(typeof(ShovelNonPhysicalCoal), nameof(ShovelNonPhysicalCoal.HandleHover))]
     internal static class ShovelHoverPatch
@@ -130,14 +131,9 @@ namespace RealisticFiring.Patches
         {
             if (!Main.Settings.AimShovelThroughDoor || !ShovelTargets.TryGetFirebox(target, out var car, out var firebox))
                 return;
-            var handler = __instance.GetComponent<GrabHandlerItem>();
-            var grabber = handler != null ? handler.GetGrabber() : null;
-            if (grabber == null || grabber.Cursor == null)
-                return;
-
-            if (FireboxAim.TryAim(grabber.Cursor.GetRay(), target, car, firebox, out var across, out var depth, out var box))
+            if (ShovelUseAim.TryMeasure(__instance, target, car, firebox, out var aim))
             {
-                firebox.NoteAim(new DoorAimSample(DoorAim.ZoneFor(across, depth), across, depth, __instance.IsLoaded ? DoorAimKind.Shovel : DoorAimKind.Rake, Time.time, FiringFrame.Of(car), box));
+                firebox.NoteAim(aim);
                 // A boosted load says so beside the aim (FireController's aim label).
                 StartupLoad.Hover = __instance.IsLoaded && StartupLoad.TryGet(__instance, out var kg, out var boost) && boost > 1.01f
                     ? $" {Items.ShovelfulWheel.Kg(kg)}{ShovelSize.BoostNote(boost)}" : null;
@@ -227,24 +223,92 @@ namespace RealisticFiring.Patches
     }
 
     /// <summary>
+    /// The aim of a desktop shovel's throw or rake, taken as the player
+    /// clicks: the game asks <c>IsUseCompatible</c> on the click's frame
+    /// (<c>InsertItemIntoTargetHandler</c>), plays the thrust, and only at its
+    /// end calls <c>HandleUse</c>, which puts the coal in. Firing fast, the
+    /// look has turned back to the coal by then (#52, a player, 2026-11-22:
+    /// "sometimes it bunches up at the side, sometimes at the front or
+    /// back"), and the last hover was where it crossed the door's edge on the
+    /// way out, or an empty shovel's. So the click's aim is held
+    /// (<see cref="ClickedAim{T}"/>) and given to the firebox just before the
+    /// coal goes in, which a multiplayer guest's shovelful sends to the host.
+    /// Without a click's aim (a use another mod makes), the cursor at the end
+    /// of the thrust, then the last hover, as before.
+    /// </summary>
+    internal static class ShovelUseAim
+    {
+        private static readonly ClickedAim<DoorAimSample> Clicked = new ClickedAim<DoorAimSample>();
+
+        /// <summary>What a shovel aims in its state: a loaded one throws, an empty one rakes.</summary>
+        public static DoorAimKind KindOf(ShovelNonPhysicalCoal shovel) => shovel.IsLoaded ? DoorAimKind.Shovel : DoorAimKind.Rake;
+
+        /// <summary>Where the desktop cursor points <paramref name="shovel"/> into <paramref name="firebox"/>'s door now, if on its target.</summary>
+        public static bool TryMeasure(ShovelNonPhysicalCoal shovel, ItemUseTarget target, TrainCar car, RealisticFirebox firebox, out DoorAimSample aim)
+        {
+            aim = default;
+            var handler = shovel.GetComponent<GrabHandlerItem>();
+            var grabber = handler != null ? handler.GetGrabber() : null;
+            if (grabber == null || grabber.Cursor == null
+                || !FireboxAim.TryAim(grabber.Cursor.GetRay(), target, car, firebox, out var across, out var depth, out var box))
+                return false;
+            aim = new DoorAimSample(DoorAim.ZoneFor(across, depth), across, depth, KindOf(shovel), Time.time, FiringFrame.Of(car), box);
+            return true;
+        }
+
+        /// <summary>At the click that starts a throw or rake: holds where it points.</summary>
+        public static void Click(ShovelNonPhysicalCoal shovel, ItemUseTarget target, TrainCar car, RealisticFirebox firebox)
+        {
+            if (!Main.Settings.AimShovelThroughDoor || VRManager.IsVREnabled())
+                return;
+            if (TryMeasure(shovel, target, car, firebox, out var aim))
+            {
+                Clicked.Click(shovel, target, aim, aim.Kind, aim.Time);
+                firebox.NoteAim(aim);
+            }
+            else
+                Clicked.Clear();
+        }
+
+        /// <summary>
+        /// At the end of the thrust: the aim of the use <paramref name="shovel"/>
+        /// makes on <paramref name="target"/>, of its kind, from its click, else
+        /// the cursor now. Null leaves the last hover to decide.
+        /// </summary>
+        public static DoorAimSample? ForUse(ShovelNonPhysicalCoal shovel, ItemUseTarget target, TrainCar car, RealisticFirebox firebox)
+        {
+            if (!Main.Settings.AimShovelThroughDoor)
+                return null;
+            if (Clicked.TryTake(shovel, target, KindOf(shovel), Time.time, RealisticFirebox.AimHoldTime, out var clicked))
+                return clicked;
+            return TryMeasure(shovel, target, car, firebox, out var now) ? now : (DoorAimSample?)null;
+        }
+    }
+
+    /// <summary>
     /// Lets a click with an empty shovel on a realistic firebox's open door
     /// count as a use, so the game plays the shovel's thrust into the firebox;
-    /// and says why a loaded one is refused at a full firebox.
+    /// holds the aim of each click that starts a throw or rake
+    /// (<see cref="ShovelUseAim"/>); and says why a loaded one is refused at a
+    /// full firebox.
     /// </summary>
     [HarmonyPatch(typeof(ShovelNonPhysicalCoal), nameof(ShovelNonPhysicalCoal.IsUseCompatible))]
     internal static class ShovelRakeCompatiblePatch
     {
         private static void Postfix(ShovelNonPhysicalCoal __instance, ItemUseTarget target, ref bool __result)
         {
-            if (__result || !ShovelTargets.TryGetFirebox(target, out var car, out var firebox))
+            if (!ShovelTargets.TryGetFirebox(target, out var car, out var firebox))
                 return;
-            if (ShovelTargets.CanRake(__instance, firebox))
-            {
+            if (!__result && ShovelTargets.CanRake(__instance, firebox))
                 __result = true;
+            // The game asks this as the player clicks (in VR, as the shovel
+            // goes in): the use starts its thrust now, or is refused.
+            if (__result)
+            {
+                ShovelUseAim.Click(__instance, target, car, firebox);
                 return;
             }
-            // The game asks this as the player clicks (in VR, as the shovel
-            // goes in), and refuses a shovel with no room at all.
+            // A shovel with no room at all is refused.
             FullFirebox.SayIfFull(__instance, car);
         }
     }
@@ -277,9 +341,10 @@ namespace RealisticFiring.Patches
     }
 
     /// <summary>
-    /// At the end of that thrust, rakes the zone the empty shovel was aimed
-    /// at (the center if no rake's aim was recorded: wood's or a shovelful's
-    /// aim is not a rake's).
+    /// At the end of that thrust: a throw lands where its click aimed, and an
+    /// empty shovel rakes the zone its click aimed at (<see cref="ShovelUseAim"/>;
+    /// without one, the last hover's rake aim, else the center: wood's or a
+    /// shovelful's aim is not a rake's).
     /// </summary>
     [HarmonyPatch(typeof(ShovelNonPhysicalCoal), nameof(ShovelNonPhysicalCoal.HandleUse))]
     internal static class ShovelRakePatch
@@ -288,15 +353,25 @@ namespace RealisticFiring.Patches
         {
             if (!ShovelTargets.TryGetFirebox(target, out var car, out var firebox))
                 return true;
+            var aim = ShovelUseAim.ForUse(__instance, target, car, firebox);
             if (!ShovelTargets.CanRake(__instance, firebox))
             {
-                // A throw: the game puts in what fits and keeps the rest.
+                // A throw: the game puts in what fits, at once, and keeps the
+                // rest; the firebox takes this aim for it (TakeFreshAim; a
+                // multiplayer guest's DeliverFromClient sends it to the host).
+                if (aim.HasValue && aim.Value.Kind == DoorAimKind.Shovel)
+                    firebox.NoteAim(aim.Value);
                 FullFirebox.SayIfFull(__instance, car);
                 return true;
             }
 
-            var aim = firebox.HoverAim;
-            firebox.Rake(aim.HasValue && DoorAimRules.AimsRake(aim.Value.Kind, aim.Value.AgeAt(Time.time), RealisticFirebox.AimHoldTime) ? aim.Value.Zone : GrateZone.Center);
+            if (!aim.HasValue)
+            {
+                var hover = firebox.HoverAim;
+                if (hover.HasValue && DoorAimRules.AimsRake(hover.Value.Kind, hover.Value.AgeAt(Time.time), RealisticFirebox.AimHoldTime))
+                    aim = hover;
+            }
+            firebox.Rake(aim.HasValue && aim.Value.Kind == DoorAimKind.Rake ? aim.Value.Zone : GrateZone.Center);
             __result = true;
             return false;
         }

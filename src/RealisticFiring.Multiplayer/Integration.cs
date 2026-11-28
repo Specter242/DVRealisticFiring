@@ -117,6 +117,7 @@ namespace RealisticFiring.Multiplayer
                 $"stoker jams {session.StokerJams}",
                 $"S282 feed pump {session.S282FeedPump}",
                 $"S282 booster {session.S282Booster}",
+                $"S282 oil burner {session.S282OilBurner}",
                 $"boosters {session.FitBoosters}",
                 $"feed pumps {session.FitFeedPumps}",
                 $"oil burners {session.RealisticOilBurners}",
@@ -304,6 +305,7 @@ namespace RealisticFiring.Multiplayer
                 DriftingValve = Upgrades.Fittings.DriftingValve,
                 ByPass = Upgrades.Fittings.ByPass,
                 AutoFireDoor = Upgrades.Fittings.AutoFireDoor,
+                OilBurner = Upgrades.Fittings.OilBurner,
                 PerLocomotive = perLoco,
                 HostVersion = (ushort)Upgrades.Fittings.Version,
                 CarFittings = carFittings,
@@ -325,6 +327,7 @@ namespace RealisticFiring.Multiplayer
             Upgrades.Fittings.SetHostOverride(Upgrades.UpgradeId.DriftingValve, packet.DriftingValve);
             Upgrades.Fittings.SetHostOverride(Upgrades.UpgradeId.ByPassValves, packet.ByPass);
             Upgrades.Fittings.SetHostOverride(Upgrades.UpgradeId.AutomaticFireDoor, packet.AutoFireDoor);
+            Upgrades.Fittings.SetHostOverride(Upgrades.UpgradeId.S282OilBurner, packet.OilBurner);
             Upgrades.Fittings.HostPerLocomotive = packet.PerLocomotive;
             if (packet.PerLocomotive)
             {

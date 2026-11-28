@@ -20,6 +20,7 @@ namespace RealisticFiring.Upgrades
         DriftingValve,
         ByPassValves,
         AutomaticFireDoor,
+        S282OilBurner,
     }
 
     /// <summary>Table entry describing one upgrade's save key, mask, settings rule, host override accessors, and optional prerequisite.</summary>
@@ -79,7 +80,7 @@ namespace RealisticFiring.Upgrades
         private static bool skipSaveRead;
         private static readonly UpgradeLedger Ledger = new UpgradeLedger();
 
-        // Keep the nine host-override fields as public static fields for binary
+        // Keep the host-override fields as public static fields for binary
         // compatibility with pre-compiled RealisticFiring.Multiplayer.dll add-ons.
         /// <summary>The host's word on the arch, in a Multiplayer session where this game is a client; null otherwise.</summary>
         public static bool? FromHost;
@@ -108,6 +109,9 @@ namespace RealisticFiring.Upgrades
         /// <summary>The host's word on the automatic fire door, as <see cref="FromHost"/>.</summary>
         public static bool? AutoFireDoorFromHost;
 
+        /// <summary>The host's word on the S282's conversion to oil, as <see cref="FromHost"/>.</summary>
+        public static bool? OilBurnerFromHost;
+
         /// <summary>Whether the host is running in per-locomotive mode, on a Multiplayer client; null otherwise.</summary>
         public static bool? HostPerLocomotive;
 
@@ -123,6 +127,7 @@ namespace RealisticFiring.Upgrades
             new UpgradeSpec(UpgradeId.DriftingValve, UpgradeMask.DriftingValve, "driftingValve", s => s.DriftingValve, () => DriftingValveFromHost, v => DriftingValveFromHost = v),
             new UpgradeSpec(UpgradeId.ByPassValves, UpgradeMask.ByPassValves, "byPassValves", s => s.ByPassValves, () => ByPassFromHost, v => ByPassFromHost = v),
             new UpgradeSpec(UpgradeId.AutomaticFireDoor, UpgradeMask.AutomaticFireDoor, "automaticFireDoor", s => s.AutomaticFireDoor, () => AutoFireDoorFromHost, v => AutoFireDoorFromHost = v),
+            new UpgradeSpec(UpgradeId.S282OilBurner, UpgradeMask.S282OilBurner, UpgradeKeys.S282OilBurner, s => s.S282OilBurner, () => OilBurnerFromHost, v => OilBurnerFromHost = v),
         };
 
         /// <summary>All registered upgrades, in <see cref="UpgradeId"/> order.</summary>
@@ -204,10 +209,10 @@ namespace RealisticFiring.Upgrades
             if (spec.Prerequisite is UpgradeId prerequisite && !EvaluateFitted(prerequisite, settings, inCareer, isBought))
                 return false;
             var rule = settings != null ? spec.Rule(settings) : UpgradeRule.BuyInCareer;
-            return Allowed(rule, inCareer, id, isBought);
+            return Allowed(rule, inCareer, id, isBought, (UpgradeKeys.Alternatives & spec.Mask) != 0);
         }
 
-        private static bool Allowed(UpgradeRule rule, Func<bool> inCareer, UpgradeId id, Func<UpgradeId, bool> isBought)
+        private static bool Allowed(UpgradeRule rule, Func<bool> inCareer, UpgradeId id, Func<UpgradeId, bool> isBought, bool alternative)
         {
             switch (rule)
             {
@@ -216,7 +221,8 @@ namespace RealisticFiring.Upgrades
                 case UpgradeRule.NeverFitted:
                     return false;
                 default:
-                    return !inCareer() || isBought(id);
+                    // An alternative (the oil conversion) only once bought, sandbox included.
+                    return alternative ? inCareer() && isBought(id) : !inCareer() || isBought(id);
             }
         }
 
@@ -247,6 +253,9 @@ namespace RealisticFiring.Upgrades
         /// <summary>Whether the S282s and S060s have their automatic fire door now (fleet-wide fallback).</summary>
         public static bool AutoFireDoor => Has(UpgradeMask.AutomaticFireDoor, null);
 
+        /// <summary>Whether the S282s are converted to oil now (fleet-wide fallback).</summary>
+        public static bool OilBurner => Has(UpgradeMask.S282OilBurner, null);
+
         /// <summary>Per-locomotive fitting queries (fall back to fleet-wide when <see cref="Scope"/> is fleet-wide).</summary>
         public static bool HasArch(TrainCar car) => Has(UpgradeMask.BrickArch, car);
         public static bool HasJets(TrainCar car) => Has(UpgradeMask.OverFireJets, car);
@@ -257,6 +266,26 @@ namespace RealisticFiring.Upgrades
         public static bool HasDriftingValve(TrainCar car) => Has(UpgradeMask.DriftingValve, car);
         public static bool HasByPass(TrainCar car) => Has(UpgradeMask.ByPassValves, car);
         public static bool HasAutoFireDoor(TrainCar car) => Has(UpgradeMask.AutomaticFireDoor, car);
+        public static bool HasOilBurner(TrainCar car) => Has(UpgradeMask.S282OilBurner, car);
+
+        /// <summary>
+        /// Whether <paramref name="upgrade"/> is fitted on the locomotive with
+        /// <paramref name="carGuid"/> right now, for a car whose own GUID isn't
+        /// on it yet (one being built as a save loads); null takes the fleet's.
+        /// </summary>
+        public static bool HasForGuid(UpgradeMask upgrade, string carGuid)
+        {
+            if (upgrade == UpgradeMask.None)
+                return false;
+            // A Multiplayer client: the host's word, whose per-car masks name cars it hasn't built yet.
+            if (HostPerLocomotive == true)
+                return (HostFleetMask() & upgrade) == upgrade;
+            if (TryHostFleetFlag(upgrade, out var hostValue))
+                return hostValue;
+            Read();
+            var scope = Main.Settings?.UpgradeScope ?? UpgradeScope.FleetWide;
+            return Ledger.IsFitted(upgrade, CurrentRules(), scope, InCareer, carGuid);
+        }
 
         /// <summary>The full effective upgrade mask for <paramref name="car"/> right now.</summary>
         public static UpgradeMask EffectiveMask(TrainCar car)
@@ -458,7 +487,8 @@ namespace RealisticFiring.Upgrades
                 ToRule(s.ByPassValves),
                 ToRule(s.S282Stoker),
                 ToRule(s.S282FeedPump),
-                ToRule(s.S282Booster));
+                ToRule(s.S282Booster),
+                ToRule(s.S282OilBurner));
         }
 
         private static FittingRule ToRule(UpgradeRule rule)
@@ -555,6 +585,9 @@ namespace RealisticFiring.Upgrades
 
         /// <summary>Whether the player of this save has bought the automatic fire door fleet-wide.</summary>
         public static bool AutoFireDoorBought => IsBought(UpgradeId.AutomaticFireDoor);
+
+        /// <summary>Whether the player of this save has bought the S282's conversion to oil fleet-wide.</summary>
+        public static bool OilBurnerBought => IsBought(UpgradeId.S282OilBurner);
 
         /// <summary>Buys <paramref name="id"/> fleet-wide: every applicable engine has it from now on, and the save keeps it.</summary>
         public static void Buy(UpgradeId id) => BuyFleet(Specs[(int)id].Mask);

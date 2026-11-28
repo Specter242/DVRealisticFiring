@@ -256,7 +256,7 @@ namespace RealisticFiring
                 s.IsOil = true;
                 s.FireOn = oil.Model.FireOn;
                 s.HasDoor = true;
-                s.DoorOpening = oil.DoorOpening;
+                s.DoorOpening = oil.DoorwayOpening;
                 s.Oil = FireController.ReadOil(oil);
             }
 

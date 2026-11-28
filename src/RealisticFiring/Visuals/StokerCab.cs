@@ -31,8 +31,8 @@ namespace RealisticFiring.Visuals
         internal const string SourceControl = "C_Blower";
         internal const string SourceLabel = "LocoS282A_Interior_Labels/Blower/Label_RM_1";
 
-        private const string SourceLever = "Right/CylinderCock";
-        private const string SourceLeverControl = "C_CylinderCock";
+        internal const string SourceLever = "Right/CylinderCock";
+        internal const string SourceLeverControl = "C_CylinderCock";
 
         // Looked for straight down from this point, in the manifold's frame;
         // the pivot sits this far above the floor, as on the S282.
@@ -197,7 +197,8 @@ namespace RealisticFiring.Visuals
         /// </summary>
         public static string Attach(TrainCar car, Transform interior)
         {
-            if (car == null || interior == null || interior.Find(RootName) != null || !Main.Settings.ShowStokerJetValves)
+            // An S282 converted to oil fires through its burner, not a stoker (S282OilCab).
+            if (car == null || interior == null || interior.Find(RootName) != null || !Main.Settings.ShowStokerJetValves || S282OilCab.IsConverted(car))
                 return null;
             var flow = car.SimController != null ? car.SimController.SimulationFlow : null;
             // Looked for by its component first: the port lookup logs an error for every loco without it.

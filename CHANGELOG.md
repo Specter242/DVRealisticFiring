@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.27.0 (2026-11-27)
+
+- **New: the S282 oil burner.** Buy **S282 oil burner** on the Upgrades
+  screen ($35,000) and the S282 is rebuilt as an oil burner the next time it
+  loads: an oil tank in the tender's coal space, and in the cab a firing
+  valve, atomizer, oil heater and a peephole to watch the fire through.
+  Sand the flues with the new sand scoop, filled at the sand box.
+- The fire iron, sand scoop, Firing tablet, booklets, firewood, rags and
+  their crates and tins now have inventory icons in the game's own style.
+- Fixed shovelfuls and rakes landing in the wrong part of the fire when
+  firing fast: each goes where you clicked.
+- Fixed the water glass reading high while the game's Steam Startup speeds a
+  cold engine, then falling by up to a fifth during a blowdown.
+- Works with Rearranged S282 3.0: the booster, the boiler's water through a
+  change of arrangement, and each arrangement's cylinders.
+- Fixed the S282 and Hudson's booster latch leaning back at Up, and its
+  plates hidden in the S282's cab wall.
+- With a camera-shake mod such as Cab Immersion Pack, the aim keypad and the
+  control labels stay on what they mark.
+- Fixed the shops not stocking with Unity Mod Manager 0.28.2.
+- Smoother frame times: less memory churned every frame.
+- Fixed the injector steam valves in VR pulling back to Off and then
+  jumping to Feed: they now turn freely in the hand and settle at Off,
+  Prime, or Feed when you let go.
+- The fire-dump lever dumps up to a third of the fire each time it is held
+  over; bring it back to center and hold it over again to dump more. A lever
+  stuck over in multiplayer no longer dumps the whole fire.
+
 ## 1.26.0 (2026-11-23)
 
 - The caboose stove's smoke now rises as thin wisps from its stovepipe.

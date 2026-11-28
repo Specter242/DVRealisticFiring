@@ -414,10 +414,14 @@ they're fitted. The booster is the engineer's.
 - **Set the stop** for the drifting fire: with the firing valve where the
   fire holds lit with the throttle shut, click it. Then you can cut the fire
   hard to the stop without putting it out. Click again to take it out.
-- **Sand the flues** when steaming falls off after smoking: open the
+- **Sand the flues** when steaming falls off after smoking, with the
+  sand scoop that comes with the engine (it lies on the cab floor by the
+  fire door, and comes back there if you leave it behind). Open the
   sandbox lid at the front of the 2901's coupled tender and click the sand
-  inside with the empty shovel to load a quart. Open the peep hole and throw it in while
-  working hard. Black clouds at the stack mean it's scouring.
+  inside with the scoop to fill it with a quart. Open the peep hole and
+  click it with the full scoop to throw the sand in while working hard.
+  Black clouds at the stack mean it's scouring. The shovel doesn't sand
+  the flues.
 - **A dead engine** fires up on the shed's steam at a roundhouse stall or
   engine shed (tow it there): plug the stand's blower line into the
   fitting on the smokebox and open the stand's valve (it feeds the blower,

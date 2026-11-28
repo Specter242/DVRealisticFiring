@@ -141,6 +141,30 @@ namespace RealisticFiring.Items
                     .ToArray();
             }
 
+            var modelFilter = model != null ? model.GetComponent<MeshFilter>() : null;
+            if (modelFilter != null && modelFilter.sharedMesh != null)
+            {
+                spec.PreviewBounds = modelFilter.sharedMesh.bounds;
+                var preview = new GameObject("Fire iron preview");
+                preview.transform.SetParent(holder.transform, false);
+                var previewModel = new GameObject("model");
+                previewModel.transform.SetParent(preview.transform, false);
+                previewModel.AddComponent<MeshFilter>().sharedMesh = modelFilter.sharedMesh;
+                var modelRenderer = model.GetComponent<MeshRenderer>();
+                previewModel.AddComponent<MeshRenderer>().sharedMaterials = modelRenderer != null ? modelRenderer.sharedMaterials : new Material[0];
+                spec.PreviewPrefab = preview;
+                // Its icon rendered from its own mesh and look; the bundle's drawn one if that fails.
+                var iconModel = IconModel(modelFilter.sharedMesh, previewModel.GetComponent<MeshRenderer>().sharedMaterials);
+                try
+                {
+                    ItemIcons.Apply(spec, iconModel, IconView, PrefabName);
+                }
+                finally
+                {
+                    Object.DestroyImmediate(iconModel);
+                }
+            }
+
             // Where the working animation puts the iron: its blade.
             var tip = new GameObject(FireIronUse.TipName).transform;
             tip.SetParent(iron.transform, false);
@@ -156,7 +180,36 @@ namespace RealisticFiring.Items
             return iron;
         }
 
-        // The iron's own icons in place of the shovel's, when the bundle has them.
+        /// <summary>
+        /// The iron's icon view: corner to corner, the blade up to the right
+        /// and the ring down to the left, facing the viewer and turned a
+        /// little. The shovel's own view shows the bar end on, a sliver
+        /// (job 3389).
+        /// </summary>
+        // A property, not a static field: the type's initializer must not call into the engine (the adapter check runs it under plain Mono).
+        internal static Quaternion IconView => Quaternion.Euler(0f, 0f, 40f) * Quaternion.Euler(0f, 70f, 0f);
+
+        /// <summary>
+        /// How much of its length the iron keeps in its icon. At its true
+        /// 1.7 m to a 25 mm bar it is a hairline at hotbar size, in every
+        /// view and perspective tried (jobs 3390 and 3391); shortened, the
+        /// bar, ring, and blade read, as the drawn icon drew them.
+        /// </summary>
+        internal const float IconLength = 0.35f;
+
+        /// <summary>The iron's mesh and look, shortened along its bar to <see cref="IconLength"/>, for its icon; the caller destroys it.</summary>
+        internal static GameObject IconModel(Mesh mesh, Material[] materials)
+        {
+            var model = new GameObject("[fire iron icon model]") { hideFlags = HideFlags.HideAndDontSave };
+            var body = new GameObject("model") { hideFlags = HideFlags.HideAndDontSave };
+            body.transform.SetParent(model.transform, false);
+            body.transform.localScale = new Vector3(1f, 1f, IconLength);
+            body.AddComponent<MeshFilter>().sharedMesh = mesh;
+            body.AddComponent<MeshRenderer>().sharedMaterials = materials;
+            return model;
+        }
+
+        // The iron's drawn icons in place of the shovel's, when the bundle has them: kept if the rendered one fails.
         private static void SetIcons(InventoryItemSpec spec)
         {
             var icon = Sprite(PlumeAssets.FireIronIcon);

@@ -357,13 +357,14 @@ namespace RealisticFiring.Core
 
         /// <summary>
         /// Runs the fire dump at a normalized flow for one tick: coal falls out
-        /// at the stock dump rate, and ash and clinker go with it.
+        /// at the stock dump rate, and ash and clinker go with it. Returns the
+        /// coal dumped, in kg.
         /// </summary>
-        public void Dump(float flow, float dt)
+        public float Dump(float flow, float dt)
         {
             flow = Smoothing.Clamp01(flow);
             if (flow <= 0f || !(dt > 0f))
-                return;
+                return 0f;
 
             var dumped = RemoveCoal(flow * parameters.CoalDumpRate * dt);
             CoalDumped += dumped;
@@ -376,6 +377,7 @@ namespace RealisticFiring.Core
                 zone.Ash *= keep;
                 zone.Clinker *= keep;
             }
+            return dumped;
         }
 
         private float Accept(float mass)

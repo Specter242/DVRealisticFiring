@@ -29,7 +29,7 @@ namespace RealisticFiring.Sim
         private static readonly Dictionary<TrainCar, bool> Known = new Dictionary<TrainCar, bool>();
         private static readonly HashSet<string> Skipped = new HashSet<string>();
 
-        /// <summary>Whether <paramref name="car"/> fires its firebox with fuel oil through a CCL stoker.</summary>
+        /// <summary>Whether <paramref name="car"/> fires its firebox with fuel oil: through a CCL stoker, or an S282 converted to oil.</summary>
         public static bool IsOilBurner(TrainCar car)
         {
             if (car == null || !Main.Session.RealisticOilBurners)
@@ -39,7 +39,8 @@ namespace RealisticFiring.Sim
             foreach (var stale in Known.Keys.Where(c => c == null).ToList())
                 Known.Remove(stale);
             var simController = car.SimController != null ? car.SimController : car.GetComponentInChildren<SimController>(true);
-            var oil = FeedsFuel(simController != null ? simController.connectionsDefinition : null, out _);
+            // The stock S282 converted to oil is one too (S282OilConversion).
+            var oil = FeedsFuel(simController != null ? simController.connectionsDefinition : null, out _) || S282OilConversion.IsOil(car);
             if (oil && LeftStock.Is(car))
             {
                 oil = false;

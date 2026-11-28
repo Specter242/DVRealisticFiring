@@ -49,7 +49,7 @@ namespace RealisticFiring.Sim
 
         private readonly float startupMaxPressure;
         private readonly ShovelDelivery shovel;
-        private readonly GrateLever grateLever = new GrateLever();
+        private readonly FireDump fireDump = new FireDump();
 
         private readonly PortReference coalDumpControl;
         private readonly PortReference intakeWaterContent;
@@ -88,8 +88,6 @@ namespace RealisticFiring.Sim
         private readonly Port oxygenAvailabilityReadOut;
 
         private Port doorPort;
-        private float coalDumpFlow;
-        private float coalDumpFlowVelocity;
         private bool reportedBadStartupParameter;
 
         private bool doorOpen;
@@ -804,22 +802,20 @@ namespace RealisticFiring.Sim
         // The dump lever doubles as the rocking grate lever: a short rock wiggles
         // the grate, a half stroke shakes it, holding it over dumps at the stock rate. The dump keeps
         // running while ash or clinker is left, since dumping is how a
-        // clinkered fire gets cleaned.
+        // clinkered fire gets cleaned. Each hold dumps at most its DumpStroke's
+        // share of the fire, so a lever value stuck over the dump point (a
+        // multiplayer desync) cannot empty the grate: only the host's sim
+        // dumps, and it counts here.
         private void CoalDump(float delta)
         {
-            var lever = grateLever.Update(coalDumpControl.Value, delta);
-            for (var i = 0; i < lever.Wiggles + lever.Shakes; i++)
-                Shake(i < lever.Wiggles ? ShakeStroke.Wiggle : ShakeStroke.Shake);
-            var target = Model.HasDumpableContents ? lever.Dump : 0f;
-            coalDumpFlow = Mathf.SmoothDamp(coalDumpFlow, target, ref coalDumpFlowVelocity, 0.5f, float.PositiveInfinity, delta);
-            if (target == 0f && coalDumpFlow < 0.01f)
-            {
-                coalDumpFlow = 0f;
-                coalDumpFlowVelocity = 0f;
-            }
-            coalDumpFlowNormalizedReadOut.Value = coalDumpFlow;
-            if (coalDumpFlow > 0f)
-                Model.Dump(coalDumpFlow, delta);
+            var dump = fireDump.Step(Model, coalDumpControl.Value, delta);
+            for (var i = 0; i < dump.Wiggles + dump.Shakes; i++)
+                Shake(i < dump.Wiggles ? ShakeStroke.Wiggle : ShakeStroke.Shake);
+            coalDumpFlowNormalizedReadOut.Value = dump.Flow;
+#if !PUBLIC_RELEASE
+            if (dump.HoldSpent && Main.Settings.LogCoalDeliveries)
+                Main.Mod.Logger.Log($"{Car?.ID}: this hold of the dump lever has dumped its share; {Model.CoalMass:F1} kg of coal left");
+#endif
         }
 
         // The drop grate: whatever lies on it falls while the lever stands open.

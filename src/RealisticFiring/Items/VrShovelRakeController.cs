@@ -1,4 +1,5 @@
 using DV.CabControls;
+using DV.Simulation.Cars;
 using DV.VRTK_Extensions;
 using HarmonyLib;
 using RealisticFiring.Core;
@@ -134,23 +135,83 @@ namespace RealisticFiring.Items
             return false;
         }
 
+        /// <summary>
+        /// Where a loaded VR shovel throws, at the moment the game puts its
+        /// coal in (its blade at the door's coal target): where the blade
+        /// points onto the bed, else where it crosses the firehole. The aim is
+        /// the shovel's own at that moment (#52), not a sample left by an
+        /// earlier rake or throw. False with the aim off, or no aim to take
+        /// (the coal then follows the fire, as before).
+        /// </summary>
+        internal static bool TryAimThrow(ShovelNonPhysicalCoal shovel, TrainCar car, RealisticFirebox firebox, out DoorAimSample aim)
+        {
+            aim = default;
+            if (shovel == null || car == null || firebox == null || Main.Settings == null || !Main.Settings.AimShovelThroughDoor)
+                return false;
+            var stockShovel = shovel.GetComponent<Shovel>();
+            var tip = stockShovel != null && stockShovel.shovelTip != null ? stockShovel.shovelTip.transform
+                : shovel.InteractionPoint != null ? shovel.InteractionPoint : null;
+            if (tip == null)
+                return false;
+            var tipPos = tip.position;
+            var bladeDir = tipPos - shovel.transform.position;
+            bladeDir = bladeDir.sqrMagnitude > 1e-4f ? bladeDir.normalized : shovel.transform.forward;
+            var hit = TargetAt(tipPos, car);
+            if (!TryAimZone(car, firebox, hit, tipPos, bladeDir, false, out var zone, out var across, out var along))
+                return false;
+            aim = new DoorAimSample(zone, across, along, DoorAimKind.Shovel, Time.time);
+            return true;
+        }
+
+        // The door's coal target of car's firebox nearest the blade, or null.
+        private static Collider TargetAt(Vector3 tipPos, TrainCar car)
+        {
+            var found = new Collider[8];
+            var count = Physics.OverlapSphereNonAlloc(tipPos, 0.25f, found, LayerMask.GetMask("Train_Interior"), QueryTriggerInteraction.Collide);
+            for (var i = 0; i < count; i++)
+            {
+                var col = found[i];
+                if (col != null && (col.GetComponent<NonPhysicsCoalTarget>() != null || col.GetComponent<Fire>() != null)
+                    && TrainCar.Resolve(col.gameObject) == car)
+                    return col;
+            }
+            return null;
+        }
+
         // Picks the grate zone targeted by the shovel blade: where the blade
         // lies over the bed, else where the shaft points onto the bed, else
         // where the blade crosses the firehole opening.
         private static GrateZone AimZone(TrainCar car, RealisticFirebox firebox, Collider hitCollider, Vector3 tipPos, Vector3 bladeDir, out float across, out float along)
         {
+            if (TryAimZone(car, firebox, hitCollider, tipPos, bladeDir, true, out var zone, out across, out along))
+                return zone;
+            across = 0.5f;
+            along = 0.5f;
+            return GrateZone.Center;
+        }
+
+        // As AimZone; a throw (tipFirst false) goes where the blade points,
+        // never where its tip stands at the door. False with nothing to aim by.
+        private static bool TryAimZone(TrainCar car, RealisticFirebox firebox, Collider hitCollider, Vector3 tipPos, Vector3 bladeDir, bool tipFirst,
+                                       out GrateZone zone, out float across, out float along)
+        {
+            zone = GrateZone.Center;
             if (ZonedCoalBed.TryGet(firebox, out var bed) && bed.Ready)
             {
                 var boxPoint = bed.BoxPoint(tipPos);
-                if (boxPoint.x >= 0f && boxPoint.x <= 1f && boxPoint.y >= 0f && boxPoint.y <= 1f)
+                if (tipFirst && boxPoint.x >= 0f && boxPoint.x <= 1f && boxPoint.y >= 0f && boxPoint.y <= 1f)
                 {
                     across = boxPoint.x;
                     along = boxPoint.y;
-                    return DoorAim.ZoneFor(across, along);
+                    zone = DoorAim.ZoneFor(across, along);
+                    return true;
                 }
                 var ray = new Ray(tipPos - bladeDir * 0.25f, bladeDir);
                 if (bed.TryAim(ray, out across, out along))
-                    return DoorAim.ZoneFor(across, along);
+                {
+                    zone = DoorAim.ZoneFor(across, along);
+                    return true;
+                }
             }
 
             if (hitCollider != null)
@@ -159,19 +220,20 @@ namespace RealisticFiring.Items
                 var bounds = CarSpace.LocalBounds(firing, hitCollider);
                 var opening = FireholeOpening.For(car, bounds);
                 var ray = new Ray(tipPos - bladeDir * 0.25f, bladeDir);
-                if (opening.TryPlace(ray, firing, out across, out along))
-                    return DoorAim.ZoneFor(across, along);
-
-                var local = firing.InverseTransformPoint(tipPos);
-                var hole = opening.Bounds;
-                across = hole.size.x > 1e-4f ? Mathf.Clamp01((local.x - hole.min.x) / hole.size.x) : 0.5f;
-                along = hole.size.y > 1e-4f ? Mathf.Clamp01((local.y - hole.min.y) / hole.size.y) : 0.5f;
-                return DoorAim.ZoneFor(across, along);
+                if (!opening.TryPlace(ray, firing, out across, out along))
+                {
+                    var local = firing.InverseTransformPoint(tipPos);
+                    var hole = opening.Bounds;
+                    across = hole.size.x > 1e-4f ? Mathf.Clamp01((local.x - hole.min.x) / hole.size.x) : 0.5f;
+                    along = hole.size.y > 1e-4f ? Mathf.Clamp01((local.y - hole.min.y) / hole.size.y) : 0.5f;
+                }
+                zone = DoorAim.ZoneFor(across, along);
+                return true;
             }
 
             across = 0.5f;
             along = 0.5f;
-            return GrateZone.Center;
+            return false;
         }
 
         private void PulseHands()
@@ -204,6 +266,27 @@ namespace RealisticFiring.Items
                 || __instance.GetComponent<ItemBase>() == null || __instance.GetComponent<VrShovelRakeController>() != null)
                 return;
             __instance.gameObject.AddComponent<VrShovelRakeController>();
+        }
+    }
+
+    /// <summary>
+    /// In VR the game puts a shovelful in as the loaded blade touches the open
+    /// door's coal target (<c>ShovelNonPhysicalCoal.OnShovelUsed</c>, every
+    /// frame, with no click): the throw is aimed by the shovel then
+    /// (<see cref="VrShovelRakeController.TryAimThrow"/>), just before the
+    /// firebox takes the coal, and a multiplayer guest's goes to the host with
+    /// it. The desktop throw is aimed at its click (<see cref="Patches.ShovelUseAim"/>).
+    /// </summary>
+    [HarmonyPatch(typeof(ShovelNonPhysicalCoal), "UnloadCoal", typeof(FireboxSimController))]
+    internal static class VrThrowAimPatch
+    {
+        private static void Prefix(ShovelNonPhysicalCoal __instance, FireboxSimController fireboxController)
+        {
+            if (!VRManager.IsVREnabled() || fireboxController == null || !__instance.IsLoaded)
+                return;
+            var car = TrainCar.Resolve(fireboxController.gameObject);
+            if (FireboxRegistry.TryGet(car, out var firebox) && VrShovelRakeController.TryAimThrow(__instance, car, firebox, out var aim))
+                firebox.NoteAim(aim);
         }
     }
 }
